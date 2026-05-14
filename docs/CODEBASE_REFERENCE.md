@@ -93,6 +93,7 @@ API yang dipakai:
 
 Logic penting:
 - Provider AI tersedia: OpenRouter, OpenAI, Gemini, KIE.ai, dan Opencode.
+- Pilihan AI provider/model disimpan ke localStorage agar refresh tetap memakai pilihan terakhir.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - Jika hasil Google Places punya `photos`, admin bisa memilih salah satu sebagai logo/brand source.
 - Gambar logo diambil melalui proxy same-origin `/api/places/photo`, lalu canvas browser mengekstrak palette warna dominan.
@@ -130,6 +131,7 @@ API yang dipakai:
 
 Logic penting:
 - Provider selector hanya menampilkan field API key untuk provider aktif.
+- Provider tab dan estimator provider/model disimpan ke localStorage agar pilihan terakhir tetap dipakai setelah refresh.
 - Auto-save berjalan 1,2 detik setelah perubahan terakhir.
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
@@ -200,6 +202,16 @@ Fungsi:
 Logic penting:
 - `estimateTokensFromText()` memakai estimasi kasar 4 karakter per token.
 - KIE.ai menggunakan estimasi diskon konservatif, bukan angka final resmi per model.
+
+### `src/lib/localStorageState.ts`
+
+Fungsi:
+- Hook kecil `useLocalStorageState()` untuk menyimpan state select/form non-rahasia di browser.
+
+Logic penting:
+- Membaca nilai awal dari localStorage saat component mount.
+- Menulis perubahan state ke localStorage.
+- Error storage diabaikan agar UI tetap jalan di private/restricted browsing.
 
 ## Cloudflare Pages Functions
 

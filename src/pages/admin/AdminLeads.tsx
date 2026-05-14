@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare } from "lucide-react";
 import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
+import { useLocalStorageState } from "../../lib/localStorageState";
 
 export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -10,8 +11,8 @@ export default function AdminLeads() {
   const [searchMessage, setSearchMessage] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [aiProvider, setAiProvider] = useState("OpenRouter");
-  const [aiModel, setAiModel] = useState("~anthropic/claude-sonnet-latest");
+  const [aiProvider, setAiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
+  const [aiModel, setAiModel] = useLocalStorageState("webview.adminLeads.aiModel", "~anthropic/claude-sonnet-latest");
   const [settings, setSettings] = useState<any>({});
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [logoSelections, setLogoSelections] = useState<Record<string, { url: string; palette: string[] }>>({});
@@ -65,6 +66,19 @@ export default function AdminLeads() {
       ]
     }
   };
+
+  useEffect(() => {
+    const provider = providers[aiProvider] ? aiProvider : "OpenRouter";
+    if (provider !== aiProvider) {
+      setAiProvider(provider);
+      return;
+    }
+
+    const hasModel = providers[provider].models.some((model) => model.value === aiModel);
+    if (!hasModel) {
+      setAiModel(providers[provider].models[0].value);
+    }
+  }, [aiProvider, aiModel]);
 
   const fetchLeads = () => {
     fetch("/api/leads")

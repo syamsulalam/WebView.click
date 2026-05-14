@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, Save } from "lucide-react";
 import { aiModelPrices, defaultInputTokens, defaultOutputTokens, estimateCostUsd, formatUsd } from "../../lib/aiPricing";
+import { useLocalStorageState } from "../../lib/localStorageState";
 
 type ProviderKey = "OPENROUTER" | "OPENAI" | "GEMINI" | "KIE" | "OPENCODE";
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -74,14 +75,14 @@ const providerOptions: Array<{
 
 export default function AdminSettings() {
   const [settings, setSettings] = useState<Record<string, string>>(initialSettings);
-  const [selectedProvider, setSelectedProvider] = useState<ProviderKey>("OPENROUTER");
+  const [selectedProvider, setSelectedProvider] = useLocalStorageState<ProviderKey>("webview.adminSettings.selectedProvider", "OPENROUTER");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [message, setMessage] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [pricingProvider, setPricingProvider] = useState("OpenRouter");
-  const [pricingModel, setPricingModel] = useState("~anthropic/claude-sonnet-latest");
+  const [pricingProvider, setPricingProvider] = useLocalStorageState("webview.adminSettings.pricingProvider", "OpenRouter");
+  const [pricingModel, setPricingModel] = useLocalStorageState("webview.adminSettings.pricingModel", "~anthropic/claude-sonnet-latest");
   const [inputTokens, setInputTokens] = useState(defaultInputTokens);
   const [outputTokens, setOutputTokens] = useState(defaultOutputTokens);
 
@@ -89,6 +90,25 @@ export default function AdminSettings() {
     () => providerOptions.find((provider) => provider.key === selectedProvider) || providerOptions[0],
     [selectedProvider],
   );
+
+  useEffect(() => {
+    if (!providerOptions.some((provider) => provider.key === selectedProvider)) {
+      setSelectedProvider("OPENROUTER");
+    }
+  }, [selectedProvider]);
+
+  useEffect(() => {
+    const providerModels = aiModelPrices.filter((item) => item.provider === pricingProvider);
+    if (providerModels.length === 0) {
+      setPricingProvider("OpenRouter");
+      setPricingModel("~anthropic/claude-sonnet-latest");
+      return;
+    }
+
+    if (!providerModels.some((item) => item.model === pricingModel)) {
+      setPricingModel(providerModels[0].model);
+    }
+  }, [pricingProvider, pricingModel]);
 
   useEffect(() => {
     fetch("/api/settings")
