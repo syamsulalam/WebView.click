@@ -73,7 +73,7 @@ Risiko debug:
 
 Fungsi:
 - Shared visitor action panel untuk `/demo` dan public preview `/:businessId`.
-- Menangani download free, domain extension selection, domain availability pre-check, dan checkout setup `$197/year`.
+- Menangani download free, domain selection, domain availability/ownership pre-check, dan checkout setup `$197/year`.
 
 Props penting:
 - `siteData`: dipakai untuk business name/business ID default.
@@ -85,10 +85,17 @@ Logic penting:
 - Domain extension list berasal dari `src/lib/domainExtensions.ts`.
 - Domain availability memakai `GET /api/domains/check?domain=...`.
 - Checkout memakai `POST /api/payments/checkout`.
+- Checkout modal memakai flow bertahap: pilih domain baru atau domain milik sendiri, cek domain, lalu baru munculkan email untuk setup updates.
+- Domain baru memakai compact inline input: label domain, extension selector berkategori, dan tombol check dalam satu baris. Filter extension berada di panel collapsible supaya form tidak terlalu tinggi.
+- Domain milik sendiri memakai input domain penuh, lalu endpoint menampilkan sinyal registrar/nameserver dari RDAP jika tersedia.
+- Untuk domain milik sendiri, user diarahkan mengganti nameserver ke Cloudflare kita atau menambah DNS record yang kita berikan jika ingin tetap memakai nameserver lama.
+- Indikator hijau pada domain baru berarti `available` dari pre-check; indikator hijau pada domain sendiri berarti domain terdeteksi registered/usable untuk setup DNS, bukan tersedia untuk dibeli.
+- Domain sendiri hanya bisa lanjut jika RDAP/DNS memberi sinyal registered/aktif; hasil inconclusive tetap ditahan sebagai warning.
 - Mode mock checkout tetap mencatat lead `checkout_pending` jika Lemon Squeezy belum dikonfigurasi.
 
 Risiko debug:
 - Jika ada perubahan pada flow download/setup, ubah komponen ini agar `/demo` dan `/:businessId` tetap sinkron.
+- Jangan menggandakan flow domain di `DemoSite` atau `PublicViewer`; keduanya harus lewat `WebsiteActionPanel`.
 
 ## Admin Pages
 
@@ -213,8 +220,7 @@ Risiko debug:
   - Paket `$197 Domain + Hosting` memanggil `POST /api/payments/checkout`.
   - Jika Lemon Squeezy belum dikonfigurasi, endpoint mencatat mock checkout dan membuka link WhatsApp admin.
 - Demo memiliki selector style preset dari `src/lib/siteStylePresets.ts` agar preset bisa diuji tanpa edit JSON.
-- Checkout demo memiliki domain label + extension selector. Extension list berasal dari `src/lib/domainExtensions.ts`.
-- Tombol check domain memanggil `GET /api/domains/check?domain=...`.
+- Checkout demo memakai flow domain shared dari `WebsiteActionPanel`: domain baru atau domain milik sendiri, inline check, dan email hanya setelah domain lolos pre-check.
 - Download/setup action panel memakai `WebsiteActionPanel` dengan `variant="demo"`, shared dengan public preview.
 
 ### `src/pages/public/PublicViewer.tsx`
@@ -345,11 +351,13 @@ Logic Payments:
 - `/api/payments/checkout` membuat checkout Lemon Squeezy jika `LEMON_SQUEEZY_API_KEY`, `LEMON_SQUEEZY_STORE_ID`, dan `LEMON_SQUEEZY_VARIANT_ID` sudah ada.
 - Jika belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
 - Paket saat ini: `$197` one-time untuk domain 1 tahun, hosting 1 tahun, dan free setup.
+- Request checkout menyimpan `domainMode` (`new` atau `owned`) ke custom data Lemon Squeezy dan notifikasi admin.
 
 Logic Domains:
 - `/api/domains/check?domain=...` melakukan availability pre-check gratis.
 - Primary provider: RDAP via `rdap.net`.
 - Fallback signal: Google Public DNS SOA lookup.
+- Jika RDAP `200`, response menyertakan `registrar`, `nameservers`, dan `rdapUrl` jika registry menyediakan field tersebut.
 - Response harus diperlakukan sebagai kandidat availability, bukan jaminan pembelian; final confirmation terjadi saat registrar purchase.
 
 ## Data and Schema

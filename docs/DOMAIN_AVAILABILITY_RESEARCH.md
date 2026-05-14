@@ -23,11 +23,33 @@ Result interpretation:
 - RDAP `404`: candidate available, but final registrar purchase must confirm.
 - Other status: inconclusive.
 - DNS no answer: useful signal only, not proof of availability.
+- For already-owned domains, RDAP `200` is a useful ownership/setup signal rather than a purchase blocker. The response can include registrar and nameserver data for setup guidance.
 
 Important limitation:
 - RDAP was built for registration data lookup, not guaranteed shopping-cart availability.
 - Some domains can be reserved, premium, blocked, in grace/delete state, or unsupported even when RDAP returns no registration data.
 - Final availability must be confirmed during registrar purchase.
+- RDAP does not prove the visitor owns the domain; it only proves the domain exists. Ownership must be confirmed operationally during setup by asking the user to change nameservers or add DNS records.
+
+## Already-Owned Domain Flow
+
+Best UX:
+- Let the user choose "I already own a domain" instead of forcing a new domain search.
+- Ask for the full domain, for example `example.com`.
+- Run the same `/api/domains/check` endpoint.
+- If RDAP returns registered, show registrar/nameserver signals and allow the user to continue.
+- During setup, ask the user to either:
+  - Change nameservers at their registrar to the Cloudflare nameservers we provide.
+  - Or keep current nameservers and add DNS records we provide, usually `A`, `AAAA`, `CNAME`, or Cloudflare Pages custom-domain records depending on the hosting target.
+
+Recommended wording:
+- New domain: "Looks available from pre-check. Final availability is confirmed during purchase."
+- Existing domain: "Domain is registered. We can help point it to your new site after you update nameservers or DNS records."
+
+Debug notes:
+- If registrar/nameservers are empty, the RDAP registry may not publish those fields consistently.
+- If RDAP says candidate available for a claimed existing domain, ask the user to verify spelling, remove `www`, and confirm the domain in their registrar account.
+- If DNS fallback returns records but RDAP is inconclusive, treat it as a setup signal but not as ownership proof.
 
 ## Free / Low-Cost Provider Options
 

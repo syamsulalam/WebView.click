@@ -942,6 +942,7 @@ async function handlePayments(request: Request, db: D1Database, env: Env, segmen
   const businessId = normalizeBusinessId(asString(body.businessId, "demo-site"));
   const businessName = asString(body.businessName, "Demo Site");
   const requestedDomain = asString(body.domain);
+  const domainMode = asString(body.domainMode, "new") === "owned" ? "owned" : "new";
   const customerEmail = asString(body.email);
   const amountCents = 19700;
   const adminWhatsApp = await getSetting(db, env, "ADMIN_WHATSAPP_NUMBER") || "081233838173";
@@ -950,7 +951,7 @@ async function handlePayments(request: Request, db: D1Database, env: Env, segmen
   const variantId = await getSetting(db, env, "LEMON_SQUEEZY_VARIANT_ID");
 
   const notifyText = encodeURIComponent(
-    `WebView.click checkout request\nBusiness: ${businessName}\nDomain: ${requestedDomain || "-"}\nPackage: $197 domain + hosting 1 year + free setup`,
+    `WebView.click checkout request\nBusiness: ${businessName}\nDomain: ${requestedDomain || "-"}\nDomain mode: ${domainMode === "owned" ? "customer-owned domain" : "new domain registration"}\nPackage: $197 domain + hosting 1 year + free setup`,
   );
   const adminNotifyUrl = `https://wa.me/${normalizeWhatsAppNumber(adminWhatsApp)}?text=${notifyText}`;
 
@@ -975,7 +976,7 @@ async function handlePayments(request: Request, db: D1Database, env: Env, segmen
         `INSERT INTO crm_activities (id, lead_id, staff_id, activity_type, description)
          VALUES (?, ?, ?, ?, ?)`,
       )
-      .bind(crypto.randomUUID(), row.id, "system", "checkout_pending", `Domain request: ${requestedDomain || "not provided"}. Admin WA: ${adminNotifyUrl}`)
+      .bind(crypto.randomUUID(), row.id, "system", "checkout_pending", `Domain request: ${requestedDomain || "not provided"} (${domainMode}). Admin WA: ${adminNotifyUrl}`)
       .run();
   }
 
@@ -1013,6 +1014,7 @@ async function handlePayments(request: Request, db: D1Database, env: Env, segmen
               business_id: businessId,
               business_name: businessName,
               requested_domain: requestedDomain,
+              domain_mode: domainMode,
               admin_whatsapp: adminWhatsApp,
             },
           },
@@ -1070,11 +1072,40 @@ async function checkDomainViaRdapNet(domain: string) {
   }
 
   if (response.status === 200) {
+    const data = await response.json() as {
+      entities?: Array<{
+        roles?: string[];
+        vcardArray?: [string, unknown[]];
+      }>;
+      nameservers?: Array<{ ldhName?: string; unicodeName?: string }>;
+      links?: Array<{ rel?: string; href?: string }>;
+    };
+    const registrarEntity = Array.isArray(data.entities)
+      ? data.entities.find((entity) => Array.isArray(entity.roles) && entity.roles.includes("registrar"))
+      : undefined;
+    const registrarVcardEntry = Array.isArray(registrarEntity?.vcardArray?.[1])
+      ? (registrarEntity.vcardArray[1] as unknown[]).find((entry) => Array.isArray(entry) && entry[0] === "fn")
+      : undefined;
+    const registrar = Array.isArray(registrarVcardEntry) && typeof registrarVcardEntry[3] === "string"
+      ? registrarVcardEntry[3]
+      : undefined;
+    const nameservers = Array.isArray(data.nameservers)
+      ? data.nameservers
+          .map((nameserver) => nameserver.ldhName || nameserver.unicodeName)
+          .filter((nameserver): nameserver is string => Boolean(nameserver))
+      : [];
+    const rdapUrl = Array.isArray(data.links)
+      ? data.links.find((link) => link.rel === "self")?.href
+      : undefined;
+
     return {
       provider: "rdap.net",
       status: "registered",
       available: false,
       message: `${domain} appears to be registered.`,
+      registrar: typeof registrar === "string" ? registrar : undefined,
+      nameservers,
+      rdapUrl,
     };
   }
 
