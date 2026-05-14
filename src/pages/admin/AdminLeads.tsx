@@ -74,7 +74,7 @@ export default function AdminLeads() {
     if (!searchQuery) return;
     setIsSearching(true);
     try {
-      const res = await fetch(`/api/places/search?query=\${encodeURIComponent(searchQuery)}`);
+      const res = await fetch(`/api/places/search?query=${encodeURIComponent(searchQuery)}`);
       const data = await res.json();
       setSearchResults(data.results || []);
     } catch (e) {
@@ -94,7 +94,7 @@ export default function AdminLeads() {
         businessName: place.name,
         businessId: businessId,
         niche: "general",
-        seoDescription: `Website resmi untuk \${place.name}.`,
+        seoDescription: `Website resmi untuk ${place.name}.`,
       },
       design: {
         themeVariables: {
@@ -116,7 +116,7 @@ export default function AdminLeads() {
         header: {
           ctaButton: { text: "Hubungi WA", href: "https://wa.me/123" }
         },
-        footer: { text: `© 2026 \${place.name}. All rights reserved.` }
+        footer: { text: `© 2026 ${place.name}. All rights reserved.` }
       },
       navigation: {
         headerMenu: [
@@ -133,7 +133,7 @@ export default function AdminLeads() {
               type: "hero",
               id: "hero-1",
               content: {
-                headline: `Selamat datang di \${place.name}`,
+                headline: `Selamat datang di ${place.name}`,
                 subheadline: place.formatted_address,
                 buttons: [{ text: "Hubungi Kami", href: "#contact", style: "primary" }]
               }
@@ -168,7 +168,7 @@ export default function AdminLeads() {
   };
 
   const updateStatus = async (id: string, newStatus: string) => {
-    await fetch(`/api/leads/\${id}/status`, {
+    await fetch(`/api/leads/${id}/status`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: newStatus })
@@ -288,7 +288,7 @@ export default function AdminLeads() {
                   </td>
                   <td className="p-4">
                     <a 
-                      href={`/\${lead.business_id}`}
+                      href={`/${lead.business_id}`}
                       target="_blank"
                       rel="noreferrer"
                       className="text-indigo-600 hover:text-indigo-800 text-sm flex items-center gap-1"
@@ -325,7 +325,7 @@ export default function AdminLeads() {
                         Screenshot Preview
                       </span>
                     </button>
-                    <a href={`mailto:\${lead.email || 'hello@example.com'}`} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded group relative">
+                    <a href={`mailto:${lead.email || 'hello@example.com'}`} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded group relative">
                       <Mail size={18} />
                       <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-[9999] pointer-events-none">
                         Send Email

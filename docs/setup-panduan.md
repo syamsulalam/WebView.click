@@ -6,7 +6,7 @@ Dokumen ini berisi panduan teknis lengkap untuk mendeploy aplikasi WebView.click
 
 ## 1. Cloudflare Pages Variables / Secrets Setup
 
-Karena kode saat ini berjalan sebagai aplikasi Node.js (Full-stack) di environment lokal/AI Studio menggunakan SQLite, ketika Anda akan membawanya ke Cloudflare, Anda harus menyesuaikan environment variables di Cloudflare Pages.
+Aplikasi produksi berjalan di Cloudflare Pages dengan Pages Functions untuk route `/api/*`, Cloudflare D1 untuk database, dan R2 untuk object storage. Backend Express di `server.ts` tetap ada sebagai referensi/legacy Node build, tetapi produksi Cloudflare memakai file di direktori `functions/`.
 
 ### Langkah-langkah di Cloudflare Dashboard:
 1. Login ke [Cloudflare Dashboard](https://dash.cloudflare.com).
@@ -20,10 +20,32 @@ Karena kode saat ini berjalan sebagai aplikasi Node.js (Full-stack) di environme
    - `VITE_CLERK_PUBLISHABLE_KEY` (Publik, dari Clerk)
    - `CLERK_SECRET_KEY` (Rahasia, dari Clerk)
    
-*Catatan: API Keys lainnya seperti Google Places, OpenAI, Gemini, dan Payment Links sekarang dikonfigurasi melalui D1 App Dashboard (`/admin/settings`) dan tidak perlu dimasukkan ke Environment Variables.*
+*Catatan: API Keys lainnya seperti Google Places, OpenAI, Gemini, dan Payment Links dikonfigurasi melalui D1 App Dashboard (`/admin/settings`) dan tidak perlu dimasukkan ke Environment Variables.*
+
+### Cloudflare Pages Functions
+Semua endpoint API produksi berada di:
+
+`functions/api/[[path]].ts`
+
+File ini menangani:
+- `GET/POST /api/settings`
+- `GET /api/public-settings`
+- `GET /api/schema`
+- `GET /api/stats`
+- `GET /api/activities`
+- `GET /api/leads`
+- `PUT /api/leads/:id/status`
+- `POST /api/leads/:business_id/ping`
+- `GET /api/places/search`
+- `POST /api/sites/generate`
+- `GET /api/sites/:business_id`
+
+Pastikan binding D1 bernama `DB`. Jika binding belum aktif, endpoint API akan mengembalikan JSON error, bukan fallback HTML.
+
+File `public/_routes.json` membatasi Pages Functions hanya untuk `/api` dan `/api/*`, sehingga asset statis dan route SPA tetap dilayani Cloudflare Pages tanpa biaya invocation API yang tidak perlu.
 
 ### Konfigurasi Cloudflare D1 (Database)
-Aplikasi lokal menggunakan SQLite (`better-sqlite3`). Untuk versi produksi di Cloudflare:
+Aplikasi produksi menggunakan Cloudflare D1:
 1. Buka Terminal lokal, pastikan Anda install Wrangler: `npm install -g wrangler`
 2. Login akun: `npx wrangler login`
 3. Buat database: `npx wrangler d1 create webview-db`
@@ -32,6 +54,7 @@ Aplikasi lokal menggunakan SQLite (`better-sqlite3`). Untuk versi produksi di Cl
    `npx wrangler d1 execute webview-db --file=./SQL/schema.sql --remote`
 6. Pada Cloudflare Pages Dashboard Anda, pergi ke **Settings > Bindings > D1 database bindings**.
 7. Tambahkan binding baru dengan variabel `DB` dan pilih database `webview-db` yang baru saja Anda buat.
+8. Redeploy Pages setelah binding ditambahkan.
 
 ### Konfigurasi Cloudflare R2 (Object Storage)
 1. Di Dashboard Cloudflare R2, klik **Create bucket**, namakan `webview`.

@@ -102,7 +102,7 @@ export default function PublicViewer() {
               <button 
                 key={idx} 
                 onClick={() => setActiveTab(pageId)}
-                className={`text-sm font-medium hover:opacity-80 transition \${activeTab === pageId ? 'border-b-2 border-white' : ''}`}
+                className={`text-sm font-medium hover:opacity-80 transition ${activeTab === pageId ? 'border-b-2 border-white' : ''}`}
               >
                 {menu.label}
               </button>
@@ -121,7 +121,7 @@ export default function PublicViewer() {
       {/* DYNAMIC CONTENT */}
       <main className="flex-1">
         {pages.map((page: any) => (
-          <div key={page.pageId} className={`transition-opacity duration-300 \${activeTab === page.pageId ? 'block animate-in fade-in zoom-in-95' : 'hidden'}`}>
+          <div key={page.pageId} className={`transition-opacity duration-300 ${activeTab === page.pageId ? 'block animate-in fade-in zoom-in-95' : 'hidden'}`}>
             {page.sections.map((section: any) => {
               if (section.type === "hero") {
                 return (
@@ -139,7 +139,7 @@ export default function PublicViewer() {
                           style={{ 
                             backgroundColor: btn.style === 'primary' ? colors.accent : 'transparent',
                             color: btn.style === 'primary' ? '#fff' : colors.textMain,
-                            border: `2px solid \${btn.style === 'primary' ? colors.accent : colors.textMain}`
+                            border: `2px solid ${btn.style === 'primary' ? colors.accent : colors.textMain}`
                           }}
                           className="px-8 py-3 rounded-xl font-medium transition hover:scale-105"
                           onClick={() => {

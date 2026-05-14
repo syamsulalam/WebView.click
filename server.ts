@@ -222,7 +222,7 @@ async function startServer() {
     
     // Log activity
     db.prepare("INSERT INTO crm_activities (id, lead_id, staff_id, activity_type, description) VALUES (?, ?, ?, ?, ?)").run(
-      crypto.randomUUID(), id, staffId || 'system', 'status_changed', `Status updated to \${status}`
+      crypto.randomUUID(), id, staffId || 'system', 'status_changed', `Status updated to ${status}`
     );
 
     res.json({ success: true });
@@ -266,7 +266,7 @@ async function startServer() {
     }
 
     try {
-      const response = await fetch(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=\${encodeURIComponent(query as string)}&key=\${process.env.GOOGLE_PLACES_API_KEY}`);
+      const response = await fetch(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query as string)}&key=${placesKey}`);
       const data = await response.json();
       res.json(data);
     } catch (e: any) {
@@ -453,7 +453,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:\${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
