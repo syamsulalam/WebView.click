@@ -95,8 +95,11 @@ function dbSelfHealMiddleware(req: express.Request, res: express.Response, next:
       try {
         setupTables();
         next();
-      } catch (err) {
-        res.status(500).json({ error: "Failed to self-heal Database. Please initialize tables." });
+      } catch (err: any) {
+        res.status(500).json({ 
+          error: "Database tables are missing or not initialized! Please run SQL schema file.", 
+          details: err.message 
+        });
       }
     } else {
       next();

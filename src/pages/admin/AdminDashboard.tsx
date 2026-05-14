@@ -13,7 +13,10 @@ export default function AdminDashboard() {
       setStats(statsData);
       setActivities(activitiesData);
       setLoading(false);
-    }).catch(e => console.error(e));
+    }).catch(e => {
+      console.error(e);
+      setLoading(false);
+    });
   }, []);
 
   return (

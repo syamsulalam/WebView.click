@@ -18,10 +18,20 @@ export default function AdminSettings() {
 
   useEffect(() => {
     fetch("/api/settings")
-      .then(r => r.json())
+      .then(async (r) => {
+        if (!r.ok) {
+          const text = await r.text();
+          throw new Error(`Server error ${r.status}: ${text.substring(0, 100)}`);
+        }
+        return r.json();
+      })
       .then(data => {
         setSettings(prev => ({ ...prev, ...data }));
         setLoading(false);
+      })
+      .catch(err => {
+        console.error("Settings fetch error:", err);
+        setLoading(false); // Stop loading even on error
       });
   }, []);
 

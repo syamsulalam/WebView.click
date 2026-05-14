@@ -4,18 +4,22 @@ export default function AdminSchema() {
   const [schemaData, setSchemaData] = useState<string>("");
 
   useEffect(() => {
-    // You could fetch this from an API if you want to be dynamic. 
-    // Here we're fetching from a static file for demonstration or loading directly via imports.
     fetch('/api/schema')
       .then(async (res) => {
         if (!res.ok) {
           const text = await res.text();
-          throw new Error(`Server returned ${res.status}: ${text.substring(0, 50)}`);
+          try {
+             const errorJson = JSON.parse(text);
+             throw new Error(errorJson.error || "Failed to load schema");
+          } catch(e: any) {
+             if (e.message.includes("Failed to load schema")) throw e;
+             throw new Error(`Server returned ${res.status}: ${text.substring(0, 50)}`);
+          }
         }
         return res.json();
       })
       .then(data => setSchemaData(JSON.stringify(data, null, 2)))
-      .catch(err => setSchemaData(err.message));
+      .catch(err => setSchemaData(err.message || String(err)));
   }, []);
 
   return (

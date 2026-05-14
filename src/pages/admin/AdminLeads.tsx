@@ -10,6 +10,8 @@ export default function AdminLeads() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiProvider, setAiProvider] = useState("OpenRouter");
   const [aiModel, setAiModel] = useState("google/gemini-2.5-pro");
+  const [settings, setSettings] = useState<any>({});
+  const [loadingSettings, setLoadingSettings] = useState(true);
 
   const providers: Record<string, { label: string; models: { value: string; label: string }[] }> = {
     OpenAI: {
@@ -53,11 +55,19 @@ export default function AdminLeads() {
   const fetchLeads = () => {
     fetch("/api/leads")
       .then(r => r.json())
-      .then(setLeads);
+      .then(setLeads)
+      .catch(e => console.error(e));
   };
 
   useEffect(() => {
     fetchLeads();
+    fetch("/api/settings")
+      .then(r => r.ok ? r.json() : {})
+      .then(data => {
+        setSettings(data);
+        setLoadingSettings(false);
+      })
+      .catch(() => setLoadingSettings(false));
   }, []);
 
   const handleSearch = async () => {
@@ -169,6 +179,22 @@ export default function AdminLeads() {
   return (
     <div className="p-8 max-w-7xl mx-auto font-sans">
       <h1 className="text-3xl font-semibold mb-8 text-gray-900">CRM Leads</h1>
+
+      {(!loadingSettings && (!settings?.GOOGLE_PLACES_API_KEY || !settings?.[`${aiProvider.toUpperCase()}_API_KEY`])) && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+          <div className="text-amber-500 mt-0.5">⚠️</div>
+          <div>
+            <h3 className="text-amber-800 font-semibold text-sm">Persiapan Belum Selesai</h3>
+            <p className="text-amber-700 text-sm mt-1">
+              Anda belum mengatur API Key untuk Google Places atau <strong>{aiProvider}</strong>. 
+              Pencarian Maps atau Generasi AI mungkin tidak akan berfungsi tanpa API Key yang tepat.
+            </p>
+            <a href="/admin/settings" className="inline-block mt-3 px-4 py-2 bg-amber-100 text-amber-800 rounded-lg text-sm font-medium hover:bg-amber-200 transition">
+              Atur API Keys di Settings
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* SEARCH SECTION */}
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-8">
