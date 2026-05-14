@@ -127,7 +127,7 @@ export default function WebsiteActionPanel({ siteData, businessId = "demo-site",
   };
 
   const panelPosition = variant === "demo"
-    ? "fixed bottom-5 right-5 z-[210]"
+    ? "fixed bottom-5 right-5 z-[210] hide-in-export"
     : "fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 hide-in-export";
 
   return (

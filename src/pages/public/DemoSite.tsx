@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { saveAs } from "file-saver";
-import JSZip from "jszip";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import templateSchema from "../../../JSON/template-schema.json";
 import SiteRenderer from "../../components/SiteRenderer";
 import WebsiteActionPanel from "../../components/WebsiteActionPanel";
+import { downloadOwnerSiteZip } from "../../lib/exportSiteHtml";
 import { siteStylePresets } from "../../lib/siteStylePresets";
 
 export default function DemoSite() {
@@ -32,17 +31,12 @@ export default function DemoSite() {
   ].filter(Boolean);
 
   const handleDownloadZip = async () => {
-    const zip = new JSZip();
-    const htmlContent = document.documentElement.outerHTML.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-    zip.file("index.html", `<!doctype html>\n<html lang="${siteData.meta?.language || "id"}">\n${htmlContent}\n</html>`);
-    zip.file("site-data.json", JSON.stringify(siteData, null, 2));
-    const blob = await zip.generateAsync({ type: "blob" });
-    saveAs(blob, `${siteData.meta?.businessId || "webview-demo"}-website.zip`);
+    await downloadOwnerSiteZip(siteData, siteData.meta?.businessId || "webview-demo");
   };
 
   return (
     <div className="relative">
-      <div className="fixed top-4 right-4 z-[200] w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white/95 backdrop-blur shadow-xl p-4 text-sm text-slate-700">
+      <div className="hide-in-export fixed top-4 right-4 z-[200] w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white/95 backdrop-blur shadow-xl p-4 text-sm text-slate-700">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="font-semibold text-slate-950">Demo JSON Sample</p>

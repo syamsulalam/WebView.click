@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import JSZip from "jszip";
-import { saveAs } from "file-saver";
 import SiteRenderer from "../../components/SiteRenderer";
+import { downloadOwnerSiteZip } from "../../lib/exportSiteHtml";
 
 export default function PublicViewer() {
   const { businessId } = useParams();
@@ -44,14 +43,7 @@ export default function PublicViewer() {
   }, [businessId]);
 
   const handleDownloadZip = async () => {
-    const zip = new JSZip();
-    const htmlContent = document.documentElement.outerHTML;
-    let cleanHtml = `<!DOCTYPE html>\n<html lang="id">\n${htmlContent}\n</html>`;
-    cleanHtml = cleanHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-
-    zip.file("index.html", cleanHtml);
-    const blob = await zip.generateAsync({ type: "blob" });
-    saveAs(blob, `${businessId}-website.zip`);
+    await downloadOwnerSiteZip(siteData, businessId || "website");
   };
 
   if (loading) {

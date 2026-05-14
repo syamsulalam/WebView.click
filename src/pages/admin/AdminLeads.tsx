@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare } from "lucide-react";
+import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, Images, PanelRightOpen, X, Play, ListChecks } from "lucide-react";
 import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
@@ -9,9 +9,29 @@ export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [prospectDrafts, setProspectDrafts] = useState<any[]>([]);
+  const [prospectFilter, setProspectFilter] = useLocalStorageState("webview.adminLeads.prospectFilter", "active");
+  const [websiteFilter, setWebsiteFilter] = useLocalStorageState("webview.adminLeads.websiteFilter", "none");
+  const [minRatingFilter, setMinRatingFilter] = useLocalStorageState("webview.adminLeads.minRatingFilter", "0");
+  const [minReviewsFilter, setMinReviewsFilter] = useLocalStorageState("webview.adminLeads.minReviewsFilter", "0");
+  const [cityFilter, setCityFilter] = useLocalStorageState("webview.adminLeads.cityFilter", "");
+  const [stateFilter, setStateFilter] = useLocalStorageState("webview.adminLeads.stateFilter", "");
+  const [nicheFilter, setNicheFilter] = useLocalStorageState("webview.adminLeads.nicheFilter", "");
+  const [selectedProspects, setSelectedProspects] = useState<Record<string, boolean>>({});
+  const [batchQueueRunning, setBatchQueueRunning] = useState(false);
+  const [batchMessage, setBatchMessage] = useState("");
+  const [generationJobs, setGenerationJobs] = useState<any[]>([]);
+  const [jobsOpen, setJobsOpen] = useState(false);
   const [searchMessage, setSearchMessage] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingPlaceKey, setGeneratingPlaceKey] = useState("");
+  const [generationMessages, setGenerationMessages] = useState<Record<string, { type: "success" | "error"; text: string; businessId?: string }>>({});
+  const [placeDetails, setPlaceDetails] = useState<Record<string, any>>({});
+  const [placeDetailsLoading, setPlaceDetailsLoading] = useState<Record<string, boolean>>({});
+  const [isTrimmingCache, setIsTrimmingCache] = useState(false);
+  const [cacheTrimMessage, setCacheTrimMessage] = useState("");
+  const [detailsPanelPlace, setDetailsPanelPlace] = useState<any>(null);
   const [aiProvider, setAiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
   const [aiModel, setAiModel] = useLocalStorageState("webview.adminLeads.aiModel", "~anthropic/claude-sonnet-latest");
   const [settings, setSettings] = useState<any>({});
@@ -73,6 +93,8 @@ export default function AdminLeads() {
     ? aiModel
     : activeProvider.models[0].value;
 
+  const getPlaceKey = (place: any) => String(place?.place_id || place?.id || place?.name || "");
+
   useEffect(() => {
     const provider = providers[aiProvider] ? aiProvider : "OpenRouter";
     if (provider !== aiProvider) {
@@ -90,6 +112,50 @@ export default function AdminLeads() {
     fetch("/api/leads")
       .then(r => r.ok ? r.json() : [])
       .then((data) => setLeads(Array.isArray(data) ? data : []))
+      .catch(e => console.error(e));
+  };
+
+  const fetchProspectDrafts = () => {
+    const params = new URLSearchParams();
+    if (prospectFilter && prospectFilter !== "active" && prospectFilter !== "all") params.set("status", prospectFilter);
+    if (websiteFilter && websiteFilter !== "all") params.set("website", websiteFilter);
+    if (minRatingFilter && minRatingFilter !== "0") params.set("minRating", minRatingFilter);
+    if (minReviewsFilter && minReviewsFilter !== "0") params.set("minReviews", minReviewsFilter);
+    if (cityFilter.trim()) params.set("city", cityFilter.trim());
+    if (stateFilter.trim()) params.set("state", stateFilter.trim());
+    if (nicheFilter.trim()) params.set("niche", nicheFilter.trim());
+    fetch(`/api/prospects?${params.toString()}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data) => {
+        const rows = Array.isArray(data) ? data : [];
+        setProspectDrafts(prospectFilter === "active"
+          ? rows.filter((item) => !["skipped", "site_generated"].includes(item.prospectStatus))
+          : rows);
+        const restoredSelections = rows.reduce((acc: Record<string, any>, item: any) => {
+          const key = getPlaceKey(item);
+          if (key && item.selectedPhoto?.url && Array.isArray(item.selectedPalette)) {
+            acc[key] = {
+              url: item.selectedPhoto.url,
+              reference: item.selectedPhoto.reference || "",
+              palette: item.selectedPalette,
+              attributions: Array.isArray(item.selectedPhoto.attributions) ? item.selectedPhoto.attributions : [],
+              priorityLabel: item.selectedPhoto.priorityLabel || "",
+              source: item.selectedPhoto.source || "google_places",
+            };
+          }
+          return acc;
+        }, {});
+        if (Object.keys(restoredSelections).length > 0) {
+          setLogoSelections(prev => ({ ...restoredSelections, ...prev }));
+        }
+      })
+      .catch(e => console.error(e));
+  };
+
+  const fetchGenerationJobs = () => {
+    fetch("/api/generation-jobs")
+      .then(r => r.ok ? r.json() : [])
+      .then((data) => setGenerationJobs(Array.isArray(data) ? data : []))
       .catch(e => console.error(e));
   };
 
@@ -207,9 +273,26 @@ export default function AdminLeads() {
     try {
       const palette = await extractPaletteFromImage(imageUrl);
       setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, reference, palette, attributions, priorityLabel, source: "google_places" } }));
+      await fetch(`/api/prospects/${encodeURIComponent(placeId)}/selection`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          photo: { url: imageUrl, reference, attributions, priorityLabel, source: "google_places" },
+          palette,
+        }),
+      }).catch(() => {});
     } catch (error) {
       console.error(error);
-      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, reference, palette: ["#111827", "#4F46E5", "#F3F4F6"], attributions, priorityLabel, source: "google_places" } }));
+      const palette = ["#111827", "#4F46E5", "#F3F4F6"];
+      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, reference, palette, attributions, priorityLabel, source: "google_places" } }));
+      await fetch(`/api/prospects/${encodeURIComponent(placeId)}/selection`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          photo: { url: imageUrl, reference, attributions, priorityLabel, source: "google_places" },
+          palette,
+        }),
+      }).catch(() => {});
     }
   };
 
@@ -242,6 +325,8 @@ export default function AdminLeads() {
 
   useEffect(() => {
     fetchLeads();
+    fetchProspectDrafts();
+    fetchGenerationJobs();
     fetch("/api/settings")
       .then(r => r.ok ? r.json() : {})
       .then(data => {
@@ -251,13 +336,16 @@ export default function AdminLeads() {
       .catch(() => setLoadingSettings(false));
   }, []);
 
-  const handleSearch = async () => {
+  useEffect(() => {
+    fetchProspectDrafts();
+  }, [prospectFilter, websiteFilter, minRatingFilter, minReviewsFilter, cityFilter, stateFilter, nicheFilter]);
+
+  const handleSearch = async (refresh = false) => {
     if (!searchQuery) return;
     setIsSearching(true);
-    setSearchMessage("");
-    setSearchResults([]);
+    setSearchMessage(refresh ? "Refreshing Google Places data..." : "Searching saved cache first...");
     try {
-      const res = await fetch(`/api/places/search?query=${encodeURIComponent(searchQuery)}`);
+      const res = await fetch(`/api/places/search?query=${encodeURIComponent(searchQuery)}${refresh ? "&refresh=1" : ""}`);
       const text = await res.text();
       let data: any = {};
       try {
@@ -272,10 +360,15 @@ export default function AdminLeads() {
 
       const results = Array.isArray(data.results) ? data.results : [];
       setSearchResults(results);
+      fetchProspectDrafts();
+      setPlaceDetails({});
+      setGenerationMessages({});
       if (results.length === 0) {
         setSearchMessage(data.hint || data.error || `Tidak ada hasil untuk "${searchQuery}". Coba query lebih spesifik seperti "concrete contractor Dallas Texas".`);
       } else {
-        setSearchMessage(data.mock ? "Mode mock aktif karena Google Places API Key belum terbaca." : `${results.length} hasil ditemukan.`);
+        setSearchMessage(data.mock
+          ? "Mode mock aktif karena Google Places API Key belum terbaca."
+          : `${results.length} hasil ditemukan${data.cached ? " dari cache DB" : " dari Google Places"}.`);
       }
     } catch (e) {
       console.error(e);
@@ -285,8 +378,78 @@ export default function AdminLeads() {
     }
   };
 
+  const loadPlaceDetails = async (place: any) => {
+    const placeKey = getPlaceKey(place);
+    const placeId = place?.place_id || place?.id;
+    if (!placeId || placeDetailsLoading[placeKey]) return;
+
+    setPlaceDetailsLoading(prev => ({ ...prev, [placeKey]: true }));
+    try {
+      const res = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`Response bukan JSON: ${text.substring(0, 120)}`);
+      }
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Place details returned ${res.status}`);
+      }
+      if (data.result) {
+        setPlaceDetails(prev => ({ ...prev, [placeKey]: data.result }));
+        fetchProspectDrafts();
+      }
+    } catch (error) {
+      console.error(error);
+      setGenerationMessages(prev => ({
+        ...prev,
+        [placeKey]: { type: "error", text: error instanceof Error ? error.message : "Gagal mengambil detail foto Places." },
+      }));
+    } finally {
+      setPlaceDetailsLoading(prev => ({ ...prev, [placeKey]: false }));
+    }
+  };
+
+  const trimPlacesCache = async () => {
+    setIsTrimmingCache(true);
+    setCacheTrimMessage("");
+    try {
+      const res = await fetch("/api/places/cache/trim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ olderThanDays: 30 }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Cache trim failed with HTTP ${res.status}`);
+      }
+      setCacheTrimMessage("Cache pencarian lama/expired sudah dibersihkan.");
+    } catch (error) {
+      console.error(error);
+      setCacheTrimMessage(error instanceof Error ? error.message : "Gagal membersihkan cache.");
+    } finally {
+      setIsTrimmingCache(false);
+    }
+  };
+
+  const updateProspectStatus = async (place: any, status: string) => {
+    const placeKey = getPlaceKey(place);
+    if (!placeKey) return;
+    await fetch(`/api/prospects/${encodeURIComponent(placeKey)}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    setSearchResults(prev => prev.filter((item) => getPlaceKey(item) !== placeKey || status !== "skipped"));
+    fetchProspectDrafts();
+  };
+
   const handleGenerateSite = async (place: any) => {
     setIsGenerating(true);
+    const placeKey = getPlaceKey(place);
+    setGeneratingPlaceKey(placeKey);
+    setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: "Generating site JSON..." } }));
     
     // Simulate AI generation process with a mock JSON
     // A Real implementation would send 'place' to an OpenAI endpoint on our server
@@ -517,7 +680,7 @@ export default function AdminLeads() {
     };
 
     try {
-      await fetch("/api/sites/generate", {
+      const response = await fetch("/api/sites/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -536,14 +699,36 @@ export default function AdminLeads() {
           selectedLogoPriority: logoSelection?.priorityLabel || ""
         })
       });
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`Generate response bukan JSON: ${text.substring(0, 160)}`);
+      }
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `Generate failed with HTTP ${response.status}`);
+      }
+
       fetchLeads();
-      setSearchResults([]);
-      setSearchQuery("");
+      fetchProspectDrafts();
+      fetchGenerationJobs();
+      setGenerationMessages(prev => ({
+        ...prev,
+        [placeKey]: { type: "success", text: "Site generated. Preview is ready.", businessId: data.businessId || businessId },
+      }));
     } catch (e) {
       console.error(e);
+      setGenerationMessages(prev => ({
+        ...prev,
+        [placeKey]: { type: "error", text: e instanceof Error ? e.message : "Generate site gagal. Hasil pencarian tetap disimpan di layar." },
+      }));
+      fetchGenerationJobs();
+    } finally {
+      setIsGenerating(false);
+      setGeneratingPlaceKey("");
     }
-    
-    setIsGenerating(false);
   };
 
   const updateStatus = async (id: string, newStatus: string) => {
@@ -553,6 +738,31 @@ export default function AdminLeads() {
       body: JSON.stringify({ status: newStatus })
     });
     fetchLeads();
+  };
+
+  const visibleProspects = searchResults.length > 0 ? searchResults : prospectDrafts;
+  const hasWebsite = (place: any) => Boolean(place.website || place.websiteUri);
+  const selectedVisibleProspects = visibleProspects.filter((place) => selectedProspects[getPlaceKey(place)]);
+
+  const toggleProspectSelection = (place: any, checked: boolean) => {
+    const placeKey = getPlaceKey(place);
+    if (!placeKey) return;
+    setSelectedProspects(prev => ({ ...prev, [placeKey]: checked }));
+  };
+
+  const startBatchGenerate = async () => {
+    if (selectedVisibleProspects.length === 0 || batchQueueRunning) return;
+    setBatchQueueRunning(true);
+    setBatchMessage(`Starting queue for ${selectedVisibleProspects.length} prospects...`);
+    for (let index = 0; index < selectedVisibleProspects.length; index += 1) {
+      const place = selectedVisibleProspects[index];
+      setBatchMessage(`Generating ${index + 1}/${selectedVisibleProspects.length}: ${place.name}`);
+      await handleGenerateSite(place);
+    }
+    setBatchQueueRunning(false);
+    setBatchMessage("Batch queue finished.");
+    setSelectedProspects({});
+    fetchGenerationJobs();
   };
 
   return (
@@ -615,6 +825,114 @@ export default function AdminLeads() {
           </div>
           <a href="/admin/settings" className="text-indigo-700 font-medium hover:underline">Lihat pricing & API key</a>
         </div>
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="font-semibold text-slate-900">Cache pencarian Google Places</p>
+            <p>Search membaca cache DB dulu untuk mengurangi panggilan API. Pakai Refresh jika butuh data terbaru.</p>
+            {cacheTrimMessage && <p className="mt-1 text-xs text-indigo-700">{cacheTrimMessage}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={trimPlacesCache}
+            disabled={isTrimmingCache}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {isTrimmingCache ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+            Trim cache 30d
+          </button>
+        </div>
+        <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Prospect status</span>
+            <select
+              value={prospectFilter}
+              onChange={(event) => setProspectFilter(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="active">Active pipeline</option>
+              <option value="new">New</option>
+              <option value="details_loaded">Details loaded</option>
+              <option value="site_generated">Site generated</option>
+              <option value="contacted">Contacted</option>
+              <option value="skipped">Skipped</option>
+              <option value="all">All saved</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Website</span>
+            <select
+              value={websiteFilter}
+              onChange={(event) => setWebsiteFilter(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="none">No website first</option>
+              <option value="has">Has website</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Min rating</span>
+            <select
+              value={minRatingFilter}
+              onChange={(event) => setMinRatingFilter(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="0">Any rating</option>
+              <option value="3.5">3.5+</option>
+              <option value="4">4.0+</option>
+              <option value="4.5">4.5+</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={fetchProspectDrafts}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            <RefreshCw size={15} />
+            Reload drafts
+          </button>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Min reviews</span>
+            <select
+              value={minReviewsFilter}
+              onChange={(event) => setMinReviewsFilter(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="0">Any reviews</option>
+              <option value="10">10+</option>
+              <option value="25">25+</option>
+              <option value="50">50+</option>
+              <option value="100">100+</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-slate-700">City</span>
+            <input
+              value={cityFilter}
+              onChange={(event) => setCityFilter(event.target.value)}
+              placeholder="Dallas"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-slate-700">State</span>
+            <input
+              value={stateFilter}
+              onChange={(event) => setStateFilter(event.target.value)}
+              placeholder="TX"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Niche</span>
+            <input
+              value={nicheFilter}
+              onChange={(event) => setNicheFilter(event.target.value)}
+              placeholder="concrete"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </label>
+        </div>
         <div className="flex gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
@@ -622,17 +940,27 @@ export default function AdminLeads() {
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch(false)}
               placeholder="Contoh: Kedai Kopi di Senopati" 
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
             />
           </div>
           <button 
-            onClick={handleSearch}
+            onClick={() => handleSearch(false)}
             disabled={isSearching}
             className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition flex items-center justify-center min-w-[120px]"
           >
             {isSearching ? <Loader2 className="animate-spin" size={20} /> : "Cari"}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSearch(true)}
+            disabled={isSearching || !searchQuery}
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            title="Abaikan cache DB dan ambil ulang dari Google Places"
+          >
+            <RefreshCw size={16} />
+            Refresh
           </button>
         </div>
 
@@ -646,27 +974,181 @@ export default function AdminLeads() {
           </div>
         )}
 
-        {searchResults.length > 0 && (
+        {visibleProspects.length > 0 && (
           <div className="mt-6 space-y-4">
-            {searchResults.map((place, idx) => (
-              <div key={idx} className="p-4 border border-gray-100 rounded-xl bg-gray-50">
-                <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h3 className="font-semibold text-gray-900">{place.name}</h3>
-                  <p className="text-sm text-gray-500">{place.formatted_address}</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Estimasi: {formatUsd(estimateGenerateCost(place).total)} untuk generate JSON ini.
-                  </p>
-                </div>
-                <button 
-                  onClick={() => handleGenerateSite(place)}
-                  disabled={isGenerating}
-                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition"
+            <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-semibold text-slate-900">{searchResults.length > 0 ? "Current search results" : "Saved prospect drafts"}</p>
+                <p>{visibleProspects.length} prospects. {selectedVisibleProspects.length} selected for batch.</p>
+                {batchMessage && <p className="mt-1 text-xs text-indigo-700">{batchMessage}</p>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allSelected = selectedVisibleProspects.length === visibleProspects.length;
+                    const next = { ...selectedProspects };
+                    visibleProspects.forEach((place) => {
+                      const key = getPlaceKey(place);
+                      if (key) next[key] = !allSelected;
+                    });
+                    setSelectedProspects(next);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                 >
-                  Generate Site
+                  <ListChecks size={14} />
+                  {selectedVisibleProspects.length === visibleProspects.length ? "Clear selected" : "Select visible"}
                 </button>
+                <button
+                  type="button"
+                  onClick={startBatchGenerate}
+                  disabled={batchQueueRunning || selectedVisibleProspects.length === 0}
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {batchQueueRunning ? <Loader2 className="animate-spin" size={14} /> : <Play size={14} />}
+                  Generate selected
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setJobsOpen((value) => !value);
+                    fetchGenerationJobs();
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Jobs ({generationJobs.length})
+                </button>
+              </div>
+            </div>
+            {jobsOpen && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="font-semibold text-slate-900">Generation jobs</p>
+                  <button type="button" onClick={fetchGenerationJobs} className="text-xs font-semibold text-indigo-700 hover:underline">Refresh jobs</button>
                 </div>
-                {place.photos?.length > 0 && (
+                <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
+                  {generationJobs.map((job) => (
+                    <div key={job.id} className="py-3 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-slate-900">{job.prospectName || job.metadata?.businessName || job.businessId || job.placeId}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          job.status === "success" ? "bg-emerald-100 text-emerald-800" : job.status === "failed" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
+                        }`}>{job.status}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">{job.provider} / {job.model} · {job.createdAt}</p>
+                      {job.error && <p className="mt-1 text-xs text-red-700">{job.error}</p>}
+                      {job.businessId && <a href={`/${job.businessId}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-xs font-semibold text-indigo-700 hover:underline">Open preview</a>}
+                    </div>
+                  ))}
+                  {generationJobs.length === 0 && <p className="py-6 text-center text-sm text-slate-500">No generation jobs yet.</p>}
+                </div>
+              </div>
+            )}
+            {visibleProspects.map((place, idx) => {
+              const placeKey = getPlaceKey(place) || String(idx);
+              const details = placeDetails[placeKey] || {};
+              const displayPlace = {
+                ...place,
+                ...details,
+                photos: Array.isArray(details.photos) && details.photos.length > 0 ? details.photos : place.photos,
+              };
+              const generationMessage = generationMessages[placeKey];
+              const currentPhotos = sortedPhotosForPlace(displayPlace);
+
+              return (
+              <div key={placeKey} className="p-4 border border-gray-100 rounded-xl bg-gray-50">
+                <div className="flex items-center justify-between gap-4">
+                <div className="flex min-w-0 gap-3">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selectedProspects[placeKey])}
+                    onChange={(event) => toggleProspectSelection(displayPlace, event.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    aria-label={`Select ${displayPlace.name}`}
+                  />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-gray-900">{displayPlace.name}</h3>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${hasWebsite(displayPlace) ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                      {hasWebsite(displayPlace) ? "Has website" : "No website"}
+                    </span>
+                    {displayPlace.prospectStatus && (
+                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                        {displayPlace.prospectStatus}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500">{displayPlace.formatted_address || displayPlace.formattedAddress}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Rating {Number(displayPlace.rating || 0).toFixed(1)} / {Number(displayPlace.user_ratings_total || displayPlace.userRatingCount || 0)} reviews. Estimasi: {formatUsd(estimateGenerateCost(displayPlace).total)}
+                  </p>
+                  {displayPlace.generatedBusinessId && (
+                    <a href={`/${displayPlace.generatedBusinessId}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline">
+                      Open generated preview <ExternalLink size={12} />
+                    </a>
+                  )}
+                  {displayPlace.lastError && (
+                    <p className="mt-1 max-w-2xl text-xs font-medium text-red-700">Last generate error: {displayPlace.lastError}</p>
+                  )}
+                </div>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDetailsPanelPlace(displayPlace)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <PanelRightOpen size={16} />
+                    Details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateProspectStatus(displayPlace, "skipped")}
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50"
+                  >
+                    Skip
+                  </button>
+                  <button
+                    onClick={() => handleGenerateSite(displayPlace)}
+                    disabled={isGenerating}
+                    className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition"
+                  >
+                    {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
+                  </button>
+                </div>
+                </div>
+                {generationMessage && (
+                  <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+                    generationMessage.type === "success"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-red-200 bg-red-50 text-red-800"
+                  }`}>
+                    <span>{generationMessage.text}</span>
+                    {generationMessage.businessId && (
+                      <a href={`/${generationMessage.businessId}`} target="_blank" rel="noreferrer" className="ml-2 font-semibold underline">
+                        Open preview
+                      </a>
+                    )}
+                  </div>
+                )}
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateProspectStatus(displayPlace, "details_loaded");
+                      loadPlaceDetails(displayPlace);
+                    }}
+                    disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={14} /> : <Images size={14} />}
+                    Load more photos/details
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    {currentPhotos.length > 0 ? `${currentPhotos.length} foto tersedia untuk dipilih.` : "Belum ada foto dari response ini."}
+                  </span>
+                </div>
+                {currentPhotos.length > 0 && (
                   <div className="mt-4 border-t border-gray-200 pt-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Pilih gambar logo/brand untuk palet warna</p>
                     <p className="text-xs text-gray-500 mb-3">
@@ -674,15 +1156,15 @@ export default function AdminLeads() {
                       Urutan tetap best-effort karena Places API tidak memberi flag owner photo.
                     </p>
                     <div className="flex gap-3 overflow-x-auto pb-1">
-                      {sortedPhotosForPlace(place).slice(0, 6).map((photo: any, photoIdx: number) => {
+                      {currentPhotos.slice(0, 10).map((photo: any, photoIdx: number) => {
                         const imageUrl = getPhotoUrl(photo);
-                        const selected = logoSelections[place.place_id || place.name]?.url === imageUrl;
-                        const priorityLabel = photoPriorityLabel(photo, place.name);
+                        const selected = logoSelections[placeKey]?.url === imageUrl;
+                        const priorityLabel = photoPriorityLabel(photo, displayPlace.name);
                         return (
                           <button
                             key={photo.photo_reference || photoIdx}
                             type="button"
-                            onClick={() => selectLogoPhoto(place.place_id || place.name, imageUrl, photo, place.name)}
+                            onClick={() => selectLogoPhoto(placeKey, imageUrl, photo, displayPlace.name)}
                             className={`relative w-24 h-24 rounded-xl overflow-hidden border-2 bg-white shrink-0 ${selected ? "border-indigo-600" : "border-gray-200 hover:border-gray-300"}`}
                             title={`Gunakan sebagai sumber warna brand. Prioritas: ${priorityLabel}`}
                           >
@@ -694,10 +1176,10 @@ export default function AdminLeads() {
                         );
                       })}
                     </div>
-                    {logoSelections[place.place_id || place.name]?.palette?.length > 0 && (
+                    {logoSelections[placeKey]?.palette?.length > 0 && (
                       <div className="mt-3 flex items-center gap-2">
                         <span className="text-xs text-gray-500">Palette:</span>
-                        {logoSelections[place.place_id || place.name].palette.map((color) => (
+                        {logoSelections[placeKey].palette.map((color) => (
                           <span key={color} className="w-6 h-6 rounded-full border border-white shadow-sm" style={{ backgroundColor: color }} title={color} />
                         ))}
                       </div>
@@ -705,7 +1187,8 @@ export default function AdminLeads() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -793,6 +1276,125 @@ export default function AdminLeads() {
           </table>
         </div>
       </div>
+
+      {detailsPanelPlace && (
+        <div className="fixed inset-0 z-[260] bg-slate-950/40">
+          <aside className="ml-auto h-full w-full max-w-xl overflow-y-auto bg-white shadow-2xl">
+            {(() => {
+              const placeKey = getPlaceKey(detailsPanelPlace);
+              const mergedPlace = {
+                ...detailsPanelPlace,
+                ...(placeDetails[placeKey] || {}),
+                photos: Array.isArray(placeDetails[placeKey]?.photos) && placeDetails[placeKey].photos.length > 0
+                  ? placeDetails[placeKey].photos
+                  : detailsPanelPlace.photos,
+              };
+              const photos = sortedPhotosForPlace(mergedPlace);
+              return (
+                <div className="p-6">
+                  <div className="mb-5 flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Prospect details</p>
+                      <h2 className="mt-1 text-xl font-semibold text-slate-950">{mergedPlace.name}</h2>
+                      <p className="mt-1 text-sm text-slate-500">{mergedPlace.formatted_address || mergedPlace.formattedAddress || "No address"}</p>
+                    </div>
+                    <button type="button" onClick={() => setDetailsPanelPlace(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 text-sm sm:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <p className="text-xs font-semibold text-slate-500">Website</p>
+                      <p className="mt-1 break-all text-slate-900">{mergedPlace.website || mergedPlace.websiteUri || "No website detected"}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <p className="text-xs font-semibold text-slate-500">Phone</p>
+                      <p className="mt-1 text-slate-900">{mergedPlace.formatted_phone_number || mergedPlace.international_phone_number || "No phone"}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <p className="text-xs font-semibold text-slate-500">Rating</p>
+                      <p className="mt-1 text-slate-900">{Number(mergedPlace.rating || 0).toFixed(1)} / {Number(mergedPlace.user_ratings_total || mergedPlace.userRatingCount || 0)} reviews</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <p className="text-xs font-semibold text-slate-500">Status</p>
+                      <select
+                        value={mergedPlace.prospectStatus || "new"}
+                        onChange={(event) => updateProspectStatus(mergedPlace, event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                      >
+                        <option value="new">New</option>
+                        <option value="details_loaded">Details loaded</option>
+                        <option value="site_generated">Site generated</option>
+                        <option value="contacted">Contacted</option>
+                        <option value="skipped">Skipped</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => loadPlaceDetails(mergedPlace)}
+                      disabled={placeDetailsLoading[placeKey] || !mergedPlace.place_id}
+                      className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={15} /> : <Images size={15} />}
+                      Refresh details/photos
+                    </button>
+                    {mergedPlace.url && (
+                      <a href={mergedPlace.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        Google Maps <ExternalLink size={15} />
+                      </a>
+                    )}
+                  </div>
+                  {mergedPlace.lastError && (
+                    <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                      <p className="font-semibold">Last generate error</p>
+                      <p className="mt-1 break-words">{mergedPlace.lastError}</p>
+                    </div>
+                  )}
+
+                  <div className="mt-6">
+                    <p className="text-sm font-semibold text-slate-900">Photo and palette source</p>
+                    <p className="mt-1 text-xs text-slate-500">Choose the closest brand/logo-like image. Selection is saved into the generated JSON as Google Places provenance.</p>
+                    {photos.length > 0 ? (
+                      <div className="mt-3 grid grid-cols-3 gap-3">
+                        {photos.slice(0, 12).map((photo: any, index: number) => {
+                          const imageUrl = getPhotoUrl(photo, 480);
+                          const selected = logoSelections[placeKey]?.url === imageUrl;
+                          const priorityLabel = photoPriorityLabel(photo, mergedPlace.name);
+                          return (
+                            <button
+                              key={photo.photo_reference || photo.name || index}
+                              type="button"
+                              onClick={() => selectLogoPhoto(placeKey, imageUrl, photo, mergedPlace.name)}
+                              className={`relative aspect-square overflow-hidden rounded-xl border-2 bg-slate-100 ${selected ? "border-indigo-600" : "border-slate-200 hover:border-slate-300"}`}
+                            >
+                              <img src={imageUrl} alt="" className="h-full w-full object-cover" crossOrigin="anonymous" />
+                              <span className="absolute bottom-1 left-1 right-1 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">{priorityLabel}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">No photos in current Places response. Try refreshing details.</div>
+                    )}
+                    {logoSelections[placeKey]?.palette?.length > 0 && (
+                      <div className="mt-4 flex items-center gap-2">
+                        <span className="text-xs text-slate-500">Selected palette:</span>
+                        {logoSelections[placeKey].palette.map((color) => (
+                          <span key={color} className="h-7 w-7 rounded-full border border-white shadow-sm" style={{ backgroundColor: color }} title={color} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </aside>
+        </div>
+      )}
     </div>
   );
 }

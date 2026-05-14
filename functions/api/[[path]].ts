@@ -66,7 +66,7 @@ const jsonHeaders = {
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
+  "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
   "access-control-allow-headers": "content-type,authorization",
 };
 
@@ -164,6 +164,56 @@ async function setupTables(db: D1Database) {
       value TEXT NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS places_search_cache (
+      query_key TEXT PRIMARY KEY,
+      query TEXT NOT NULL,
+      results_json TEXT NOT NULL,
+      provider_status TEXT,
+      result_count INTEGER DEFAULT 0,
+      hit_count INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      expires_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS places_prospects (
+      place_id TEXT PRIMARY KEY,
+      query_key TEXT,
+      query TEXT,
+      business_name TEXT NOT NULL,
+      address TEXT,
+      phone TEXT,
+      website_url TEXT,
+      maps_url TEXT,
+      rating REAL,
+      reviews INTEGER,
+      niche TEXT,
+      status TEXT DEFAULT 'new',
+      result_json TEXT NOT NULL,
+      details_json TEXT,
+      selected_photo_json TEXT,
+      selected_palette_json TEXT,
+      generated_business_id TEXT,
+      last_error TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      generated_at DATETIME,
+      details_loaded_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS generation_jobs (
+      id TEXT PRIMARY KEY,
+      business_id TEXT,
+      place_id TEXT,
+      provider TEXT,
+      model TEXT,
+      status TEXT NOT NULL,
+      error TEXT,
+      metadata_json TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   await addColumnIfMissing(db, "leads", "email", "TEXT");
@@ -178,6 +228,37 @@ async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "leads", "staff_id", "TEXT");
   await addColumnIfMissing(db, "leads", "updated_at", "DATETIME");
   await addColumnIfMissing(db, "json_sites", "updated_at", "DATETIME");
+  await addColumnIfMissing(db, "places_search_cache", "provider_status", "TEXT");
+  await addColumnIfMissing(db, "places_search_cache", "result_count", "INTEGER DEFAULT 0");
+  await addColumnIfMissing(db, "places_search_cache", "hit_count", "INTEGER DEFAULT 0");
+  await addColumnIfMissing(db, "places_search_cache", "expires_at", "DATETIME");
+  await addColumnIfMissing(db, "places_prospects", "query_key", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "query", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "business_name", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "address", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "phone", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "website_url", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "maps_url", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "rating", "REAL");
+  await addColumnIfMissing(db, "places_prospects", "reviews", "INTEGER");
+  await addColumnIfMissing(db, "places_prospects", "niche", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "status", "TEXT DEFAULT 'new'");
+  await addColumnIfMissing(db, "places_prospects", "result_json", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "details_json", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "selected_photo_json", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "selected_palette_json", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "generated_business_id", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "last_error", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "generated_at", "DATETIME");
+  await addColumnIfMissing(db, "places_prospects", "details_loaded_at", "DATETIME");
+  await addColumnIfMissing(db, "generation_jobs", "business_id", "TEXT");
+  await addColumnIfMissing(db, "generation_jobs", "place_id", "TEXT");
+  await addColumnIfMissing(db, "generation_jobs", "provider", "TEXT");
+  await addColumnIfMissing(db, "generation_jobs", "model", "TEXT");
+  await addColumnIfMissing(db, "generation_jobs", "status", "TEXT");
+  await addColumnIfMissing(db, "generation_jobs", "error", "TEXT");
+  await addColumnIfMissing(db, "generation_jobs", "metadata_json", "TEXT");
+  await addColumnIfMissing(db, "generation_jobs", "updated_at", "DATETIME");
 }
 
 async function getSetting(db: D1Database, env: Env, key: keyof Env & string): Promise<string | undefined> {
@@ -207,6 +288,120 @@ function normalizeWhatsAppNumber(value: string) {
 function normalizeBusinessId(name: string): string {
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return slug || crypto.randomUUID();
+}
+
+function normalizeSearchQuery(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function asNumber(value: unknown): number | null {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function placeString(place: Record<string, unknown>, keys: string[], fallback = "") {
+  for (const key of keys) {
+    const value = place[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return fallback;
+}
+
+function placeArray(place: Record<string, unknown>, key: string) {
+  const value = place[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function placeIdFromPlace(place: Record<string, unknown>) {
+  const explicitId = placeString(place, ["place_id", "id"]);
+  if (explicitId) return explicitId;
+  return normalizeBusinessId(`${placeString(place, ["name"], "unknown")}-${placeString(place, ["formatted_address", "formattedAddress", "vicinity"])}`);
+}
+
+function prospectFromPlace(place: Record<string, unknown>, fallbackQuery = "", fallbackQueryKey = "") {
+  const placeId = placeIdFromPlace(place);
+  const types = placeArray(place, "types");
+  const rating = asNumber(place.rating);
+  const reviews = asNumber(place.user_ratings_total) ?? asNumber(place.userRatingCount);
+  return {
+    placeId,
+    queryKey: fallbackQueryKey,
+    query: fallbackQuery,
+    businessName: placeString(place, ["name"], "Untitled Business"),
+    address: placeString(place, ["formatted_address", "formattedAddress", "vicinity"]),
+    phone: placeString(place, ["formatted_phone_number", "international_phone_number", "nationalPhoneNumber"]),
+    websiteUrl: placeString(place, ["website", "websiteUri"]),
+    mapsUrl: placeString(place, ["url", "googleMapsUri"]),
+    rating,
+    reviews,
+    niche: typeof types[0] === "string" ? types[0] : "general",
+  };
+}
+
+async function upsertProspectsFromPlaces(db: D1Database, queryKey: string, query: string, results: unknown[]) {
+  const statements = results
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    .map((place) => {
+      const prospect = prospectFromPlace(place, query, queryKey);
+      return db
+        .prepare(
+          `INSERT INTO places_prospects (
+             place_id, query_key, query, business_name, address, phone, website_url, maps_url, rating, reviews, niche, status, result_json, updated_at
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(place_id) DO UPDATE SET
+             query_key = excluded.query_key,
+             query = excluded.query,
+             business_name = excluded.business_name,
+             address = excluded.address,
+             phone = COALESCE(NULLIF(excluded.phone, ''), phone),
+             website_url = COALESCE(NULLIF(excluded.website_url, ''), website_url),
+             maps_url = COALESCE(NULLIF(excluded.maps_url, ''), maps_url),
+             rating = COALESCE(excluded.rating, rating),
+             reviews = COALESCE(excluded.reviews, reviews),
+             niche = excluded.niche,
+             result_json = excluded.result_json,
+             updated_at = CURRENT_TIMESTAMP`,
+        )
+        .bind(
+          prospect.placeId,
+          prospect.queryKey,
+          prospect.query,
+          prospect.businessName,
+          prospect.address,
+          prospect.phone,
+          prospect.websiteUrl,
+          prospect.mapsUrl,
+          prospect.rating,
+          prospect.reviews,
+          prospect.niche,
+          JSON.stringify(place),
+        );
+    });
+
+  if (statements.length) {
+    await db.batch(statements);
+  }
+}
+
+function parseJsonObject(value: string | null | undefined) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseJsonArray(value: string | null | undefined) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function extensionFromContentType(contentType: string | null) {
@@ -356,8 +551,42 @@ async function handleLeads(request: Request, db: D1Database, segments: string[])
 }
 
 async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<Response> {
-  const query = url.searchParams.get("query") || "";
+  const query = (url.searchParams.get("query") || "").trim();
+  const queryKey = normalizeSearchQuery(query);
+  const refresh = url.searchParams.get("refresh") === "1";
   const placesKey = await getSetting(db, env, "GOOGLE_PLACES_API_KEY");
+
+  if (!queryKey) {
+    return errorJson("Missing query", 400);
+  }
+
+  if (!refresh) {
+    const cached = await db
+      .prepare(
+        `SELECT query, results_json, provider_status, result_count, updated_at, expires_at
+         FROM places_search_cache
+         WHERE query_key = ? AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))`,
+      )
+      .bind(queryKey)
+      .first<{ query: string; results_json: string; provider_status?: string; result_count?: number; updated_at?: string; expires_at?: string }>();
+
+    if (cached?.results_json) {
+      await db
+        .prepare("UPDATE places_search_cache SET hit_count = COALESCE(hit_count, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE query_key = ?")
+        .bind(queryKey)
+        .run();
+
+      return json({
+        cached: true,
+        status: cached.provider_status || "CACHE_HIT",
+        query: cached.query,
+        resultCount: cached.result_count || 0,
+        updatedAt: cached.updated_at,
+        expiresAt: cached.expires_at,
+        results: JSON.parse(cached.results_json),
+      });
+    }
+  }
 
   const mockResult = {
     place_id: "mock-place",
@@ -369,6 +598,7 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
   };
 
   if (!placesKey || placesKey.length < 10) {
+    await upsertProspectsFromPlaces(db, queryKey, query, [mockResult]);
     return json({
       mock: true,
       status: "MOCK_NO_API_KEY",
@@ -402,16 +632,36 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
       });
     }
 
-    if (!Array.isArray(data.results) || data.results.length === 0) {
+    const results = Array.isArray(data.results) ? data.results : [];
+    await upsertProspectsFromPlaces(db, queryKey, query, results);
+    const cacheExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    await db
+      .prepare(
+        `INSERT INTO places_search_cache (query_key, query, results_json, provider_status, result_count, expires_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(query_key) DO UPDATE SET
+           query = excluded.query,
+           results_json = excluded.results_json,
+           provider_status = excluded.provider_status,
+           result_count = excluded.result_count,
+           expires_at = excluded.expires_at,
+           updated_at = CURRENT_TIMESTAMP`,
+      )
+      .bind(queryKey, query, JSON.stringify(results), data.status || "OK", results.length, cacheExpiresAt)
+      .run();
+
+    if (results.length === 0) {
       return json({
         status: data.status || "ZERO_RESULTS",
+        cached: false,
         results: [],
       });
     }
 
     return json({
       status: data.status || "OK",
-      results: data.results,
+      cached: false,
+      results,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -422,6 +672,264 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
       results: [],
     });
   }
+}
+
+async function handlePlacesDetails(url: URL, db: D1Database, env: Env): Promise<Response> {
+  const placeId = url.searchParams.get("placeId") || url.searchParams.get("place_id") || "";
+  const placesKey = await getSetting(db, env, "GOOGLE_PLACES_API_KEY");
+
+  if (!placeId) {
+    return errorJson("Missing placeId", 400);
+  }
+
+  if (!placesKey) {
+    return errorJson("Google Places API key is not configured", 400);
+  }
+
+  const fields = [
+    "place_id",
+    "name",
+    "formatted_address",
+    "formatted_phone_number",
+    "international_phone_number",
+    "website",
+    "url",
+    "opening_hours",
+    "rating",
+    "user_ratings_total",
+    "types",
+    "business_status",
+    "photos",
+  ].join(",");
+
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${encodeURIComponent(fields)}&key=${encodeURIComponent(placesKey)}`,
+    );
+    const data = await response.json() as { status?: string; result?: Record<string, unknown>; error_message?: string };
+
+    if (!response.ok || (data.status && data.status !== "OK")) {
+      return json({
+        status: data.status || "GOOGLE_HTTP_ERROR",
+        error: data.error_message || `Google Places Details returned HTTP ${response.status}`,
+        result: null,
+      }, response.ok ? 200 : response.status);
+    }
+
+    if (data.result && typeof data.result === "object") {
+      const prospect = prospectFromPlace(data.result);
+      await db
+        .prepare(
+          `UPDATE places_prospects
+           SET details_json = ?,
+               phone = COALESCE(NULLIF(?, ''), phone),
+               website_url = COALESCE(NULLIF(?, ''), website_url),
+               maps_url = COALESCE(NULLIF(?, ''), maps_url),
+               details_loaded_at = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE place_id = ?`,
+        )
+        .bind(JSON.stringify(data.result), prospect.phone, prospect.websiteUrl, prospect.mapsUrl, placeId)
+        .run();
+    }
+
+    return json({
+      status: data.status || "OK",
+      result: data.result || null,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Places details failed:", error);
+    return json({
+      status: "PLACES_DETAILS_FAILED",
+      error: message,
+      result: null,
+    });
+  }
+}
+
+async function handlePlacesCache(request: Request, db: D1Database, segments: string[]): Promise<Response> {
+  if (request.method !== "POST" || segments[2] !== "trim") {
+    return errorJson("Not Found", 404);
+  }
+
+  const body = await readJsonBody(request);
+  const olderThanDays = Math.max(1, Math.min(365, Number(body.olderThanDays || 30)));
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
+  const result = await db
+    .prepare(
+      `DELETE FROM places_search_cache
+       WHERE datetime(updated_at) < datetime(?) OR (expires_at IS NOT NULL AND datetime(expires_at) < datetime('now'))`,
+    )
+    .bind(cutoff)
+    .run();
+
+  return json({ success: true, olderThanDays, result });
+}
+
+async function handleProspects(request: Request, db: D1Database, segments: string[], url: URL): Promise<Response> {
+  if (request.method === "GET" && segments.length === 1) {
+    const status = url.searchParams.get("status") || "";
+    const website = url.searchParams.get("website") || "";
+    const query = normalizeSearchQuery(url.searchParams.get("query") || "");
+    const minRating = asNumber(url.searchParams.get("minRating"));
+    const minReviews = asNumber(url.searchParams.get("minReviews"));
+    const city = normalizeSearchQuery(url.searchParams.get("city") || "");
+    const state = normalizeSearchQuery(url.searchParams.get("state") || "");
+    const niche = normalizeSearchQuery(url.searchParams.get("niche") || "");
+    const rows = await db
+      .prepare(
+        `SELECT p.*,
+                l.business_id AS lead_business_id,
+                l.status AS lead_status
+         FROM places_prospects p
+         LEFT JOIN leads l ON l.business_id = p.generated_business_id
+         WHERE (? = '' OR p.status = ?)
+           AND (? = '' OR (? = 'none' AND COALESCE(p.website_url, '') = '') OR (? = 'has' AND COALESCE(p.website_url, '') <> ''))
+           AND (? = '' OR lower(p.business_name || ' ' || COALESCE(p.address, '') || ' ' || COALESCE(p.query, '')) LIKE '%' || ? || '%')
+           AND (? IS NULL OR COALESCE(p.rating, 0) >= ?)
+           AND (? IS NULL OR COALESCE(p.reviews, 0) >= ?)
+           AND (? = '' OR lower(COALESCE(p.address, '')) LIKE '%' || ? || '%')
+           AND (? = '' OR lower(COALESCE(p.address, '')) LIKE '%' || ? || '%')
+           AND (? = '' OR lower(COALESCE(p.niche, '')) LIKE '%' || ? || '%')
+         ORDER BY datetime(p.updated_at) DESC
+         LIMIT 100`,
+      )
+      .bind(
+        status,
+        status,
+        website,
+        website,
+        website,
+        query,
+        query,
+        minRating,
+        minRating,
+        minReviews,
+        minReviews,
+        city,
+        city,
+        state,
+        state,
+        niche,
+        niche,
+      )
+      .all<{
+        place_id: string;
+        query?: string;
+        business_name: string;
+        address?: string;
+        phone?: string;
+        website_url?: string;
+        maps_url?: string;
+        rating?: number;
+        reviews?: number;
+        niche?: string;
+        status?: string;
+        result_json?: string;
+        details_json?: string;
+        selected_photo_json?: string;
+        selected_palette_json?: string;
+        generated_business_id?: string;
+        last_error?: string;
+        updated_at?: string;
+        generated_at?: string;
+      }>();
+
+    return json((rows.results || []).map((row) => ({
+      ...parseJsonObject(row.result_json),
+      ...parseJsonObject(row.details_json),
+      place_id: row.place_id,
+      name: row.business_name,
+      formatted_address: row.address,
+      formatted_phone_number: row.phone,
+      website: row.website_url,
+      url: row.maps_url,
+      rating: row.rating,
+      user_ratings_total: row.reviews,
+      types: row.niche ? [row.niche] : [],
+      prospectStatus: row.status || "new",
+      generatedBusinessId: row.generated_business_id || "",
+      lastError: row.last_error || "",
+      selectedPhoto: parseJsonObject(row.selected_photo_json),
+      selectedPalette: parseJsonArray(row.selected_palette_json),
+      updatedAt: row.updated_at,
+      generatedAt: row.generated_at,
+    })));
+  }
+
+  if (request.method === "PUT" && segments.length === 3 && segments[2] === "status") {
+    const placeId = decodeURIComponent(segments[1]);
+    const body = await readJsonBody(request);
+    const status = asString(body.status, "new");
+    await db
+      .prepare("UPDATE places_prospects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE place_id = ?")
+      .bind(status, placeId)
+      .run();
+    return json({ success: true });
+  }
+
+  if (request.method === "PUT" && segments.length === 3 && segments[2] === "selection") {
+    const placeId = decodeURIComponent(segments[1]);
+    const body = await readJsonBody(request);
+    const photo = body.photo && typeof body.photo === "object" ? body.photo : {};
+    const palette = Array.isArray(body.palette) ? body.palette.filter((item) => typeof item === "string") : [];
+    await db
+      .prepare(
+        `UPDATE places_prospects
+         SET selected_photo_json = ?,
+             selected_palette_json = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE place_id = ?`,
+      )
+      .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
+      .run();
+    return json({ success: true });
+  }
+
+  return errorJson("Not Found", 404);
+}
+
+async function handleGenerationJobs(request: Request, db: D1Database): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorJson("Not Found", 404);
+  }
+
+  const rows = await db
+    .prepare(
+      `SELECT j.*, p.business_name AS prospect_name
+       FROM generation_jobs j
+       LEFT JOIN places_prospects p ON p.place_id = j.place_id
+       ORDER BY datetime(j.created_at) DESC
+       LIMIT 100`,
+    )
+    .all<{
+      id: string;
+      business_id?: string;
+      place_id?: string;
+      provider?: string;
+      model?: string;
+      status?: string;
+      error?: string;
+      metadata_json?: string;
+      created_at?: string;
+      updated_at?: string;
+      prospect_name?: string;
+    }>();
+
+  return json((rows.results || []).map((row) => ({
+    id: row.id,
+    businessId: row.business_id || "",
+    placeId: row.place_id || "",
+    prospectName: row.prospect_name || "",
+    provider: row.provider || "",
+    model: row.model || "",
+    status: row.status || "",
+    error: row.error || "",
+    metadata: parseJsonObject(row.metadata_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  })));
 }
 
 async function handlePlacesPhoto(url: URL, db: D1Database, env: Env): Promise<Response> {
@@ -792,6 +1300,18 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       ? body.selectedLogoAttributions.filter((item) => typeof item === "string") as string[]
       : [];
     const selectedLogoPriority = asString(body.selectedLogoPriority);
+    const originPlaceId = placeIdFromPlace(originData);
+    const jobId = crypto.randomUUID();
+
+    await db
+      .prepare(
+        `INSERT INTO generation_jobs (id, business_id, place_id, provider, model, status, metadata_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'running', ?, CURRENT_TIMESTAMP)`,
+      )
+      .bind(jobId, businessId, originPlaceId, provider, model, JSON.stringify({ businessName, selectedLogoReference, selectedLogoPriority }))
+      .run();
+
+    try {
 
     let finalJson = body.jsonContent && typeof body.jsonContent === "object"
       ? body.jsonContent as Record<string, unknown>
@@ -844,19 +1364,27 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       finalJson.design = design;
     }
 
-    normalizeImageFilenames(finalJson, businessId);
-    const assetKeys = await uploadImageAssetsToR2(finalJson, env, new URL(request.url).origin, businessId);
-    const jsonKey = await uploadJsonToR2(finalJson, env, businessId);
-    if (jsonKey || assetKeys.length) {
+    try {
+      normalizeImageFilenames(finalJson, businessId);
+      const assetKeys = await uploadImageAssetsToR2(finalJson, env, new URL(request.url).origin, businessId);
+      const jsonKey = await uploadJsonToR2(finalJson, env, businessId);
+      if (jsonKey || assetKeys.length) {
+        finalJson.storage = {
+          ...(finalJson.storage && typeof finalJson.storage === "object" ? finalJson.storage as Record<string, unknown> : {}),
+          r2JsonKey: jsonKey,
+          r2JsonUrl: jsonKey ? publicR2Url(env, jsonKey) : "",
+          r2AssetKeys: assetKeys,
+        };
+        if (jsonKey) {
+          await uploadJsonToR2(finalJson, env, businessId);
+        }
+      }
+    } catch (error) {
+      console.error("R2 sync failed, continuing with D1 site save:", error);
       finalJson.storage = {
         ...(finalJson.storage && typeof finalJson.storage === "object" ? finalJson.storage as Record<string, unknown> : {}),
-        r2JsonKey: jsonKey,
-        r2JsonUrl: jsonKey ? publicR2Url(env, jsonKey) : "",
-        r2AssetKeys: assetKeys,
+        r2SyncError: error instanceof Error ? error.message : String(error),
       };
-      if (jsonKey) {
-        await uploadJsonToR2(finalJson, env, businessId);
-      }
     }
 
     const leadId = crypto.randomUUID();
@@ -918,7 +1446,36 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
         .run();
     }
 
+    await db
+      .prepare("UPDATE generation_jobs SET status = 'success', error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(jobId)
+      .run();
+    await db
+      .prepare(
+        `UPDATE places_prospects
+         SET status = 'site_generated',
+             generated_business_id = ?,
+             last_error = NULL,
+             generated_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE place_id = ?`,
+      )
+      .bind(businessId, originPlaceId)
+      .run();
+
     return json({ success: true, businessId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await db
+        .prepare("UPDATE generation_jobs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(message, jobId)
+        .run();
+      await db
+        .prepare("UPDATE places_prospects SET last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE place_id = ?")
+        .bind(message, originPlaceId)
+        .run();
+      return errorJson(message, 500);
+    }
   }
 
   if (request.method === "GET" && segments.length === 2) {
@@ -1221,8 +1778,24 @@ async function route(context: PagesContext): Promise<Response> {
       return handleLeads(request, db, segments);
     }
 
+    if (segments[0] === "prospects") {
+      return handleProspects(request, db, segments, url);
+    }
+
+    if (segments[0] === "generation-jobs") {
+      return handleGenerationJobs(request, db);
+    }
+
     if (request.method === "GET" && segments[0] === "places" && segments[1] === "photo") {
       return handlePlacesPhoto(url, db, env);
+    }
+
+    if (request.method === "GET" && segments[0] === "places" && segments[1] === "details") {
+      return handlePlacesDetails(url, db, env);
+    }
+
+    if (segments[0] === "places" && segments[1] === "cache") {
+      return handlePlacesCache(request, db, segments);
     }
 
     if (request.method === "GET" && segments[0] === "places" && segments[1] === "search") {

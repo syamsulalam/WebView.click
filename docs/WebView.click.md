@@ -408,7 +408,7 @@ Berikan catatan berikut bersamaan dengan *query SQL* di atas ke AI Anda:
 ### **Saran Tambahan untuk Anda:**
 
 1. **Masalah Iframe Google Maps:** Di tahap pengembangan, AI mungkin akan mengingatkan bahwa Google Maps tidak bisa dimasukkan ke dalam *iframe* lalu datanya diambil menggunakan JavaScript (karena perlindungan keamanan *CORS/X-Frame-Options* dari Google). *Solusinya:* Gunakan **Google Places API** di backend admin. Admin cukup mengetik nama bisnis, API yang akan menarik semua data (foto, review, alamat) secara resmi, lalu AI akan meracik JSON-nya.  
-2. **Export HTML:** Untuk mengubah React ke HTML statis, AI bisa menggunakan *library* kecil di klien untuk mengambil document.documentElement.outerHTML, memasukannya ke file ZIP beserta gambar-gambarnya, dan memicu *download*. Ini sangat mudah di-coding oleh AI.
+2. **Export HTML:** Export owner memakai `downloadOwnerSiteZip`: clone DOM yang sudah dirender, hapus elemen internal `.hide-in-export`, absolutkan link/gambar, tambahkan Tailwind CDN + stylesheet production + favicon, lalu zip hanya `index.html`. Jangan sertakan JSON internal generator di zip owner.
 
 ## **7\. Admin Dashboard (/admin), CRM, & Operasional Bisnis**
 

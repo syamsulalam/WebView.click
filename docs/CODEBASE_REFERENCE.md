@@ -123,8 +123,12 @@ Fungsi:
 
 API yang dipakai:
 - `GET /api/leads`
+- `GET /api/prospects`
+- `PUT /api/prospects/:placeId/status`
 - `GET /api/settings`
 - `GET /api/places/search?query=...`
+- `GET /api/places/search?query=...&refresh=1`
+- `GET /api/places/details?placeId=...`
 - `GET /api/places/photo?reference=...`
 - `POST /api/sites/generate`
 - `PUT /api/leads/:id/status`
@@ -146,12 +150,26 @@ Logic penting:
 - JSON mock fallback menentukan `design.stylePreset` dan `design.stylePresetConfig` via `src/lib/siteStylePresets.ts`.
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
 - Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.
+- Search default membaca cache D1 `places_search_cache`; tombol `Refresh` memaksa request baru ke Google Places.
+- Setiap result Google Places di-upsert ke `places_prospects` sebagai prospect draft agar pencarian lama tidak hilang.
+- Filter prospect tersimpan memakai status, website/no website, minimum rating, minimum review count, city, state, dan niche. Default workflow memprioritaskan bisnis tanpa website.
+- Hasil pencarian tidak dikosongkan setelah generate, termasuk saat `/api/sites/generate` gagal.
+- Generate status ditampilkan per bisnis, dengan link preview jika sukses.
+- Tombol `Load more photos/details` memanggil Place Details agar admin bisa memilih lebih banyak foto sebelum generate dan menyimpan `details_json`.
+- Tombol `Details` membuka drawer berisi website, phone, rating, status prospect, Google Maps link, error generate terakhir, dan grid foto/palette.
+- Tombol `Trim cache 30d` memanggil `POST /api/places/cache/trim` untuk membersihkan cache Places lama/expired.
+- Tombol `Skip` mengubah status prospect ke `skipped`; status lain bisa diubah dari drawer.
+- Checkbox prospect + `Generate selected` menjalankan batch generate queue secara sequential dari browser agar tidak menembak semua AI request paralel.
+- Tombol `Jobs` membaca `GET /api/generation-jobs` dan menampilkan 100 job terakhir.
+- Foto/palette yang dipilih admin disimpan via `PUT /api/prospects/:placeId/selection`, lalu dihydrate kembali saat prospect draft dibuka.
 
 Risiko debug:
 - Jika foto Google tidak muncul, cek Places API key dan apakah Text Search mengembalikan `photos`.
+- Jika hanya satu foto muncul, klik `Load more photos/details`; Text Search memang sering mengembalikan foto terbatas.
 - Jika pencarian tidak menampilkan hasil, cek pesan di UI dan response `/api/places/search`; Function menormalisasi status Google seperti `ZERO_RESULTS`, `REQUEST_DENIED`, dan fetch failure ke JSON.
 - Error `API keys with referer restrictions cannot be used with this API` berarti key Google Places masih dibatasi HTTP referrer. Untuk Pages Functions/server-side, pakai server key tanpa application restriction dan batasi hanya API-nya di Google Cloud.
 - Canvas palette butuh image same-origin/CORS; karena itu foto harus lewat proxy `/api/places/photo`, bukan langsung URL Google.
+- Audit dan roadmap admin disimpan di `docs/ADMIN_WORKFLOW_AUDIT.md`.
 
 ### `src/pages/admin/AdminSchema.tsx`
 
@@ -216,7 +234,7 @@ Risiko debug:
 - Jika `/demo` blank, cek apakah `resolveJsonModule` aktif di `tsconfig.json`.
 - Jika section baru tidak muncul sesuai harapan, update `SiteRenderer`.
 - Tombol floating demo:
-  - Download Free membuat zip berisi `index.html` dan `site-data.json`.
+  - Download Free membuat zip owner berisi `index.html` saja via `downloadOwnerSiteZip`.
   - Paket `$197 Domain + Hosting` memanggil `POST /api/payments/checkout`.
   - Jika Lemon Squeezy belum dikonfigurasi, endpoint mencatat mock checkout dan membuka link WhatsApp admin.
 - Demo memiliki selector style preset dari `src/lib/siteStylePresets.ts` agar preset bisa diuji tanpa edit JSON.
@@ -346,6 +364,34 @@ Logic R2:
 Risiko debug:
 - Jika asset tidak bisa dibuka, cek custom domain R2 `assets.webview.click`, bucket public/custom domain setting, dan env `R2_PUBLIC_BASE_URL`.
 - Asset yang hanya berupa filename lokal tidak bisa di-upload karena tidak ada binary sumber; Function hanya memastikan namanya mengandung slug.
+- Jika R2 sync gagal saat generate, Function menyimpan `storage.r2SyncError` dan tetap lanjut menyimpan JSON ke D1.
+
+Logic Places Cache:
+- `places_search_cache` menyimpan response `GET /api/places/search` selama 30 hari.
+- `GET /api/places/search?query=...` membaca cache jika masih valid.
+- `GET /api/places/search?query=...&refresh=1` melewati cache dan menyimpan response terbaru.
+- `POST /api/places/cache/trim` menghapus cache lama/expired; body: `{ "olderThanDays": 30 }`.
+
+Logic Prospect Drafts:
+- `places_prospects` menyimpan result Places per `place_id`.
+- Search dan mock search memanggil upsert prospect draft.
+- Place Details memperbarui `details_json`, phone, website, maps URL, dan `details_loaded_at`.
+- `GET /api/prospects` menerima filter `status`, `website=none|has|all`, `minRating`, `minReviews`, `city`, `state`, dan `niche`.
+- `PUT /api/prospects/:placeId/status` mengubah status workflow (`new`, `details_loaded`, `site_generated`, `contacted`, `skipped`).
+- `PUT /api/prospects/:placeId/selection` menyimpan selected Google Places photo metadata dan palette.
+
+Logic Generation Jobs:
+- `generation_jobs` mencatat setiap request `/api/sites/generate` dengan status `running`, `success`, atau `failed`.
+- Jika generate sukses, prospect draft diupdate ke `site_generated` dan `generated_business_id` diisi.
+- Jika generate gagal, `generation_jobs.error` dan `places_prospects.last_error` diisi agar admin bisa melihat error di UI.
+- `GET /api/generation-jobs` mengembalikan 100 job terbaru untuk panel Jobs di `/admin/leads`.
+
+Logic Owner HTML Export:
+- `src/lib/exportSiteHtml.ts` membuat zip owner berisi hanya `index.html`.
+- Export menghapus `<script>` internal, `.hide-in-export`, dan `[data-export-remove="true"]`.
+- Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
+- Export menambahkan Tailwind CSS/CDN hotlink, stylesheet production absolute, style tags renderer, favicon dari logo bisnis/fallback SVG, dan mengubah URL relatif gambar/link menjadi absolute URL.
+- Google Places photo tetap hotlink/proxy dari URL WebView.click sehingga file HTML owner tetap menampilkan gambar tanpa menyimpan asset ke zip.
 
 Logic Payments:
 - `/api/payments/checkout` membuat checkout Lemon Squeezy jika `LEMON_SQUEEZY_API_KEY`, `LEMON_SQUEEZY_STORE_ID`, dan `LEMON_SQUEEZY_VARIANT_ID` sudah ada.
@@ -374,6 +420,8 @@ Fungsi:
 
 Fungsi:
 - Skema Cloudflare D1 production.
+- Tabel inti: `leads`, `subscriptions`, `crm_activities`, `json_sites`, `system_settings`.
+- Tabel admin prospecting: `places_search_cache`, `places_prospects`, dan `generation_jobs`.
 
 Tabel:
 - `leads`
