@@ -10,6 +10,7 @@ File: `src/App.tsx`
 
 Routes utama:
 - `/` -> `HubPage`
+- `/demo` -> `DemoSite`
 - `/admin` -> `AdminLayout` + `AdminDashboard`
 - `/admin/leads` -> `AdminLeads`
 - `/admin/schema` -> `AdminSchema`
@@ -17,6 +18,28 @@ Routes utama:
 - `/:businessId` -> `PublicViewer`
 
 ## Components
+
+### `src/components/SiteRenderer.tsx`
+
+Fungsi:
+- Renderer bersama untuk preview public dan demo JSON sample.
+- Mengubah struktur JSON website menjadi UI halaman lengkap.
+
+Props penting:
+- `siteData`: JSON website yang akan dirender.
+- `publicLinks`: payment links untuk panel prospek.
+- `businessId`: slug untuk download filename/metadata.
+- `showProspectPanel`: menampilkan atau menyembunyikan panel CTA prospek.
+- `onDownloadZip`: callback download HTML static.
+
+Logic penting:
+- State `activeTab` dipakai untuk navigasi antar page dari `navigation.headerMenu`.
+- Section renderer mendukung `hero`, `features`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
+- Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
+
+Risiko debug:
+- Jika UI demo/public berbeda dari ekspektasi, cek mapping section di file ini dulu sebelum mengubah `PublicViewer`.
+- Jika menambah `section.type` baru di JSON, tambahkan renderer di file ini dan update dokumen ini.
 
 ### `src/components/AdminLayout.tsx`
 
@@ -123,6 +146,21 @@ Fungsi:
 Logic penting:
 - `localStorage.savedBusinessId` diset oleh `PublicViewer`.
 
+### `src/pages/public/DemoSite.tsx`
+
+Fungsi:
+- Route `/demo` untuk merender sample dari `JSON/template-schema.json` tanpa API, D1, atau R2.
+- Dipakai untuk koreksi visual dan menentukan variable JSON tambahan sebelum generator AI dipaksa mengikuti schema baru.
+
+Logic penting:
+- Import JSON sample langsung dari repo.
+- Menampilkan floating inspector kecil berisi nama bisnis dan daftar `pageId:sectionType` yang sedang tersedia.
+- Menggunakan `SiteRenderer` dengan `showProspectPanel={false}` agar demo fokus ke hasil render website.
+
+Risiko debug:
+- Jika `/demo` blank, cek apakah `resolveJsonModule` aktif di `tsconfig.json`.
+- Jika section baru tidak muncul sesuai harapan, update `SiteRenderer`.
+
 ### `src/pages/public/PublicViewer.tsx`
 
 Fungsi:
@@ -136,7 +174,7 @@ API yang dipakai:
 - `GET /api/sites/:businessId`
 
 Logic penting:
-- Jika JSON site ditemukan, halaman render section dinamis seperti `hero`, `features`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
+- Jika JSON site ditemukan, halaman meneruskan data ke `SiteRenderer`.
 - `handleDownloadZip()` membuat zip HTML statis dari DOM saat ini.
 - Payment link basic/premium dibaca dari D1 settings.
 

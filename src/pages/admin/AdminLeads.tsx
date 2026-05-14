@@ -73,7 +73,18 @@ export default function AdminLeads() {
   };
 
   const selectedPrice = estimateCostUsd(aiProvider, aiModel);
-  const settingsKey = aiProvider === "KIE" ? "KIE_API_KEY" : `${aiProvider.toUpperCase()}_API_KEY`;
+  const providerApiKeyMap: Record<string, string> = {
+    OpenRouter: "OPENROUTER_API_KEY",
+    OpenAI: "OPENAI_API_KEY",
+    Gemini: "GEMINI_API_KEY",
+    KIE: "KIE_API_KEY",
+    Opencode: "OPENCODE_API_KEY",
+  };
+  const settingsKey = providerApiKeyMap[aiProvider] || "";
+  const missingRequiredSettings = [
+    !String(settings?.GOOGLE_PLACES_API_KEY || "").trim() ? "Google Places API Key" : "",
+    !String(settings?.[settingsKey] || "").trim() ? `${providers[aiProvider]?.label || aiProvider} Key` : "",
+  ].filter(Boolean);
 
   const getPhotoUrl = (photo: any, maxWidth = 320) => {
     const reference = photo?.photo_reference || photo?.name || photo?.reference;
@@ -272,13 +283,13 @@ export default function AdminLeads() {
     <div className="p-8 max-w-7xl mx-auto font-sans">
       <h1 className="text-3xl font-semibold mb-8 text-gray-900">CRM Leads</h1>
 
-      {(!loadingSettings && (!settings?.GOOGLE_PLACES_API_KEY || !settings?.[settingsKey])) && (
+      {(!loadingSettings && missingRequiredSettings.length > 0) && (
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
           <div className="text-amber-500 mt-0.5">⚠️</div>
           <div>
             <h3 className="text-amber-800 font-semibold text-sm">Persiapan Belum Selesai</h3>
             <p className="text-amber-700 text-sm mt-1">
-              Anda belum mengatur API Key untuk Google Places atau <strong>{aiProvider}</strong>. 
+              Field berikut belum terbaca dari settings: <strong>{missingRequiredSettings.join(", ")}</strong>.
               Pencarian Maps atau Generasi AI mungkin tidak akan berfungsi tanpa API Key yang tepat.
             </p>
             <a href="/admin/settings" className="inline-block mt-3 px-4 py-2 bg-amber-100 text-amber-800 rounded-lg text-sm font-medium hover:bg-amber-200 transition">
