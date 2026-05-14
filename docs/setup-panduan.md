@@ -1,0 +1,81 @@
+# Panduan Setup WebView.click
+
+Dokumen ini berisi panduan teknis lengkap untuk mendeploy aplikasi WebView.click ke infrastruktur Cloudflare (Pages, D1, R2), melakukan setup Google Places API, dan menyiapkan integrasi pembayaran (untuk kreator Indonesia menerima pembayaran USD).
+
+---
+
+## 1. Cloudflare Pages Variables / Secrets Setup
+
+Karena kode saat ini berjalan sebagai aplikasi Node.js (Full-stack) di environment lokal/AI Studio menggunakan SQLite, ketika Anda akan membawanya ke Cloudflare, Anda harus menyesuaikan environment variables di Cloudflare Pages.
+
+### Langkah-langkah di Cloudflare Dashboard:
+1. Login ke [Cloudflare Dashboard](https://dash.cloudflare.com).
+2. Masuk ke **Workers & Pages**.
+3. Buat Project Pages baru, sambungkan dengan repository GitHub aplikasi ini.
+   - **Framework preset:** `Vite`
+   - **Build command:** `npm run build`
+   - **Build output directory:** `dist`
+4. Sebelum melakukan deploy pertama kali, masuk ke **Settings > Environment variables**.
+5. Tambahkan variable berikut (sama seperti di `.env` lokal Anda):
+   - `VITE_CLERK_PUBLISHABLE_KEY` (Publik, dari Clerk)
+   - `CLERK_SECRET_KEY` (Rahasia, dari Clerk)
+   - `OPENAI_API_KEY` (Rahasia, jika menggunakan AI Auto-generator)
+   - `GOOGLE_PLACES_API_KEY` (Rahasia, untuk scrape Maps)
+   - `PAYMENT_LINK_BASIC` / `PAYMENT_LINK_PREMIUM` (URL gateway pembayaran)
+
+### Konfigurasi Cloudflare D1 (Database)
+Aplikasi lokal menggunakan SQLite (`better-sqlite3`). Untuk versi produksi di Cloudflare:
+1. Buka Terminal lokal, pastikan Anda install Wrangler: `npm install -g wrangler`
+2. Login akun: `npx wrangler login`
+3. Buat database: `npx wrangler d1 create webview-crm`
+4. Copy `database_id` yang muncul, lalu tambahkan di file `wrangler.toml` project Anda agar Pages Functions bisa membaca database D1.
+
+### Konfigurasi Cloudflare R2 (Object Storage)
+1. Di Dashboard Cloudflare R2, klik **Create bucket**, namakan `webview-sites`.
+2. Aktifkan **Public R2.dev URL** atau sambungkan dengan domain kustom untuk memberikan akses publik ke file `.json` dan gambar website generator.
+3. Bind bucket ke Pages Functions di settings Cloudflare Pages > Bindings.
+
+---
+
+## 2. Setup Google Places API (Scraping GMB)
+
+Agar fitur "cari prospek" berfungsi dengan data dunia nyata:
+1. Kunjungi [Google Cloud Console](https://console.cloud.google.com).
+2. Buat Project baru bernama `WebView CRM`.
+3. Buka menu **APIs & Services > Library**, cari dan AKTIFKAN:
+   - **Places API (New)**
+   - **Maps JavaScript API** (Untuk render peta lokal jika butuh fallback)
+4. Buka **Credentials**, klik **Create Credentials > API Key**.
+5. *PENTING:* Lakukan Restrict Key!
+   - Di bagian _API restrictions_, pilih hanya `Places API (New)`.
+   - Di bagian _Application restrictions_, pilih _HTTP referrers_ (atau IP Address jika berjalan di backend). Untuk backend Node/Pages Functions, tidak perlu referer, tapi gunakan restriction IP jika IP server statis, atau biarkan tidak di restrict asalkan disimpan di server rahasia (TIDAK bocor ke VITE_).
+6. Copy API Key tersebut, lalu masukkan ke dalam `.env` lokal sebagai variabel `GOOGLE_PLACES_API_KEY`.
+
+---
+
+## 3. Setup Pembayaran Ekstensif (IDR ke USD)
+
+Sebagai developer/bisnis di Indonesia yang menargetkan pasar US ($120 - $297/tahun), menggunakan **Stripe lokal (Indonesia)** seringkali menjadi kendala karena currency conversion dan syarat perusahaan (PT/CV). Berikut solusi terbaik untuk menerima pembayaran dari klien US:
+
+### Opsi A: Paddle / Lemon Squeezy (Merchant of Record - Rekomendasi 🏆)
+Metode ini paling mudah bagi perorangan di Indonesia karena mereka bertindak sebagai pihak penjual (MoR) resmi.
+1. Daftar di [LemonSqueezy](https://www.lemonsqueezy.com) atau [Paddle](https://www.paddle.com).
+2. Buat produk berlangganan (Subscription Product): "Premium Managed Hosting - $120/year" & "Basic Setup - $197/one-time".
+3. Aktifkan pembayaran via Card, Apple Pay, dan PayPal (ditangani otomatis oleh LS/Paddle).
+4. Ambil **Checkout Link** dari produk tersebut.
+5. Masukkan ke dalam `.env` aplikasi ini, sehingga ketika klien menekan "Checkout/Bayar" dari web preview, mereka akan diarahkan ke Lemon Squeezy. Pencairan dana otomatis ditransfer setiap bulan / dua minggu langsung ke rekening BCA/Mandiri Anda dalam bentuk Rupiah (IDR).
+
+### Opsi B: Stripe Atlas + Wise/Payoneer (Untuk Badan Usaha Kelas Dunia)
+Bila ingin terlihat 100% korporat Amerika Serikat.
+1. Daftar [Stripe Atlas](https://stripe.com/atlas) ($500) untuk membuka entitas LLC di Delaware, USA.
+2. Kamu akan memilik Stripe Account resmi USA dan rekening Mercury Bank USA.
+3. Klien US dapat membayar menggunakan kartu kredit atau ACH Transfer (sangat diminati pebisnis B2B lokal di US).
+4. Buat Stripe Payment Links dan gunakan URL tersebut di aplikasi ini.
+5. Pindahkan uang dari Mercury Bank LLC -> Akun Wise -> Rekening Pribadi di Indonesia.
+
+### Opsi C: PayPal Pribadi (Bootstrap Pemula 🚀)
+Sesuai PRD, untuk awal yang cepat tanpa modal.
+1. Kunjungi dompet PayPal dan buat tautan **PayPal.Me**. (Misal: `paypal.me/akunanda`).
+2. Kirim email B2B dengan faktur tagihan PayPal manual.
+3. Di CRM Aplikasi ini, terdapat tombol "Tandai Sudah Bayar" yang hanya Anda (admin) yang bisa mengeklik. Ubah statusnya secara manual.
+4. *Peringatan:* Jika transaksi di atas $2000 per bulan dari akun pribadi menggunakan PayPal biasa tanpa verifikasi bisnis yang kuat, risiko funds diblokir sepihak cukup tinggi.
