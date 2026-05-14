@@ -19,6 +19,7 @@ import {
   Star,
 } from "lucide-react";
 import { normalizeStylePreset, siteStylePresetCss } from "../lib/siteStylePresets";
+import WebsiteActionPanel from "./WebsiteActionPanel";
 
 type SiteRendererProps = {
   siteData: any;
@@ -690,28 +691,12 @@ export default function SiteRenderer({
       )}
 
       {showProspectPanel && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-6 py-4 rounded-full shadow-2xl border border-gray-200 flex items-center gap-4 z-[100] hide-in-export">
-          <span className="font-semibold text-gray-900 mr-2 text-sm">Pratinjau Khusus</span>
-          {onDownloadZip && (
-            <button
-              onClick={onDownloadZip}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-medium rounded-full transition"
-            >
-              Unduh Kode Html (Gratis)
-            </button>
-          )}
-          <button
-            onClick={() => {
-              const link = publicLinks.basic;
-              if (confirm("Layanan hosting & managed setup $120/tahun. Lanjutkan ke pembayaran?")) {
-                window.open(link, "_blank");
-              }
-            }}
-            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-full transition"
-          >
-            Terima Beres ($120/thn)
-          </button>
-        </div>
+        <WebsiteActionPanel
+          siteData={siteData}
+          businessId={businessId}
+          variant="public"
+          onDownloadZip={onDownloadZip}
+        />
       )}
 
       <style>{`

@@ -1045,6 +1045,105 @@ async function handlePayments(request: Request, db: D1Database, env: Env, segmen
   });
 }
 
+function normalizeDomainInput(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .replace(/[^a-z0-9.-]+/g, "")
+    .replace(/^\.+|\.+$/g, "");
+}
+
+async function checkDomainViaRdapNet(domain: string) {
+  const response = await fetch(`https://rdap.net/domain/${encodeURIComponent(domain)}`, {
+    headers: { accept: "application/rdap+json, application/json" },
+  });
+
+  if (response.status === 404) {
+    return {
+      provider: "rdap.net",
+      status: "candidate_available",
+      available: true,
+      message: `${domain} looks available from RDAP. Final availability is confirmed during registrar purchase.`,
+    };
+  }
+
+  if (response.status === 200) {
+    return {
+      provider: "rdap.net",
+      status: "registered",
+      available: false,
+      message: `${domain} appears to be registered.`,
+    };
+  }
+
+  return {
+    provider: "rdap.net",
+    status: "inconclusive",
+    available: null,
+    message: `RDAP returned HTTP ${response.status}. Try another extension or check again later.`,
+  };
+}
+
+async function checkDomainViaGoogleDns(domain: string) {
+  const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=SOA`, {
+    headers: { accept: "application/json" },
+  });
+  const data = await response.json() as { Status?: number; Answer?: unknown[] };
+
+  if (data.Status === 0 && Array.isArray(data.Answer) && data.Answer.length > 0) {
+    return {
+      provider: "Google Public DNS",
+      status: "dns_exists",
+      available: false,
+      message: `${domain} has DNS records and is likely already in use.`,
+    };
+  }
+
+  return {
+    provider: "Google Public DNS",
+    status: "dns_no_soa",
+    available: null,
+    message: `${domain} has no SOA answer. This is not enough to confirm availability, but it is a useful fallback signal.`,
+  };
+}
+
+async function handleDomains(url: URL, segments: string[]): Promise<Response> {
+  if (segments[1] !== "check") {
+    return errorJson("Not Found", 404);
+  }
+
+  const domain = normalizeDomainInput(url.searchParams.get("domain") || "");
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9.-]{2,}$/.test(domain)) {
+    return errorJson("Invalid domain format", 400);
+  }
+
+  try {
+    const rdap = await checkDomainViaRdapNet(domain);
+    if (rdap.available !== null) return json(rdap);
+    const dns = await checkDomainViaGoogleDns(domain);
+    return json({
+      ...rdap,
+      fallback: dns,
+      message: `${rdap.message} Fallback DNS signal: ${dns.message}`,
+    });
+  } catch (error) {
+    console.error("Domain check failed:", error);
+    try {
+      return json(await checkDomainViaGoogleDns(domain));
+    } catch (fallbackError) {
+      console.error("Domain fallback check failed:", fallbackError);
+      return json({
+        provider: "domain-check-fallback",
+        status: "inconclusive",
+        available: null,
+        message: "Domain availability check is temporarily unavailable. We can still confirm it during setup.",
+      });
+    }
+  }
+}
+
 async function route(context: PagesContext): Promise<Response> {
   const { request, env } = context;
 
@@ -1105,6 +1204,10 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (segments[0] === "payments") {
       return handlePayments(request, db, env, segments);
+    }
+
+    if (request.method === "GET" && segments[0] === "domains") {
+      return handleDomains(url, segments);
     }
 
     return errorJson("Not Found", 404);

@@ -46,6 +46,7 @@ Logic penting:
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
 - Footer dirender lebih lengkap: brand/about, sosial, halaman, highlights/offers, kontak, alamat, dan jam operasional jika tersedia.
+- Visitor action panel untuk download/setup dirender lewat shared component `WebsiteActionPanel`, bukan logic lokal di renderer.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
 
 Risiko debug:
@@ -67,6 +68,27 @@ Logic penting:
 Risiko debug:
 - Jika admin terkunci, cek `VITE_CLERK_PUBLISHABLE_KEY` dan metadata user di Clerk.
 - `isDevBypass` hanya fallback untuk dev/AI Studio, bukan mode auth production ideal.
+
+### `src/components/WebsiteActionPanel.tsx`
+
+Fungsi:
+- Shared visitor action panel untuk `/demo` dan public preview `/:businessId`.
+- Menangani download free, domain extension selection, domain availability pre-check, dan checkout setup `$197/year`.
+
+Props penting:
+- `siteData`: dipakai untuk business name/business ID default.
+- `businessId`: fallback ID checkout.
+- `variant`: `demo` atau `public` untuk positioning/label kecil.
+- `onDownloadZip`: callback download zip, tersedia di demo dan public preview.
+
+Logic penting:
+- Domain extension list berasal dari `src/lib/domainExtensions.ts`.
+- Domain availability memakai `GET /api/domains/check?domain=...`.
+- Checkout memakai `POST /api/payments/checkout`.
+- Mode mock checkout tetap mencatat lead `checkout_pending` jika Lemon Squeezy belum dikonfigurasi.
+
+Risiko debug:
+- Jika ada perubahan pada flow download/setup, ubah komponen ini agar `/demo` dan `/:businessId` tetap sinkron.
 
 ## Admin Pages
 
@@ -180,6 +202,7 @@ Logic penting:
 - Import JSON sample langsung dari repo.
 - Menampilkan floating inspector kecil berisi nama bisnis dan daftar `pageId:sectionType` yang sedang tersedia.
 - Inspector menampilkan field JSON yang hilang jika renderer sedang memakai fallback.
+- Inspector bisa diminimize agar tidak menutup preview.
 - Menggunakan `SiteRenderer` dengan `showProspectPanel={false}` agar demo fokus ke hasil render website.
 
 Risiko debug:
@@ -190,6 +213,9 @@ Risiko debug:
   - Paket `$197 Domain + Hosting` memanggil `POST /api/payments/checkout`.
   - Jika Lemon Squeezy belum dikonfigurasi, endpoint mencatat mock checkout dan membuka link WhatsApp admin.
 - Demo memiliki selector style preset dari `src/lib/siteStylePresets.ts` agar preset bisa diuji tanpa edit JSON.
+- Checkout demo memiliki domain label + extension selector. Extension list berasal dari `src/lib/domainExtensions.ts`.
+- Tombol check domain memanggil `GET /api/domains/check?domain=...`.
+- Download/setup action panel memakai `WebsiteActionPanel` dengan `variant="demo"`, shared dengan public preview.
 
 ### `src/pages/public/PublicViewer.tsx`
 
@@ -206,7 +232,8 @@ API yang dipakai:
 Logic penting:
 - Jika JSON site ditemukan, halaman meneruskan data ke `SiteRenderer`.
 - `handleDownloadZip()` membuat zip HTML statis dari DOM saat ini.
-- Payment link basic/premium dibaca dari D1 settings.
+- Panel prospek dari `SiteRenderer` memakai `WebsiteActionPanel` dengan `variant="public"`, sehingga flow download/setup sama dengan `/demo`.
+- Payment checkout memakai `POST /api/payments/checkout`; payment link basic/premium lama masih bisa dibaca tapi bukan flow utama.
 
 Risiko debug:
 - Jika halaman 404, cek row `json_sites.business_id`.
@@ -246,6 +273,13 @@ Logic penting:
 - `inferStylePresetFromText()` dipakai CRM generate untuk memilih preset dari nama bisnis, alamat, dan Places types.
 - `normalizeStylePreset()` memastikan nilai JSON yang tidak dikenal fallback ke `local-clean`.
 
+### `src/lib/domainExtensions.ts`
+
+Fungsi:
+- Daftar extension domain yang ditawarkan di checkout demo.
+- Kategori extension untuk selector searchable/filterable.
+- Helper `normalizeDomainLabel()` dan `buildDomain()`.
+
 ## Cloudflare Pages Functions
 
 ### `functions/api/[[path]].ts`
@@ -268,6 +302,7 @@ Endpoint:
 - `POST /api/sites/generate`
 - `GET /api/sites/:business_id`
 - `POST /api/payments/checkout`
+- `GET /api/domains/check`
 
 Logic D1:
 - Binding wajib: `DB`.
@@ -311,6 +346,12 @@ Logic Payments:
 - Jika belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
 - Paket saat ini: `$197` one-time untuk domain 1 tahun, hosting 1 tahun, dan free setup.
 
+Logic Domains:
+- `/api/domains/check?domain=...` melakukan availability pre-check gratis.
+- Primary provider: RDAP via `rdap.net`.
+- Fallback signal: Google Public DNS SOA lookup.
+- Response harus diperlakukan sebagai kandidat availability, bukan jaminan pembelian; final confirmation terjadi saat registrar purchase.
+
 ## Data and Schema
 
 ### `JSON/template-schema.json`
@@ -346,4 +387,5 @@ Jika menambah laman atau komponen baru:
 - `docs/GOOGLE_PLACES_PHOTO_STRATEGY.md`: strategi foto Google Places untuk free preview vs paid website.
 - `docs/NICHE_STYLE_PRESETS.md`: brainstorm dan kontrak `design.stylePreset`.
 - `docs/LEMON_SQUEEZY_INTEGRATION.md`: catatan integrasi checkout Lemon Squeezy.
+- `docs/DOMAIN_AVAILABILITY_RESEARCH.md`: riset provider gratis/murah untuk cek availability domain.
 - `docs/SITE_BUILDER_UPGRADE_PLAN.md`: rencana upgrade JSON schema dan renderer agar demo/site output lebih modern dan personalized.
