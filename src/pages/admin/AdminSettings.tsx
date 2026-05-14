@@ -266,7 +266,9 @@ export default function AdminSettings() {
       <div className="grid md:grid-cols-2 gap-6 mt-6">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-2">Google Places</h2>
-          <p className="text-xs text-gray-500 mb-4">Dipakai untuk Search di CRM Leads.</p>
+          <p className="text-xs text-gray-500 mb-4">
+            Dipakai dari Cloudflare Pages Function. Jangan gunakan HTTP referrer restriction untuk key ini; pakai API restriction ke Places API saja.
+          </p>
           <input
             type="password"
             value={settings.GOOGLE_PLACES_API_KEY || ""}

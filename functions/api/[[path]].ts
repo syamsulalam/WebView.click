@@ -381,9 +381,13 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
     }
 
     if (data.status && data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+      const refererRestriction = data.error_message?.toLowerCase().includes("referer restrictions");
       return json({
         status: data.status,
         error: data.error_message || `Google Places status: ${data.status}`,
+        hint: refererRestriction
+          ? "Google Places key ini dipakai dari Cloudflare Pages Function/server-side, jadi tidak boleh memakai HTTP referrer restriction. Buat server key terpisah: Application restrictions = None, API restrictions = Places API, lalu simpan di /admin/settings sebagai GOOGLE_PLACES_API_KEY."
+          : "Cek Google Cloud Console: pastikan billing aktif, Places API yang sesuai aktif, dan API key disimpan sebagai GOOGLE_PLACES_API_KEY.",
         results: [],
       });
     }

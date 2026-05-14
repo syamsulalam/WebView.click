@@ -87,10 +87,13 @@ Agar fitur "cari prospek" berfungsi dengan data dunia nyata:
    - **Places API (New)**
    - **Maps JavaScript API** (Untuk render peta lokal jika butuh fallback)
 4. Buka **Credentials**, klik **Create Credentials > API Key**.
-5. *PENTING:* Lakukan Restrict Key!
-   - Di bagian _API restrictions_, pilih hanya `Places API (New)`.
-   - Di bagian _Application restrictions_, pilih _HTTP referrers_ (atau IP Address jika berjalan di backend). Untuk backend Node/Pages Functions, tidak perlu referer, tapi gunakan restriction IP jika IP server statis, atau biarkan tidak di restrict asalkan disimpan di server rahasia (TIDAK bocor ke VITE_).
-6. Copy API Key tersebut, lalu masukkan ke dalam `.env` lokal sebagai variabel `GOOGLE_PLACES_API_KEY`.
+5. *PENTING:* Karena WebView.click memanggil Google Places dari Cloudflare Pages Functions/server-side, **jangan gunakan HTTP referrer restriction** untuk key ini. Jika memakai referrer restriction, Google akan menolak request dengan error `API keys with referer restrictions cannot be used with this API`.
+6. Rekomendasi konfigurasi key untuk produksi:
+   - **Application restrictions:** `None`.
+   - **API restrictions:** batasi hanya ke Places API yang dipakai project ini.
+   - Aktifkan billing dan kuota/budget alert di Google Cloud.
+7. Cloudflare Pages tidak menyediakan static outbound IP yang stabil untuk IP restriction, jadi restriction IP biasanya tidak praktis untuk Pages Functions. Jika wajib IP restriction, pindahkan endpoint Google Places ke server dengan static egress IP.
+8. Copy API Key tersebut, lalu simpan di `/admin/settings` sebagai `GOOGLE_PLACES_API_KEY`.
 
 ---
 

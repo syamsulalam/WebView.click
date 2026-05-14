@@ -187,7 +187,7 @@ export default function AdminLeads() {
       const results = Array.isArray(data.results) ? data.results : [];
       setSearchResults(results);
       if (results.length === 0) {
-        setSearchMessage(data.error || `Tidak ada hasil untuk "${searchQuery}". Coba query lebih spesifik seperti "concrete contractor Dallas Texas".`);
+        setSearchMessage(data.hint || data.error || `Tidak ada hasil untuk "${searchQuery}". Coba query lebih spesifik seperti "concrete contractor Dallas Texas".`);
       } else {
         setSearchMessage(data.mock ? "Mode mock aktif karena Google Places API Key belum terbaca." : `${results.length} hasil ditemukan.`);
       }
