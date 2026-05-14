@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare } from "lucide-react";
 import * as htmlToImage from "html-to-image";
+import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 
 export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -9,54 +10,136 @@ export default function AdminLeads() {
   const [isSearching, setIsSearching] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiProvider, setAiProvider] = useState("OpenRouter");
-  const [aiModel, setAiModel] = useState("google/gemini-2.5-pro");
+  const [aiModel, setAiModel] = useState("~anthropic/claude-sonnet-latest");
   const [settings, setSettings] = useState<any>({});
   const [loadingSettings, setLoadingSettings] = useState(true);
+  const [logoSelections, setLogoSelections] = useState<Record<string, { url: string; palette: string[] }>>({});
 
   const providers: Record<string, { label: string; models: { value: string; label: string }[] }> = {
     OpenAI: {
       label: "OpenAI API",
       models: [
-        { value: "gpt-4o", label: "GPT-4o (Standard)" },
-        { value: "gpt-4.5-preview", label: "GPT-4.5 Preview" },
-        { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-        { value: "o1", label: "o1 (Reasoning)" },
-        { value: "o3-mini", label: "o3-mini (Reasoning)" }
+        { value: "gpt-5.5", label: "GPT-5.5 ($5 in / $30 out)" },
+        { value: "gpt-5.4", label: "GPT-5.4 ($2.50 in / $15 out)" },
+        { value: "gpt-5.4-mini", label: "GPT-5.4 Mini ($0.75 in / $4.50 out)" },
+        { value: "gpt-4.1", label: "GPT-4.1 Legacy ($2 in / $8 out)" }
       ]
     },
     Gemini: {
       label: "Gemini API",
       models: [
-        { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" },
-        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-        { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" }
+        { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview ($2 in / $12 out)" },
+        { value: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview ($0.50 in / $3 out)" },
+        { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash-Lite ($0.25 in / $1.50 out)" },
+        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro Legacy" }
       ]
     },
     OpenRouter: {
       label: "OpenRouter API",
       models: [
-        { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-        { value: "anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
-        { value: "openai/gpt-4o", label: "GPT-4o" },
-        { value: "qwen/qwen-2.5-coder-32b-instruct", label: "Qwen 2.5 Coder 32B" },
-        { value: "meta-llama/llama-3.1-405b-instruct", label: "Llama 3.1 405B" }
+        { value: "~anthropic/claude-sonnet-latest", label: "Claude Sonnet Latest ($3 in / $15 out)" },
+        { value: "~openai/gpt-latest", label: "OpenAI GPT Latest ($5 in / $30 out)" },
+        { value: "~google/gemini-pro-latest", label: "Gemini Pro Latest ($2 in / $12 out)" },
+        { value: "~google/gemini-flash-latest", label: "Gemini Flash Latest ($0.50 in / $3 out)" },
+        { value: "qwen/qwen3.6-max-preview", label: "Qwen3.6 Max Preview ($1.04 in / $6.24 out)" },
+        { value: "qwen/qwen3.6-flash", label: "Qwen3.6 Flash ($0.25 in / $1.50 out)" }
+      ]
+    },
+    KIE: {
+      label: "KIE.ai API",
+      models: [
+        { value: "kie/gpt-5-5", label: "KIE GPT-5.5 (est. $2.50 in / $15 out)" },
+        { value: "kie/gpt-5-2", label: "KIE GPT-5.2 (cek live credit KIE)" },
+        { value: "kie/gemini-3.1-pro", label: "KIE Gemini 3.1 Pro (est. $1 in / $6 out)" },
+        { value: "kie/gemini-3-flash", label: "KIE Gemini 3 Flash (est. $0.25 in / $1.50 out)" }
       ]
     },
     Opencode: {
       label: "Opencode API (Custom)",
       models: [
-        { value: "opencode-default", label: "Opencode Default Model" },
-        { value: "mimo-2.5", label: "Mimo 2.5" },
-        { value: "qwen-3.6", label: "Qwen 3.6 (Alias)" }
+        { value: "opencode-default", label: "Default model dari endpoint" },
+        { value: "qwen/qwen3.6-flash", label: "Qwen3.6 Flash" },
+        { value: "qwen/qwen3.6-max-preview", label: "Qwen3.6 Max Preview" },
+        { value: "custom-model", label: "Custom model alias" }
       ]
     }
   };
 
   const fetchLeads = () => {
     fetch("/api/leads")
-      .then(r => r.json())
-      .then(setLeads)
+      .then(r => r.ok ? r.json() : [])
+      .then((data) => setLeads(Array.isArray(data) ? data : []))
       .catch(e => console.error(e));
+  };
+
+  const selectedPrice = estimateCostUsd(aiProvider, aiModel);
+  const settingsKey = aiProvider === "KIE" ? "KIE_API_KEY" : `${aiProvider.toUpperCase()}_API_KEY`;
+
+  const getPhotoUrl = (photo: any, maxWidth = 320) => {
+    const reference = photo?.photo_reference || photo?.name || photo?.reference;
+    if (!reference) return "";
+    return `/api/places/photo?reference=${encodeURIComponent(reference)}&maxwidth=${maxWidth}`;
+  };
+
+  const estimateGenerateCost = (place?: any) => {
+    const source = place ? JSON.stringify(place) : searchQuery;
+    const inputTokens = estimateTokensFromText(source, 5000);
+    return estimateCostUsd(aiProvider, aiModel, inputTokens, defaultOutputTokens);
+  };
+
+  const extractPaletteFromImage = (imageUrl: string) => new Promise<string[]>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const size = 72;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) {
+        reject(new Error("Canvas tidak tersedia."));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, size, size);
+      const pixels = ctx.getImageData(0, 0, size, size).data;
+      const buckets = new Map<string, number>();
+
+      for (let i = 0; i < pixels.length; i += 16) {
+        const alpha = pixels[i + 3];
+        if (alpha < 180) continue;
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        if (max > 245 || min < 10 || max - min < 18) continue;
+
+        const key = [r, g, b].map((value) => Math.round(value / 32) * 32).join(",");
+        buckets.set(key, (buckets.get(key) || 0) + 1);
+      }
+
+      const palette = Array.from(buckets.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([key]) => {
+          const [r, g, b] = key.split(",").map(Number);
+          return `#${[r, g, b].map((value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0")).join("")}`;
+        });
+
+      resolve(palette.length ? palette : ["#111827", "#4F46E5", "#F3F4F6"]);
+    };
+    img.onerror = () => reject(new Error("Gagal membaca gambar logo."));
+    img.src = imageUrl;
+  });
+
+  const selectLogoPhoto = async (placeId: string, imageUrl: string) => {
+    try {
+      const palette = await extractPaletteFromImage(imageUrl);
+      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, palette } }));
+    } catch (error) {
+      console.error(error);
+      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, palette: ["#111827", "#4F46E5", "#F3F4F6"] } }));
+    }
   };
 
   useEffect(() => {
@@ -89,19 +172,25 @@ export default function AdminLeads() {
     // Simulate AI generation process with a mock JSON
     // A Real implementation would send 'place' to an OpenAI endpoint on our server
     const businessId = place.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + "-" + Math.floor(Math.random() * 1000);
+    const logoSelection = logoSelections[place.place_id || place.name];
+    const brandPalette = logoSelection?.palette || [];
+    const primaryColor = brandPalette[0] || "#111827";
+    const accentColor = brandPalette[1] || "#4F46E5";
+    const secondaryColor = brandPalette[2] || "#F3F4F6";
     const mockJson = {
       meta: {
         businessName: place.name,
         businessId: businessId,
         niche: "general",
         seoDescription: `Website resmi untuk ${place.name}.`,
+        brandPalette,
       },
       design: {
         themeVariables: {
           colors: {
-            primary: "#111827",
-            secondary: "#F3F4F6",
-            accent: "#4F46E5",
+            primary: primaryColor,
+            secondary: secondaryColor,
+            accent: accentColor,
             textMain: "#1F2937",
             textMuted: "#6B7280",
             background: "#FFFFFF"
@@ -114,6 +203,7 @@ export default function AdminLeads() {
       },
       global: {
         header: {
+          logoImageUrl: logoSelection?.url || "",
           ctaButton: { text: "Hubungi WA", href: "https://wa.me/123" }
         },
         footer: { text: `© 2026 ${place.name}. All rights reserved.` }
@@ -154,7 +244,9 @@ export default function AdminLeads() {
           businessId,
           businessName: place.name,
           phone: "0000000000",
-          originData: place
+          originData: place,
+          brandPalette,
+          selectedLogoImageUrl: logoSelection?.url || ""
         })
       });
       fetchLeads();
@@ -180,7 +272,7 @@ export default function AdminLeads() {
     <div className="p-8 max-w-7xl mx-auto font-sans">
       <h1 className="text-3xl font-semibold mb-8 text-gray-900">CRM Leads</h1>
 
-      {(!loadingSettings && (!settings?.GOOGLE_PLACES_API_KEY || !settings?.[`${aiProvider.toUpperCase()}_API_KEY`])) && (
+      {(!loadingSettings && (!settings?.GOOGLE_PLACES_API_KEY || !settings?.[settingsKey])) && (
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
           <div className="text-amber-500 mt-0.5">⚠️</div>
           <div>
@@ -225,6 +317,17 @@ export default function AdminLeads() {
             </select>
           </div>
         </div>
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <div>
+            <p className="font-semibold text-slate-900">Perkiraan biaya generate JSON</p>
+            <p>
+              {selectedPrice.total !== null
+                ? `${formatUsd(estimateGenerateCost().total)} per generate awal (${aiModel})`
+                : `Harga ${aiModel} belum fixed. Cek dashboard provider sebelum generate.`}
+            </p>
+          </div>
+          <a href="/admin/settings" className="text-indigo-700 font-medium hover:underline">Lihat pricing & API key</a>
+        </div>
         <div className="flex gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
@@ -249,10 +352,14 @@ export default function AdminLeads() {
         {searchResults.length > 0 && (
           <div className="mt-6 space-y-4">
             {searchResults.map((place, idx) => (
-              <div key={idx} className="flex items-center justify-between p-4 border border-gray-100 rounded-xl bg-gray-50">
+              <div key={idx} className="p-4 border border-gray-100 rounded-xl bg-gray-50">
+                <div className="flex items-center justify-between gap-4">
                 <div>
                   <h3 className="font-semibold text-gray-900">{place.name}</h3>
                   <p className="text-sm text-gray-500">{place.formatted_address}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Estimasi: {formatUsd(estimateGenerateCost(place).total)} untuk generate JSON ini.
+                  </p>
                 </div>
                 <button 
                   onClick={() => handleGenerateSite(place)}
@@ -261,6 +368,37 @@ export default function AdminLeads() {
                 >
                   Generate Site
                 </button>
+                </div>
+                {place.photos?.length > 0 && (
+                  <div className="mt-4 border-t border-gray-200 pt-4">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Pilih gambar logo/brand untuk palet warna</p>
+                    <div className="flex gap-3 overflow-x-auto pb-1">
+                      {place.photos.slice(0, 6).map((photo: any, photoIdx: number) => {
+                        const imageUrl = getPhotoUrl(photo);
+                        const selected = logoSelections[place.place_id || place.name]?.url === imageUrl;
+                        return (
+                          <button
+                            key={photo.photo_reference || photoIdx}
+                            type="button"
+                            onClick={() => selectLogoPhoto(place.place_id || place.name, imageUrl)}
+                            className={`relative w-20 h-20 rounded-xl overflow-hidden border-2 bg-white shrink-0 ${selected ? "border-indigo-600" : "border-gray-200 hover:border-gray-300"}`}
+                            title="Gunakan sebagai sumber warna brand"
+                          >
+                            <img src={imageUrl} alt="" className="w-full h-full object-cover" crossOrigin="anonymous" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {logoSelections[place.place_id || place.name]?.palette?.length > 0 && (
+                      <div className="mt-3 flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Palette:</span>
+                        {logoSelections[place.place_id || place.name].palette.map((color) => (
+                          <span key={color} className="w-6 h-6 rounded-full border border-white shadow-sm" style={{ backgroundColor: color }} title={color} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

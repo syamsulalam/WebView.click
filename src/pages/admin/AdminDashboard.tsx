@@ -1,20 +1,56 @@
 import { useEffect, useState } from "react";
 
+type Stats = {
+  totalLeads: number;
+  conversionRate: number;
+  totalRevenue: number;
+};
+
+const emptyStats: Stats = { totalLeads: 0, conversionRate: 0, totalRevenue: 0 };
+
+function toNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 export default function AdminDashboard() {
-  const [stats, setStats] = useState({ totalLeads: 0, conversionRate: 0, totalRevenue: 0 });
+  const [stats, setStats] = useState<Stats>(emptyStats);
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [apiWarning, setApiWarning] = useState("");
 
   useEffect(() => {
+    const fetchJson = async (url: string) => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`${url} returned ${response.status}: ${text.substring(0, 140)}`);
+      }
+      return response.json() as Promise<unknown>;
+    };
+
     Promise.all([
-      fetch("/api/stats").then(r => r.json()),
-      fetch("/api/activities").then(r => r.json())
+      fetchJson("/api/stats").catch((error) => {
+        console.error(error);
+        setApiWarning("API stats belum siap. Dashboard menampilkan angka default sementara.");
+        return emptyStats;
+      }),
+      fetchJson("/api/activities").catch((error) => {
+        console.error(error);
+        setApiWarning("API activities belum siap. Dashboard tetap bisa dibuka dengan data kosong sementara.");
+        return [];
+      })
     ]).then(([statsData, activitiesData]) => {
-      setStats(statsData);
-      setActivities(activitiesData);
+      const safeStats = statsData && typeof statsData === "object" ? statsData as Partial<Stats> : emptyStats;
+      setStats({
+        totalLeads: toNumber(safeStats.totalLeads),
+        conversionRate: toNumber(safeStats.conversionRate),
+        totalRevenue: toNumber(safeStats.totalRevenue),
+      });
+      setActivities(Array.isArray(activitiesData) ? activitiesData : []);
       setLoading(false);
     }).catch(e => {
       console.error(e);
+      setApiWarning("API admin belum merespons normal. Dashboard menampilkan state kosong sementara.");
       setLoading(false);
     });
   }, []);
@@ -22,6 +58,12 @@ export default function AdminDashboard() {
   return (
     <div className="p-8 max-w-6xl mx-auto font-sans bg-gray-50/50 min-h-[calc(100vh-64px)] rounded-3xl mt-4 border border-gray-100">
       <h1 className="text-3xl font-semibold mb-8 text-gray-900 tracking-tight">Overview</h1>
+      {apiWarning && (
+        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+          <p className="font-semibold">Mode fallback aktif</p>
+          <p className="mt-1">{apiWarning}</p>
+        </div>
+      )}
       
       {loading ? (
         <div className="animate-pulse space-y-8">

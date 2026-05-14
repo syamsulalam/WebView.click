@@ -20,13 +20,19 @@ type D1Database = {
   exec: (query: string) => Promise<D1Result>;
 };
 
+type R2Bucket = {
+  put: (key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string, options?: { httpMetadata?: { contentType?: string } }) => Promise<unknown>;
+};
+
 type Env = {
   DB?: D1Database;
-  R2?: unknown;
+  R2?: R2Bucket;
+  R2_PUBLIC_BASE_URL?: string;
   GOOGLE_PLACES_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   OPENAI_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  KIE_API_KEY?: string;
   OPENCODE_API_KEY?: string;
   OPENCODE_BASE_URL?: string;
 };
@@ -79,6 +85,18 @@ function getDb(env: Env): D1Database {
     throw new Error("Cloudflare D1 binding `DB` is not configured.");
   }
   return env.DB;
+}
+
+async function tableColumns(db: D1Database, table: string): Promise<Set<string>> {
+  const rows = await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
+  return new Set((rows.results || []).map((row) => row.name));
+}
+
+async function addColumnIfMissing(db: D1Database, table: string, column: string, definition: string) {
+  const columns = await tableColumns(db, table);
+  if (!columns.has(column)) {
+    await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 async function setupTables(db: D1Database) {
@@ -144,31 +162,18 @@ async function setupTables(db: D1Database) {
     );
   `);
 
-  const migrations = [
-    "ALTER TABLE leads ADD COLUMN email TEXT",
-    "ALTER TABLE leads ADD COLUMN phone TEXT",
-    "ALTER TABLE leads ADD COLUMN gmb_url TEXT",
-    "ALTER TABLE leads ADD COLUMN website_url TEXT",
-    "ALTER TABLE leads ADD COLUMN rating REAL",
-    "ALTER TABLE leads ADD COLUMN reviews INTEGER",
-    "ALTER TABLE leads ADD COLUMN address TEXT",
-    "ALTER TABLE leads ADD COLUMN view_count INTEGER DEFAULT 0",
-    "ALTER TABLE leads ADD COLUMN last_viewed_at DATETIME",
-    "ALTER TABLE leads ADD COLUMN staff_id TEXT",
-    "ALTER TABLE leads ADD COLUMN updated_at DATETIME",
-    "ALTER TABLE json_sites ADD COLUMN updated_at DATETIME",
-  ];
-
-  for (const migration of migrations) {
-    try {
-      await db.exec(migration);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.toLowerCase().includes("duplicate column")) {
-        throw error;
-      }
-    }
-  }
+  await addColumnIfMissing(db, "leads", "email", "TEXT");
+  await addColumnIfMissing(db, "leads", "phone", "TEXT");
+  await addColumnIfMissing(db, "leads", "gmb_url", "TEXT");
+  await addColumnIfMissing(db, "leads", "website_url", "TEXT");
+  await addColumnIfMissing(db, "leads", "rating", "REAL");
+  await addColumnIfMissing(db, "leads", "reviews", "INTEGER");
+  await addColumnIfMissing(db, "leads", "address", "TEXT");
+  await addColumnIfMissing(db, "leads", "view_count", "INTEGER DEFAULT 0");
+  await addColumnIfMissing(db, "leads", "last_viewed_at", "DATETIME");
+  await addColumnIfMissing(db, "leads", "staff_id", "TEXT");
+  await addColumnIfMissing(db, "leads", "updated_at", "DATETIME");
+  await addColumnIfMissing(db, "json_sites", "updated_at", "DATETIME");
 }
 
 async function getSetting(db: D1Database, env: Env, key: keyof Env & string): Promise<string | undefined> {
@@ -194,11 +199,32 @@ function normalizeBusinessId(name: string): string {
   return slug || crypto.randomUUID();
 }
 
+function extensionFromContentType(contentType: string | null) {
+  if (!contentType) return "bin";
+  if (contentType.includes("png")) return "png";
+  if (contentType.includes("webp")) return "webp";
+  if (contentType.includes("svg")) return "svg";
+  if (contentType.includes("gif")) return "gif";
+  if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
+  return "bin";
+}
+
+function publicR2Url(env: Env, key: string) {
+  const configuredBaseUrl = typeof env.R2_PUBLIC_BASE_URL === "string" ? env.R2_PUBLIC_BASE_URL : "";
+  const baseUrl = (configuredBaseUrl || "https://assets.webview.click").replace(/\/$/, "");
+  return `${baseUrl}/${key}`;
+}
+
 async function handleSettings(request: Request, db: D1Database): Promise<Response> {
   if (request.method === "GET") {
-    const rows = await db.prepare("SELECT key, value FROM system_settings").all<SettingRow>();
-    const settings = Object.fromEntries((rows.results || []).map((row) => [row.key, row.value]));
-    return json(settings);
+    try {
+      const rows = await db.prepare("SELECT key, value FROM system_settings").all<SettingRow>();
+      const settings = Object.fromEntries((rows.results || []).map((row) => [row.key, row.value]));
+      return json(settings);
+    } catch (error) {
+      console.error("Settings fallback:", error);
+      return json({});
+    }
   }
 
   if (request.method === "POST") {
@@ -234,32 +260,46 @@ async function handlePublicSettings(db: D1Database): Promise<Response> {
 }
 
 async function handleActivities(db: D1Database): Promise<Response> {
-  const activities = await db
-    .prepare(
-      `SELECT c.*, l.business_name
-       FROM crm_activities c
-       JOIN leads l ON c.lead_id = l.id
-       ORDER BY c.created_at DESC
-       LIMIT 10`,
-    )
-    .all();
-  return json(activities.results || []);
+  try {
+    const activities = await db
+      .prepare(
+        `SELECT c.*, l.business_name
+         FROM crm_activities c
+         LEFT JOIN leads l ON c.lead_id = l.id
+         ORDER BY c.created_at DESC
+         LIMIT 10`,
+      )
+      .all();
+    return json(activities.results || []);
+  } catch (error) {
+    console.error("Activities fallback:", error);
+    return json([]);
+  }
 }
 
 async function handleStats(db: D1Database): Promise<Response> {
-  const leadsCount = await db.prepare("SELECT COUNT(*) as count FROM leads").first<{ count: number }>();
-  const paidCount = await db.prepare("SELECT COUNT(*) as count FROM leads WHERE status='won_paid'").first<{ count: number }>();
-  const revenueData = await db
-    .prepare("SELECT SUM(amount_paid) as total_revenue FROM subscriptions WHERE payment_status='paid'")
-    .first<{ total_revenue: number | null }>();
+  try {
+    const leadsCount = await db.prepare("SELECT COUNT(*) as count FROM leads").first<{ count: number }>();
+    const paidCount = await db.prepare("SELECT COUNT(*) as count FROM leads WHERE status='won_paid'").first<{ count: number }>();
+    const revenueData = await db
+      .prepare("SELECT SUM(amount_paid) as total_revenue FROM subscriptions WHERE payment_status='paid'")
+      .first<{ total_revenue: number | null }>();
 
-  const totalLeads = leadsCount?.count || 0;
-  const paidLeads = paidCount?.count || 0;
-  return json({
-    totalLeads,
-    conversionRate: totalLeads > 0 ? (paidLeads / totalLeads) * 100 : 0,
-    totalRevenue: revenueData?.total_revenue || 0,
-  });
+    const totalLeads = Number(leadsCount?.count || 0);
+    const paidLeads = Number(paidCount?.count || 0);
+    return json({
+      totalLeads,
+      conversionRate: totalLeads > 0 ? (paidLeads / totalLeads) * 100 : 0,
+      totalRevenue: Number(revenueData?.total_revenue || 0),
+    });
+  } catch (error) {
+    console.error("Stats fallback:", error);
+    return json({
+      totalLeads: 0,
+      conversionRate: 0,
+      totalRevenue: 0,
+    });
+  }
 }
 
 async function handleLeads(request: Request, db: D1Database, segments: string[]): Promise<Response> {
@@ -332,6 +372,38 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
   return json(data, response.ok ? 200 : response.status);
 }
 
+async function handlePlacesPhoto(url: URL, db: D1Database, env: Env): Promise<Response> {
+  const reference = url.searchParams.get("reference");
+  const maxWidth = url.searchParams.get("maxwidth") || "320";
+  const placesKey = await getSetting(db, env, "GOOGLE_PLACES_API_KEY");
+
+  if (!reference) {
+    return errorJson("Missing photo reference", 400);
+  }
+
+  if (!placesKey) {
+    return errorJson("Google Places API key is not configured", 400);
+  }
+
+  const photoUrl = new URL("https://maps.googleapis.com/maps/api/place/photo");
+  photoUrl.searchParams.set("maxwidth", maxWidth);
+  photoUrl.searchParams.set("photo_reference", reference);
+  photoUrl.searchParams.set("key", placesKey);
+
+  const response = await fetch(photoUrl.toString(), { redirect: "follow" });
+  if (!response.ok || !response.body) {
+    return errorJson("Could not fetch Google Places photo", response.status || 500);
+  }
+
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", "*");
+  headers.set("cache-control", "public, max-age=86400");
+  return new Response(response.body, {
+    status: response.status,
+    headers,
+  });
+}
+
 async function generateAiJson(
   db: D1Database,
   env: Env,
@@ -341,6 +413,8 @@ async function generateAiJson(
   const model = asString(body.model);
   const businessName = asString(body.businessName);
   const originData = body.originData || {};
+  const brandPalette = Array.isArray(body.brandPalette) ? body.brandPalette : [];
+  const selectedLogoImageUrl = asString(body.selectedLogoImageUrl);
 
   if (!provider || !model) {
     return null;
@@ -349,8 +423,8 @@ async function generateAiJson(
   const systemMsg =
     `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
     `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. ONLY output JSON, no markdown formatting.";
-  const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}`;
+    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. If selectedLogoImageUrl is provided, preserve it as the header logo image. ONLY output JSON, no markdown formatting.";
+  const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}`;
 
   let responseContent = "";
 
@@ -410,6 +484,63 @@ async function generateAiJson(
     });
     const aiJson = await apiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     responseContent = aiJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  } else if (provider === "KIE") {
+    const key = await getSetting(db, env, "KIE_API_KEY");
+    if (!key) return null;
+
+    const kieModelMap: Record<string, { endpoint: string; model?: string; mode: "chat" | "responses" }> = {
+      "kie/gpt-5-5": { endpoint: "https://api.kie.ai/codex/v1/responses", model: "gpt-5-5", mode: "responses" },
+      "kie/gpt-5-2": { endpoint: "https://api.kie.ai/gpt-5-2/v1/chat/completions", mode: "chat" },
+      "kie/gemini-3.1-pro": { endpoint: "https://api.kie.ai/gemini-3.1-pro/v1/chat/completions", mode: "chat" },
+      "kie/gemini-3-flash": { endpoint: "https://api.kie.ai/gemini-3-flash/v1/chat/completions", mode: "chat" },
+    };
+    const kieConfig = kieModelMap[model] || kieModelMap["kie/gemini-3-flash"];
+
+    if (kieConfig.mode === "responses") {
+      const apiRes = await fetch(kieConfig.endpoint, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${key}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: kieConfig.model,
+          stream: false,
+          input: [
+            {
+              role: "user",
+              content: [
+                { type: "input_text", text: `${systemMsg}\n\n${userMsg}` },
+              ],
+            },
+          ],
+          reasoning: { effort: "high" },
+        }),
+      });
+      const aiJson = await apiRes.json() as { output?: Array<{ content?: Array<{ text?: string }> }> };
+      responseContent = aiJson.output
+        ?.flatMap((item) => item.content || [])
+        .map((item) => item.text || "")
+        .join("\n") || "";
+    } else {
+      const apiRes = await fetch(kieConfig.endpoint, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${key}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: systemMsg },
+            { role: "user", content: userMsg },
+          ],
+          stream: false,
+          reasoning_effort: "high",
+        }),
+      });
+      const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+      responseContent = aiJson.choices?.[0]?.message?.content || "";
+    }
   } else if (provider === "Opencode") {
     const key = await getSetting(db, env, "OPENCODE_API_KEY");
     const endpoint = await getSetting(db, env, "OPENCODE_BASE_URL") || "https://api.opencode.example.com/v1/chat/completions";
@@ -441,6 +572,121 @@ async function generateAiJson(
   return JSON.parse(cleaned) as Record<string, unknown>;
 }
 
+function isImageField(key: string) {
+  const normalized = key.toLowerCase();
+  return normalized.includes("image") || normalized.includes("logo") || normalized.includes("photo") || normalized.includes("gallery");
+}
+
+function normalizeImageFilenames(value: unknown, businessId: string, hint = "asset"): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item, index) => {
+      if (typeof item === "string" && isImageField(hint) && item && !item.startsWith("http") && !item.startsWith("/") && !item.startsWith("data:")) {
+        const parts = item.split(".");
+        const extension = parts.length > 1 ? parts.pop() || "jpg" : "jpg";
+        const cleanHint = hint.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "image";
+        return `${businessId}-${cleanHint}-${index + 1}.${extension}`;
+      }
+      return normalizeImageFilenames(item, businessId, `${hint}-${index + 1}`);
+    });
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const objectValue = value as Record<string, unknown>;
+  for (const [key, childValue] of Object.entries(objectValue)) {
+    if (typeof childValue === "string" && isImageField(key) && childValue && !childValue.startsWith("http") && !childValue.startsWith("/") && !childValue.startsWith("data:")) {
+      const parts = childValue.split(".");
+      const extension = parts.length > 1 ? parts.pop() || "jpg" : "jpg";
+      const cleanHint = key.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || hint;
+      objectValue[key] = `${businessId}-${cleanHint}.${extension}`;
+    } else {
+      objectValue[key] = normalizeImageFilenames(childValue, businessId, key);
+    }
+  }
+
+  return objectValue;
+}
+
+function collectImageUrls(value: unknown, urls: Set<string>, keyHint = "") {
+  if (Array.isArray(value)) {
+    value.forEach((item) => {
+      if (typeof item === "string" && isImageField(keyHint) && (item.startsWith("http") || item.startsWith("/api/"))) {
+        urls.add(item);
+      } else {
+        collectImageUrls(item, urls, keyHint);
+      }
+    });
+    return;
+  }
+
+  if (!value || typeof value !== "object") return;
+
+  for (const [key, childValue] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof childValue === "string" && isImageField(key) && (childValue.startsWith("http") || childValue.startsWith("/api/"))) {
+      urls.add(childValue);
+    } else {
+      collectImageUrls(childValue, urls, key);
+    }
+  }
+}
+
+function replaceStringValue(value: unknown, from: string, to: string): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => replaceStringValue(item, from, to));
+  }
+
+  if (!value || typeof value !== "object") {
+    return value === from ? to : value;
+  }
+
+  const objectValue = value as Record<string, unknown>;
+  for (const [key, childValue] of Object.entries(objectValue)) {
+    objectValue[key] = replaceStringValue(childValue, from, to);
+  }
+  return objectValue;
+}
+
+async function uploadImageAssetsToR2(finalJson: Record<string, unknown>, env: Env, origin: string, businessId: string) {
+  if (!env.R2) {
+    return [] as string[];
+  }
+
+  const urls = new Set<string>();
+  collectImageUrls(finalJson, urls);
+  const assetKeys: string[] = [];
+  let index = 1;
+
+  for (const imageUrl of urls) {
+    try {
+      const absoluteUrl = new URL(imageUrl, origin).toString();
+      const response = await fetch(absoluteUrl);
+      if (!response.ok) continue;
+      const contentType = response.headers.get("content-type");
+      if (!contentType?.startsWith("image/")) continue;
+      const extension = extensionFromContentType(contentType);
+      const key = `sites/${businessId}/assets/${businessId}-asset-${String(index).padStart(2, "0")}.${extension}`;
+      await env.R2.put(key, await response.arrayBuffer(), { httpMetadata: { contentType } });
+      const publicUrl = publicR2Url(env, key);
+      replaceStringValue(finalJson, imageUrl, publicUrl);
+      assetKeys.push(key);
+      index += 1;
+    } catch (error) {
+      console.error("R2 asset upload failed:", error);
+    }
+  }
+
+  return assetKeys;
+}
+
+async function uploadJsonToR2(finalJson: Record<string, unknown>, env: Env, businessId: string) {
+  if (!env.R2) return "";
+  const key = `sites/${businessId}/${businessId}.json`;
+  await env.R2.put(key, JSON.stringify(finalJson, null, 2), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
+  return key;
+}
+
 async function handleSites(request: Request, db: D1Database, env: Env, segments: string[]): Promise<Response> {
   if (request.method === "POST" && segments.length === 2 && segments[1] === "generate") {
     const body = await readJsonBody(request);
@@ -450,6 +696,8 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     const originData = body.originData && typeof body.originData === "object" ? body.originData as Record<string, unknown> : {};
     const provider = asString(body.provider, "mock");
     const model = asString(body.model, "mock-json");
+    const brandPalette = Array.isArray(body.brandPalette) ? body.brandPalette.filter((item) => typeof item === "string") as string[] : [];
+    const selectedLogoImageUrl = asString(body.selectedLogoImageUrl);
 
     let finalJson = body.jsonContent && typeof body.jsonContent === "object"
       ? body.jsonContent as Record<string, unknown>
@@ -466,6 +714,44 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
 
     if (finalJson.meta && typeof finalJson.meta === "object") {
       (finalJson.meta as Record<string, unknown>).businessId = businessId;
+      if (brandPalette.length) {
+        (finalJson.meta as Record<string, unknown>).brandPalette = brandPalette;
+      }
+    }
+
+    if (selectedLogoImageUrl) {
+      const globalConfig = finalJson.global && typeof finalJson.global === "object" ? finalJson.global as Record<string, unknown> : {};
+      const headerConfig = globalConfig.header && typeof globalConfig.header === "object" ? globalConfig.header as Record<string, unknown> : {};
+      headerConfig.logoImageUrl = selectedLogoImageUrl;
+      globalConfig.header = headerConfig;
+      finalJson.global = globalConfig;
+    }
+
+    if (brandPalette.length) {
+      const design = finalJson.design && typeof finalJson.design === "object" ? finalJson.design as Record<string, unknown> : {};
+      const themeVariables = design.themeVariables && typeof design.themeVariables === "object" ? design.themeVariables as Record<string, unknown> : {};
+      const colors = themeVariables.colors && typeof themeVariables.colors === "object" ? themeVariables.colors as Record<string, unknown> : {};
+      colors.primary = colors.primary || brandPalette[0];
+      colors.accent = colors.accent || brandPalette[1] || brandPalette[0];
+      colors.secondary = colors.secondary || brandPalette[2] || "#F3F4F6";
+      themeVariables.colors = colors;
+      design.themeVariables = themeVariables;
+      finalJson.design = design;
+    }
+
+    normalizeImageFilenames(finalJson, businessId);
+    const assetKeys = await uploadImageAssetsToR2(finalJson, env, new URL(request.url).origin, businessId);
+    const jsonKey = await uploadJsonToR2(finalJson, env, businessId);
+    if (jsonKey || assetKeys.length) {
+      finalJson.storage = {
+        ...(finalJson.storage && typeof finalJson.storage === "object" ? finalJson.storage as Record<string, unknown> : {}),
+        r2JsonKey: jsonKey,
+        r2JsonUrl: jsonKey ? publicR2Url(env, jsonKey) : "",
+        r2AssetKeys: assetKeys,
+      };
+      if (jsonKey) {
+        await uploadJsonToR2(finalJson, env, businessId);
+      }
     }
 
     const leadId = crypto.randomUUID();
@@ -554,7 +840,11 @@ async function route(context: PagesContext): Promise<Response> {
 
   try {
     const db = getDb(env);
-    await setupTables(db);
+    try {
+      await setupTables(db);
+    } catch (setupError) {
+      console.error("DB setup fallback:", setupError);
+    }
 
     if (segments.length === 0) {
       return json({ ok: true, service: "webview-click-api" });
@@ -582,6 +872,10 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (segments[0] === "leads") {
       return handleLeads(request, db, segments);
+    }
+
+    if (request.method === "GET" && segments[0] === "places" && segments[1] === "photo") {
+      return handlePlacesPhoto(url, db, env);
     }
 
     if (request.method === "GET" && segments[0] === "places" && segments[1] === "search") {

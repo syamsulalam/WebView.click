@@ -58,17 +58,22 @@ Aplikasi produksi menggunakan Cloudflare D1:
 
 ### Konfigurasi Cloudflare R2 (Object Storage)
 1. Di Dashboard Cloudflare R2, klik **Create bucket**, namakan `webview`.
-2. Aktifkan **Public R2.dev URL** atau sambungkan dengan domain kustom untuk memberikan akses publik ke file `.json` dan gambar website generator.
+2. Sambungkan bucket ke custom domain `assets.webview.click` untuk memberikan akses publik ke file `.json` dan gambar website generator.
 3. Di Cloudflare Pages Dashboard, pergi ke **Settings > Bindings > R2 bucket bindings**.
 4. Tambahkan binding dengan variabel `R2` dan hubungkan ke `webview`.
+5. Tambahkan environment variable `R2_PUBLIC_BASE_URL` dengan nilai `https://assets.webview.click`. Function juga punya fallback ke domain ini, tetapi env variable tetap disarankan agar konfigurasi eksplisit di dashboard Cloudflare Pages.
+6. Setelah deploy, hasil generate akan memakai pola URL publik:
+   - JSON: `https://assets.webview.click/sites/{businessId}/{businessId}.json`
+   - Asset: `https://assets.webview.click/sites/{businessId}/assets/{businessId}-asset-XX.ext`
 
 ---
 
 ## 2. Setup AI Generators (Website Builders)
-Sistem memiliki pengaturan AI multikoneksi. Di `/admin`, Anda dapat memilih dari OpenRouter, OpenAI, Gemini, atau Opencode untuk meracik JSON dan copywriting website klien Anda. Di dashboard aplikasi (`/admin/settings`), atur variabel ini:
+Sistem memiliki pengaturan AI multikoneksi. Di `/admin`, Anda dapat memilih dari OpenRouter, OpenAI, Gemini, KIE.ai, atau Opencode untuk meracik JSON dan copywriting website klien Anda. Di dashboard aplikasi (`/admin/settings`), atur variabel ini:
 - `OPENROUTER_API_KEY`: Key dari OpenRouter untuk ratusan model OSS.
-- `OPENAI_API_KEY`: Key jika memilih platform OpenAI (`gpt-4o`).
+- `OPENAI_API_KEY`: Key jika memilih platform OpenAI (`gpt-5.5`, `gpt-5.4`, atau `gpt-5.4-mini`).
 - `GEMINI_API_KEY`: Key jika memilih Gemini.
+- `KIE_API_KEY`: Key jika memilih KIE.ai.
 - `OPENCODE_API_KEY` & `OPENCODE_BASE_URL`: Jika menggunakan Custom Opencode API atau custom OpenAI-compatible endpoint.
 
 ---

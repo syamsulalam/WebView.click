@@ -14,3 +14,4 @@
 - Keep changes narrowly scoped to the requested behavior.
 - Preserve existing user changes in the worktree.
 - Use existing project patterns before introducing new abstractions.
+- When adding or materially changing a page, component, or Pages Function endpoint, update `docs/CODEBASE_REFERENCE.md` in the same change with its purpose, APIs, important state/logic, and debugging notes.
