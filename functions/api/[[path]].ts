@@ -457,6 +457,10 @@ async function generateAiJson(
   const originData = body.originData || {};
   const brandPalette = Array.isArray(body.brandPalette) ? body.brandPalette : [];
   const selectedLogoImageUrl = asString(body.selectedLogoImageUrl);
+  const selectedLogoReference = asString(body.selectedLogoReference);
+  const selectedLogoSource = asString(body.selectedLogoSource, selectedLogoImageUrl.startsWith("/api/places/photo") ? "google_places" : "");
+  const selectedLogoAttributions = Array.isArray(body.selectedLogoAttributions) ? body.selectedLogoAttributions : [];
+  const selectedLogoPriority = asString(body.selectedLogoPriority);
 
   if (!provider || !model) {
     return null;
@@ -465,8 +469,8 @@ async function generateAiJson(
   const systemMsg =
     `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
     `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. If selectedLogoImageUrl is provided, preserve it as the header logo image. ONLY output JSON, no markdown formatting.";
-  const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}`;
+    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
+  const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}`;
 
   let responseContent = "";
 
@@ -619,10 +623,27 @@ function isImageField(key: string) {
   return normalized.includes("image") || normalized.includes("logo") || normalized.includes("photo") || normalized.includes("gallery");
 }
 
+function isImageMetadataField(key: string) {
+  const normalized = key.toLowerCase();
+  return (
+    normalized.includes("attribution") ||
+    normalized.includes("reference") ||
+    normalized.includes("source") ||
+    normalized.includes("caption") ||
+    normalized.includes("priority") ||
+    normalized.includes("author") ||
+    normalized.includes("provider")
+  );
+}
+
+function isImageAssetField(key: string) {
+  return isImageField(key) && !isImageMetadataField(key);
+}
+
 function normalizeImageFilenames(value: unknown, businessId: string, hint = "asset"): unknown {
   if (Array.isArray(value)) {
     return value.map((item, index) => {
-      if (typeof item === "string" && isImageField(hint) && item && !item.startsWith("http") && !item.startsWith("/") && !item.startsWith("data:")) {
+      if (typeof item === "string" && isImageAssetField(hint) && item && !item.startsWith("http") && !item.startsWith("/") && !item.startsWith("data:")) {
         const parts = item.split(".");
         const extension = parts.length > 1 ? parts.pop() || "jpg" : "jpg";
         const cleanHint = hint.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "image";
@@ -638,7 +659,7 @@ function normalizeImageFilenames(value: unknown, businessId: string, hint = "ass
 
   const objectValue = value as Record<string, unknown>;
   for (const [key, childValue] of Object.entries(objectValue)) {
-    if (typeof childValue === "string" && isImageField(key) && childValue && !childValue.startsWith("http") && !childValue.startsWith("/") && !childValue.startsWith("data:")) {
+    if (typeof childValue === "string" && isImageAssetField(key) && childValue && !childValue.startsWith("http") && !childValue.startsWith("/") && !childValue.startsWith("data:")) {
       const parts = childValue.split(".");
       const extension = parts.length > 1 ? parts.pop() || "jpg" : "jpg";
       const cleanHint = key.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || hint;
@@ -654,7 +675,7 @@ function normalizeImageFilenames(value: unknown, businessId: string, hint = "ass
 function collectImageUrls(value: unknown, urls: Set<string>, keyHint = "") {
   if (Array.isArray(value)) {
     value.forEach((item) => {
-      if (typeof item === "string" && isImageField(keyHint) && (item.startsWith("http") || item.startsWith("/api/"))) {
+      if (typeof item === "string" && isImageAssetField(keyHint) && (item.startsWith("http") || item.startsWith("/api/")) && !isGooglePlacesPhotoUrl(item)) {
         urls.add(item);
       } else {
         collectImageUrls(item, urls, keyHint);
@@ -666,11 +687,26 @@ function collectImageUrls(value: unknown, urls: Set<string>, keyHint = "") {
   if (!value || typeof value !== "object") return;
 
   for (const [key, childValue] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof childValue === "string" && isImageField(key) && (childValue.startsWith("http") || childValue.startsWith("/api/"))) {
+    if (typeof childValue === "string" && isImageAssetField(key) && (childValue.startsWith("http") || childValue.startsWith("/api/")) && !isGooglePlacesPhotoUrl(childValue)) {
       urls.add(childValue);
     } else {
       collectImageUrls(childValue, urls, key);
     }
+  }
+}
+
+function isGooglePlacesPhotoUrl(value: string) {
+  try {
+    const url = new URL(value, "https://webview.click");
+    const host = url.hostname.toLowerCase();
+    return (
+      url.pathname.startsWith("/api/places/photo") ||
+      host.endsWith("googleusercontent.com") ||
+      (host === "maps.googleapis.com" && url.pathname.includes("/place/photo")) ||
+      (host === "places.googleapis.com" && url.pathname.includes("/photos/") && url.pathname.endsWith("/media"))
+    );
+  } catch {
+    return value.startsWith("/api/places/photo");
   }
 }
 
@@ -740,6 +776,12 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     const model = asString(body.model, "mock-json");
     const brandPalette = Array.isArray(body.brandPalette) ? body.brandPalette.filter((item) => typeof item === "string") as string[] : [];
     const selectedLogoImageUrl = asString(body.selectedLogoImageUrl);
+    const selectedLogoReference = asString(body.selectedLogoReference);
+    const selectedLogoSource = asString(body.selectedLogoSource, selectedLogoImageUrl.startsWith("/api/places/photo") ? "google_places" : "");
+    const selectedLogoAttributions = Array.isArray(body.selectedLogoAttributions)
+      ? body.selectedLogoAttributions.filter((item) => typeof item === "string") as string[]
+      : [];
+    const selectedLogoPriority = asString(body.selectedLogoPriority);
 
     let finalJson = body.jsonContent && typeof body.jsonContent === "object"
       ? body.jsonContent as Record<string, unknown>
@@ -767,6 +809,17 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       headerConfig.logoImageUrl = selectedLogoImageUrl;
       globalConfig.header = headerConfig;
       finalJson.global = globalConfig;
+
+      const brand = finalJson.brand && typeof finalJson.brand === "object" ? finalJson.brand as Record<string, unknown> : {};
+      brand.logoImageUrl = selectedLogoImageUrl;
+      brand.photoSource = selectedLogoSource;
+      brand.googlePhotoReference = selectedLogoReference;
+      brand.photoCaption = selectedLogoSource === "google_places" ? "Photo from Google Business Profile" : "";
+      brand.photoAttributions = selectedLogoAttributions;
+      if (selectedLogoPriority) {
+        brand.selectedPhotoPriority = selectedLogoPriority;
+      }
+      finalJson.brand = brand;
     }
 
     if (brandPalette.length) {

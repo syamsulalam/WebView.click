@@ -31,6 +31,109 @@
     },
     "customCss": "/* Override Tailwind spesifik */\n.glass-effect { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); }\n.hover-zoom:hover { transform: scale(1.03); transition: transform 0.3s ease; }"
   },
+  "sourceData": {
+    "provider": "google_places",
+    "placeId": "sample-place-id",
+    "resourceName": "places/sample-place-id",
+    "googleMapsUri": "https://maps.google.com/?cid=sample",
+    "lastSyncedAt": "2026-05-14T00:00:00Z",
+    "businessStatus": "OPERATIONAL",
+    "pureServiceAreaBusiness": false,
+    "hasWebsite": false,
+    "websiteUri": null,
+    "attributions": []
+  },
+  "brand": {
+    "logoSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☕</text></svg>",
+    "logoImageUrl": "kopi-senja-jakarta-logo.png",
+    "palette": ["#4E342E", "#FF7043", "#D7CCC8"],
+    "mood": "warm-local-premium",
+    "visualStyle": "modern-local-cafe",
+    "imageTreatment": "rounded-editorial",
+    "preferredHeroImage": "kopi-senja-jakarta-hero.jpg",
+    "photoSource": "owner_or_generated",
+    "googlePhotoReference": "",
+    "photoCaption": "",
+    "photoAttributions": []
+  },
+  "businessProfile": {
+    "name": "Kopi Senja Jakarta",
+    "primaryType": "cafe",
+    "typeLabel": "Coffee shop",
+    "categories": ["cafe", "bakery", "breakfast"],
+    "shortPitch": "Kedai kopi lokal dengan biji Nusantara, pastry harian, dan suasana nyaman untuk kerja atau ngobrol santai.",
+    "serviceArea": ["Jakarta Selatan", "Senopati"],
+    "address": {
+      "formatted": "Jl. Sudirman No. 12, Jakarta Selatan",
+      "short": "Sudirman, Jakarta Selatan",
+      "city": "Jakarta Selatan",
+      "state": "DKI Jakarta",
+      "postalCode": "12190",
+      "country": "ID"
+    },
+    "contact": {
+      "phoneNational": "+62 812-3456-7890",
+      "phoneInternational": "+6281234567890",
+      "email": "halo@kopisenja.com",
+      "bookingUrl": "https://wa.me/6281234567890",
+      "directionsUrl": "https://maps.google.com/?q=Kopi%20Senja%20Jakarta"
+    }
+  },
+  "trust": {
+    "rating": 4.8,
+    "reviewCount": 320,
+    "reviewSummary": "Pelanggan sering memuji kopi, pastry, suasana kerja yang nyaman, dan pelayanan ramah.",
+    "reviews": [
+      { "authorName": "Andi W", "rating": 5, "text": "Kopinya enak banget, tempatnya cozy buat kerja seharian!", "relativePublishTimeDescription": "2 bulan lalu", "attribution": "Google" },
+      { "authorName": "Rina R", "rating": 5, "text": "Croissant-nya juara. Pasti bakal balik lagi ke sini.", "relativePublishTimeDescription": "1 bulan lalu", "attribution": "Google" },
+      { "authorName": "Dimas A", "rating": 5, "text": "Wi-Fi stabil, baristanya ramah, cocok untuk meeting santai.", "relativePublishTimeDescription": "3 minggu lalu", "attribution": "Google" }
+    ],
+    "badges": ["Open now", "Local favorite", "Work-friendly"]
+  },
+  "offers": [
+    { "title": "Signature Coffee", "description": "Espresso, gula aren, dan susu segar dengan profil rasa yang seimbang.", "priceHint": "Mulai Rp 25.000", "image": "kopi-senja-jakarta-service1.jpg", "cta": { "text": "Lihat Menu", "href": "#services" } },
+    { "title": "Fresh Pastry", "description": "Croissant dan pastry harian yang cocok untuk sarapan atau teman kopi.", "priceHint": "Mulai Rp 30.000", "image": "kopi-senja-jakarta-service2.jpg", "cta": { "text": "Pesan Sekarang", "href": "#contact" } },
+    { "title": "Work-Friendly Table", "description": "Area duduk nyaman dengan Wi-Fi cepat untuk WFC dan meeting kecil.", "priceHint": "Walk-in welcome", "image": "kopi-senja-jakarta-gallery1.jpg", "cta": { "text": "Booking Tempat", "href": "#contact" } }
+  ],
+  "capabilities": [
+    { "label": "Wi-Fi cepat", "enabled": true, "source": "manual.sample", "description": "Koneksi stabil untuk kerja dan meeting online." },
+    { "label": "Outdoor seating", "enabled": true, "source": "google_places.outdoorSeating", "description": "Area luar ruangan untuk suasana lebih santai." },
+    { "label": "Serves coffee", "enabled": true, "source": "google_places.servesCoffee", "description": "Menu kopi espresso-based dan manual brew." }
+  ],
+  "location": {
+    "formattedAddress": "Jl. Sudirman No. 12, Jakarta Selatan",
+    "mapEmbedUrl": "",
+    "directionsUrl": "https://maps.google.com/?q=Kopi%20Senja%20Jakarta",
+    "latitude": -6.2088,
+    "longitude": 106.8456,
+    "isServiceAreaBusiness": false
+  },
+  "hours": {
+    "timezone": "Asia/Jakarta",
+    "openNow": true,
+    "regular": [
+      "Senin - Jumat: 08:00 - 22:00",
+      "Sabtu - Minggu: 07:00 - 23:00"
+    ],
+    "current": []
+  },
+  "conversion": {
+    "primaryCta": { "text": "Hubungi WA", "href": "https://wa.me/6281234567890" },
+    "secondaryCta": { "text": "Buka Maps", "href": "https://maps.google.com/?q=Kopi%20Senja%20Jakarta" },
+    "stickyMobileCta": true,
+    "leadForm": {
+      "enabled": true,
+      "fields": ["name", "phone", "message"],
+      "submitLabel": "Kirim Pesan"
+    }
+  },
+  "seo": {
+    "title": "Kopi Senja Jakarta - Coffee Shop Nyaman di Jakarta Selatan",
+    "description": "Coffee shop lokal di Jakarta Selatan dengan kopi Nusantara, pastry harian, Wi-Fi cepat, dan area outdoor.",
+    "localBusinessSchema": {},
+    "keywords": ["coffee shop jakarta selatan", "kopi senopati", "cafe wfc jakarta"],
+    "cityLandingPhrase": "Coffee shop nyaman di Jakarta Selatan"
+  },
   "global": {
     "header": {
       "logoSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☕</text></svg>",
@@ -83,6 +186,17 @@
           }
         },
         {
+          "type": "trustBar",
+          "id": "trust-google",
+          "content": {
+            "items": [
+              { "label": "Google Rating", "value": "4.8", "icon": "star" },
+              { "label": "Reviews", "value": "320+", "icon": "check" },
+              { "label": "Reservasi", "value": "+62 812-3456-7890", "icon": "phone" }
+            ]
+          }
+        },
+        {
           "type": "features",
           "id": "features-usp",
           "content": {
@@ -91,6 +205,43 @@
               { "title": "Biji Kopi Pilihan", "description": "100% Arabica Nusantara", "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M10 2v7.31'/><path d='M14 9.3V1.99'/><path d='M8.5 2h7'/><path d='M14 9.3a6.5 6.5 0 1 1-4 0'/><path d='M5.52 16h12.96'/></svg>" },
               { "title": "Wi-Fi Cepat", "description": "Cocok untuk WFC", "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12.55a11 11 0 0 1 14.08 0'/><path d='M1.42 9a16 16 0 0 1 21.16 0'/><path d='M8.53 16.11a6 6 0 0 1 6.95 0'/><line x1='12' y1='20' x2='12.01' y2='20'/></svg>" },
               { "title": "Area Outdoor", "description": "Smoking area yang luas", "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v20'/><path d='M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6'/></svg>" }
+            ]
+          }
+        },
+        {
+          "type": "offers",
+          "id": "home-offers",
+          "content": {
+            "title": "Menu dan pengalaman favorit",
+            "description": "Bagian ini dihasilkan dari data bisnis, review, foto, dan kategori Google Places."
+          }
+        },
+        {
+          "type": "reviews",
+          "id": "home-reviews",
+          "content": {
+            "title": "Yang pelanggan sukai"
+          }
+        },
+        {
+          "type": "hoursLocation",
+          "id": "home-location-hours",
+          "content": {
+            "title": "Jam dan lokasi",
+            "address": "Jl. Sudirman No. 12, Jakarta Selatan",
+            "phone": "+62 812-3456-7890",
+            "directionsUrl": "https://maps.google.com/?q=Kopi%20Senja%20Jakarta"
+          }
+        },
+        {
+          "type": "faq",
+          "id": "home-faq",
+          "content": {
+            "title": "Pertanyaan umum",
+            "items": [
+              { "question": "Apakah bisa untuk kerja dari cafe?", "answer": "Bisa. Kopi Senja menyediakan Wi-Fi cepat, stop kontak di beberapa area, dan pilihan meja untuk kerja santai." },
+              { "question": "Apakah perlu reservasi?", "answer": "Walk-in tetap bisa, tetapi reservasi disarankan untuk rombongan kecil atau jam ramai." },
+              { "question": "Apakah tersedia area outdoor?", "answer": "Ya, tersedia area outdoor untuk pelanggan yang ingin suasana lebih terbuka." }
             ]
           }
         }

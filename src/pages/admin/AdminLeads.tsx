@@ -15,7 +15,7 @@ export default function AdminLeads() {
   const [aiModel, setAiModel] = useLocalStorageState("webview.adminLeads.aiModel", "~anthropic/claude-sonnet-latest");
   const [settings, setSettings] = useState<any>({});
   const [loadingSettings, setLoadingSettings] = useState(true);
-  const [logoSelections, setLogoSelections] = useState<Record<string, { url: string; palette: string[] }>>({});
+  const [logoSelections, setLogoSelections] = useState<Record<string, { url: string; reference: string; palette: string[]; attributions: string[]; priorityLabel: string; source: string }>>({});
 
   const providers: Record<string, { label: string; models: { value: string; label: string }[] }> = {
     OpenAI: {
@@ -66,6 +66,11 @@ export default function AdminLeads() {
       ]
     }
   };
+  const activeProviderKey = providers[aiProvider] ? aiProvider : "OpenRouter";
+  const activeProvider = providers[activeProviderKey];
+  const activeModel = activeProvider.models.some((model) => model.value === aiModel)
+    ? aiModel
+    : activeProvider.models[0].value;
 
   useEffect(() => {
     const provider = providers[aiProvider] ? aiProvider : "OpenRouter";
@@ -87,7 +92,7 @@ export default function AdminLeads() {
       .catch(e => console.error(e));
   };
 
-  const selectedPrice = estimateCostUsd(aiProvider, aiModel);
+  const selectedPrice = estimateCostUsd(activeProviderKey, activeModel);
   const providerApiKeyMap: Record<string, string> = {
     OpenRouter: "OPENROUTER_API_KEY",
     OpenAI: "OPENAI_API_KEY",
@@ -95,22 +100,58 @@ export default function AdminLeads() {
     KIE: "KIE_API_KEY",
     Opencode: "OPENCODE_API_KEY",
   };
-  const settingsKey = providerApiKeyMap[aiProvider] || "";
+  const settingsKey = providerApiKeyMap[activeProviderKey] || "";
   const missingRequiredSettings = [
     !String(settings?.GOOGLE_PLACES_API_KEY || "").trim() ? "Google Places API Key" : "",
-    !String(settings?.[settingsKey] || "").trim() ? `${providers[aiProvider]?.label || aiProvider} Key` : "",
+    !String(settings?.[settingsKey] || "").trim() ? `${activeProvider.label} Key` : "",
   ].filter(Boolean);
 
+  const getPhotoReference = (photo: any) => photo?.photo_reference || photo?.name || photo?.reference || "";
+
   const getPhotoUrl = (photo: any, maxWidth = 320) => {
-    const reference = photo?.photo_reference || photo?.name || photo?.reference;
+    const reference = getPhotoReference(photo);
     if (!reference) return "";
     return `/api/places/photo?reference=${encodeURIComponent(reference)}&maxwidth=${maxWidth}`;
   };
 
+  const stripHtml = (value: string) => value.replace(/<[^>]*>/g, "").trim();
+
+  const getPhotoAttributions = (photo: any) => {
+    const legacy = Array.isArray(photo?.html_attributions)
+      ? photo.html_attributions.map((value: string) => stripHtml(String(value)))
+      : [];
+    const newApi = Array.isArray(photo?.authorAttributions)
+      ? photo.authorAttributions
+          .map((item: any) => item?.displayName || item?.uri || item?.photoUri || "")
+          .filter(Boolean)
+      : [];
+    return [...legacy, ...newApi].filter(Boolean);
+  };
+
+  const photoPriority = (photo: any, businessName: string) => {
+    const attributions = getPhotoAttributions(photo).join(" ").toLowerCase();
+    const nameTokens = businessName.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2);
+    if (attributions && nameTokens.some((token) => attributions.includes(token))) return 0;
+    if (!attributions) return 1;
+    return 2;
+  };
+
+  const photoPriorityLabel = (photo: any, businessName: string) => {
+    const priority = photoPriority(photo, businessName);
+    if (priority === 0) return "Owner-like";
+    if (priority === 1) return "No attribution";
+    return "UGC/attributed";
+  };
+
+  const sortedPhotosForPlace = (place: any) =>
+    [...(Array.isArray(place?.photos) ? place.photos : [])].sort((a, b) =>
+      photoPriority(a, place?.name || "") - photoPriority(b, place?.name || ""),
+    );
+
   const estimateGenerateCost = (place?: any) => {
     const source = place ? JSON.stringify(place) : searchQuery;
     const inputTokens = estimateTokensFromText(source, 5000);
-    return estimateCostUsd(aiProvider, aiModel, inputTokens, defaultOutputTokens);
+    return estimateCostUsd(activeProviderKey, activeModel, inputTokens, defaultOutputTokens);
   };
 
   const extractPaletteFromImage = (imageUrl: string) => new Promise<string[]>((resolve, reject) => {
@@ -158,13 +199,16 @@ export default function AdminLeads() {
     img.src = imageUrl;
   });
 
-  const selectLogoPhoto = async (placeId: string, imageUrl: string) => {
+  const selectLogoPhoto = async (placeId: string, imageUrl: string, photo: any, businessName: string) => {
+    const attributions = getPhotoAttributions(photo);
+    const priorityLabel = photoPriorityLabel(photo, businessName);
+    const reference = getPhotoReference(photo);
     try {
       const palette = await extractPaletteFromImage(imageUrl);
-      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, palette } }));
+      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, reference, palette, attributions, priorityLabel, source: "google_places" } }));
     } catch (error) {
       console.error(error);
-      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, palette: ["#111827", "#4F46E5", "#F3F4F6"] } }));
+      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, reference, palette: ["#111827", "#4F46E5", "#F3F4F6"], attributions, priorityLabel, source: "google_places" } }));
     }
   };
 
@@ -224,13 +268,29 @@ export default function AdminLeads() {
     const primaryColor = brandPalette[0] || "#111827";
     const accentColor = brandPalette[1] || "#4F46E5";
     const secondaryColor = brandPalette[2] || "#F3F4F6";
+    const phone = place.formatted_phone_number || place.international_phone_number || place.nationalPhoneNumber || "0000000000";
+    const mapsUrl = place.url || place.googleMapsUri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}`;
+    const rating = Number(place.rating || 0);
+    const reviewCount = Number(place.user_ratings_total || place.userRatingCount || 0);
     const mockJson = {
       meta: {
         businessName: place.name,
         businessId: businessId,
-        niche: "general",
+        niche: Array.isArray(place.types) ? place.types[0] : "general",
         seoDescription: `Website resmi untuk ${place.name}.`,
         brandPalette,
+      },
+      sourceData: {
+        provider: "google_places",
+        placeId: place.place_id || place.id || "",
+        resourceName: place.name?.startsWith?.("places/") ? place.name : "",
+        googleMapsUri: mapsUrl,
+        lastSyncedAt: new Date().toISOString(),
+        businessStatus: place.business_status || place.businessStatus || "",
+        pureServiceAreaBusiness: Boolean(place.pureServiceAreaBusiness),
+        hasWebsite: Boolean(place.website || place.websiteUri),
+        websiteUri: place.website || place.websiteUri || null,
+        attributions: logoSelection?.attributions || []
       },
       design: {
         themeVariables: {
@@ -248,10 +308,81 @@ export default function AdminLeads() {
           }
         }
       },
+      brand: {
+        logoImageUrl: logoSelection?.url || "",
+        logoSvg: "",
+        palette: brandPalette,
+        preferredHeroImage: logoSelection?.url || "",
+        photoSource: logoSelection?.source || "",
+        googlePhotoReference: logoSelection?.reference || "",
+        photoCaption: logoSelection?.source === "google_places" ? "Photo from Google Business Profile" : "",
+        photoAttributions: logoSelection?.attributions || [],
+        selectedPhotoPriority: logoSelection?.priorityLabel || ""
+      },
+      businessProfile: {
+        name: place.name,
+        primaryType: Array.isArray(place.types) ? place.types[0] : "local_business",
+        typeLabel: Array.isArray(place.types) ? String(place.types[0]).replace(/_/g, " ") : "Local business",
+        categories: Array.isArray(place.types) ? place.types : [],
+        shortPitch: `Layanan lokal terpercaya di ${place.formatted_address || "area sekitar"}.`,
+        address: {
+          formatted: place.formatted_address || place.formattedAddress || "",
+        },
+        contact: {
+          phoneNational: phone,
+          phoneInternational: phone,
+          directionsUrl: mapsUrl
+        }
+      },
+      trust: {
+        rating,
+        reviewCount,
+        reviewSummary: reviewCount ? `${place.name} memiliki rating ${rating.toFixed(1)} dari ${reviewCount} review Google.` : "",
+        reviews: [],
+        badges: [
+          place.business_status === "OPERATIONAL" ? "Operational" : "",
+          place.website || place.websiteUri ? "Has website" : "No website lead",
+          phone !== "0000000000" ? "Has phone" : ""
+        ].filter(Boolean)
+      },
+      offers: [
+        { title: "Layanan Utama", description: `Solusi profesional dari ${place.name} untuk pelanggan lokal.`, priceHint: "Hubungi untuk estimasi", image: logoSelection?.url || "", cta: { text: "Minta Info", href: "#contact" } },
+        { title: "Konsultasi Cepat", description: "Tanyakan kebutuhan Anda dan dapatkan arahan layanan yang sesuai.", priceHint: "Respon cepat", image: "", cta: { text: "Hubungi", href: "#contact" } },
+        { title: "Kunjungan Lokal", description: "Informasi lokasi dan rute tersedia langsung dari Google Maps.", priceHint: "Buka Maps", image: "", cta: { text: "Lihat Lokasi", href: mapsUrl } }
+      ],
+      capabilities: [
+        { label: "Bisnis lokal", enabled: true, source: "google_places.types", description: "Profil bisnis diambil dari data Google Places." },
+        { label: "Rating Google", enabled: rating > 0, source: "google_places.rating", description: reviewCount ? `${reviewCount} review tersedia.` : "Rating belum tersedia." },
+        { label: "Kontak langsung", enabled: phone !== "0000000000", source: "google_places.phone", description: "CTA diarahkan ke kontak bisnis." }
+      ],
+      location: {
+        formattedAddress: place.formatted_address || place.formattedAddress || "",
+        directionsUrl: mapsUrl,
+        isServiceAreaBusiness: Boolean(place.pureServiceAreaBusiness)
+      },
+      hours: {
+        timezone: "",
+        openNow: Boolean(place.opening_hours?.open_now),
+        regular: Array.isArray(place.opening_hours?.weekday_text) ? place.opening_hours.weekday_text : [],
+        current: []
+      },
+      conversion: {
+        primaryCta: { text: "Hubungi Sekarang", href: phone !== "0000000000" ? `tel:${phone}` : "#contact" },
+        secondaryCta: { text: "Buka Maps", href: mapsUrl },
+        stickyMobileCta: true,
+        leadForm: { enabled: true, fields: ["name", "phone", "message"], submitLabel: "Kirim Pesan" }
+      },
+      seo: {
+        title: `${place.name} - Website Resmi`,
+        description: `Website resmi untuk ${place.name} di ${place.formatted_address || "area lokal"}.`,
+        localBusinessSchema: {},
+        keywords: Array.isArray(place.types) ? place.types : [],
+        cityLandingPhrase: place.formatted_address || ""
+      },
       global: {
         header: {
           logoImageUrl: logoSelection?.url || "",
-          ctaButton: { text: "Hubungi WA", href: "https://wa.me/123" }
+          ctaButton: { text: "Hubungi", href: phone !== "0000000000" ? `tel:${phone}` : "#contact" }
         },
         footer: { text: `© 2026 ${place.name}. All rights reserved.` }
       },
@@ -270,9 +401,49 @@ export default function AdminLeads() {
               type: "hero",
               id: "hero-1",
               content: {
-                headline: `Selamat datang di ${place.name}`,
-                subheadline: place.formatted_address,
-                buttons: [{ text: "Hubungi Kami", href: "#contact", style: "primary" }]
+                headline: `${place.name} siap membantu kebutuhan lokal Anda`,
+                subheadline: place.formatted_address || "Informasi bisnis dari Google Places.",
+                buttons: [
+                  { text: "Hubungi Kami", href: "#contact", style: "primary" },
+                  { text: "Buka Maps", href: mapsUrl, style: "outline" }
+                ],
+                image: logoSelection?.url || ""
+              }
+            },
+            { type: "trustBar", id: "trust-1", content: {} },
+            {
+              type: "features",
+              id: "features-1",
+              content: {
+                title: "Kenapa bisnis ini relevan",
+                items: [
+                  { title: "Profil Google aktif", description: place.business_status || "Data bisnis tersedia dari Google Places." },
+                  { title: "Mudah dihubungi", description: phone !== "0000000000" ? phone : "Kontak bisa dilengkapi oleh admin." },
+                  { title: "Siap dibuatkan website", description: place.website || place.websiteUri ? "Sudah punya website, cocok untuk redesign." : "Belum terdeteksi punya website." }
+                ]
+              }
+            },
+            { type: "offers", id: "offers-1", content: { title: "Layanan yang bisa ditonjolkan" } },
+            { type: "reviews", id: "reviews-1", content: { title: "Social proof dari Google" } },
+            {
+              type: "hoursLocation",
+              id: "location-1",
+              content: {
+                title: "Lokasi dan kontak",
+                address: place.formatted_address || "",
+                phone,
+                directionsUrl: mapsUrl
+              }
+            },
+            {
+              type: "faq",
+              id: "faq-1",
+              content: {
+                title: "Pertanyaan umum",
+                items: [
+                  { question: "Bagaimana cara menghubungi bisnis ini?", "answer": phone !== "0000000000" ? `Hubungi langsung di ${phone}.` : "Nomor telepon belum tersedia dan bisa dilengkapi manual." },
+                  { question: "Apakah data ini bisa diedit?", "answer": "Bisa. JSON hasil generate dapat dikoreksi sebelum dipakai sebagai website final." }
+                ]
               }
             }
           ]
@@ -285,15 +456,19 @@ export default function AdminLeads() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: aiModel,
-          provider: aiProvider,
+          model: activeModel,
+          provider: activeProviderKey,
           jsonContent: mockJson,
           businessId,
           businessName: place.name,
-          phone: "0000000000",
+          phone,
           originData: place,
           brandPalette,
-          selectedLogoImageUrl: logoSelection?.url || ""
+          selectedLogoImageUrl: logoSelection?.url || "",
+          selectedLogoReference: logoSelection?.reference || "",
+          selectedLogoSource: logoSelection?.source || "",
+          selectedLogoAttributions: logoSelection?.attributions || [],
+          selectedLogoPriority: logoSelection?.priorityLabel || ""
         })
       });
       fetchLeads();
@@ -342,7 +517,7 @@ export default function AdminLeads() {
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-500 font-medium">AI Web Builder:</label>
             <select 
-              value={aiProvider} 
+              value={activeProviderKey}
               onChange={(e) => {
                 setAiProvider(e.target.value);
                 setAiModel(providers[e.target.value].models[0].value);
@@ -354,11 +529,11 @@ export default function AdminLeads() {
               ))}
             </select>
             <select 
-              value={aiModel} 
+              value={activeModel}
               onChange={(e) => setAiModel(e.target.value)}
               className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {providers[aiProvider].models.map(m => (
+              {activeProvider.models.map(m => (
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
@@ -369,8 +544,8 @@ export default function AdminLeads() {
             <p className="font-semibold text-slate-900">Perkiraan biaya generate JSON</p>
             <p>
               {selectedPrice.total !== null
-                ? `${formatUsd(estimateGenerateCost().total)} per generate awal (${aiModel})`
-                : `Harga ${aiModel} belum fixed. Cek dashboard provider sebelum generate.`}
+                ? `${formatUsd(estimateGenerateCost().total)} per generate awal (${activeModel})`
+                : `Harga ${activeModel} belum fixed. Cek dashboard provider sebelum generate.`}
             </p>
           </div>
           <a href="/admin/settings" className="text-indigo-700 font-medium hover:underline">Lihat pricing & API key</a>
@@ -428,20 +603,28 @@ export default function AdminLeads() {
                 </div>
                 {place.photos?.length > 0 && (
                   <div className="mt-4 border-t border-gray-200 pt-4">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Pilih gambar logo/brand untuk palet warna</p>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Pilih gambar logo/brand untuk palet warna</p>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Foto gratis akan dipakai runtime via proxy Google Places, tidak di-upload ke R2. Caption attribution ikut disimpan di JSON.
+                      Urutan tetap best-effort karena Places API tidak memberi flag owner photo.
+                    </p>
                     <div className="flex gap-3 overflow-x-auto pb-1">
-                      {place.photos.slice(0, 6).map((photo: any, photoIdx: number) => {
+                      {sortedPhotosForPlace(place).slice(0, 6).map((photo: any, photoIdx: number) => {
                         const imageUrl = getPhotoUrl(photo);
                         const selected = logoSelections[place.place_id || place.name]?.url === imageUrl;
+                        const priorityLabel = photoPriorityLabel(photo, place.name);
                         return (
                           <button
                             key={photo.photo_reference || photoIdx}
                             type="button"
-                            onClick={() => selectLogoPhoto(place.place_id || place.name, imageUrl)}
-                            className={`relative w-20 h-20 rounded-xl overflow-hidden border-2 bg-white shrink-0 ${selected ? "border-indigo-600" : "border-gray-200 hover:border-gray-300"}`}
-                            title="Gunakan sebagai sumber warna brand"
+                            onClick={() => selectLogoPhoto(place.place_id || place.name, imageUrl, photo, place.name)}
+                            className={`relative w-24 h-24 rounded-xl overflow-hidden border-2 bg-white shrink-0 ${selected ? "border-indigo-600" : "border-gray-200 hover:border-gray-300"}`}
+                            title={`Gunakan sebagai sumber warna brand. Prioritas: ${priorityLabel}`}
                           >
                             <img src={imageUrl} alt="" className="w-full h-full object-cover" crossOrigin="anonymous" />
+                            <span className="absolute left-1 right-1 bottom-1 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                              {priorityLabel}
+                            </span>
                           </button>
                         );
                       })}

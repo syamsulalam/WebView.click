@@ -36,7 +36,11 @@ Logic penting:
 - `normalizeSiteData()` menerima variasi schema lama/baru, termasuk `design.themeVariables.typography` dan `design.typography`.
 - Field penting yang hilang diberi fallback agar preview tidak blank.
 - State `activeTab` dipakai untuk navigasi antar page dari `navigation.headerMenu`.
-- Section renderer mendukung `hero`, `features`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
+- Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
+- Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
+- Gambar dirender sebagai `<img>` jika URL usable (`http`, `/`, atau `data:`); filename placeholder tetap ditampilkan sebagai fallback supaya preview tidak blank.
+- Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
+- `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
 
 Risiko debug:
@@ -97,8 +101,12 @@ Logic penting:
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - Jika hasil Google Places punya `photos`, admin bisa memilih salah satu sebagai logo/brand source.
 - Gambar logo diambil melalui proxy same-origin `/api/places/photo`, lalu canvas browser mengekstrak palette warna dominan.
+- Foto Places diurutkan best-effort: attribution yang mirip nama bisnis, lalu tanpa attribution, lalu UGC/attributed. Places API tidak menyediakan flag owner photo yang reliable.
 - Palette dikirim ke `/api/sites/generate` sebagai `brandPalette`.
 - Logo yang dipilih dikirim sebagai `selectedLogoImageUrl`.
+- Photo reference dan source dikirim sebagai `selectedLogoReference` dan `selectedLogoSource`.
+- Attribution foto yang dipilih dikirim sebagai `selectedLogoAttributions` dan disimpan di JSON sebagai `brand.photoAttributions`.
+- Untuk situs gratis, foto Google Places tetap hotlink/proxy runtime dan tidak di-upload ke R2.
 - JSON mock fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
 - Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.
 
@@ -254,14 +262,17 @@ Logic Google Places/logo:
 - `/api/places/search` memakai Google Places Text Search.
 - `/api/places/photo` mem-proxy Google Places Photo agar frontend bisa membaca pixel untuk palette.
 - `brandPalette` dan `selectedLogoImageUrl` dikirim dari `AdminLeads` ke generator.
+- `selectedLogoReference`, `selectedLogoSource`, `selectedLogoAttributions`, dan `selectedLogoPriority` ikut dikirim agar JSON final menyimpan provenance foto.
 - Function memaksa `businessId` masuk ke `meta.businessId` dan menjaga `logoImageUrl` jika dipilih admin.
+- Jika logo dipilih, Function juga menulis `brand.logoImageUrl`, `brand.photoSource`, `brand.googlePhotoReference`, `brand.photoCaption`, `brand.photoAttributions`, dan `brand.selectedPhotoPriority`.
 
 Logic R2:
 - Binding optional: `R2`.
 - Public URL: `R2_PUBLIC_BASE_URL`, default/fallback production `https://assets.webview.click`.
 - Saat `POST /api/sites/generate`, Function:
   - Menormalisasi filename image non-URL agar mengandung slug `businessId`.
-  - Meng-upload image URL yang bisa di-fetch ke `sites/{businessId}/assets/{businessId}-asset-XX.ext`.
+  - Meng-upload image URL non-Google yang bisa di-fetch ke `sites/{businessId}/assets/{businessId}-asset-XX.ext`.
+  - Melewati Google Places photo URLs (`/api/places/photo`, Google photo media, `googleusercontent.com`) agar free preview tidak menyimpan ulang foto Google ke R2.
   - Meng-upload JSON final ke `sites/{businessId}/{businessId}.json`.
   - Menambahkan metadata `storage.r2JsonKey`, `storage.r2JsonUrl`, dan `storage.r2AssetKeys` ke JSON.
 
@@ -275,6 +286,8 @@ Risiko debug:
 
 Fungsi:
 - Baseline struktur JSON website yang diberikan ke model AI.
+- Sample kini berisi schema baru untuk site builder: `sourceData`, `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, `conversion`, dan `seo`.
+- Homepage sample memakai section modern: `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, dan `faq`.
 
 ### `SQL/schema.sql`
 
@@ -294,3 +307,9 @@ Jika menambah laman atau komponen baru:
 - Update route/entry di dokumen ini.
 - Jelaskan fungsi, API yang dipakai, logic state penting, dan risiko debug.
 - Jika menambah endpoint Function baru, update bagian `Cloudflare Pages Functions`.
+
+## Related Planning Docs
+
+- `docs/GOOGLE_PLACES_DATA_INVENTORY.md`: inventaris data Google Places yang bisa dipakai untuk CRM lead scoring dan site generation.
+- `docs/GOOGLE_PLACES_PHOTO_STRATEGY.md`: strategi foto Google Places untuk free preview vs paid website.
+- `docs/SITE_BUILDER_UPGRADE_PLAN.md`: rencana upgrade JSON schema dan renderer agar demo/site output lebih modern dan personalized.
