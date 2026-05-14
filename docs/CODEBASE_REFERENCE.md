@@ -97,9 +97,11 @@ Logic penting:
 - Palette dikirim ke `/api/sites/generate` sebagai `brandPalette`.
 - Logo yang dipilih dikirim sebagai `selectedLogoImageUrl`.
 - JSON mock fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
+- Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.
 
 Risiko debug:
 - Jika foto Google tidak muncul, cek Places API key dan apakah Text Search mengembalikan `photos`.
+- Jika pencarian tidak menampilkan hasil, cek pesan di UI dan response `/api/places/search`; Function menormalisasi status Google seperti `ZERO_RESULTS`, `REQUEST_DENIED`, dan fetch failure ke JSON.
 - Canvas palette butuh image same-origin/CORS; karena itu foto harus lewat proxy `/api/places/photo`, bukan langsung URL Google.
 
 ### `src/pages/admin/AdminSchema.tsx`

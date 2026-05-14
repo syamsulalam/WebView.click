@@ -7,6 +7,7 @@ export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchMessage, setSearchMessage] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiProvider, setAiProvider] = useState("OpenRouter");
@@ -167,14 +168,35 @@ export default function AdminLeads() {
   const handleSearch = async () => {
     if (!searchQuery) return;
     setIsSearching(true);
+    setSearchMessage("");
+    setSearchResults([]);
     try {
       const res = await fetch(`/api/places/search?query=${encodeURIComponent(searchQuery)}`);
-      const data = await res.json();
-      setSearchResults(data.results || []);
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`Response bukan JSON: ${text.substring(0, 120)}`);
+      }
+
+      if (!res.ok) {
+        throw new Error(data.error || `Places API returned ${res.status}`);
+      }
+
+      const results = Array.isArray(data.results) ? data.results : [];
+      setSearchResults(results);
+      if (results.length === 0) {
+        setSearchMessage(data.error || `Tidak ada hasil untuk "${searchQuery}". Coba query lebih spesifik seperti "concrete contractor Dallas Texas".`);
+      } else {
+        setSearchMessage(data.mock ? "Mode mock aktif karena Google Places API Key belum terbaca." : `${results.length} hasil ditemukan.`);
+      }
     } catch (e) {
       console.error(e);
+      setSearchMessage(e instanceof Error ? e.message : "Gagal mencari prospek.");
+    } finally {
+      setIsSearching(false);
     }
-    setIsSearching(false);
   };
 
   const handleGenerateSite = async (place: any) => {
@@ -359,6 +381,16 @@ export default function AdminLeads() {
             {isSearching ? <Loader2 className="animate-spin" size={20} /> : "Cari"}
           </button>
         </div>
+
+        {searchMessage && (
+          <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+            searchResults.length > 0
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-amber-200 bg-amber-50 text-amber-800"
+          }`}>
+            {searchMessage}
+          </div>
+        )}
 
         {searchResults.length > 0 && (
           <div className="mt-6 space-y-4">

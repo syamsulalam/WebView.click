@@ -349,27 +349,65 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
   const query = url.searchParams.get("query") || "";
   const placesKey = await getSetting(db, env, "GOOGLE_PLACES_API_KEY");
 
+  const mockResult = {
+    place_id: "mock-place",
+    name: `Kedai Kopi Senja ${query}`,
+    formatted_address: "Jl. Sudirman No 123",
+    rating: 4.8,
+    user_ratings_total: 120,
+    business_status: "OPERATIONAL",
+  };
+
   if (!placesKey || placesKey.length < 10) {
     return json({
       mock: true,
-      results: [
-        {
-          place_id: "mock-place",
-          name: `Kedai Kopi Senja ${query}`,
-          formatted_address: "Jl. Sudirman No 123",
-          rating: 4.8,
-          user_ratings_total: 120,
-          business_status: "OPERATIONAL",
-        },
-      ],
+      status: "MOCK_NO_API_KEY",
+      results: [mockResult],
     });
   }
 
-  const response = await fetch(
-    `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${encodeURIComponent(placesKey)}`,
-  );
-  const data = await response.json();
-  return json(data, response.ok ? 200 : response.status);
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${encodeURIComponent(placesKey)}`,
+    );
+    const data = await response.json() as { status?: string; results?: unknown[]; error_message?: string };
+
+    if (!response.ok) {
+      return json({
+        status: "GOOGLE_HTTP_ERROR",
+        error: data.error_message || `Google Places returned HTTP ${response.status}`,
+        results: [],
+      });
+    }
+
+    if (data.status && data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+      return json({
+        status: data.status,
+        error: data.error_message || `Google Places status: ${data.status}`,
+        results: [],
+      });
+    }
+
+    if (!Array.isArray(data.results) || data.results.length === 0) {
+      return json({
+        status: data.status || "ZERO_RESULTS",
+        results: [],
+      });
+    }
+
+    return json({
+      status: data.status || "OK",
+      results: data.results,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Places search failed:", error);
+    return json({
+      status: "PLACES_FETCH_FAILED",
+      error: message,
+      results: [],
+    });
+  }
 }
 
 async function handlePlacesPhoto(url: URL, db: D1Database, env: Env): Promise<Response> {
