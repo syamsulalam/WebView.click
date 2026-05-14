@@ -84,26 +84,32 @@ function getSetting(key: string, envFallback?: string): string | undefined {
   }
 }
 
-// Middleware DB Self-Heal untuk seluruh routes
 function dbSelfHealMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  let isDbOk = false;
   try {
     db.prepare("SELECT 1 FROM system_settings LIMIT 1").get();
-    next();
+    isDbOk = true;
   } catch (e: any) {
     if (e.message?.includes('no such table')) {
       console.warn('DB uninitialized, self healing tables...');
       try {
         setupTables();
-        next();
+        isDbOk = true;
       } catch (err: any) {
-        res.status(500).json({ 
+        // Return immediately if DB is utterly broken.
+        return res.status(500).json({ 
           error: "Database tables are missing or not initialized! Please run SQL schema file.", 
           details: err.message 
         });
       }
     } else {
-      next();
+      // Different DB error, just let next() handle normally or fail via routes.
+      isDbOk = true; 
     }
+  }
+  
+  if (isDbOk) {
+    next();
   }
 }
 
