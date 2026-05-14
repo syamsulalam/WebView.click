@@ -40,6 +40,18 @@ const AppWrapper = () => {
     );
   }
 
+  // Cek penggunaan pk_live_ di environment AI Studio (bukan domain utama)
+  const isDevHost = window.location.hostname.includes('run.app') || window.location.hostname.includes('localhost');
+  const isDevBypass = !PUBLISHABLE_KEY || (PUBLISHABLE_KEY.startsWith('pk_live_') && isDevHost);
+
+  if (isDevBypass) {
+    return (
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    );
+  }
+
   return (
     <ClerkProvider publishableKey={PUBLISHABLE_KEY} appearance={clerkAppearance}>
       <BrowserRouter>

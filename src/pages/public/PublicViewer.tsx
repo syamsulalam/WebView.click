@@ -9,16 +9,28 @@ export default function PublicViewer() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [activeTab, setActiveTab] = useState("home");
+  const [publicLinks, setPublicLinks] = useState({ basic: "", premium: "" });
 
   useEffect(() => {
     if (businessId) {
       localStorage.setItem("savedBusinessId", businessId);
       
       // Ping view
-      fetch(`/api/leads/\${businessId}/ping`, { method: "POST" }).catch(() => {});
+      fetch(`/api/leads/${businessId}/ping`, { method: "POST" }).catch(() => {});
+
+      // Fetch public settings for payment links
+      fetch(`/api/public-settings`)
+        .then(r => r.json())
+        .then(data => {
+          setPublicLinks({
+            basic: data.PAYMENT_LINK_BASIC || "https://paypal.me/yourusername/120",
+            premium: data.PAYMENT_LINK_PREMIUM || ""
+          });
+        })
+        .catch(() => {});
 
       // Fetch JSON metadata
-      fetch(`/api/sites/\${businessId}`)
+      fetch(`/api/sites/${businessId}`)
         .then(r => {
           if (!r.ok) throw new Error("Not found");
           return r.json();
@@ -149,7 +161,9 @@ export default function PublicViewer() {
                       <div className="grid md:grid-cols-3 gap-8">
                         {section.content.items.map((item: any, i: number) => (
                           <div key={i} className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition">
-                            <div className="text-2xl mb-4 opacity-50">✦</div>
+                            {item.iconSvg && (
+                              <div className="w-10 h-10 mb-4 text-indigo-500" dangerouslySetInnerHTML={{ __html: item.iconSvg }} />
+                            )}
                             <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
                             <p className="opacity-70">{item.description}</p>
                           </div>
@@ -158,6 +172,124 @@ export default function PublicViewer() {
                     </div>
                   </section>
                 );
+              }
+              if (section.type === "textImageBlock") {
+                return (
+                  <section key={section.id} className="py-20 px-6">
+                    <div className={`max-w-6xl mx-auto flex flex-col md:flex-row gap-12 items-center ${section.content.layout === 'imageRight' ? 'md:flex-row-reverse' : ''}`}>
+                      <div className="flex-1">
+                        <h2 className="text-3xl font-bold mb-6">{section.content.title}</h2>
+                        <div className="opacity-80 prose max-w-none" dangerouslySetInnerHTML={{ __html: section.content.bodyHtml }} />
+                      </div>
+                      <div className="flex-1 w-full relative h-[400px] bg-gray-100 rounded-3xl overflow-hidden shadow-lg border border-gray-200">
+                        {/* Placeholder for real images */}
+                        <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">{section.content.image}</div>
+                      </div>
+                    </div>
+                  </section>
+                );
+              }
+              if (section.type === "teamGrid") {
+                return (
+                  <section key={section.id} className="py-20 px-6 bg-black/5">
+                    <div className="max-w-6xl mx-auto">
+                      <h2 className="text-3xl font-bold text-center mb-12">{section.content.title}</h2>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                        {section.content.members.map((member: any, i: number) => (
+                          <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 text-center pb-6">
+                            <div className="h-48 bg-gray-200 mb-4 flex items-center justify-center text-xs text-gray-400">
+                              {member.image}
+                            </div>
+                            <h3 className="text-lg font-semibold">{member.name}</h3>
+                            <p className="text-sm opacity-60 font-medium">{member.role}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </section>
+                );
+              }
+              if (section.type === "gridCards") {
+                return (
+                  <section key={section.id} className="py-20 px-6">
+                    <div className="max-w-6xl mx-auto">
+                      <div className="text-center mb-12">
+                        <h2 className="text-3xl font-bold mb-4">{section.content.title}</h2>
+                        <p className="opacity-70 max-w-2xl mx-auto">{section.content.description}</p>
+                      </div>
+                      <div className="grid md:grid-cols-3 gap-8">
+                        {section.content.cards.map((card: any, i: number) => (
+                          <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100">
+                            <div className="h-48 bg-gray-200 flex items-center justify-center text-xs text-gray-400">
+                              {card.image}
+                            </div>
+                            <div className="p-6">
+                              <h3 className="text-xl font-bold mb-2">{card.title}</h3>
+                              <p className="opacity-70 mb-4">{card.description}</p>
+                              {card.price && <p className="font-semibold text-lg" style={{ color: colors.accent }}>{card.price}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </section>
+                );
+              }
+              if (section.type === "imageGallery") {
+                 return (
+                   <section key={section.id} className="py-20 px-6 bg-black/5">
+                     <div className="max-w-6xl mx-auto">
+                       <h2 className="text-3xl font-bold text-center mb-12">{section.content.title}</h2>
+                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                         {section.content.images.map((img: string, i: number) => (
+                           <div key={i} className="h-64 bg-gray-200 rounded-xl flex items-center justify-center text-xs text-gray-400">
+                             {img}
+                           </div>
+                         ))}
+                       </div>
+                     </div>
+                   </section>
+                 );
+              }
+              if (section.type === "contactForm") {
+                return (
+                  <section key={section.id} className="py-20 px-6">
+                    <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row border border-gray-100">
+                      <div style={{ backgroundColor: colors.primary, color: '#fff' }} className="p-10 md:w-2/5">
+                        <h2 className="text-2xl font-bold mb-6">{section.content.title}</h2>
+                        <div className="space-y-4 text-sm opacity-90">
+                          <p><strong>Alamat:</strong><br/>{section.content.address}</p>
+                          <p><strong>Telepon:</strong><br/>{section.content.phone}</p>
+                          <p><strong>Email:</strong><br/>{section.content.email}</p>
+                          <div>
+                            <strong>Jam Operasional:</strong>
+                            <ul className="mt-1 space-y-1">
+                              {section.content.openingHours.map((h: string, i: number) => <li key={i}>• {h}</li>)}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-10 md:w-3/5">
+                        <h3 className="text-xl font-bold mb-6">{section.content.formConfig.heading}</h3>
+                        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); alert("Formulir ini membutuhkan backend. Hubungi admin untuk mengaktifkan fitur formulir."); }}>
+                          {section.content.formConfig.fields.map((f: any, i: number) => (
+                            <div key={i}>
+                              <label className="block text-sm font-medium opacity-80 mb-1">{f.label}</label>
+                              {f.type === 'textarea' ? (
+                                <textarea required={f.required} className="w-full border border-gray-300 rounded-lg p-3 bg-transparent" rows={4}></textarea>
+                              ) : (
+                                <input required={f.required} type={f.type} className="w-full border border-gray-300 rounded-lg p-3 bg-transparent" />
+                              )}
+                            </div>
+                          ))}
+                          <button style={{ backgroundColor: colors.accent, color: '#fff' }} className="px-6 py-3 rounded-lg font-medium hover:opacity-90 transition pt-2">
+                            {section.content.formConfig.buttonText}
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </section>
+                )
               }
               // Add more conditions for textImageBlock, teamGrid, gallery etc.
               return <div key={section.id} className="py-20 text-center opacity-50">[Section: {section.type}]</div>;
@@ -182,7 +314,7 @@ export default function PublicViewer() {
         </button>
         <button 
           onClick={() => {
-            const link = import.meta.env.VITE_PAYMENT_LINK_BASIC || "https://paypal.me/yourusername/120";
+            const link = publicLinks.basic;
             if(confirm("Layanan hosting & managed setup $120/tahun. Lanjutkan ke pembayaran?")) {
               window.open(link, "_blank");
             }

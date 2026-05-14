@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import Database from "better-sqlite3";
+import fs from "fs";
 
 // Initialize SQLite DB matching PRD
 const db = new Database("webviewcrm.sqlite", { verbose: console.log });
@@ -58,7 +59,22 @@ db.exec(`
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
+
+function getSetting(key: string, envFallback?: string): string | undefined {
+  try {
+    const row = db.prepare("SELECT value FROM system_settings WHERE key = ?").get(key) as { value: string };
+    return row ? row.value : envFallback;
+  } catch (e) {
+    return envFallback;
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -68,6 +84,66 @@ async function startServer() {
   app.use(cors());
 
   // --- API ROUTES ---
+
+  // Settings API
+  app.get("/api/settings", (req, res) => {
+    try {
+      const rows = db.prepare("SELECT key, value FROM system_settings").all() as {key: string, value: string}[];
+      const settings = rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
+      res.json(settings);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/settings", (req, res) => {
+    const settings = req.body;
+    try {
+      const stmt = db.prepare("INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP");
+      const initMany = db.transaction((settingsObj) => {
+        for (const [k, v] of Object.entries(settingsObj)) {
+          if (v !== undefined && v !== null) {
+            stmt.run(k, String(v));
+          }
+        }
+      });
+      initMany(settings);
+      res.json({ success: true });
+    } catch(e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/public-settings", (req, res) => {
+    try {
+      const rows = db.prepare("SELECT key, value FROM system_settings WHERE key IN ('PAYMENT_LINK_BASIC', 'PAYMENT_LINK_PREMIUM')").all() as {key: string, value: string}[];
+      const settings = rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
+      res.json(settings);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // JSON Schema File 
+  app.get("/api/schema", (req, res) => {
+    try {
+      const templateStr = fs.readFileSync(path.join(process.cwd(), "JSON", "template-schema.json"), "utf8");
+      res.json(JSON.parse(templateStr));
+    } catch(e) {
+      res.status(500).json({ error: "Could not read schema" });
+    }
+  });
+
+  // Recent Activities
+  app.get("/api/activities", (req, res) => {
+    const activities = db.prepare(`
+      SELECT c.*, l.business_name 
+      FROM crm_activities c 
+      JOIN leads l ON c.lead_id = l.id 
+      ORDER BY c.created_at DESC LIMIT 10
+    `).all();
+    res.json(activities);
+  });
 
   // 1. Dashboard Stats
   app.get("/api/stats", (req, res) => {
@@ -123,7 +199,9 @@ async function startServer() {
   // 5. Google Places Proxy (Mock or Real)
   app.get("/api/places/search", async (req, res) => {
     const { query } = req.query;
-    if (!process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_PLACES_API_KEY.length < 10) {
+    const placesKey = getSetting("GOOGLE_PLACES_API_KEY", process.env.GOOGLE_PLACES_API_KEY);
+
+    if (!placesKey || placesKey.length < 10) {
       // Mock data if no API key
       return res.json({
         mock: true,
@@ -150,10 +228,123 @@ async function startServer() {
   });
 
   // 6. Save JSON Site & Lead
-  app.post("/api/sites/generate", (req, res) => {
-    const { jsonContent, businessId, businessName, phone, originData } = req.body;
+  app.post("/api/sites/generate", async (req, res) => {
+    const { jsonContent, businessId, businessName, phone, originData, model, provider } = req.body;
     
     try {
+      let finalJson = jsonContent;
+      
+      // AI generation
+      if (model && provider) {
+        try {
+          const templateStr = fs.readFileSync(path.join(process.cwd(), "JSON", "template-schema.json"), "utf8");
+          const systemMsg = `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n${templateStr}\n\nUse the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. ONLY output JSON, no markdown formatting.`;
+          const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}`;
+
+          let responseContent = "";
+          
+          const orKey = getSetting("OPENROUTER_API_KEY", process.env.OPENROUTER_API_KEY);
+          const oaKey = getSetting("OPENAI_API_KEY", process.env.OPENAI_API_KEY);
+          const gmKey = getSetting("GEMINI_API_KEY", process.env.GEMINI_API_KEY);
+          const ocKey = getSetting("OPENCODE_API_KEY", process.env.OPENCODE_API_KEY);
+          const ocUrl = getSetting("OPENCODE_BASE_URL", process.env.OPENCODE_BASE_URL) || "https://api.opencode.example.com/v1/chat/completions";
+
+          if (provider === "OpenRouter" && orKey) {
+            const apiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${orKey}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                model: model, 
+                response_format: { type: "json_object" },
+                messages: [
+                  { role: "system", content: systemMsg },
+                  { role: "user", content: userMsg }
+                ]
+              })
+            });
+            const aiJson = await apiRes.json();
+            if (aiJson.choices && aiJson.choices[0].message.content) {
+              responseContent = aiJson.choices[0].message.content;
+            }
+          } 
+          else if (provider === "OpenAI" && oaKey) {
+            const apiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${oaKey}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                model: model,
+                response_format: { type: "json_object" },
+                messages: [
+                  { role: "system", content: systemMsg },
+                  { role: "user", content: userMsg }
+                ]
+              })
+            });
+            const aiJson = await apiRes.json();
+            if (aiJson.choices && aiJson.choices[0].message.content) {
+              responseContent = aiJson.choices[0].message.content;
+            }
+          }
+          else if (provider === "Gemini" && gmKey) {
+            const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${gmKey}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                system_instruction: { parts: [{ text: systemMsg }] },
+                contents: [{ parts: [{ text: userMsg }] }],
+                generationConfig: { responseMimeType: "application/json" }
+              })
+            });
+            const aiJson = await apiRes.json();
+            if (aiJson.candidates && aiJson.candidates[0].content.parts[0].text) {
+              responseContent = aiJson.candidates[0].content.parts[0].text;
+            }
+          }
+          else if (provider === "Opencode" && ocKey) {
+            // Opencode as an openai-compatible endpoint
+            const apiRes = await fetch(ocUrl, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${ocKey}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                model: model,
+                response_format: { type: "json_object" },
+                messages: [
+                  { role: "system", content: systemMsg },
+                  { role: "user", content: userMsg }
+                ]
+              })
+            });
+            const aiJson = await apiRes.json();
+            if (aiJson.choices && aiJson.choices[0].message.content) {
+              responseContent = aiJson.choices[0].message.content;
+            }
+          }
+
+          if (responseContent) {
+            // strip markdown formatting if the model still provided it
+            responseContent = responseContent.replace(/```json/g, "").replace(/```/g, "").trim();
+            finalJson = JSON.parse(responseContent);
+            if(finalJson.meta) finalJson.meta.businessId = businessId;
+          } else {
+             console.log("No valid AI response generated, continuing with mock");
+          }
+
+        } catch(aiErr) {
+          console.error("AI generation failed, falling back to mock:", aiErr);
+        }
+      }
+
       const leadId = crypto.randomUUID();
       
       db.prepare(`
@@ -166,10 +357,23 @@ async function startServer() {
         INSERT INTO json_sites (business_id, json_content)
         VALUES (?, ?)
         ON CONFLICT(business_id) DO UPDATE SET json_content = excluded.json_content, updated_at = CURRENT_TIMESTAMP
-      `).run(businessId, JSON.stringify(jsonContent));
+      `).run(businessId, JSON.stringify(finalJson));
+
+      try {
+        const leadRow = db.prepare("SELECT id FROM leads WHERE business_id = ?").get() as { id: string };
+        if (leadRow) {
+          db.prepare(`
+            INSERT INTO crm_activities (id, lead_id, staff_id, activity_type, description)
+            VALUES (?, ?, ?, ?, ?)
+          `).run(crypto.randomUUID(), leadRow.id, "system", "note_added", `AI Website generated successfully using ${provider || 'mock'} (${model || 'mock-json'}).`);
+        }
+      } catch (actErr) {
+        console.error("Activity log error:", actErr);
+      }
 
       res.json({ success: true, businessId });
     } catch (e: any) {
+      console.error(e);
       res.status(500).json({ error: e.message });
     }
   });

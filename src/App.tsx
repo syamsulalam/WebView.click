@@ -5,6 +5,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminLeads from './pages/admin/AdminLeads';
+import AdminSchema from './pages/admin/AdminSchema';
+import AdminSettings from './pages/admin/AdminSettings';
 import AdminLayout from './components/AdminLayout';
 import PublicViewer from './pages/public/PublicViewer';
 import HubPage from './pages/public/HubPage';
@@ -16,6 +18,8 @@ export default function App() {
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<AdminDashboard />} />
         <Route path="leads" element={<AdminLeads />} />
+        <Route path="schema" element={<AdminSchema />} />
+        <Route path="settings" element={<AdminSettings />} />
       </Route>
       <Route path="/:businessId" element={<PublicViewer />} />
     </Routes>

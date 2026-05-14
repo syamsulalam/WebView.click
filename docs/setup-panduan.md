@@ -16,28 +16,41 @@ Karena kode saat ini berjalan sebagai aplikasi Node.js (Full-stack) di environme
    - **Build command:** `npm run build`
    - **Build output directory:** `dist`
 4. Sebelum melakukan deploy pertama kali, masuk ke **Settings > Environment variables**.
-5. Tambahkan variable berikut (sama seperti di `.env` lokal Anda):
+5. Tambahkan variable berikut:
    - `VITE_CLERK_PUBLISHABLE_KEY` (Publik, dari Clerk)
    - `CLERK_SECRET_KEY` (Rahasia, dari Clerk)
-   - `OPENAI_API_KEY` (Rahasia, jika menggunakan AI Auto-generator)
-   - `GOOGLE_PLACES_API_KEY` (Rahasia, untuk scrape Maps)
-   - `PAYMENT_LINK_BASIC` / `PAYMENT_LINK_PREMIUM` (URL gateway pembayaran)
+   
+*Catatan: API Keys lainnya seperti Google Places, OpenAI, Gemini, dan Payment Links sekarang dikonfigurasi melalui D1 App Dashboard (`/admin/settings`) dan tidak perlu dimasukkan ke Environment Variables.*
 
 ### Konfigurasi Cloudflare D1 (Database)
 Aplikasi lokal menggunakan SQLite (`better-sqlite3`). Untuk versi produksi di Cloudflare:
 1. Buka Terminal lokal, pastikan Anda install Wrangler: `npm install -g wrangler`
 2. Login akun: `npx wrangler login`
 3. Buat database: `npx wrangler d1 create webview-crm`
-4. Copy `database_id` yang muncul, lalu tambahkan di file `wrangler.toml` project Anda agar Pages Functions bisa membaca database D1.
+4. Copy `database_id` yang muncul.
+5. Jalankan inisialisasi skema dengan command: 
+   `npx wrangler d1 execute webview-crm --file=./SQL/schema.sql --remote`
+6. Pada Cloudflare Pages Dashboard Anda, pergi ke **Settings > Bindings > D1 database bindings**.
+7. Tambahkan binding baru dengan variabel `DB` dan pilih database `webview-crm` yang baru saja Anda buat. Ini akan memungkinkan pekerja serverless (seperti Pages Functions atau Workers) untuk menyimpan CRM *leads* sesuai tabel panduan di `WebView.click.md`.
 
 ### Konfigurasi Cloudflare R2 (Object Storage)
 1. Di Dashboard Cloudflare R2, klik **Create bucket**, namakan `webview-sites`.
 2. Aktifkan **Public R2.dev URL** atau sambungkan dengan domain kustom untuk memberikan akses publik ke file `.json` dan gambar website generator.
-3. Bind bucket ke Pages Functions di settings Cloudflare Pages > Bindings.
+3. Di Cloudflare Pages Dashboard, pergi ke **Settings > Bindings > R2 bucket bindings**.
+4. Tambahkan binding dengan variabel `R2_BUCKET` dan hubungkan ke `webview-sites`. Sistem akan dapat menulis JSON ke storage ini sesuai arsitektur.
 
 ---
 
-## 2. Setup Google Places API (Scraping GMB)
+## 2. Setup AI Generators (Website Builders)
+Sistem memiliki pengaturan AI multikoneksi. Di `/admin`, Anda dapat memilih dari OpenRouter, OpenAI, Gemini, atau Opencode untuk meracik JSON dan copywriting website klien Anda. Di dashboard aplikasi (`/admin/settings`), atur variabel ini:
+- `OPENROUTER_API_KEY`: Key dari OpenRouter untuk ratusan model OSS.
+- `OPENAI_API_KEY`: Key jika memilih platform OpenAI (`gpt-4o`).
+- `GEMINI_API_KEY`: Key jika memilih Gemini.
+- `OPENCODE_API_KEY` & `OPENCODE_BASE_URL`: Jika menggunakan Custom Opencode API atau custom OpenAI-compatible endpoint.
+
+---
+
+## 3. Setup Google Places API (Scraping GMB)
 
 Agar fitur "cari prospek" berfungsi dengan data dunia nyata:
 1. Kunjungi [Google Cloud Console](https://console.cloud.google.com).

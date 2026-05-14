@@ -1,0 +1,195 @@
+{
+  "meta": {
+    "businessName": "Kopi Senja Jakarta",
+    "businessId": "kopi-senja-jakarta",
+    "niche": "cafe",
+    "language": "id",
+    "seoTitle": "Kopi Senja Jakarta - Tempat Nongkrong Terbaik",
+    "seoDescription": "Kopi Senja menyajikan biji kopi Nusantara terbaik dengan suasana nyaman di Jakarta.",
+    "faviconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☕</text></svg>"
+  },
+  "design": {
+    "themeVariables": {
+      "colors": {
+        "primary": "#4E342E",
+        "secondary": "#D7CCC8",
+        "accent": "#FF7043",
+        "textMain": "#212121",
+        "textMuted": "#757575",
+        "background": "#FAFAFA"
+      },
+      "typography": {
+        "headingFont": "'Poppins', sans-serif",
+        "bodyFont": "'Inter', sans-serif"
+      },
+      "uiTokens": {
+        "borderRadius": "12px",
+        "borderWidth": "1px",
+        "borderColor": "#E0E0E0",
+        "boxShadow": "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
+      }
+    },
+    "customCss": "/* Override Tailwind spesifik */\n.glass-effect { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); }\n.hover-zoom:hover { transform: scale(1.03); transition: transform 0.3s ease; }"
+  },
+  "global": {
+    "header": {
+      "logoSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☕</text></svg>",
+      "logoImageUrl": "kopi-senja-jakarta-logo.png",
+      "ctaButton": {
+        "text": "Hubungi WA",
+        "href": "https://wa.me/6281234567890"
+      }
+    },
+    "footer": {
+      "text": "© 2026 Kopi Senja Jakarta. All rights reserved.",
+      "socials": [
+        { "platform": "Instagram", "href": "https://instagram.com/kopisenja", "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='2' y='2' width='20' height='20' rx='5' ry='5'></rect><path d='M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z'></path><line x1='17.5' y1='6.5' x2='17.51' y2='6.5'></line></svg>" }
+      ]
+    },
+    "socialProof": {
+      "googleRating": "4.8",
+      "reviewCount": "320",
+      "reviews": [
+        { "authorName": "Andi W", "rating": 5, "text": "Kopinya enak banget, tempatnya cozy buat kerja seharian!" },
+        { "authorName": "Rina R", "rating": 5, "text": "Croissant-nya juara. Pasti bakal balik lagi ke sini." }
+      ]
+    }
+  },
+  "navigation": {
+    "headerMenu": [
+      { "label": "Beranda", "href": "#home" },
+      { "label": "Tentang Kami", "href": "#about" },
+      { "label": "Menu", "href": "#services" },
+      { "label": "Galeri", "href": "#gallery" },
+      { "label": "Kontak", "href": "#contact" }
+    ]
+  },
+  "pages": [
+    {
+      "pageId": "home",
+      "pageTitle": "Beranda",
+      "sections": [
+        {
+          "type": "hero",
+          "id": "hero-main",
+          "content": {
+            "headline": "Awali Harimu dengan Secangkir Inspirasi",
+            "subheadline": "Tempat ngopi paling nyaman di Jakarta. Wi-Fi cepat, kopi nikmat.",
+            "buttons": [
+              { "text": "Lihat Menu", "href": "#services", "style": "primary" },
+              { "text": "Booking Tempat", "href": "#contact", "style": "outline" }
+            ],
+            "image": "kopi-senja-jakarta-hero.jpg"
+          }
+        },
+        {
+          "type": "features",
+          "id": "features-usp",
+          "content": {
+            "title": "Mengapa Memilih Kami?",
+            "items": [
+              { "title": "Biji Kopi Pilihan", "description": "100% Arabica Nusantara", "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M10 2v7.31'/><path d='M14 9.3V1.99'/><path d='M8.5 2h7'/><path d='M14 9.3a6.5 6.5 0 1 1-4 0'/><path d='M5.52 16h12.96'/></svg>" },
+              { "title": "Wi-Fi Cepat", "description": "Cocok untuk WFC", "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12.55a11 11 0 0 1 14.08 0'/><path d='M1.42 9a16 16 0 0 1 21.16 0'/><path d='M8.53 16.11a6 6 0 0 1 6.95 0'/><line x1='12' y1='20' x2='12.01' y2='20'/></svg>" },
+              { "title": "Area Outdoor", "description": "Smoking area yang luas", "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v20'/><path d='M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6'/></svg>" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "pageId": "about",
+      "pageTitle": "Tentang Kami",
+      "sections": [
+        {
+          "type": "textImageBlock",
+          "id": "about-story",
+          "content": {
+            "layout": "imageLeft",
+            "title": "Cerita Kami",
+            "bodyHtml": "<p>Berdiri sejak 2021, Kopi Senja berawal dari kecintaan kami terhadap kopi lokal. Kami percaya bahwa setiap seduhan menceritakan kisah yang berbeda. Suasana kedai dirancang khusus agar Anda merasa seperti di rumah sendiri.</p>",
+            "image": "kopi-senja-jakarta-about.jpg",
+            "button": null
+          }
+        },
+        {
+          "type": "teamGrid",
+          "id": "about-team",
+          "content": {
+            "title": "Tim Hebat Kami",
+            "members": [
+              { "name": "Budi Santoso", "role": "Head Barista", "image": "kopi-senja-jakarta-team1.jpg" },
+              { "name": "Siti Aminah", "role": "Pastry Chef", "image": "kopi-senja-jakarta-team2.jpg" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "pageId": "services",
+      "pageTitle": "Menu & Layanan",
+      "sections": [
+        {
+          "type": "gridCards",
+          "id": "menu-list",
+          "content": {
+            "title": "Menu Unggulan Kami",
+            "description": "Dibuat dengan bahan premium dan cinta.",
+            "cards": [
+              { "title": "Es Kopi Senja", "description": "Espresso dengan susu dan gula aren", "price": "Rp 25.000", "image": "kopi-senja-jakarta-service1.jpg" },
+              { "title": "Croissant Butter", "description": "Renyah di luar, lembut di dalam", "price": "Rp 30.000", "image": "kopi-senja-jakarta-service2.jpg" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "pageId": "gallery",
+      "pageTitle": "Galeri",
+      "sections": [
+        {
+          "type": "imageGallery",
+          "id": "gallery-main",
+          "content": {
+            "title": "Suasana Kedai Kami",
+            "images": [
+              "kopi-senja-jakarta-gallery1.jpg",
+              "kopi-senja-jakarta-gallery2.jpg",
+              "kopi-senja-jakarta-gallery3.jpg",
+              "kopi-senja-jakarta-gallery4.jpg"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "pageId": "contact",
+      "pageTitle": "Kontak Kami",
+      "sections": [
+        {
+          "type": "contactForm",
+          "id": "contact-main",
+          "content": {
+            "title": "Hubungi Kami",
+            "address": "Jl. Sudirman No. 12, Jakarta Selatan",
+            "phone": "+62 812-3456-7890",
+            "email": "halo@kopisenja.com",
+            "openingHours": [
+              "Senin - Jumat: 08:00 - 22:00",
+              "Sabtu - Minggu: 07:00 - 23:00"
+            ],
+            "formConfig": {
+              "heading": "Kirim Pesan",
+              "endpoint": "https://formspree.io/f/endpoint-anda",
+              "buttonText": "Kirim Pesan Sekarang",
+              "fields": [
+                { "name": "nama", "label": "Nama Lengkap", "type": "text", "required": true },
+                { "name": "email", "label": "Alamat Email", "type": "email", "required": true },
+                { "name": "pesan", "label": "Pesan", "type": "textarea", "required": true }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,41 @@ export default function AdminLeads() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [aiProvider, setAiProvider] = useState("OpenRouter");
+  const [aiModel, setAiModel] = useState("google/gemini-2.5-pro");
+
+  const providers: Record<string, { label: string; models: { value: string; label: string }[] }> = {
+    OpenRouter: {
+      label: "OpenRouter API",
+      models: [
+        { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+        { value: "anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
+        { value: "openai/gpt-4o", label: "GPT-4o" },
+        { value: "meta-llama/llama-3.1-405b-instruct", label: "Llama 3.1 405B" }
+      ]
+    },
+    OpenAI: {
+      label: "OpenAI API",
+      models: [
+        { value: "gpt-4o", label: "GPT-4o" },
+        { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+        { value: "o1-mini", label: "o1-mini" }
+      ]
+    },
+    Gemini: {
+      label: "Gemini API",
+      models: [
+        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+        { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" }
+      ]
+    },
+    Opencode: {
+      label: "Opencode API",
+      models: [
+        { value: "opencode-default", label: "Opencode Default Model" }
+      ]
+    }
+  };
 
   const fetchLeads = () => {
     fetch("/api/leads")
@@ -97,10 +132,13 @@ export default function AdminLeads() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          model: aiModel,
+          provider: aiProvider,
           jsonContent: mockJson,
           businessId,
           businessName: place.name,
           phone: "0000000000",
+          originData: place
         })
       });
       fetchLeads();
@@ -128,7 +166,33 @@ export default function AdminLeads() {
 
       {/* SEARCH SECTION */}
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-8">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Cari Prospek Baru (Google Maps)</h2>
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
+          <h2 className="text-lg font-medium text-gray-900">Cari Prospek Baru (Google Maps)</h2>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-500 font-medium">AI Web Builder:</label>
+            <select 
+              value={aiProvider} 
+              onChange={(e) => {
+                setAiProvider(e.target.value);
+                setAiModel(providers[e.target.value].models[0].value);
+              }}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {Object.keys(providers).map(pKey => (
+                <option key={pKey} value={pKey}>{providers[pKey].label}</option>
+              ))}
+            </select>
+            <select 
+              value={aiModel} 
+              onChange={(e) => setAiModel(e.target.value)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {providers[aiProvider].models.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div className="flex gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
