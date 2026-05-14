@@ -26,18 +26,18 @@ Karena kode saat ini berjalan sebagai aplikasi Node.js (Full-stack) di environme
 Aplikasi lokal menggunakan SQLite (`better-sqlite3`). Untuk versi produksi di Cloudflare:
 1. Buka Terminal lokal, pastikan Anda install Wrangler: `npm install -g wrangler`
 2. Login akun: `npx wrangler login`
-3. Buat database: `npx wrangler d1 create webview-crm`
+3. Buat database: `npx wrangler d1 create webview-db`
 4. Copy `database_id` yang muncul.
 5. Jalankan inisialisasi skema dengan command: 
-   `npx wrangler d1 execute webview-crm --file=./SQL/schema.sql --remote`
+   `npx wrangler d1 execute webview-db --file=./SQL/schema.sql --remote`
 6. Pada Cloudflare Pages Dashboard Anda, pergi ke **Settings > Bindings > D1 database bindings**.
-7. Tambahkan binding baru dengan variabel `DB` dan pilih database `webview-crm` yang baru saja Anda buat. Ini akan memungkinkan pekerja serverless (seperti Pages Functions atau Workers) untuk menyimpan CRM *leads* sesuai tabel panduan di `WebView.click.md`.
+7. Tambahkan binding baru dengan variabel `DB` dan pilih database `webview-db` yang baru saja Anda buat. Ini akan memungkinkan pekerja serverless (seperti Pages Functions atau Workers) untuk menyimpan CRM *leads* sesuai tabel panduan di `WebView.click.md`.
 
 ### Konfigurasi Cloudflare R2 (Object Storage)
-1. Di Dashboard Cloudflare R2, klik **Create bucket**, namakan `webview-sites`.
+1. Di Dashboard Cloudflare R2, klik **Create bucket**, namakan `webview`.
 2. Aktifkan **Public R2.dev URL** atau sambungkan dengan domain kustom untuk memberikan akses publik ke file `.json` dan gambar website generator.
 3. Di Cloudflare Pages Dashboard, pergi ke **Settings > Bindings > R2 bucket bindings**.
-4. Tambahkan binding dengan variabel `R2_BUCKET` dan hubungkan ke `webview-sites`. Sistem akan dapat menulis JSON ke storage ini sesuai arsitektur.
+4. Tambahkan binding dengan variabel `R2` dan hubungkan ke `webview`. Sistem akan dapat menulis JSON ke storage ini sesuai arsitektur.
 
 ---
 

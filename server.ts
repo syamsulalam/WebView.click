@@ -9,72 +9,101 @@ import fs from "fs";
 const db = new Database("webviewcrm.sqlite", { verbose: console.log });
 db.pragma("journal_mode = WAL");
 
-// Setup Tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS leads (
-      id TEXT PRIMARY KEY,
-      business_id TEXT UNIQUE NOT NULL,
-      business_name TEXT NOT NULL,
-      niche TEXT,
-      email TEXT,
-      phone TEXT,
-      gmb_url TEXT,
-      website_url TEXT,
-      status TEXT DEFAULT 'scraped',
-      view_count INTEGER DEFAULT 0,
-      last_viewed_at DATETIME,
-      staff_id TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+// Setup Tables helper
+function setupTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS leads (
+        id TEXT PRIMARY KEY,
+        business_id TEXT UNIQUE NOT NULL,
+        business_name TEXT NOT NULL,
+        niche TEXT,
+        email TEXT,
+        phone TEXT,
+        gmb_url TEXT,
+        website_url TEXT,
+        status TEXT DEFAULT 'scraped',
+        view_count INTEGER DEFAULT 0,
+        last_viewed_at DATETIME,
+        staff_id TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  CREATE TABLE IF NOT EXISTS subscriptions (
-      id TEXT PRIMARY KEY,
-      lead_id TEXT NOT NULL,
-      package_type TEXT NOT NULL,
-      amount_paid REAL DEFAULT 0.00,
-      payment_status TEXT DEFAULT 'unpaid',
-      payment_method TEXT,
-      payment_reference TEXT,
-      subscription_start_date DATETIME,
-      subscription_end_date DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
-  );
+    CREATE TABLE IF NOT EXISTS subscriptions (
+        id TEXT PRIMARY KEY,
+        lead_id TEXT NOT NULL,
+        package_type TEXT NOT NULL,
+        amount_paid REAL DEFAULT 0.00,
+        payment_status TEXT DEFAULT 'unpaid',
+        payment_method TEXT,
+        payment_reference TEXT,
+        subscription_start_date DATETIME,
+        subscription_end_date DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
+    );
 
-  CREATE TABLE IF NOT EXISTS crm_activities (
-      id TEXT PRIMARY KEY,
-      lead_id TEXT NOT NULL,
-      staff_id TEXT NOT NULL,
-      activity_type TEXT NOT NULL,
-      description TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
-  );
+    CREATE TABLE IF NOT EXISTS crm_activities (
+        id TEXT PRIMARY KEY,
+        lead_id TEXT NOT NULL,
+        staff_id TEXT NOT NULL,
+        activity_type TEXT NOT NULL,
+        description TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
+    );
 
-  CREATE TABLE IF NOT EXISTS json_sites (
-      business_id TEXT PRIMARY KEY,
-      json_content TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    CREATE TABLE IF NOT EXISTS json_sites (
+        business_id TEXT PRIMARY KEY,
+        json_content TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  CREATE TABLE IF NOT EXISTS system_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
+    CREATE TABLE IF NOT EXISTS system_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+}
+
+setupTables();
 
 function getSetting(key: string, envFallback?: string): string | undefined {
   try {
     const row = db.prepare("SELECT value FROM system_settings WHERE key = ?").get(key) as { value: string };
     return row ? row.value : envFallback;
-  } catch (e) {
+  } catch (e: any) {
+    if (e.message?.includes('no such table')) {
+      console.warn('DB uninitialized, self healing tables...');
+      setupTables();
+    }
     return envFallback;
   }
 }
+
+// Middleware DB Self-Heal untuk seluruh routes
+function dbSelfHealMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  try {
+    db.prepare("SELECT 1 FROM system_settings LIMIT 1").get();
+    next();
+  } catch (e: any) {
+    if (e.message?.includes('no such table')) {
+      console.warn('DB uninitialized, self healing tables...');
+      try {
+        setupTables();
+        next();
+      } catch (err) {
+        res.status(500).json({ error: "Failed to self-heal Database. Please initialize tables." });
+      }
+    } else {
+      next();
+    }
+  }
+}
+
 
 async function startServer() {
   const app = express();
@@ -84,6 +113,7 @@ async function startServer() {
   app.use(cors());
 
   // --- API ROUTES ---
+  app.use("/api", dbSelfHealMiddleware);
 
   // Settings API
   app.get("/api/settings", (req, res) => {

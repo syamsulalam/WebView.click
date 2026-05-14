@@ -7,9 +7,15 @@ export default function AdminSchema() {
     // You could fetch this from an API if you want to be dynamic. 
     // Here we're fetching from a static file for demonstration or loading directly via imports.
     fetch('/api/schema')
-      .then(res => res.json())
+      .then(async (res) => {
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`Server returned ${res.status}: ${text.substring(0, 50)}`);
+        }
+        return res.json();
+      })
       .then(data => setSchemaData(JSON.stringify(data, null, 2)))
-      .catch(err => setSchemaData("Failed to load schema: " + err.message));
+      .catch(err => setSchemaData(err.message));
   }, []);
 
   return (
