@@ -16,6 +16,21 @@ CREATE TABLE IF NOT EXISTS leads (
     last_contacted DATETIME
 );
 
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id TEXT PRIMARY KEY,
+    lead_id TEXT NOT NULL,
+    package_type TEXT NOT NULL,
+    amount_paid REAL DEFAULT 0.00,
+    payment_status TEXT DEFAULT 'unpaid',
+    payment_method TEXT,
+    payment_reference TEXT,
+    subscription_start_date DATETIME,
+    subscription_end_date DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS crm_activities (
     id TEXT PRIMARY KEY,
     lead_id TEXT NOT NULL,

@@ -12,34 +12,40 @@ export default function AdminLeads() {
   const [aiModel, setAiModel] = useState("google/gemini-2.5-pro");
 
   const providers: Record<string, { label: string; models: { value: string; label: string }[] }> = {
+    OpenAI: {
+      label: "OpenAI API",
+      models: [
+        { value: "gpt-4o", label: "GPT-4o (Standard)" },
+        { value: "gpt-4.5-preview", label: "GPT-4.5 Preview" },
+        { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+        { value: "o1", label: "o1 (Reasoning)" },
+        { value: "o3-mini", label: "o3-mini (Reasoning)" }
+      ]
+    },
+    Gemini: {
+      label: "Gemini API",
+      models: [
+        { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" },
+        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+        { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" }
+      ]
+    },
     OpenRouter: {
       label: "OpenRouter API",
       models: [
         { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
         { value: "anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
         { value: "openai/gpt-4o", label: "GPT-4o" },
+        { value: "qwen/qwen-2.5-coder-32b-instruct", label: "Qwen 2.5 Coder 32B" },
         { value: "meta-llama/llama-3.1-405b-instruct", label: "Llama 3.1 405B" }
       ]
     },
-    OpenAI: {
-      label: "OpenAI API",
-      models: [
-        { value: "gpt-4o", label: "GPT-4o" },
-        { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-        { value: "o1-mini", label: "o1-mini" }
-      ]
-    },
-    Gemini: {
-      label: "Gemini API",
-      models: [
-        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-        { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" }
-      ]
-    },
     Opencode: {
-      label: "Opencode API",
+      label: "Opencode API (Custom)",
       models: [
-        { value: "opencode-default", label: "Opencode Default Model" }
+        { value: "opencode-default", label: "Opencode Default Model" },
+        { value: "mimo-2.5", label: "Mimo 2.5" },
+        { value: "qwen-3.6", label: "Qwen 3.6 (Alias)" }
       ]
     }
   };

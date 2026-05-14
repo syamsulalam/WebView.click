@@ -136,28 +136,36 @@ async function startServer() {
 
   // Recent Activities
   app.get("/api/activities", (req, res) => {
-    const activities = db.prepare(`
-      SELECT c.*, l.business_name 
-      FROM crm_activities c 
-      JOIN leads l ON c.lead_id = l.id 
-      ORDER BY c.created_at DESC LIMIT 10
-    `).all();
-    res.json(activities);
+    try {
+      const activities = db.prepare(`
+        SELECT c.*, l.business_name 
+        FROM crm_activities c 
+        JOIN leads l ON c.lead_id = l.id 
+        ORDER BY c.created_at DESC LIMIT 10
+      `).all();
+      res.json(activities);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // 1. Dashboard Stats
   app.get("/api/stats", (req, res) => {
-    const leadsCount = db.prepare("SELECT COUNT(*) as count FROM leads").get() as { count: number };
-    const paidCount = db.prepare("SELECT COUNT(*) as count FROM leads WHERE status='won_paid'").get() as { count: number };
-    
-    // Revenue
-    const revenueData = db.prepare("SELECT SUM(amount_paid) as total_revenue FROM subscriptions WHERE payment_status='paid'").get() as { total_revenue: number | null };
-    
-    res.json({
-      totalLeads: leadsCount.count,
-      conversionRate: leadsCount.count > 0 ? (paidCount.count / leadsCount.count) * 100 : 0,
-      totalRevenue: revenueData.total_revenue || 0,
-    });
+    try {
+      const leadsCount = db.prepare("SELECT COUNT(*) as count FROM leads").get() as { count: number };
+      const paidCount = db.prepare("SELECT COUNT(*) as count FROM leads WHERE status='won_paid'").get() as { count: number };
+      
+      // Revenue
+      const revenueData = db.prepare("SELECT SUM(amount_paid) as total_revenue FROM subscriptions WHERE payment_status='paid'").get() as { total_revenue: number | null };
+      
+      res.json({
+        totalLeads: leadsCount.count,
+        conversionRate: leadsCount.count > 0 ? (paidCount.count / leadsCount.count) * 100 : 0,
+        totalRevenue: revenueData.total_revenue || 0,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // 2. Fetch Leads
