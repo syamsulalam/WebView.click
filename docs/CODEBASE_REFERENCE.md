@@ -33,6 +33,8 @@ Props penting:
 - `onDownloadZip`: callback download HTML static.
 
 Logic penting:
+- `normalizeSiteData()` menerima variasi schema lama/baru, termasuk `design.themeVariables.typography` dan `design.typography`.
+- Field penting yang hilang diberi fallback agar preview tidak blank.
 - State `activeTab` dipakai untuk navigasi antar page dari `navigation.headerMenu`.
 - Section renderer mendukung `hero`, `features`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
@@ -157,6 +159,7 @@ Fungsi:
 Logic penting:
 - Import JSON sample langsung dari repo.
 - Menampilkan floating inspector kecil berisi nama bisnis dan daftar `pageId:sectionType` yang sedang tersedia.
+- Inspector menampilkan field JSON yang hilang jika renderer sedang memakai fallback.
 - Menggunakan `SiteRenderer` dengan `showProspectPanel={false}` agar demo fokus ke hasil render website.
 
 Risiko debug:

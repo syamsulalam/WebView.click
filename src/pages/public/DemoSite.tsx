@@ -3,9 +3,18 @@ import SiteRenderer from "../../components/SiteRenderer";
 
 export default function DemoSite() {
   const siteData = templateSchema as any;
-  const sections = siteData.pages.flatMap((page: any) =>
-    page.sections.map((section: any) => `${page.pageId}:${section.type}`),
+  const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
+  const sections = pages.flatMap((page: any) =>
+    Array.isArray(page.sections) ? page.sections.map((section: any) => `${page.pageId}:${section.type}`) : [],
   );
+  const missingFields = [
+    !siteData?.meta ? "meta" : "",
+    !siteData?.design?.themeVariables?.colors ? "design.themeVariables.colors" : "",
+    !siteData?.design?.themeVariables?.typography && !siteData?.design?.typography ? "design.themeVariables.typography" : "",
+    !siteData?.global?.header ? "global.header" : "",
+    !siteData?.navigation?.headerMenu ? "navigation.headerMenu" : "",
+    !Array.isArray(siteData?.pages) ? "pages[]" : "",
+  ].filter(Boolean);
 
   return (
     <div className="relative">
@@ -34,6 +43,12 @@ export default function DemoSite() {
             </span>
           ))}
         </div>
+        {missingFields.length > 0 && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <p className="font-semibold">JSON memakai fallback renderer</p>
+            <p className="mt-1">Field hilang: {missingFields.join(", ")}</p>
+          </div>
+        )}
       </div>
       <SiteRenderer
         siteData={siteData}

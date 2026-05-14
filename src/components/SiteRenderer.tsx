@@ -8,6 +8,60 @@ type SiteRendererProps = {
   onDownloadZip?: () => void;
 };
 
+function normalizeSiteData(siteData: any) {
+  const meta = siteData?.meta || {};
+  const design = siteData?.design || {};
+  const themeVariables = design.themeVariables || {};
+  const colors = themeVariables.colors || {};
+  const typography = themeVariables.typography || design.typography || {};
+  const globalConfig = siteData?.global || {};
+  const header = globalConfig.header || {};
+  const footer = globalConfig.footer || {};
+  const navigation = siteData?.navigation || {};
+  const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
+
+  return {
+    meta: {
+      businessName: meta.businessName || "Demo Business",
+      businessId: meta.businessId || "demo-business",
+      ...meta,
+    },
+    colors: {
+      primary: colors.primary || "#111827",
+      secondary: colors.secondary || "#F3F4F6",
+      accent: colors.accent || "#4F46E5",
+      textMain: colors.textMain || "#1F2937",
+      textMuted: colors.textMuted || "#6B7280",
+      background: colors.background || "#FFFFFF",
+    },
+    typography: {
+      headingFont: typography.headingFont || "'Inter', sans-serif",
+      bodyFont: typography.bodyFont || "'Inter', sans-serif",
+    },
+    globalConfig: {
+      ...globalConfig,
+      header: {
+        ctaButton: { text: "Hubungi Kami", href: "#contact" },
+        ...header,
+        ctaButton: {
+          text: header.ctaButton?.text || "Hubungi Kami",
+          href: header.ctaButton?.href || "#contact",
+        },
+      },
+      footer: {
+        text: footer.text || `© 2026 ${meta.businessName || "Demo Business"}.`,
+        ...footer,
+      },
+    },
+    navigation: {
+      headerMenu: Array.isArray(navigation.headerMenu)
+        ? navigation.headerMenu
+        : pages.map((page: any) => ({ label: page.pageTitle || page.pageId, href: `#${page.pageId}` })),
+    },
+    pages,
+  };
+}
+
 export default function SiteRenderer({
   siteData,
   publicLinks = { basic: "", premium: "" },
@@ -18,8 +72,7 @@ export default function SiteRenderer({
   const initialPage = siteData?.pages?.[0]?.pageId || "home";
   const [activeTab, setActiveTab] = useState(initialPage);
 
-  const { meta, design, global: globalConfig, navigation, pages } = siteData;
-  const colors = design.themeVariables.colors;
+  const { meta, colors, typography, globalConfig, navigation, pages } = normalizeSiteData(siteData);
 
   const customStyles = {
     "--color-primary": colors.primary,
@@ -27,7 +80,7 @@ export default function SiteRenderer({
     "--color-accent": colors.accent,
     "--color-text": colors.textMain,
     "--color-bg": colors.background,
-    fontFamily: design.typography.bodyFont,
+    fontFamily: typography.bodyFont,
     backgroundColor: "var(--color-bg)",
     color: "var(--color-text)",
   } as React.CSSProperties;
@@ -66,7 +119,7 @@ export default function SiteRenderer({
               if (section.type === "hero") {
                 return (
                   <section key={section.id} className="py-24 px-6 text-center max-w-4xl mx-auto">
-                    <h1 className="text-5xl font-bold mb-6 tracking-tight leading-tight" style={{ fontFamily: design.typography.headingFont }}>
+                    <h1 className="text-5xl font-bold mb-6 tracking-tight leading-tight" style={{ fontFamily: typography.headingFont }}>
                       {section.content.headline}
                     </h1>
                     <p className="text-xl mb-10 opacity-80 max-w-2xl mx-auto">
