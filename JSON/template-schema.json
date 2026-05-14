@@ -123,6 +123,67 @@
     { "title": "Fresh Pastry", "description": "Croissant dan pastry harian yang cocok untuk sarapan atau teman kopi.", "priceHint": "Mulai Rp 30.000", "image": "kopi-senja-jakarta-service2.jpg", "cta": { "text": "Pesan Sekarang", "href": "#contact" } },
     { "title": "Work-Friendly Table", "description": "Area duduk nyaman dengan Wi-Fi cepat untuk WFC dan meeting kecil.", "priceHint": "Walk-in welcome", "image": "kopi-senja-jakarta-gallery1.jpg", "cta": { "text": "Booking Tempat", "href": "#contact" } }
   ],
+  "productServiceStrategy": {
+    "mode": "both",
+    "reasoning": "Kopi Senja menjual produk menu seperti kopi dan pastry, sekaligus layanan/pengalaman seperti reservasi meja dan WFC-friendly seating.",
+    "navbarGroupLabel": "Menu & Layanan",
+    "detailPageRule": "Each product/service gets its own page with overview, benefits, included details, social proof, FAQ, and conversion CTA so pages are not thin."
+  },
+  "products": [
+    {
+      "id": "signature-coffee",
+      "title": "Signature Coffee",
+      "type": "product",
+      "summary": "Minuman kopi andalan dengan espresso, susu segar, dan gula aren yang seimbang.",
+      "description": "Signature Coffee dibuat untuk pelanggan yang ingin rasa kopi lokal yang kuat tetapi tetap smooth untuk diminum harian.",
+      "priceHint": "Mulai Rp 25.000",
+      "image": "kopi-senja-jakarta-service1.jpg",
+      "detailPageId": "product-signature-coffee",
+      "bestFor": ["Pecinta kopi susu", "Takeaway pagi", "Teman kerja dari cafe"],
+      "included": ["Espresso base", "Fresh milk", "Gula aren", "Pilihan iced/hot"],
+      "highlights": [
+        { "title": "Rasa seimbang", "description": "Manis, creamy, dan tetap terasa karakter kopinya." },
+        { "title": "Dibuat saat dipesan", "description": "Setiap cup disiapkan fresh oleh barista." }
+      ],
+      "relatedReviewKeywords": ["kopi", "coffee", "enak", "barista"]
+    },
+    {
+      "id": "fresh-pastry",
+      "title": "Fresh Pastry",
+      "type": "product",
+      "summary": "Croissant dan pastry harian untuk sarapan, meeting ringan, atau teman kopi.",
+      "description": "Pilihan pastry dibuat untuk melengkapi menu kopi dan memberi opsi ringan untuk pelanggan yang datang pagi atau sore.",
+      "priceHint": "Mulai Rp 30.000",
+      "image": "kopi-senja-jakarta-service2.jpg",
+      "detailPageId": "product-fresh-pastry",
+      "bestFor": ["Sarapan cepat", "Meeting santai", "Pairing kopi"],
+      "included": ["Butter croissant", "Daily pastry rotation", "Dine-in atau takeaway"],
+      "highlights": [
+        { "title": "Fresh harian", "description": "Stok pastry mengikuti produksi dan rotasi harian." },
+        { "title": "Cocok untuk pairing", "description": "Rasa pastry dipilih agar cocok dengan kopi signature." }
+      ],
+      "relatedReviewKeywords": ["croissant", "pastry", "sarapan"]
+    }
+  ],
+  "services": [
+    {
+      "id": "work-friendly-table",
+      "title": "Work-Friendly Table",
+      "type": "service",
+      "summary": "Area duduk nyaman dengan Wi-Fi cepat untuk kerja, meeting kecil, dan ngobrol produktif.",
+      "description": "Layanan pengalaman tempat duduk dirancang untuk pelanggan yang ingin WFC tanpa kehilangan suasana cafe yang hangat.",
+      "priceHint": "Walk-in welcome",
+      "image": "kopi-senja-jakarta-gallery1.jpg",
+      "detailPageId": "service-work-friendly-table",
+      "bestFor": ["Remote worker", "Meeting kecil", "Belajar atau fokus kerja"],
+      "included": ["Wi-Fi cepat", "Meja nyaman", "Akses stop kontak di beberapa area", "Menu kopi dan pastry"],
+      "highlights": [
+        { "title": "Suasana fokus", "description": "Area duduk dibuat nyaman untuk kerja tanpa terasa terlalu formal." },
+        { "title": "Mudah reservasi", "description": "Hubungi tim untuk rekomendasi jam yang lebih tenang." }
+      ],
+      "relatedReviewKeywords": ["wifi", "kerja", "meeting", "cozy", "nyaman"]
+    }
+  ],
   "capabilities": [
     { "label": "Wi-Fi cepat", "enabled": true, "source": "manual.sample", "description": "Koneksi stabil untuk kerja dan meeting online." },
     { "label": "Outdoor seating", "enabled": true, "source": "google_places.outdoorSeating", "description": "Area luar ruangan untuk suasana lebih santai." },
@@ -190,7 +251,15 @@
     "headerMenu": [
       { "label": "Beranda", "href": "#home" },
       { "label": "Tentang Kami", "href": "#about" },
-      { "label": "Menu", "href": "#services" },
+      {
+        "label": "Menu",
+        "href": "#services",
+        "children": [
+          { "label": "Signature Coffee", "href": "#product-signature-coffee", "description": "Produk kopi andalan" },
+          { "label": "Fresh Pastry", "href": "#product-fresh-pastry", "description": "Pastry harian" },
+          { "label": "Work-Friendly Table", "href": "#service-work-friendly-table", "description": "Layanan meja WFC" }
+        ]
+      },
       { "label": "Galeri", "href": "#gallery" },
       { "label": "Kontak", "href": "#contact" }
     ]
@@ -317,6 +386,217 @@
               { "title": "Es Kopi Senja", "description": "Espresso dengan susu dan gula aren", "price": "Rp 25.000", "image": "kopi-senja-jakarta-service1.jpg" },
               { "title": "Croissant Butter", "description": "Renyah di luar, lembut di dalam", "price": "Rp 30.000", "image": "kopi-senja-jakarta-service2.jpg" }
             ]
+          }
+        }
+      ]
+    },
+    {
+      "pageId": "product-signature-coffee",
+      "pageTitle": "Signature Coffee",
+      "sections": [
+        {
+          "type": "hero",
+          "id": "signature-coffee-hero",
+          "content": {
+            "headline": "Signature Coffee yang Jadi Favorit Pelanggan",
+            "subheadline": "Kopi susu gula aren dengan espresso yang kuat, creamy, dan pas untuk menemani aktivitas harian.",
+            "buttons": [
+              { "text": "Pesan atau Tanya Menu", "href": "#contact", "style": "primary" },
+              { "text": "Lihat Lokasi", "href": "#contact", "style": "outline" }
+            ],
+            "image": "kopi-senja-jakarta-service1.jpg"
+          }
+        },
+        {
+          "type": "offeringDetail",
+          "id": "signature-coffee-detail",
+          "content": {
+            "kind": "Produk",
+            "title": "Signature Coffee",
+            "summary": "Menu kopi andalan untuk pelanggan yang ingin rasa kopi lokal yang kuat tetapi tetap smooth.",
+            "priceHint": "Mulai Rp 25.000",
+            "image": "kopi-senja-jakarta-service1.jpg",
+            "bestFor": ["Pecinta kopi susu", "Takeaway pagi", "Teman kerja dari cafe"],
+            "included": ["Espresso base", "Fresh milk", "Gula aren", "Pilihan iced/hot"],
+            "highlights": [
+              { "title": "Rasa konsisten", "description": "Takaran espresso dan gula aren dibuat seimbang agar enak diminum harian." },
+              { "title": "Fresh setiap order", "description": "Barista menyiapkan setiap cup saat pelanggan memesan." }
+            ]
+          }
+        },
+        {
+          "type": "reviews",
+          "id": "signature-coffee-reviews",
+          "content": {
+            "title": "Pelanggan sering memuji kopinya",
+            "reviews": [
+              { "authorName": "Andi W", "rating": 5, "text": "Kopinya enak banget, tempatnya cozy buat kerja seharian!" },
+              { "authorName": "Rina R", "rating": 5, "text": "Croissant-nya juara. Pasti bakal balik lagi ke sini." }
+            ]
+          }
+        },
+        {
+          "type": "faq",
+          "id": "signature-coffee-faq",
+          "content": {
+            "title": "Pertanyaan tentang Signature Coffee",
+            "items": [
+              { "question": "Apakah tersedia iced dan hot?", "answer": "Ya, Signature Coffee bisa dipesan dingin atau panas sesuai preferensi." },
+              { "question": "Apakah bisa takeaway?", "answer": "Bisa. Menu ini cocok untuk dine-in maupun takeaway." },
+              { "question": "Apakah bisa dikurangi manisnya?", "answer": "Bisa ditanyakan ke barista saat memesan agar rasa lebih sesuai." }
+            ]
+          }
+        },
+        {
+          "type": "hoursLocation",
+          "id": "signature-coffee-cta",
+          "content": {
+            "title": "Coba langsung di kedai",
+            "address": "Jl. Sudirman No. 12, Jakarta Selatan",
+            "phone": "+62 812-3456-7890",
+            "directionsUrl": "https://maps.google.com/?q=Kopi%20Senja%20Jakarta"
+          }
+        }
+      ]
+    },
+    {
+      "pageId": "product-fresh-pastry",
+      "pageTitle": "Fresh Pastry",
+      "sections": [
+        {
+          "type": "hero",
+          "id": "fresh-pastry-hero",
+          "content": {
+            "headline": "Fresh Pastry untuk Teman Kopi dan Sarapan",
+            "subheadline": "Pilihan croissant dan pastry harian yang cocok untuk sarapan cepat, meeting santai, atau pairing kopi.",
+            "buttons": [
+              { "text": "Tanya Stok Hari Ini", "href": "#contact", "style": "primary" },
+              { "text": "Lihat Menu Lain", "href": "#services", "style": "outline" }
+            ],
+            "image": "kopi-senja-jakarta-service2.jpg"
+          }
+        },
+        {
+          "type": "offeringDetail",
+          "id": "fresh-pastry-detail",
+          "content": {
+            "kind": "Produk",
+            "title": "Fresh Pastry",
+            "summary": "Pastry harian yang melengkapi menu kopi dan memberi pilihan ringan untuk pelanggan pagi atau sore.",
+            "priceHint": "Mulai Rp 30.000",
+            "image": "kopi-senja-jakarta-service2.jpg",
+            "bestFor": ["Sarapan cepat", "Meeting santai", "Pairing kopi"],
+            "included": ["Butter croissant", "Daily pastry rotation", "Dine-in atau takeaway"],
+            "highlights": [
+              { "title": "Rotasi harian", "description": "Pilihan pastry mengikuti stok dan produksi harian." },
+              { "title": "Pairing kopi", "description": "Rasa pastry dipilih agar cocok dengan kopi signature." }
+            ]
+          }
+        },
+        {
+          "type": "features",
+          "id": "fresh-pastry-features",
+          "content": {
+            "title": "Kenapa pelanggan suka pastry kami",
+            "items": [
+              { "title": "Cocok untuk sarapan", "description": "Ukuran dan rasa pas untuk memulai hari." },
+              { "title": "Teman meeting", "description": "Mudah dibagi untuk diskusi santai." },
+              { "title": "Dine-in atau takeaway", "description": "Fleksibel untuk makan di tempat atau dibawa." }
+            ]
+          }
+        },
+        {
+          "type": "faq",
+          "id": "fresh-pastry-faq",
+          "content": {
+            "title": "Pertanyaan tentang Fresh Pastry",
+            "items": [
+              { "question": "Apakah stok pastry selalu sama?", "answer": "Stok dapat berubah mengikuti produksi harian, jadi sebaiknya tanya terlebih dahulu." },
+              { "question": "Apakah bisa takeaway?", "answer": "Bisa, pastry dapat dibawa pulang bersama kopi." }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "pageId": "service-work-friendly-table",
+      "pageTitle": "Work-Friendly Table",
+      "sections": [
+        {
+          "type": "hero",
+          "id": "work-friendly-table-hero",
+          "content": {
+            "headline": "Meja Nyaman untuk Kerja, Meeting, dan Fokus",
+            "subheadline": "Area duduk dengan Wi-Fi cepat, suasana cafe yang hangat, dan akses kontak mudah untuk reservasi rombongan kecil.",
+            "buttons": [
+              { "text": "Reservasi / Tanya Jam", "href": "#contact", "style": "primary" },
+              { "text": "Buka Maps", "href": "#contact", "style": "outline" }
+            ],
+            "image": "kopi-senja-jakarta-gallery1.jpg"
+          }
+        },
+        {
+          "type": "offeringDetail",
+          "id": "work-friendly-table-detail",
+          "content": {
+            "kind": "Layanan",
+            "title": "Work-Friendly Table",
+            "summary": "Pengalaman tempat duduk untuk pelanggan yang ingin WFC, meeting kecil, atau belajar dengan suasana yang nyaman.",
+            "priceHint": "Walk-in welcome",
+            "image": "kopi-senja-jakarta-gallery1.jpg",
+            "bestFor": ["Remote worker", "Meeting kecil", "Belajar atau fokus kerja"],
+            "included": ["Wi-Fi cepat", "Meja nyaman", "Akses stop kontak di beberapa area", "Menu kopi dan pastry"],
+            "highlights": [
+              { "title": "Suasana fokus", "description": "Area duduk dibuat nyaman untuk kerja tanpa terasa terlalu formal." },
+              { "title": "Mudah reservasi", "description": "Hubungi tim untuk rekomendasi jam yang lebih tenang." }
+            ]
+          }
+        },
+        {
+          "type": "reviews",
+          "id": "work-friendly-table-reviews",
+          "content": {
+            "title": "Review tentang suasana dan kenyamanan",
+            "reviews": [
+              { "authorName": "Andi W", "rating": 5, "text": "Tempatnya cozy buat kerja seharian!" },
+              { "authorName": "Dimas A", "rating": 5, "text": "Wi-Fi stabil, baristanya ramah, cocok untuk meeting santai." }
+            ]
+          }
+        },
+        {
+          "type": "faq",
+          "id": "work-friendly-table-faq",
+          "content": {
+            "title": "Pertanyaan tentang area kerja",
+            "items": [
+              { "question": "Apakah bisa reservasi meja?", "answer": "Bisa ditanyakan melalui kontak yang tersedia, terutama untuk rombongan kecil." },
+              { "question": "Apakah Wi-Fi tersedia?", "answer": "Ya, Wi-Fi tersedia untuk pelanggan yang ingin bekerja atau meeting ringan." },
+              { "question": "Kapan waktu yang lebih tenang?", "answer": "Jam lebih tenang bisa berubah, jadi hubungi tim untuk rekomendasi sebelum datang." }
+            ]
+          }
+        },
+        {
+          "type": "contactForm",
+          "id": "work-friendly-table-contact",
+          "content": {
+            "title": "Tanya ketersediaan meja",
+            "address": "Jl. Sudirman No. 12, Jakarta Selatan",
+            "phone": "+62 812-3456-7890",
+            "email": "halo@kopisenja.com",
+            "openingHours": [
+              "Senin - Jumat: 08:00 - 22:00",
+              "Sabtu - Minggu: 07:00 - 23:00"
+            ],
+            "formConfig": {
+              "heading": "Kirim Pesan",
+              "endpoint": "#",
+              "buttonText": "Tanya Meja",
+              "fields": [
+                { "name": "nama", "label": "Nama", "type": "text", "required": true },
+                { "name": "telepon", "label": "Nomor Telepon", "type": "text", "required": true },
+                { "name": "pesan", "label": "Kebutuhan meja / jam datang", "type": "textarea", "required": true }
+              ]
+            }
           }
         }
       ]

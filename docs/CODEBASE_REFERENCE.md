@@ -149,6 +149,9 @@ Logic penting:
 - JSON mock fallback menentukan `meta.language` dari alamat/region Places: US default English, Indonesia default Indonesian.
 - JSON mock fallback menentukan `design.stylePreset` dan `design.stylePresetConfig` via `src/lib/siteStylePresets.ts`.
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
+- Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
+- Mock fallback di `AdminLeads` juga membuat product/service detail pages memakai section `hero`, `offeringDetail`, `reviews`, `faq`, dan `hoursLocation`.
+- Place Details mengambil field `reviews`; detail page bisa memakai review Google yang relevan via keyword best-effort.
 - Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.
 - Search default membaca cache D1 `places_search_cache`; tombol `Refresh` memaksa request baru ke Google Places.
 - Setiap result Google Places di-upsert ke `places_prospects` sebagai prospect draft agar pencarian lama tidak hilang.
@@ -391,6 +394,8 @@ Logic Owner HTML Export:
 - Export menghapus `<script>` internal, `.hide-in-export`, dan `[data-export-remove="true"]`.
 - Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
 - Export menambahkan Tailwind CSS/CDN hotlink, stylesheet production absolute, style tags renderer, favicon dari logo bisnis/fallback SVG, dan mengubah URL relatif gambar/link menjadi absolute URL.
+- Export menambahkan JS inline kecil untuk mengaktifkan tabbed navigation pada elemen `data-wv-tab` dan `data-wv-page` karena React handler tidak ikut dalam HTML statis.
+- Favicon export memakai inline SVG dari `meta.faviconSvg` / `brand.faviconSvg` / `brand.logoSvg`, atau fallback SVG monogram; tidak memanggil favicon remote WebView.click.
 - Google Places photo tetap hotlink/proxy dari URL WebView.click sehingga file HTML owner tetap menampilkan gambar tanpa menyimpan asset ke zip.
 
 Logic Payments:
@@ -413,8 +418,10 @@ Logic Domains:
 Fungsi:
 - Baseline struktur JSON website yang diberikan ke model AI.
 - Sample kini berisi schema baru untuk site builder: `sourceData`, `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, `conversion`, dan `seo`.
+- Sample juga berisi `productServiceStrategy`, `products`, `services`, submenu `navigation.headerMenu[].children`, dan halaman detail produk/layanan.
 - `design` berisi `stylePreset`, `stylePresetConfig`, dan `styleSystem.allowedPresets` agar AI memilih nuansa niche yang valid.
 - Homepage sample memakai section modern: `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, dan `faq`.
+- Halaman detail produk/layanan memakai `offeringDetail` plus review relevan, FAQ, dan CTA kontak/lokasi agar tidak thin.
 
 ### `SQL/schema.sql`
 

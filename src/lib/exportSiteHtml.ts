@@ -21,12 +21,14 @@ function escapeHtml(value: string) {
 }
 
 function faviconHref(siteData: any) {
-  const logo = siteData?.brand?.logoImageUrl || siteData?.global?.header?.logoImageUrl || "";
-  if (logo) return absoluteUrl(logo);
+  const svg = siteData?.meta?.faviconSvg || siteData?.brand?.faviconSvg || siteData?.brand?.logoSvg || "";
+  if (typeof svg === "string" && svg.trim().startsWith("<svg")) {
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
   const name = siteData?.meta?.businessName || "Site";
   const initial = String(name).trim().slice(0, 1).toUpperCase() || "S";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#111827"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${initial}</text></svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#111827"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${escapeHtml(initial)}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(fallbackSvg)}`;
 }
 
 function cleanHtmlClone() {
@@ -51,6 +53,50 @@ function cleanHtmlClone() {
   clone.querySelectorAll("form").forEach((node) => node.setAttribute("action", "#"));
 
   return clone;
+}
+
+function ownerInlineScript() {
+  return `<script>
+(function () {
+  function pages() {
+    return Array.prototype.slice.call(document.querySelectorAll("[data-wv-page]"));
+  }
+  function activate(pageId, shouldScroll) {
+    var allPages = pages();
+    var target = allPages.find(function (page) { return page.getAttribute("data-wv-page") === pageId || page.id === pageId; });
+    if (!target) {
+      var anchorTarget = document.getElementById(pageId);
+      if (anchorTarget && shouldScroll !== false) anchorTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    allPages.forEach(function (page) {
+      var active = page === target;
+      page.classList.toggle("hidden", !active);
+      page.classList.toggle("block", active);
+    });
+    Array.prototype.slice.call(document.querySelectorAll("[data-wv-tab]")).forEach(function (button) {
+      var active = button.getAttribute("data-wv-tab") === pageId;
+      button.classList.toggle("border-b-2", active);
+      button.classList.toggle("border-white", active);
+      button.setAttribute("aria-current", active ? "page" : "false");
+    });
+    if (history.replaceState) history.replaceState(null, "", "#" + pageId);
+    if (shouldScroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  document.addEventListener("click", function (event) {
+    var trigger = event.target && event.target.closest ? event.target.closest("[data-wv-tab], a[href^='#']") : null;
+    if (!trigger) return;
+    var pageId = trigger.getAttribute("data-wv-tab") || (trigger.getAttribute("href") || "").replace(/^#/, "");
+    if (!pageId) return;
+    if (pages().some(function (page) { return page.getAttribute("data-wv-page") === pageId || page.id === pageId; })) {
+      event.preventDefault();
+      activate(pageId, true);
+    }
+  });
+  var initial = (window.location.hash || "").replace(/^#/, "") || (pages()[0] && (pages()[0].getAttribute("data-wv-page") || pages()[0].id));
+  if (initial) activate(initial, false);
+})();
+</script>`;
 }
 
 export async function downloadOwnerSiteZip(siteData: any, businessId = "website") {
@@ -79,6 +125,7 @@ export async function downloadOwnerSiteZip(siteData: any, businessId = "website"
 </head>
 <body>
 ${bodyHtml}
+${ownerInlineScript()}
 </body>
 </html>`;
 

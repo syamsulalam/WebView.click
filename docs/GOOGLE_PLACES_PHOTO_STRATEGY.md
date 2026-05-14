@@ -65,6 +65,7 @@ Renderer:
 
 Free:
 - Hotlink/proxy Google Places photo.
+- Untuk HTML gratis yang diberikan ke owner, tetap gunakan proxy WebView.click untuk foto Places. Direct hotlink ke Google Places Photo membutuhkan API key di URL/header atau redirect ke media URL yang tidak stabil/berumur pendek; memasukkan key ke HTML owner akan membocorkan key dan sulit direstrict ke domain owner yang belum pasti.
 - Attribution wajib tampil.
 - Tidak ada R2 image copy.
 - Jika photo reference expire, preview bisa perlu refresh dari Places data.

@@ -26,7 +26,9 @@ Tujuan `/admin/leads` adalah mencari bisnis yang belum punya website bagus, memb
 - Admin bisa klik `Load more photos/details` untuk mengambil Place Details. Ini biasanya memberi lebih banyak foto dibanding Text Search.
 - Admin bisa membuka drawer detail untuk melihat website, phone, rating, Maps link, status, foto, dan palette.
 - Foto/palette pilihan admin disimpan ke `places_prospects`, sehingga pilihan tidak hilang saat admin refresh dan membuka prospect draft lagi.
-- Free download owner sekarang berupa zip berisi `index.html` saja, tanpa `site-data.json`, tanpa panel internal WebView.click, dengan Tailwind CSS/CDN hotlink, stylesheet absolute, favicon, dan gambar Google Places hotlink/proxy.
+- Free download owner sekarang berupa zip berisi `index.html` saja, tanpa `site-data.json`, tanpa panel internal WebView.click, dengan Tailwind CSS/CDN hotlink, stylesheet absolute, inline SVG favicon, inline JS tab navigation, dan gambar Google Places hotlink/proxy.
+- Generator sekarang membuat struktur produk/layanan: `productServiceStrategy`, `products`, `services`, submenu navbar, dan halaman detail non-thin untuk setiap produk/layanan.
+- Place Details mengambil review Google agar halaman detail bisa memakai review yang paling relevan secara best-effort.
 
 ## Why Search Sometimes Shows Only One Image
 

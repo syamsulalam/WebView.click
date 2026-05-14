@@ -420,6 +420,12 @@ function publicR2Url(env: Env, key: string) {
   return `${baseUrl}/${key}`;
 }
 
+function faviconSvgFromBusinessName(name: string, background = "#111827") {
+  const initial = (name.trim().slice(0, 1).toUpperCase() || "S").replace(/[<>&"]/g, "");
+  const safeBackground = /^#[0-9a-f]{3,8}$/i.test(background) ? background : "#111827";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${safeBackground}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${initial}</text></svg>`;
+}
+
 async function handleSettings(request: Request, db: D1Database): Promise<Response> {
   if (request.method === "GET") {
     try {
@@ -696,6 +702,7 @@ async function handlePlacesDetails(url: URL, db: D1Database, env: Env): Promise<
     "url",
     "opening_hours",
     "rating",
+    "reviews",
     "user_ratings_total",
     "types",
     "business_status",
@@ -987,7 +994,7 @@ async function generateAiJson(
   const systemMsg =
     `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
     `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
+    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
   const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}`;
 
   let responseContent = "";
@@ -1326,12 +1333,15 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       console.error("AI generation failed, using submitted JSON:", error);
     }
 
-    if (finalJson.meta && typeof finalJson.meta === "object") {
-      (finalJson.meta as Record<string, unknown>).businessId = businessId;
-      if (brandPalette.length) {
-        (finalJson.meta as Record<string, unknown>).brandPalette = brandPalette;
-      }
+    const metaConfig = finalJson.meta && typeof finalJson.meta === "object" ? finalJson.meta as Record<string, unknown> : {};
+    metaConfig.businessId = businessId;
+    if (brandPalette.length) {
+      metaConfig.brandPalette = brandPalette;
     }
+    if (typeof metaConfig.faviconSvg !== "string") {
+      metaConfig.faviconSvg = faviconSvgFromBusinessName(businessName, brandPalette[0] || "#111827");
+    }
+    finalJson.meta = metaConfig;
 
     if (selectedLogoImageUrl) {
       const globalConfig = finalJson.global && typeof finalJson.global === "object" ? finalJson.global as Record<string, unknown> : {};

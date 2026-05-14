@@ -44,6 +44,8 @@ function normalizeSiteData(siteData: any) {
   const businessProfile = siteData?.businessProfile || {};
   const brand = siteData?.brand || {};
   const offers = Array.isArray(siteData?.offers) ? siteData.offers : [];
+  const products = Array.isArray(siteData?.products) ? siteData.products : [];
+  const services = Array.isArray(siteData?.services) ? siteData.services : [];
   const capabilities = Array.isArray(siteData?.capabilities) ? siteData.capabilities : [];
   const location = siteData?.location || {};
   const hours = siteData?.hours || {};
@@ -99,6 +101,8 @@ function normalizeSiteData(siteData: any) {
       badges: Array.isArray(trust.badges) ? trust.badges : [],
     },
     offers,
+    products,
+    services,
     capabilities,
     location,
     hours,
@@ -208,7 +212,7 @@ export default function SiteRenderer({
   const initialPage = siteData?.pages?.[0]?.pageId || "home";
   const [activeTab, setActiveTab] = useState(initialPage);
 
-  const { meta, colors, typography, stylePreset, brand, businessProfile, trust, offers, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const { meta, colors, typography, stylePreset, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const brandPhotoAttribution = (src?: string) => attributionText(src, brand.photoAttributions, brand.photoSource, brand.photoCaption);
   const presetClass = `wv-preset-${normalizeStylePreset(stylePreset)}`;
   const homePageId = pages[0]?.pageId || "home";
@@ -249,6 +253,7 @@ export default function SiteRenderer({
         <button
           type="button"
           onClick={() => changeTab(homePageId)}
+          data-wv-tab={homePageId}
           className="font-bold text-xl tracking-tight flex items-center gap-3 text-left hover:opacity-85 transition"
           aria-label={`Go to ${meta.businessName} home`}
         >
@@ -259,15 +264,38 @@ export default function SiteRenderer({
         <nav className="hidden md:flex gap-6">
           {navigation.headerMenu.map((menu: any, idx: number) => {
             const pageId = menu.href.replace("#", "");
+            const children = Array.isArray(menu.children) ? menu.children : [];
             return (
-              <button
-                key={idx}
-                onClick={() => changeTab(pageId)}
-                className={`text-sm font-medium hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
-              >
-                {menuIcon(menu.label, menu.href)}
-                {menu.label}
-              </button>
+              <div key={idx} className="relative group">
+                <button
+                  onClick={() => changeTab(pageId)}
+                  data-wv-tab={pageId}
+                  className={`text-sm font-medium hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
+                >
+                  {menuIcon(menu.label, menu.href)}
+                  {menu.label}
+                  {children.length > 0 && <span className="text-xs opacity-80">▾</span>}
+                </button>
+                {children.length > 0 && (
+                  <div className="invisible absolute left-0 top-full z-[80] mt-3 w-72 translate-y-2 rounded-xl border border-slate-200 bg-white p-2 text-slate-900 opacity-0 shadow-2xl transition group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
+                    {children.map((child: any) => {
+                      const childPageId = String(child.href || "").replace("#", "");
+                      return (
+                        <button
+                          key={child.href || child.label}
+                          type="button"
+                          data-wv-tab={childPageId}
+                          onClick={() => changeTab(childPageId)}
+                          className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                        >
+                          <span className="block text-sm font-semibold">{child.label}</span>
+                          {child.description && <span className="mt-0.5 block text-xs text-slate-500">{child.description}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
@@ -283,7 +311,12 @@ export default function SiteRenderer({
 
       <main className="flex-1">
         {pages.map((page: any) => (
-          <div key={page.pageId} className={`transition-opacity duration-300 ${activeTab === page.pageId ? "block animate-in fade-in zoom-in-95" : "hidden"}`}>
+          <div
+            key={page.pageId}
+            id={page.pageId}
+            data-wv-page={page.pageId}
+            className={`transition-opacity duration-300 ${activeTab === page.pageId ? "block animate-in fade-in zoom-in-95" : "hidden"}`}
+          >
             {(Array.isArray(page.sections) ? page.sections : []).map((section: any) => {
               if (section.type === "hero") {
                 const heroContent = section.content || {};
@@ -307,6 +340,7 @@ export default function SiteRenderer({
                             return (
                               <button
                                 key={i}
+                                data-wv-tab={href.startsWith("#") ? href.replace("#", "") : undefined}
                                 style={{
                                   backgroundColor: btn.style === "primary" ? colors.accent : "transparent",
                                   color: btn.style === "primary" ? "#fff" : colors.textMain,
@@ -408,6 +442,56 @@ export default function SiteRenderer({
                             </div>
                           </div>
                         ))}
+                      </div>
+                    </div>
+                  </section>
+                );
+              }
+
+              if (section.type === "offeringDetail") {
+                const detail = section.content || {};
+                const highlights = Array.isArray(detail.highlights) ? detail.highlights : [];
+                const included = Array.isArray(detail.included) ? detail.included : [];
+                const bestFor = Array.isArray(detail.bestFor) ? detail.bestFor : [];
+                return (
+                  <section key={section.id} className="py-20 px-6 bg-white">
+                    <div className="max-w-6xl mx-auto grid gap-10 lg:grid-cols-[1.05fr_0.95fr]">
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{detail.kind || "Offering"}</p>
+                        <h2 className="text-3xl md:text-4xl font-bold text-slate-950">{detail.title}</h2>
+                        <p className="mt-4 text-lg text-slate-600">{detail.summary || detail.description}</p>
+                        {highlights.length > 0 && (
+                          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                            {highlights.map((item: any, i: number) => (
+                              <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <p className="font-semibold text-slate-950">{item.title || item}</p>
+                                {item.description && <p className="mt-1 text-sm text-slate-600">{item.description}</p>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
+                        <div className="h-56 overflow-hidden rounded-xl bg-slate-200">
+                          <ImageFrame src={detail.image || brand.preferredHeroImage} label={detail.title} attribution={brandPhotoAttribution(detail.image || brand.preferredHeroImage)} />
+                        </div>
+                        {detail.priceHint && <p className="mt-5 text-lg font-bold" style={{ color: colors.accent }}>{detail.priceHint}</p>}
+                        {included.length > 0 && (
+                          <div className="mt-5">
+                            <p className="font-semibold text-slate-950">{isIndonesian ? "Yang termasuk" : "What's included"}</p>
+                            <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                              {included.map((item: string) => <li key={item} className="flex gap-2"><CheckCircle2 size={16} className="mt-0.5 shrink-0" style={{ color: colors.accent }} />{item}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {bestFor.length > 0 && (
+                          <div className="mt-5">
+                            <p className="font-semibold text-slate-950">{isIndonesian ? "Cocok untuk" : "Best for"}</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {bestFor.map((item: string) => <span key={item} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">{item}</span>)}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </section>
@@ -626,7 +710,7 @@ export default function SiteRenderer({
       <footer style={{ backgroundColor: colors.primary, color: "#fff" }} className="px-6 py-14 text-sm">
         <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1.3fr_0.8fr_0.8fr_1fr]">
           <div>
-            <button type="button" onClick={() => changeTab(homePageId)} className="mb-4 flex items-center gap-3 text-left text-lg font-bold hover:opacity-85">
+            <button type="button" data-wv-tab={homePageId} onClick={() => changeTab(homePageId)} className="mb-4 flex items-center gap-3 text-left text-lg font-bold hover:opacity-85">
               {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
               {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : null}
               <span>{meta.businessName}</span>
@@ -644,7 +728,7 @@ export default function SiteRenderer({
             <p className="mb-4 font-semibold">{labels.pages}</p>
             <div className="space-y-2 opacity-85">
               {navigation.headerMenu.map((menu: any) => (
-                <button key={menu.href} type="button" onClick={() => changeTab(menu.href.replace("#", ""))} className="block hover:opacity-100">
+                <button key={menu.href} type="button" data-wv-tab={menu.href.replace("#", "")} onClick={() => changeTab(menu.href.replace("#", ""))} className="block hover:opacity-100">
                   {menu.label}
                 </button>
               ))}
@@ -654,7 +738,9 @@ export default function SiteRenderer({
             <p className="mb-4 font-semibold">{labels.highlights}</p>
             <div className="space-y-2 opacity-85">
               {offers.slice(0, 4).map((offer: any) => <p key={offer.title}>{offer.title}</p>)}
-              {offers.length === 0 && capabilities.slice(0, 4).map((item: any) => <p key={item.label}>{item.label}</p>)}
+              {offers.length === 0 && products.slice(0, 4).map((item: any) => <p key={item.title}>{item.title}</p>)}
+              {offers.length === 0 && products.length === 0 && services.slice(0, 4).map((item: any) => <p key={item.title}>{item.title}</p>)}
+              {offers.length === 0 && products.length === 0 && services.length === 0 && capabilities.slice(0, 4).map((item: any) => <p key={item.label}>{item.label}</p>)}
             </div>
           </div>
           <div>

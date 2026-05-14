@@ -323,6 +323,91 @@ export default function AdminLeads() {
     return inferStylePresetFromText(text);
   };
 
+  const faviconSvgForBusiness = (businessName: string, background = "#111827") => {
+    const initial = String(businessName || "S").trim().slice(0, 1).toUpperCase() || "S";
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${background}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${initial}</text></svg>`;
+  };
+
+  const inferProductServiceMode = (place: any) => {
+    const text = [place.name, ...(Array.isArray(place.types) ? place.types : [])].join(" ").toLowerCase();
+    const productSignals = ["store", "shop", "restaurant", "cafe", "bakery", "meal", "food", "bar", "florist", "clothing", "furniture", "jewelry"];
+    const serviceSignals = ["contractor", "repair", "lawyer", "dentist", "doctor", "plumber", "electrician", "cleaning", "salon", "spa", "agency", "service"];
+    const hasProducts = productSignals.some((signal) => text.includes(signal));
+    const hasServices = serviceSignals.some((signal) => text.includes(signal));
+    if (hasProducts && hasServices) return "both";
+    if (hasProducts) return "products";
+    return hasServices ? "services" : "services";
+  };
+
+  const keywordRelevantReviews = (reviews: any[], keywords: string[]) => {
+    const normalized = keywords.map((keyword) => keyword.toLowerCase());
+    const matching = reviews.filter((review) => {
+      const text = String(review.text || "").toLowerCase();
+      return normalized.some((keyword) => text.includes(keyword));
+    });
+    return (matching.length ? matching : reviews).slice(0, 3);
+  };
+
+  const buildOfferings = (place: any, isEnglish: boolean, mode: string, imageUrl: string, mapsUrl: string) => {
+    const typeLabel = Array.isArray(place.types) ? String(place.types[0] || "local business").replace(/_/g, " ") : "local business";
+    const serviceBase = [
+      {
+        id: "core-service",
+        type: "service",
+        title: isEnglish ? `${typeLabel} service` : "Layanan utama",
+        summary: isEnglish ? `Primary local service from ${place.name}.` : `Layanan utama dari ${place.name} untuk pelanggan lokal.`,
+        description: isEnglish ? `Built around the needs customers usually search for when looking for ${typeLabel}.` : `Dibuat berdasarkan kebutuhan pelanggan yang mencari ${typeLabel}.`,
+        priceHint: isEnglish ? "Contact for estimate" : "Hubungi untuk estimasi",
+        image: imageUrl,
+        detailPageId: "service-core-service",
+        bestFor: isEnglish ? ["Local customers", "Fast inquiry", "Custom needs"] : ["Pelanggan lokal", "Tanya cepat", "Kebutuhan khusus"],
+        included: isEnglish ? ["Initial consultation", "Clear next steps", "Local support"] : ["Konsultasi awal", "Arahan langkah berikutnya", "Dukungan lokal"],
+        highlights: [
+          { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: isEnglish ? "CTA connects directly to the business." : "CTA diarahkan langsung ke kontak bisnis." },
+          { title: isEnglish ? "Local relevance" : "Relevan lokal", description: place.formatted_address || place.formattedAddress || "" }
+        ],
+        relatedReviewKeywords: ["service", "help", "professional", "layanan", "ramah"]
+      },
+      {
+        id: "fast-consultation",
+        type: "service",
+        title: isEnglish ? "Fast consultation" : "Konsultasi cepat",
+        summary: isEnglish ? "Ask questions and get clear next steps." : "Tanyakan kebutuhan dan dapatkan arahan yang jelas.",
+        description: isEnglish ? "Useful for customers who need to understand availability, pricing, and timing before visiting or booking." : "Cocok untuk pelanggan yang ingin memahami ketersediaan, harga, dan jadwal sebelum datang atau booking.",
+        priceHint: isEnglish ? "Fast response" : "Respon cepat",
+        image: "",
+        detailPageId: "service-fast-consultation",
+        bestFor: isEnglish ? ["Price questions", "Availability", "Planning"] : ["Tanya harga", "Cek ketersediaan", "Perencanaan"],
+        included: isEnglish ? ["Question intake", "Basic recommendation", "Contact handoff"] : ["Penerimaan pertanyaan", "Rekomendasi awal", "Arahan kontak"],
+        highlights: [
+          { title: isEnglish ? "Low friction" : "Mudah dimulai", description: isEnglish ? "Customers can call or message directly." : "Pelanggan bisa langsung telepon atau kirim pesan." }
+        ],
+        relatedReviewKeywords: ["fast", "quick", "response", "cepat", "ramah"]
+      }
+    ];
+    const productBase = [
+      {
+        id: "featured-product",
+        type: "product",
+        title: isEnglish ? "Featured product" : "Produk unggulan",
+        summary: isEnglish ? `A highlighted product or menu item from ${place.name}.` : `Produk atau menu unggulan dari ${place.name}.`,
+        description: isEnglish ? "A product-led page for customers who want to understand the item before visiting or ordering." : "Halaman produk untuk pelanggan yang ingin memahami item sebelum datang atau memesan.",
+        priceHint: isEnglish ? "Ask for current price" : "Tanya harga terbaru",
+        image: imageUrl,
+        detailPageId: "product-featured-product",
+        bestFor: isEnglish ? ["First-time buyers", "Local pickup", "Popular choice"] : ["Pembeli pertama", "Pickup lokal", "Pilihan populer"],
+        included: isEnglish ? ["Product overview", "Current availability", "How to order"] : ["Ringkasan produk", "Ketersediaan terbaru", "Cara pesan"],
+        highlights: [
+          { title: isEnglish ? "Easy to understand" : "Mudah dipahami", description: isEnglish ? "Clear product benefit and ordering path." : "Benefit produk dan cara pesan dibuat jelas." }
+        ],
+        relatedReviewKeywords: ["product", "menu", "food", "coffee", "produk", "enak"]
+      }
+    ];
+    if (mode === "products") return productBase;
+    if (mode === "both") return [...productBase, ...serviceBase.slice(0, 1)];
+    return serviceBase;
+  };
+
   useEffect(() => {
     fetchLeads();
     fetchProspectDrafts();
@@ -467,6 +552,87 @@ export default function AdminLeads() {
     const stylePreset = inferStylePresetFromPlace(place);
     const stylePresetMeta = getStylePreset(stylePreset);
     const isEnglish = locale.language === "en";
+    const googleReviews = Array.isArray(place.reviews) ? place.reviews : [];
+    const offeringMode = inferProductServiceMode(place);
+    const offerings = buildOfferings(place, isEnglish, offeringMode, logoSelection?.url || "", mapsUrl);
+    const products = offerings.filter((item) => item.type === "product");
+    const services = offerings.filter((item) => item.type === "service");
+    const offeringMenuChildren = offerings.map((item) => ({
+      label: item.title,
+      href: `#${item.detailPageId}`,
+      description: item.type === "product"
+        ? (isEnglish ? "Product detail" : "Detail produk")
+        : (isEnglish ? "Service detail" : "Detail layanan"),
+    }));
+    const offeringDetailPages = offerings.map((item) => ({
+      pageId: item.detailPageId,
+      pageTitle: item.title,
+      sections: [
+        {
+          type: "hero",
+          id: `${item.id}-hero`,
+          content: {
+            headline: isEnglish ? `${item.title} from ${place.name}` : `${item.title} dari ${place.name}`,
+            subheadline: item.summary,
+            buttons: [
+              { text: isEnglish ? "Ask about this" : "Tanya layanan/produk ini", href: "#contact", style: "primary" },
+              { text: isEnglish ? "Back to offers" : "Lihat pilihan lain", href: "#services", style: "outline" },
+            ],
+            image: item.image,
+          },
+        },
+        {
+          type: "offeringDetail",
+          id: `${item.id}-detail`,
+          content: {
+            kind: item.type === "product" ? (isEnglish ? "Product" : "Produk") : (isEnglish ? "Service" : "Layanan"),
+            title: item.title,
+            summary: item.summary,
+            description: item.description,
+            priceHint: item.priceHint,
+            image: item.image,
+            bestFor: item.bestFor,
+            included: item.included,
+            highlights: item.highlights,
+          },
+        },
+        {
+          type: "reviews",
+          id: `${item.id}-reviews`,
+          content: {
+            title: isEnglish ? `Relevant customer notes for ${item.title}` : `Catatan pelanggan terkait ${item.title}`,
+            reviews: keywordRelevantReviews(googleReviews, item.relatedReviewKeywords),
+          },
+        },
+        {
+          type: "faq",
+          id: `${item.id}-faq`,
+          content: {
+            title: isEnglish ? `Questions about ${item.title}` : `Pertanyaan tentang ${item.title}`,
+            items: [
+              {
+                question: isEnglish ? `How do I ask about ${item.title}?` : `Bagaimana cara bertanya tentang ${item.title}?`,
+                answer: isEnglish ? "Use the contact button or call the business directly for current availability and pricing." : "Gunakan tombol kontak atau hubungi bisnis langsung untuk ketersediaan dan harga terbaru.",
+              },
+              {
+                question: isEnglish ? "Can details be customized?" : "Apakah detail bisa disesuaikan?",
+                answer: isEnglish ? "Yes. The business owner can replace this copy with exact packages, prices, and requirements." : "Bisa. Pemilik bisnis dapat mengganti copy ini dengan paket, harga, dan syarat yang lebih tepat.",
+              },
+            ],
+          },
+        },
+        {
+          type: "hoursLocation",
+          id: `${item.id}-contact`,
+          content: {
+            title: isEnglish ? "Contact and location" : "Kontak dan lokasi",
+            address: place.formatted_address || place.formattedAddress || "",
+            phone,
+            directionsUrl: mapsUrl,
+          },
+        },
+      ],
+    }));
     const mockJson = {
       meta: {
         businessName: place.name,
@@ -475,6 +641,7 @@ export default function AdminLeads() {
         language: locale.language,
         region: locale.region,
         seoDescription: isEnglish ? `Official website for ${place.name}.` : `Website resmi untuk ${place.name}.`,
+        faviconSvg: faviconSvgForBusiness(place.name, primaryColor),
         brandPalette,
       },
       sourceData: {
@@ -515,6 +682,7 @@ export default function AdminLeads() {
       brand: {
         logoImageUrl: logoSelection?.url || "",
         logoSvg: "",
+        faviconSvg: faviconSvgForBusiness(place.name, primaryColor),
         palette: brandPalette,
         preferredHeroImage: logoSelection?.url || "",
         photoSource: logoSelection?.source || "",
@@ -548,36 +716,42 @@ export default function AdminLeads() {
             ? `${place.name} has a ${rating.toFixed(1)} rating from ${reviewCount} Google reviews.`
             : `${place.name} memiliki rating ${rating.toFixed(1)} dari ${reviewCount} review Google.`
           : "",
-        reviews: [],
+        reviews: googleReviews.slice(0, 3).map((review: any) => ({
+          authorName: review.author_name || review.authorName || "Google reviewer",
+          rating: Number(review.rating || 5),
+          text: review.text || "",
+          relativePublishTimeDescription: review.relative_time_description || review.relativePublishTimeDescription || "",
+          attribution: "Google",
+        })),
         badges: [
           place.business_status === "OPERATIONAL" ? "Operational" : "",
           place.website || place.websiteUri ? "Has website" : "No website lead",
           phone !== "0000000000" ? "Has phone" : ""
         ].filter(Boolean)
       },
-      offers: [
-        {
-          title: isEnglish ? "Core Service" : "Layanan Utama",
-          description: isEnglish ? `Professional local support from ${place.name}.` : `Solusi profesional dari ${place.name} untuk pelanggan lokal.`,
-          priceHint: isEnglish ? "Contact for estimate" : "Hubungi untuk estimasi",
-          image: logoSelection?.url || "",
-          cta: { text: isEnglish ? "Request Info" : "Minta Info", href: "#contact" },
-        },
-        {
-          title: isEnglish ? "Fast Consultation" : "Konsultasi Cepat",
-          description: isEnglish ? "Ask about your needs and get clear next steps." : "Tanyakan kebutuhan Anda dan dapatkan arahan layanan yang sesuai.",
-          priceHint: isEnglish ? "Fast response" : "Respon cepat",
-          image: "",
-          cta: { text: isEnglish ? "Contact" : "Hubungi", href: "#contact" },
-        },
-        {
-          title: isEnglish ? "Local Visit" : "Kunjungan Lokal",
-          description: isEnglish ? "Location and directions are available through Google Maps." : "Informasi lokasi dan rute tersedia langsung dari Google Maps.",
-          priceHint: isEnglish ? "Open Maps" : "Buka Maps",
-          image: "",
-          cta: { text: isEnglish ? "Get Directions" : "Lihat Lokasi", href: mapsUrl },
-        }
-      ],
+      productServiceStrategy: {
+        mode: offeringMode,
+        reasoning: isEnglish
+          ? "The generator inferred whether this business should emphasize products, services, or both from Google Places types and the business name."
+          : "Generator menentukan apakah bisnis ini lebih cocok menampilkan produk, layanan, atau keduanya dari tipe Google Places dan nama bisnis.",
+        navbarGroupLabel: offeringMode === "products"
+          ? (isEnglish ? "Products" : "Produk")
+          : offeringMode === "both"
+            ? (isEnglish ? "Products & Services" : "Produk & Layanan")
+            : (isEnglish ? "Services" : "Layanan"),
+        detailPageRule: isEnglish
+          ? "Each offering has a dedicated page with overview, benefits, included details, reviews, FAQ, and conversion CTA."
+          : "Setiap penawaran punya halaman detail berisi overview, manfaat, detail yang termasuk, review, FAQ, dan CTA."
+      },
+      products,
+      services,
+      offers: offerings.map((item) => ({
+        title: item.title,
+        description: item.summary,
+        priceHint: item.priceHint,
+        image: item.image,
+        cta: { text: isEnglish ? "View details" : "Lihat detail", href: `#${item.detailPageId}` },
+      })),
       capabilities: [
         { label: "Bisnis lokal", enabled: true, source: "google_places.types", description: "Profil bisnis diambil dari data Google Places." },
         { label: "Rating Google", enabled: rating > 0, source: "google_places.rating", description: reviewCount ? `${reviewCount} review tersedia.` : "Rating belum tersedia." },
@@ -617,7 +791,15 @@ export default function AdminLeads() {
       navigation: {
         headerMenu: [
           { label: isEnglish ? "Home" : "Beranda", href: "#home" },
-          { label: isEnglish ? "Services" : "Layanan", href: "#services" },
+          {
+            label: offeringMode === "products"
+              ? (isEnglish ? "Products" : "Produk")
+              : offeringMode === "both"
+                ? (isEnglish ? "Products & Services" : "Produk & Layanan")
+                : (isEnglish ? "Services" : "Layanan"),
+            href: "#services",
+            children: offeringMenuChildren,
+          },
           { label: isEnglish ? "Contact" : "Kontak", href: "#contact" }
         ]
       },
@@ -675,7 +857,8 @@ export default function AdminLeads() {
               }
             }
           ]
-        }
+        },
+        ...offeringDetailPages
       ]
     };
 
