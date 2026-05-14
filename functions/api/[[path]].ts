@@ -35,6 +35,10 @@ type Env = {
   KIE_API_KEY?: string;
   OPENCODE_API_KEY?: string;
   OPENCODE_BASE_URL?: string;
+  LEMON_SQUEEZY_API_KEY?: string;
+  LEMON_SQUEEZY_STORE_ID?: string;
+  LEMON_SQUEEZY_VARIANT_ID?: string;
+  ADMIN_WHATSAPP_NUMBER?: string;
 };
 
 type PagesContext = {
@@ -192,6 +196,12 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
 
 function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
+}
+
+function normalizeWhatsAppNumber(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.startsWith("0")) return `62${digits.slice(1)}`;
+  return digits;
 }
 
 function normalizeBusinessId(name: string): string {
@@ -469,7 +479,7 @@ async function generateAiJson(
   const systemMsg =
     `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
     `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
+    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
   const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}`;
 
   let responseContent = "";
@@ -923,6 +933,118 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
   return errorJson("Not Found", 404);
 }
 
+async function handlePayments(request: Request, db: D1Database, env: Env, segments: string[]): Promise<Response> {
+  if (request.method !== "POST" || segments[1] !== "checkout") {
+    return errorJson("Not Found", 404);
+  }
+
+  const body = await readJsonBody(request);
+  const businessId = normalizeBusinessId(asString(body.businessId, "demo-site"));
+  const businessName = asString(body.businessName, "Demo Site");
+  const requestedDomain = asString(body.domain);
+  const customerEmail = asString(body.email);
+  const amountCents = 19700;
+  const adminWhatsApp = await getSetting(db, env, "ADMIN_WHATSAPP_NUMBER") || "081233838173";
+  const apiKey = await getSetting(db, env, "LEMON_SQUEEZY_API_KEY");
+  const storeId = await getSetting(db, env, "LEMON_SQUEEZY_STORE_ID");
+  const variantId = await getSetting(db, env, "LEMON_SQUEEZY_VARIANT_ID");
+
+  const notifyText = encodeURIComponent(
+    `WebView.click checkout request\nBusiness: ${businessName}\nDomain: ${requestedDomain || "-"}\nPackage: $197 domain + hosting 1 year + free setup`,
+  );
+  const adminNotifyUrl = `https://wa.me/${normalizeWhatsAppNumber(adminWhatsApp)}?text=${notifyText}`;
+
+  const leadId = crypto.randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO leads (id, business_id, business_name, niche, email, status, view_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'checkout_pending', 0, CURRENT_TIMESTAMP)
+       ON CONFLICT(business_id) DO UPDATE SET
+         business_name = excluded.business_name,
+         email = COALESCE(excluded.email, email),
+         status = 'checkout_pending',
+         updated_at = CURRENT_TIMESTAMP`,
+    )
+    .bind(leadId, businessId, businessName, "demo", customerEmail)
+    .run();
+
+  const row = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
+  if (row?.id) {
+    await db
+      .prepare(
+        `INSERT INTO crm_activities (id, lead_id, staff_id, activity_type, description)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .bind(crypto.randomUUID(), row.id, "system", "checkout_pending", `Domain request: ${requestedDomain || "not provided"}. Admin WA: ${adminNotifyUrl}`)
+      .run();
+  }
+
+  if (!apiKey || !storeId || !variantId) {
+    return json({
+      success: true,
+      mock: true,
+      checkoutUrl: "",
+      adminNotifyUrl,
+      message: "Lemon Squeezy belum dikonfigurasi. Checkout disimpan sebagai mock checkout_pending.",
+    });
+  }
+
+  const origin = new URL(request.url).origin;
+  const checkoutResponse = await fetch("https://api.lemonsqueezy.com/v1/checkouts", {
+    method: "POST",
+    headers: {
+      accept: "application/vnd.api+json",
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/vnd.api+json",
+    },
+    body: JSON.stringify({
+      data: {
+        type: "checkouts",
+        attributes: {
+          custom_price: amountCents,
+          product_options: {
+            name: "WebView.click Domain + Hosting + Free Setup",
+            description: "$197 total: domain 1 year, hosting 1 year ($15/month x 12), and free setup.",
+            redirect_url: `${origin}/admin/leads`,
+          },
+          checkout_data: {
+            email: customerEmail || undefined,
+            custom: {
+              business_id: businessId,
+              business_name: businessName,
+              requested_domain: requestedDomain,
+              admin_whatsapp: adminWhatsApp,
+            },
+          },
+        },
+        relationships: {
+          store: { data: { type: "stores", id: storeId } },
+          variant: { data: { type: "variants", id: variantId } },
+        },
+      },
+    }),
+  });
+
+  const checkoutData = await checkoutResponse.json() as { data?: { attributes?: { url?: string } }; errors?: unknown };
+  if (!checkoutResponse.ok || !checkoutData.data?.attributes?.url) {
+    return json({
+      success: false,
+      mock: true,
+      checkoutUrl: "",
+      adminNotifyUrl,
+      error: checkoutData.errors || `Lemon Squeezy returned HTTP ${checkoutResponse.status}`,
+      message: "Checkout real belum berhasil dibuat. Request tetap dicatat sebagai checkout_pending.",
+    }, 502);
+  }
+
+  return json({
+    success: true,
+    mock: false,
+    checkoutUrl: checkoutData.data.attributes.url,
+    adminNotifyUrl,
+  });
+}
+
 async function route(context: PagesContext): Promise<Response> {
   const { request, env } = context;
 
@@ -979,6 +1101,10 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (segments[0] === "sites") {
       return handleSites(request, db, env, segments);
+    }
+
+    if (segments[0] === "payments") {
+      return handlePayments(request, db, env, segments);
     }
 
     return errorJson("Not Found", 404);

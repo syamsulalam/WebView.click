@@ -1,5 +1,24 @@
 import { useState } from "react";
-import { CheckCircle2, Clock, MapPin, Phone, Star } from "lucide-react";
+import {
+  Briefcase,
+  CheckCircle2,
+  Clock,
+  Facebook,
+  Globe,
+  Home,
+  Image as ImageIcon,
+  Images,
+  Info,
+  Instagram,
+  Linkedin,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Phone,
+  PhoneCall,
+  Star,
+} from "lucide-react";
+import { normalizeStylePreset, siteStylePresetCss } from "../lib/siteStylePresets";
 
 type SiteRendererProps = {
   siteData: any;
@@ -28,6 +47,7 @@ function normalizeSiteData(siteData: any) {
   const location = siteData?.location || {};
   const hours = siteData?.hours || {};
   const conversion = siteData?.conversion || {};
+  const stylePreset = design.stylePreset || themeVariables.stylePreset || brand.visualStyle || "local-clean";
 
   return {
     meta: {
@@ -47,6 +67,7 @@ function normalizeSiteData(siteData: any) {
       headingFont: typography.headingFont || "'Inter', sans-serif",
       bodyFont: typography.bodyFont || "'Inter', sans-serif",
     },
+    stylePreset,
     brand: {
       logoImageUrl: brand.logoImageUrl || header.logoImageUrl || "",
       logoSvg: brand.logoSvg || header.logoSvg || "",
@@ -136,6 +157,25 @@ function attributionText(src?: string, attributions: string[] = [], source = "",
   return cleanAttributions.length ? `${base}: ${cleanAttributions.join(", ")}` : base;
 }
 
+function menuIcon(label = "", href = "") {
+  const key = `${label} ${href}`.toLowerCase();
+  if (key.includes("home") || key.includes("beranda")) return <Home size={16} />;
+  if (key.includes("about") || key.includes("tentang")) return <Info size={16} />;
+  if (key.includes("service") || key.includes("layanan") || key.includes("menu")) return <Briefcase size={16} />;
+  if (key.includes("gallery") || key.includes("galeri")) return <Images size={16} />;
+  if (key.includes("contact") || key.includes("kontak")) return <Mail size={16} />;
+  return <ImageIcon size={16} />;
+}
+
+function socialIcon(platform = "") {
+  const key = platform.toLowerCase();
+  if (key.includes("instagram")) return <Instagram size={18} />;
+  if (key.includes("facebook")) return <Facebook size={18} />;
+  if (key.includes("linkedin")) return <Linkedin size={18} />;
+  if (key.includes("whatsapp")) return <MessageCircle size={18} />;
+  return <Globe size={18} />;
+}
+
 function ImageFrame({ src, label, className = "", attribution = "" }: { src?: string; label?: string; className?: string; attribution?: string }) {
   if (isUsableImage(src)) {
     return (
@@ -167,8 +207,29 @@ export default function SiteRenderer({
   const initialPage = siteData?.pages?.[0]?.pageId || "home";
   const [activeTab, setActiveTab] = useState(initialPage);
 
-  const { meta, colors, typography, brand, businessProfile, trust, offers, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const { meta, colors, typography, stylePreset, brand, businessProfile, trust, offers, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const brandPhotoAttribution = (src?: string) => attributionText(src, brand.photoAttributions, brand.photoSource, brand.photoCaption);
+  const presetClass = `wv-preset-${normalizeStylePreset(stylePreset)}`;
+  const homePageId = pages[0]?.pageId || "home";
+  const isIndonesian = meta.language === "id";
+  const labels = {
+    pages: isIndonesian ? "Halaman" : "Pages",
+    highlights: isIndonesian ? "Unggulan" : "Highlights",
+    contact: isIndonesian ? "Kontak" : "Contact",
+    learnMore: isIndonesian ? "Pelajari Lebih Lanjut" : "Learn More",
+  };
+  const changeTab = (pageId: string) => {
+    setActiveTab(pageId || homePageId);
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  };
+  const footerSocials = Array.isArray(globalConfig.footer.socials) && globalConfig.footer.socials.length > 0
+    ? globalConfig.footer.socials
+    : [
+        { platform: "Instagram", href: "#" },
+        { platform: "Facebook", href: "#" },
+        { platform: "LinkedIn", href: "#" },
+      ];
+  const footerHours = Array.isArray(hours.regular) ? hours.regular.slice(0, 3) : [];
 
   const customStyles = {
     "--color-primary": colors.primary,
@@ -182,22 +243,28 @@ export default function SiteRenderer({
   } as React.CSSProperties;
 
   return (
-    <div style={customStyles} className="min-h-screen flex flex-col" id="rendered-site">
+    <div style={customStyles} className={`min-h-screen flex flex-col ${presetClass}`} id="rendered-site">
       <header style={{ backgroundColor: colors.primary, color: "#fff" }} className="py-4 px-6 md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm">
-        <div className="font-bold text-xl tracking-tight flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => changeTab(homePageId)}
+          className="font-bold text-xl tracking-tight flex items-center gap-3 text-left hover:opacity-85 transition"
+          aria-label={`Go to ${meta.businessName} home`}
+        >
           {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
           {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : null}
           <span>{meta.businessName}</span>
-        </div>
+        </button>
         <nav className="hidden md:flex gap-6">
           {navigation.headerMenu.map((menu: any, idx: number) => {
             const pageId = menu.href.replace("#", "");
             return (
               <button
                 key={idx}
-                onClick={() => setActiveTab(pageId)}
-                className={`text-sm font-medium hover:opacity-80 transition ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
+                onClick={() => changeTab(pageId)}
+                className={`text-sm font-medium hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
               >
+                {menuIcon(menu.label, menu.href)}
                 {menu.label}
               </button>
             );
@@ -206,8 +273,9 @@ export default function SiteRenderer({
         <a
           href={globalConfig.header.ctaButton.href}
           style={{ backgroundColor: colors.accent }}
-          className="px-5 py-2 rounded-lg text-white font-medium hover:opacity-90 transition text-sm"
+          className="px-5 py-2 rounded-lg text-white font-medium hover:opacity-90 transition text-sm inline-flex items-center gap-2"
         >
+          <PhoneCall size={16} />
           {globalConfig.header.ctaButton.text}
         </a>
       </header>
@@ -245,10 +313,10 @@ export default function SiteRenderer({
                                 }}
                                 className="px-6 py-3 rounded-lg font-semibold transition hover:translate-y-[-1px]"
                                 onClick={() => {
-                                  if (href.startsWith("#")) setActiveTab(href.replace("#", ""));
+                                  if (href.startsWith("#")) changeTab(href.replace("#", ""));
                                 }}
                               >
-                                {btn.text || "Pelajari Lebih Lanjut"}
+                                {btn.text || labels.learnMore}
                               </button>
                             );
                           })}
@@ -554,8 +622,58 @@ export default function SiteRenderer({
         ))}
       </main>
 
-      <footer style={{ backgroundColor: colors.primary, color: "#fff" }} className="py-12 px-6 text-center opacity-90 text-sm">
-        <p>{globalConfig.footer.text}</p>
+      <footer style={{ backgroundColor: colors.primary, color: "#fff" }} className="px-6 py-14 text-sm">
+        <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1.3fr_0.8fr_0.8fr_1fr]">
+          <div>
+            <button type="button" onClick={() => changeTab(homePageId)} className="mb-4 flex items-center gap-3 text-left text-lg font-bold hover:opacity-85">
+              {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
+              {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : null}
+              <span>{meta.businessName}</span>
+            </button>
+            <p className="max-w-sm opacity-80">{businessProfile.shortPitch || meta.seoDescription || globalConfig.footer.text}</p>
+            <div className="mt-5 flex gap-2">
+              {footerSocials.map((social: any) => (
+                <a key={social.platform} href={social.href || "#"} className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20" aria-label={social.platform}>
+                  {socialIcon(social.platform)}
+                </a>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-4 font-semibold">{labels.pages}</p>
+            <div className="space-y-2 opacity-85">
+              {navigation.headerMenu.map((menu: any) => (
+                <button key={menu.href} type="button" onClick={() => changeTab(menu.href.replace("#", ""))} className="block hover:opacity-100">
+                  {menu.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-4 font-semibold">{labels.highlights}</p>
+            <div className="space-y-2 opacity-85">
+              {offers.slice(0, 4).map((offer: any) => <p key={offer.title}>{offer.title}</p>)}
+              {offers.length === 0 && capabilities.slice(0, 4).map((item: any) => <p key={item.label}>{item.label}</p>)}
+            </div>
+          </div>
+          <div>
+            <p className="mb-4 font-semibold">{labels.contact}</p>
+            <div className="space-y-3 opacity-85">
+              {(businessProfile.contact?.phoneNational || globalConfig.header.ctaButton?.href) && (
+                <p className="flex gap-2"><Phone size={16} className="mt-0.5 shrink-0" /> <span>{businessProfile.contact?.phoneNational || globalConfig.header.ctaButton.href}</span></p>
+              )}
+              {(location.formattedAddress || businessProfile.address?.formatted) && (
+                <p className="flex gap-2"><MapPin size={16} className="mt-0.5 shrink-0" /> <span>{location.formattedAddress || businessProfile.address.formatted}</span></p>
+              )}
+              {footerHours.length > 0 && (
+                <div className="flex gap-2"><Clock size={16} className="mt-0.5 shrink-0" /> <div>{footerHours.map((item: string) => <p key={item}>{item}</p>)}</div></div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="mx-auto mt-10 max-w-6xl border-t border-white/15 pt-6 text-xs opacity-70">
+          <p>{globalConfig.footer.text}</p>
+        </div>
       </footer>
 
       {conversion.stickyMobileCta && (
@@ -598,6 +716,7 @@ export default function SiteRenderer({
 
       <style>{`
         @media print { .hide-in-export { display: none !important; } }
+        ${siteStylePresetCss}
       `}</style>
     </div>
   );

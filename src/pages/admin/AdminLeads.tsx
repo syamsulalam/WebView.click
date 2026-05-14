@@ -3,6 +3,7 @@ import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare } from "luci
 import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
+import { getStylePreset, inferStylePresetFromText } from "../../lib/siteStylePresets";
 
 export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -212,6 +213,33 @@ export default function AdminLeads() {
     }
   };
 
+  const inferLocaleFromPlace = (place: any) => {
+    const text = [
+      place.formatted_address,
+      place.formattedAddress,
+      place.plus_code?.compound_code,
+      place.vicinity,
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    if (/\b(united states|usa|tx|texas|ca|california|fl|florida|ny|new york|az|arizona|ga|georgia)\b/.test(text)) {
+      return { language: "en", region: "US" };
+    }
+    if (/\b(indonesia|jakarta|bandung|surabaya|bali|yogyakarta|semarang|medan)\b/.test(text)) {
+      return { language: "id", region: "ID" };
+    }
+    return { language: "en", region: "US" };
+  };
+
+  const inferStylePresetFromPlace = (place: any) => {
+    const text = [
+      place.name,
+      place.formatted_address,
+      ...(Array.isArray(place.types) ? place.types : []),
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    return inferStylePresetFromText(text);
+  };
+
   useEffect(() => {
     fetchLeads();
     fetch("/api/settings")
@@ -272,12 +300,18 @@ export default function AdminLeads() {
     const mapsUrl = place.url || place.googleMapsUri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}`;
     const rating = Number(place.rating || 0);
     const reviewCount = Number(place.user_ratings_total || place.userRatingCount || 0);
+    const locale = inferLocaleFromPlace(place);
+    const stylePreset = inferStylePresetFromPlace(place);
+    const stylePresetMeta = getStylePreset(stylePreset);
+    const isEnglish = locale.language === "en";
     const mockJson = {
       meta: {
         businessName: place.name,
         businessId: businessId,
         niche: Array.isArray(place.types) ? place.types[0] : "general",
-        seoDescription: `Website resmi untuk ${place.name}.`,
+        language: locale.language,
+        region: locale.region,
+        seoDescription: isEnglish ? `Official website for ${place.name}.` : `Website resmi untuk ${place.name}.`,
         brandPalette,
       },
       sourceData: {
@@ -293,6 +327,13 @@ export default function AdminLeads() {
         attributions: logoSelection?.attributions || []
       },
       design: {
+        stylePreset,
+        stylePresetConfig: {
+          label: stylePresetMeta.label,
+          mood: stylePresetMeta.mood,
+          industries: stylePresetMeta.industries,
+          recommendedColors: stylePresetMeta.recommendedColors,
+        },
         themeVariables: {
           colors: {
             primary: primaryColor,
@@ -324,7 +365,9 @@ export default function AdminLeads() {
         primaryType: Array.isArray(place.types) ? place.types[0] : "local_business",
         typeLabel: Array.isArray(place.types) ? String(place.types[0]).replace(/_/g, " ") : "Local business",
         categories: Array.isArray(place.types) ? place.types : [],
-        shortPitch: `Layanan lokal terpercaya di ${place.formatted_address || "area sekitar"}.`,
+        shortPitch: isEnglish
+          ? `A trusted local business serving customers around ${place.formatted_address || "the local area"}.`
+          : `Layanan lokal terpercaya di ${place.formatted_address || "area sekitar"}.`,
         address: {
           formatted: place.formatted_address || place.formattedAddress || "",
         },
@@ -337,7 +380,11 @@ export default function AdminLeads() {
       trust: {
         rating,
         reviewCount,
-        reviewSummary: reviewCount ? `${place.name} memiliki rating ${rating.toFixed(1)} dari ${reviewCount} review Google.` : "",
+        reviewSummary: reviewCount
+          ? isEnglish
+            ? `${place.name} has a ${rating.toFixed(1)} rating from ${reviewCount} Google reviews.`
+            : `${place.name} memiliki rating ${rating.toFixed(1)} dari ${reviewCount} review Google.`
+          : "",
         reviews: [],
         badges: [
           place.business_status === "OPERATIONAL" ? "Operational" : "",
@@ -346,9 +393,27 @@ export default function AdminLeads() {
         ].filter(Boolean)
       },
       offers: [
-        { title: "Layanan Utama", description: `Solusi profesional dari ${place.name} untuk pelanggan lokal.`, priceHint: "Hubungi untuk estimasi", image: logoSelection?.url || "", cta: { text: "Minta Info", href: "#contact" } },
-        { title: "Konsultasi Cepat", description: "Tanyakan kebutuhan Anda dan dapatkan arahan layanan yang sesuai.", priceHint: "Respon cepat", image: "", cta: { text: "Hubungi", href: "#contact" } },
-        { title: "Kunjungan Lokal", description: "Informasi lokasi dan rute tersedia langsung dari Google Maps.", priceHint: "Buka Maps", image: "", cta: { text: "Lihat Lokasi", href: mapsUrl } }
+        {
+          title: isEnglish ? "Core Service" : "Layanan Utama",
+          description: isEnglish ? `Professional local support from ${place.name}.` : `Solusi profesional dari ${place.name} untuk pelanggan lokal.`,
+          priceHint: isEnglish ? "Contact for estimate" : "Hubungi untuk estimasi",
+          image: logoSelection?.url || "",
+          cta: { text: isEnglish ? "Request Info" : "Minta Info", href: "#contact" },
+        },
+        {
+          title: isEnglish ? "Fast Consultation" : "Konsultasi Cepat",
+          description: isEnglish ? "Ask about your needs and get clear next steps." : "Tanyakan kebutuhan Anda dan dapatkan arahan layanan yang sesuai.",
+          priceHint: isEnglish ? "Fast response" : "Respon cepat",
+          image: "",
+          cta: { text: isEnglish ? "Contact" : "Hubungi", href: "#contact" },
+        },
+        {
+          title: isEnglish ? "Local Visit" : "Kunjungan Lokal",
+          description: isEnglish ? "Location and directions are available through Google Maps." : "Informasi lokasi dan rute tersedia langsung dari Google Maps.",
+          priceHint: isEnglish ? "Open Maps" : "Buka Maps",
+          image: "",
+          cta: { text: isEnglish ? "Get Directions" : "Lihat Lokasi", href: mapsUrl },
+        }
       ],
       capabilities: [
         { label: "Bisnis lokal", enabled: true, source: "google_places.types", description: "Profil bisnis diambil dari data Google Places." },
@@ -382,15 +447,15 @@ export default function AdminLeads() {
       global: {
         header: {
           logoImageUrl: logoSelection?.url || "",
-          ctaButton: { text: "Hubungi", href: phone !== "0000000000" ? `tel:${phone}` : "#contact" }
+          ctaButton: { text: isEnglish ? "Call Now" : "Hubungi", href: phone !== "0000000000" ? `tel:${phone}` : "#contact" }
         },
         footer: { text: `© 2026 ${place.name}. All rights reserved.` }
       },
       navigation: {
         headerMenu: [
-          { label: "Beranda", href: "#home" },
-          { label: "Layanan", href: "#services" },
-          { label: "Kontak", href: "#contact" }
+          { label: isEnglish ? "Home" : "Beranda", href: "#home" },
+          { label: isEnglish ? "Services" : "Layanan", href: "#services" },
+          { label: isEnglish ? "Contact" : "Kontak", href: "#contact" }
         ]
       },
       pages: [
@@ -401,11 +466,11 @@ export default function AdminLeads() {
               type: "hero",
               id: "hero-1",
               content: {
-                headline: `${place.name} siap membantu kebutuhan lokal Anda`,
-                subheadline: place.formatted_address || "Informasi bisnis dari Google Places.",
+                headline: isEnglish ? `${place.name} is ready to help locally` : `${place.name} siap membantu kebutuhan lokal Anda`,
+                subheadline: place.formatted_address || (isEnglish ? "Business information from Google Places." : "Informasi bisnis dari Google Places."),
                 buttons: [
-                  { text: "Hubungi Kami", href: "#contact", style: "primary" },
-                  { text: "Buka Maps", href: mapsUrl, style: "outline" }
+                  { text: isEnglish ? "Contact Us" : "Hubungi Kami", href: "#contact", style: "primary" },
+                  { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl, style: "outline" }
                 ],
                 image: logoSelection?.url || ""
               }
@@ -415,21 +480,21 @@ export default function AdminLeads() {
               type: "features",
               id: "features-1",
               content: {
-                title: "Kenapa bisnis ini relevan",
+                title: isEnglish ? "Why this business stands out" : "Kenapa bisnis ini relevan",
                 items: [
-                  { title: "Profil Google aktif", description: place.business_status || "Data bisnis tersedia dari Google Places." },
-                  { title: "Mudah dihubungi", description: phone !== "0000000000" ? phone : "Kontak bisa dilengkapi oleh admin." },
-                  { title: "Siap dibuatkan website", description: place.website || place.websiteUri ? "Sudah punya website, cocok untuk redesign." : "Belum terdeteksi punya website." }
+                  { title: isEnglish ? "Active Google profile" : "Profil Google aktif", description: place.business_status || (isEnglish ? "Business data is available from Google Places." : "Data bisnis tersedia dari Google Places.") },
+                  { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: phone !== "0000000000" ? phone : (isEnglish ? "Contact details can be completed by admin." : "Kontak bisa dilengkapi oleh admin.") },
+                  { title: isEnglish ? "Website-ready" : "Siap dibuatkan website", description: place.website || place.websiteUri ? (isEnglish ? "Already has a website, good for redesign." : "Sudah punya website, cocok untuk redesign.") : (isEnglish ? "No website detected yet." : "Belum terdeteksi punya website.") }
                 ]
               }
             },
-            { type: "offers", id: "offers-1", content: { title: "Layanan yang bisa ditonjolkan" } },
-            { type: "reviews", id: "reviews-1", content: { title: "Social proof dari Google" } },
+            { type: "offers", id: "offers-1", content: { title: isEnglish ? "Services to highlight" : "Layanan yang bisa ditonjolkan" } },
+            { type: "reviews", id: "reviews-1", content: { title: isEnglish ? "Google social proof" : "Social proof dari Google" } },
             {
               type: "hoursLocation",
               id: "location-1",
               content: {
-                title: "Lokasi dan kontak",
+                title: isEnglish ? "Location and contact" : "Lokasi dan kontak",
                 address: place.formatted_address || "",
                 phone,
                 directionsUrl: mapsUrl
@@ -439,10 +504,10 @@ export default function AdminLeads() {
               type: "faq",
               id: "faq-1",
               content: {
-                title: "Pertanyaan umum",
+                title: isEnglish ? "Common questions" : "Pertanyaan umum",
                 items: [
-                  { question: "Bagaimana cara menghubungi bisnis ini?", "answer": phone !== "0000000000" ? `Hubungi langsung di ${phone}.` : "Nomor telepon belum tersedia dan bisa dilengkapi manual." },
-                  { question: "Apakah data ini bisa diedit?", "answer": "Bisa. JSON hasil generate dapat dikoreksi sebelum dipakai sebagai website final." }
+                  { question: isEnglish ? "How do I contact this business?" : "Bagaimana cara menghubungi bisnis ini?", "answer": phone !== "0000000000" ? (isEnglish ? `Call directly at ${phone}.` : `Hubungi langsung di ${phone}.`) : (isEnglish ? "Phone number is not available yet and can be completed manually." : "Nomor telepon belum tersedia dan bisa dilengkapi manual.") },
+                  { question: isEnglish ? "Can this data be edited?" : "Apakah data ini bisa diedit?", "answer": isEnglish ? "Yes. The generated JSON can be corrected before the final website is used." : "Bisa. JSON hasil generate dapat dikoreksi sebelum dipakai sebagai website final." }
                 ]
               }
             }
@@ -684,6 +749,7 @@ export default function AdminLeads() {
                         <option value="scraped">Scraped</option>
                         <option value="contacted">Contacted</option>
                         <option value="viewed">Viewed</option>
+                        <option value="checkout_pending">Checkout Pending</option>
                         <option value="negotiating">Negotiating</option>
                         <option value="won_paid">Won (Paid)</option>
                         <option value="lost">Lost</option>

@@ -36,11 +36,16 @@ Logic penting:
 - `normalizeSiteData()` menerima variasi schema lama/baru, termasuk `design.themeVariables.typography` dan `design.typography`.
 - Field penting yang hilang diberi fallback agar preview tidak blank.
 - State `activeTab` dipakai untuk navigasi antar page dari `navigation.headerMenu`.
+- Header logo/title bisa diklik untuk kembali ke tab home.
+- Navbar dan CTA memakai icon lucide.
+- Pergantian tab menjalankan scroll-to-top.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
+- Renderer membaca `design.stylePreset` untuk niche style modifier. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
 - Gambar dirender sebagai `<img>` jika URL usable (`http`, `/`, atau `data:`); filename placeholder tetap ditampilkan sebagai fallback supaya preview tidak blank.
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
+- Footer dirender lebih lengkap: brand/about, sosial, halaman, highlights/offers, kontak, alamat, dan jam operasional jika tersedia.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
 
 Risiko debug:
@@ -108,6 +113,9 @@ Logic penting:
 - Attribution foto yang dipilih dikirim sebagai `selectedLogoAttributions` dan disimpan di JSON sebagai `brand.photoAttributions`.
 - Untuk situs gratis, foto Google Places tetap hotlink/proxy runtime dan tidak di-upload ke R2.
 - JSON mock fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
+- JSON mock fallback menentukan `meta.language` dari alamat/region Places: US default English, Indonesia default Indonesian.
+- JSON mock fallback menentukan `design.stylePreset` dan `design.stylePresetConfig` via `src/lib/siteStylePresets.ts`.
+- Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
 - Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.
 
 Risiko debug:
@@ -144,6 +152,7 @@ Logic penting:
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - KIE.ai ditampilkan sebagai estimasi diskon karena pricing live berada di dashboard/pricing KIE.
+- Payment settings sekarang mencakup Lemon Squeezy API key, store ID, variant ID, dan nomor WhatsApp admin untuk mock/checkout notifications.
 
 Risiko debug:
 - Jika save gagal, form tetap menyimpan state lokal dan banner merah meminta retry.
@@ -176,6 +185,11 @@ Logic penting:
 Risiko debug:
 - Jika `/demo` blank, cek apakah `resolveJsonModule` aktif di `tsconfig.json`.
 - Jika section baru tidak muncul sesuai harapan, update `SiteRenderer`.
+- Tombol floating demo:
+  - Download Free membuat zip berisi `index.html` dan `site-data.json`.
+  - Paket `$197 Domain + Hosting` memanggil `POST /api/payments/checkout`.
+  - Jika Lemon Squeezy belum dikonfigurasi, endpoint mencatat mock checkout dan membuka link WhatsApp admin.
+- Demo memiliki selector style preset dari `src/lib/siteStylePresets.ts` agar preset bisa diuji tanpa edit JSON.
 
 ### `src/pages/public/PublicViewer.tsx`
 
@@ -221,6 +235,17 @@ Logic penting:
 - Menulis perubahan state ke localStorage.
 - Error storage diabaikan agar UI tetap jalan di private/restricted browsing.
 
+### `src/lib/siteStylePresets.ts`
+
+Fungsi:
+- Registry style preset niche untuk site builder.
+- Menyediakan metadata label, industri, mood, recommended colors, dan keyword matching.
+- Mengekspor CSS modifier yang diinjeksi oleh `SiteRenderer`.
+
+Logic penting:
+- `inferStylePresetFromText()` dipakai CRM generate untuk memilih preset dari nama bisnis, alamat, dan Places types.
+- `normalizeStylePreset()` memastikan nilai JSON yang tidak dikenal fallback ke `local-clean`.
+
 ## Cloudflare Pages Functions
 
 ### `functions/api/[[path]].ts`
@@ -242,6 +267,7 @@ Endpoint:
 - `GET /api/places/photo`
 - `POST /api/sites/generate`
 - `GET /api/sites/:business_id`
+- `POST /api/payments/checkout`
 
 Logic D1:
 - Binding wajib: `DB`.
@@ -280,6 +306,11 @@ Risiko debug:
 - Jika asset tidak bisa dibuka, cek custom domain R2 `assets.webview.click`, bucket public/custom domain setting, dan env `R2_PUBLIC_BASE_URL`.
 - Asset yang hanya berupa filename lokal tidak bisa di-upload karena tidak ada binary sumber; Function hanya memastikan namanya mengandung slug.
 
+Logic Payments:
+- `/api/payments/checkout` membuat checkout Lemon Squeezy jika `LEMON_SQUEEZY_API_KEY`, `LEMON_SQUEEZY_STORE_ID`, dan `LEMON_SQUEEZY_VARIANT_ID` sudah ada.
+- Jika belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
+- Paket saat ini: `$197` one-time untuk domain 1 tahun, hosting 1 tahun, dan free setup.
+
 ## Data and Schema
 
 ### `JSON/template-schema.json`
@@ -287,6 +318,7 @@ Risiko debug:
 Fungsi:
 - Baseline struktur JSON website yang diberikan ke model AI.
 - Sample kini berisi schema baru untuk site builder: `sourceData`, `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, `conversion`, dan `seo`.
+- `design` berisi `stylePreset`, `stylePresetConfig`, dan `styleSystem.allowedPresets` agar AI memilih nuansa niche yang valid.
 - Homepage sample memakai section modern: `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, dan `faq`.
 
 ### `SQL/schema.sql`
@@ -312,4 +344,6 @@ Jika menambah laman atau komponen baru:
 
 - `docs/GOOGLE_PLACES_DATA_INVENTORY.md`: inventaris data Google Places yang bisa dipakai untuk CRM lead scoring dan site generation.
 - `docs/GOOGLE_PLACES_PHOTO_STRATEGY.md`: strategi foto Google Places untuk free preview vs paid website.
+- `docs/NICHE_STYLE_PRESETS.md`: brainstorm dan kontrak `design.stylePreset`.
+- `docs/LEMON_SQUEEZY_INTEGRATION.md`: catatan integrasi checkout Lemon Squeezy.
 - `docs/SITE_BUILDER_UPGRADE_PLAN.md`: rencana upgrade JSON schema dan renderer agar demo/site output lebih modern dan personalized.

@@ -16,6 +16,10 @@ const initialSettings: Record<string, string> = {
   GOOGLE_PLACES_API_KEY: "",
   PAYMENT_LINK_BASIC: "",
   PAYMENT_LINK_PREMIUM: "",
+  LEMON_SQUEEZY_API_KEY: "",
+  LEMON_SQUEEZY_STORE_ID: "",
+  LEMON_SQUEEZY_VARIANT_ID: "",
+  ADMIN_WHATSAPP_NUMBER: "081233838173",
 };
 
 const providerOptions: Array<{
@@ -313,6 +317,36 @@ export default function AdminSettings() {
               value={settings.PAYMENT_LINK_PREMIUM || ""}
               onChange={(e) => handleChange("PAYMENT_LINK_PREMIUM", e.target.value)}
               placeholder="Premium package URL"
+              className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
+            />
+            <input
+              type="password"
+              value={settings.LEMON_SQUEEZY_API_KEY || ""}
+              onChange={(e) => handleChange("LEMON_SQUEEZY_API_KEY", e.target.value)}
+              placeholder="Lemon Squeezy API Key"
+              className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="text"
+                value={settings.LEMON_SQUEEZY_STORE_ID || ""}
+                onChange={(e) => handleChange("LEMON_SQUEEZY_STORE_ID", e.target.value)}
+                placeholder="Store ID"
+                className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
+              />
+              <input
+                type="text"
+                value={settings.LEMON_SQUEEZY_VARIANT_ID || ""}
+                onChange={(e) => handleChange("LEMON_SQUEEZY_VARIANT_ID", e.target.value)}
+                placeholder="Variant ID"
+                className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
+              />
+            </div>
+            <input
+              type="text"
+              value={settings.ADMIN_WHATSAPP_NUMBER || ""}
+              onChange={(e) => handleChange("ADMIN_WHATSAPP_NUMBER", e.target.value)}
+              placeholder="Admin WhatsApp number"
               className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
             />
           </div>

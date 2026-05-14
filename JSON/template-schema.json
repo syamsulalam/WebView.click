@@ -9,6 +9,34 @@
     "faviconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☕</text></svg>"
   },
   "design": {
+    "stylePreset": "cafe-warm",
+    "stylePresetConfig": {
+      "label": "Cafe Warm",
+      "mood": "warm, editorial, inviting",
+      "industries": ["cafe", "coffee shop", "bakery", "restaurant"],
+      "recommendedColors": ["#4E342E", "#FF7043", "#FAFAFA"]
+    },
+    "styleSystem": {
+      "allowedPresets": [
+        "local-clean",
+        "contractor-rugged",
+        "legal-authority",
+        "garden-organic",
+        "pool-aqua",
+        "dental-clean",
+        "cafe-warm",
+        "auto-shop-steel",
+        "salon-soft-luxe",
+        "fitness-energy",
+        "real-estate-premium",
+        "cleaning-fresh",
+        "security-trust",
+        "education-friendly",
+        "pet-care-friendly",
+        "financial-trust"
+      ],
+      "selectionRule": "Choose one preset based on Google Places primaryType, types, business name, query intent, and review language. US businesses should usually use English copy."
+    },
     "themeVariables": {
       "colors": {
         "primary": "#4E342E",
