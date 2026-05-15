@@ -55,10 +55,27 @@ Logic penting:
 - Contact form membuat `mailto:` URL berisi nama, email, pesan, dan semua field form yang diisi.
 - Visitor action panel untuk download/setup dirender lewat shared component `WebsiteActionPanel`, bukan logic lokal di renderer.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
+- Text utama di renderer dibungkus dengan shared `EditableText`, sehingga owner bisa klik copy di `/demo` atau `/:businessId`, edit langsung, dan perubahan tersimpan di localStorage per business/page/text key.
 
 Risiko debug:
 - Jika UI demo/public berbeda dari ekspektasi, cek mapping section di file ini dulu sebelum mengubah `PublicViewer`.
 - Jika menambah `section.type` baru di JSON, tambahkan renderer di file ini dan update dokumen ini.
+
+### `src/components/EditableText.tsx`
+
+Fungsi:
+- Inline light text editor untuk preview owner di `/demo` dan `/:businessId`.
+- Memakai native `contentEditable`, bukan dependency editor tambahan.
+
+Logic penting:
+- Setiap teks punya key `webview.inlineText.{businessId}.{page}.{field}` di localStorage.
+- Toolbar kecil mendukung bold, italic, dan underline via browser command.
+- Paste dipaksa plain text agar HTML asing tidak ikut masuk.
+- Export HTML membersihkan atribut `contenteditable` dan toolbar lewat `src/lib/exportSiteHtml.ts`, tetapi isi teks hasil edit tetap ikut karena sudah ada di DOM.
+
+Risiko debug:
+- Jika teks tidak ikut download, cek apakah field tersebut sudah dibungkus `EditableText` di `SiteRenderer`.
+- Jika key berubah karena page/section ID berubah, localStorage edit lama tidak akan terpakai.
 
 ### `src/components/AdminLayout.tsx`
 
@@ -163,6 +180,7 @@ Logic penting:
 - Badge website sebelum Place Details adalah `Website unknown`, bukan `No website`, karena Google Places Text Search tidak selalu menyertakan website. Setelah `Gather data`, badge baru berubah menjadi `Has website` atau `No website` dari Place Details.
 - Search dapat mengaktifkan `websitePrecheck=1`, yaitu Place Details minimal untuk hasil teratas agar status website diketahui sebelum admin melakukan gather data penuh. Ini memakai kuota Details, tetapi mencegah buang waktu/generate untuk bisnis yang sudah punya website.
 - Filter `No website first` berarti `website_check_status=no_website`, bukan sekadar kolom website kosong. Prospek yang belum dicek masuk kategori `Website unknown`.
+- List prospek otomatis diurutkan dengan conversion score: no website verified, rating 4.5+, review count 10-100, phone exists, US market, belum generated, dan details gathered menaikkan skor; bisnis yang sudah punya website diberi penalti besar.
 - Nama bisnis di list link ke Google Business/Maps listing. Jika exact `url` belum tersedia, fallback URL memakai `query_place_id` agar cross-check tetap menuju listing spesifik sebaik mungkin.
 - Search result diberi `searchQuery` agar generator tidak memakai tipe Places generik seperti `establishment` sebagai niche ketika Google tidak memberi kategori spesifik.
 - Untuk situs gratis, foto Google Places tetap hotlink/proxy runtime dan tidak di-upload ke R2.

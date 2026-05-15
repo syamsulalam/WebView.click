@@ -83,6 +83,15 @@ function cleanHtmlClone() {
   clone.querySelectorAll("script").forEach((node) => node.remove());
   clone.querySelectorAll(".hide-in-export").forEach((node) => node.remove());
   clone.querySelectorAll("[data-export-remove='true']").forEach((node) => node.remove());
+  clone.querySelectorAll("[data-wv-editable='true']").forEach((node) => {
+    const element = node as HTMLElement;
+    element.removeAttribute("contenteditable");
+    element.removeAttribute("spellcheck");
+    element.removeAttribute("suppresscontenteditablewarning");
+    element.removeAttribute("data-wv-editable");
+    element.removeAttribute("data-wv-edit-key");
+    element.classList.remove("cursor-text", "hover:ring-2", "hover:ring-indigo-200", "focus:ring-2", "focus:ring-indigo-500", "focus:ring-offset-2");
+  });
 
   clone.querySelectorAll("img[src], source[src], video[src], audio[src], iframe[src]").forEach((node) => {
     const element = node as HTMLElement;

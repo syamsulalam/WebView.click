@@ -1207,7 +1207,6 @@ export default function AdminLeads() {
     fetchLeads();
   };
 
-  const visibleProspects = searchActive ? searchResults : prospectDrafts;
   const hasWebsite = (place: any) => Boolean(place.website || place.websiteUri);
   const websiteBadge = (place: any) => {
     if (hasWebsite(place)) {
@@ -1224,6 +1223,75 @@ export default function AdminLeads() {
     }
     return { label: "No website verified", className: "bg-emerald-100 text-emerald-800", title: "No website returned by Google Place Details." };
   };
+  const isUsMarket = (place: any) => {
+    const text = [
+      place.formatted_address,
+      place.formattedAddress,
+      place.address,
+      place.vicinity,
+      place.plus_code?.compound_code,
+      place.region,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return /\b(united states|usa|tx|texas|ca|california|fl|florida|ny|new york|az|arizona|ga|georgia|il|illinois|pa|pennsylvania|oh|ohio|nc|north carolina|mi|michigan|nj|new jersey|va|virginia|wa|washington|tn|tennessee|ma|massachusetts|in|indiana|mo|missouri|md|maryland|wi|wisconsin|co|colorado|mn|minnesota|sc|south carolina|al|alabama|la|louisiana|ky|kentucky|or|oregon|ok|oklahoma|ct|connecticut|ut|utah|ia|iowa|nv|nevada|ar|arkansas|ms|mississippi|ks|kansas|nm|new mexico|ne|nebraska|id|idaho|wv|west virginia|hi|hawaii|nh|new hampshire|me|maine|mt|montana|ri|rhode island|de|delaware|sd|south dakota|nd|north dakota|ak|alaska|vt|vermont|wy|wyoming)\b/.test(text);
+  };
+  const prospectScore = (place: any) => {
+    const rating = Number(place.rating || 0);
+    const reviews = Number(place.user_ratings_total || place.userRatingCount || place.reviews || 0);
+    const phone = placePhone(place);
+    let score = 0;
+    const reasons: string[] = [];
+
+    if (place.websiteCheckStatus === "no_website" && !hasWebsite(place)) {
+      score += 45;
+      reasons.push("no website verified");
+    } else if (hasWebsite(place)) {
+      score -= 80;
+      reasons.push("has website");
+    } else {
+      score -= 8;
+      reasons.push("website unknown");
+    }
+
+    if (rating >= 4.5) {
+      score += 18;
+      reasons.push("4.5+ rating");
+    } else if (rating >= 4) {
+      score += 10;
+      reasons.push("4.0+ rating");
+    }
+
+    if (reviews >= 10 && reviews <= 100) {
+      score += 18;
+      reasons.push("10-100 reviews");
+    } else if (reviews > 100 && reviews <= 300) {
+      score += 8;
+      reasons.push("established reviews");
+    } else if (reviews > 0 && reviews < 10) {
+      score += 5;
+      reasons.push("some reviews");
+    }
+
+    if (phone) {
+      score += 14;
+      reasons.push("phone exists");
+    }
+    if (isUsMarket(place)) {
+      score += 18;
+      reasons.push("US market");
+    }
+    if (!place.generatedBusinessId) {
+      score += 8;
+      reasons.push("not generated yet");
+    }
+    if (hasGatheredDetails(place)) {
+      score += 5;
+      reasons.push("details gathered");
+    }
+
+    return { score: Math.max(0, Math.round(score)), reasons };
+  };
+  const visibleProspectsRaw = searchActive ? searchResults : prospectDrafts;
+  const visibleProspects = [...visibleProspectsRaw].sort((a, b) => prospectScore(b).score - prospectScore(a).score);
   const selectedVisibleProspects = visibleProspects.filter((place) => selectedProspects[getPlaceKey(place)]);
 
   const toggleProspectSelection = (place: any, checked: boolean) => {
@@ -1488,7 +1556,7 @@ export default function AdminLeads() {
             <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="font-semibold text-slate-900">{searchResults.length > 0 ? "Current search results" : "Saved prospect drafts"}</p>
-                <p>{visibleProspects.length} prospects. {selectedVisibleProspects.length} selected for batch.</p>
+                <p>{visibleProspects.length} prospects ranked by conversion score. {selectedVisibleProspects.length} selected for batch.</p>
                 {batchMessage && <p className="mt-1 text-xs text-indigo-700">{batchMessage}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1561,6 +1629,7 @@ export default function AdminLeads() {
               const detailsReady = hasGatheredDetails(displayPlace);
               const websiteStatus = websiteBadge(displayPlace);
               const listingUrl = googleBusinessListingUrl(displayPlace);
+              const score = prospectScore(displayPlace);
 
               return (
               <div key={placeKey} className="p-4 border border-gray-100 rounded-xl bg-gray-50">
@@ -1581,6 +1650,9 @@ export default function AdminLeads() {
                     </a>
                     <span title={websiteStatus.title} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${websiteStatus.className}`}>
                       {websiteStatus.label}
+                    </span>
+                    <span title={score.reasons.join(", ")} className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
+                      Score {score.score}
                     </span>
                     {displayPlace.prospectStatus && (
                       <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">

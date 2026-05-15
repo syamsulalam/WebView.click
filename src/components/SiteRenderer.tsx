@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import {
   Briefcase,
   CheckCircle2,
@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, googleFontImportUrl } from "../lib/fontPairings";
+import EditableText, { type EditableTextTag } from "./EditableText";
 import WebsiteActionPanel from "./WebsiteActionPanel";
 
 type SiteRendererProps = {
@@ -350,6 +351,29 @@ export default function SiteRenderer({
     featuresFallback: isIndonesian ? "Mengapa Memilih Kami?" : "Why Choose Us?",
     capabilityFallback: isIndonesian ? "Tersedia di lokasi ini." : "Available from this business.",
   };
+  const editKey = (...parts: Array<string | number | undefined>) =>
+    [businessId || meta.businessId || "demo", ...parts]
+      .filter((part) => part !== undefined && part !== "")
+      .map((part) => String(part).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""))
+      .join(".");
+  const editableText = (
+    id: string,
+    value: string | number | null | undefined,
+    as: EditableTextTag = "span",
+    className = "",
+    style?: CSSProperties,
+    multiline = false,
+  ) => (
+    <EditableText
+      as={as}
+      storageKey={editKey(/^(header|footer)\./.test(id) ? "global" : activeTab, id)}
+      className={className}
+      style={style}
+      multiline={multiline}
+    >
+      {value ?? ""}
+    </EditableText>
+  );
   const changeTab = (pageId: string) => {
     const nextPageId = pageId || homePageId;
     if (!pages.some((page: any) => page.pageId === nextPageId)) {
@@ -416,7 +440,7 @@ export default function SiteRenderer({
         >
           {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
           {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
-          <span>{meta.businessName}</span>
+          {editableText("header.businessName", meta.businessName, "span")}
         </button>
         <nav className="hidden md:flex gap-6">
           {navigation.headerMenu.map((menu: any, idx: number) => {
@@ -507,13 +531,13 @@ export default function SiteRenderer({
                     <div className="max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: colors.accent }}>
-                          {businessProfile.typeLabel}
+                          {editableText(`${section.id}.eyebrow`, businessProfile.typeLabel, "span")}
                         </p>
                         <h1 className="text-4xl md:text-6xl font-bold mb-6 leading-tight text-slate-950">
-                          {heroContent.headline || labels.heroFallback}
+                          {editableText(`${section.id}.headline`, heroContent.headline || labels.heroFallback, "span")}
                         </h1>
                         <p className="text-lg md:text-xl mb-8 text-slate-600 max-w-2xl">
-                          {heroContent.subheadline || businessProfile.shortPitch}
+                          {editableText(`${section.id}.subheadline`, heroContent.subheadline || businessProfile.shortPitch, "span", "", undefined, true)}
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3">
                           {(heroContent.buttons || []).map((btn: any, i: number) => {
@@ -573,8 +597,8 @@ export default function SiteRenderer({
                             {item.icon === "star" ? <Star size={18} /> : item.icon === "phone" ? <Phone size={18} /> : <CheckCircle2 size={18} />}
                           </div>
                           <div>
-                            <p className="text-xl font-bold text-slate-950">{item.value}</p>
-                            <p className="text-xs uppercase tracking-wide text-slate-500">{item.label}</p>
+                            {editableText(`${section.id}.trust.${i}.value`, item.value, "p", "text-xl font-bold text-slate-950")}
+                            {editableText(`${section.id}.trust.${i}.label`, item.label, "p", "text-xs uppercase tracking-wide text-slate-500")}
                           </div>
                         </div>
                       ))}
@@ -588,7 +612,7 @@ export default function SiteRenderer({
                 return (
                   <section key={section.id} className="py-20 px-6 bg-black/5">
                     <div className="max-w-6xl mx-auto">
-                      <h2 className="text-3xl font-bold text-center mb-12">{section.content?.title || labels.featuresFallback}</h2>
+                      {editableText(`${section.id}.title`, section.content?.title || labels.featuresFallback, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid md:grid-cols-3 gap-8">
                         {items.map((item: any, i: number) => (
                           <div key={i} className="bg-white p-7 rounded-xl shadow-sm hover:shadow-md transition border border-slate-100">
@@ -599,8 +623,8 @@ export default function SiteRenderer({
                                 buttonIcon(item.title || item.label || "", "")
                               )}
                             </div>
-                            <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
-                            <p className="opacity-70">{item.description}</p>
+                            {editableText(`${section.id}.item.${i}.title`, item.title, "h3", "text-xl font-semibold mb-2")}
+                            {editableText(`${section.id}.item.${i}.description`, item.description, "p", "opacity-70", undefined, true)}
                           </div>
                         ))}
                       </div>
@@ -616,9 +640,9 @@ export default function SiteRenderer({
                   <section key={section.id} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto">
                       <div className="max-w-2xl mb-10">
-                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{labels.offersEyebrow}</p>
-                        <h2 className="text-3xl md:text-4xl font-bold text-slate-950">{section.content?.title || labels.offersTitle}</h2>
-                        {section.content?.description && <p className="mt-3 text-slate-600">{section.content.description}</p>}
+                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{editableText(`${section.id}.eyebrow`, labels.offersEyebrow, "span")}</p>
+                        {editableText(`${section.id}.title`, section.content?.title || labels.offersTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
+                        {section.content?.description && editableText(`${section.id}.description`, section.content.description, "p", "mt-3 text-slate-600", undefined, true)}
                       </div>
                       <div className="grid md:grid-cols-3 gap-5">
                         {items.map((offer: any, i: number) => (
@@ -627,9 +651,9 @@ export default function SiteRenderer({
                               <ImageFrame src={offer.image} label={offer.title} attribution={brandPhotoAttribution(offer.image)} exportName={`offer-${offer.title || i + 1}`} />
                             </div>
                             <div className="p-6">
-                              <h3 className="text-lg font-bold text-slate-950">{offer.title}</h3>
-                              <p className="mt-2 text-sm text-slate-600">{offer.description}</p>
-                              {offer.priceHint && <p className="mt-4 text-sm font-semibold" style={{ color: colors.accent }}>{offer.priceHint}</p>}
+                              {editableText(`${section.id}.offer.${i}.title`, offer.title, "h3", "text-lg font-bold text-slate-950")}
+                              {editableText(`${section.id}.offer.${i}.description`, offer.description, "p", "mt-2 text-sm text-slate-600", undefined, true)}
+                              {offer.priceHint && editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "p", "mt-4 text-sm font-semibold", { color: colors.accent })}
                             </div>
                           </div>
                         ))}
@@ -648,15 +672,15 @@ export default function SiteRenderer({
                   <section key={section.id} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto grid gap-10 lg:grid-cols-[1.05fr_0.95fr]">
                       <div>
-                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{detail.kind || "Offering"}</p>
-                        <h2 className="text-3xl md:text-4xl font-bold text-slate-950">{detail.title}</h2>
-                        <p className="mt-4 text-lg text-slate-600">{detail.summary || detail.description}</p>
+                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
+                        {editableText(`${section.id}.title`, detail.title, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
+                        {editableText(`${section.id}.summary`, detail.summary || detail.description, "p", "mt-4 text-lg text-slate-600", undefined, true)}
                         {highlights.length > 0 && (
                           <div className="mt-8 grid gap-3 sm:grid-cols-2">
                             {highlights.map((item: any, i: number) => (
                               <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                                <p className="font-semibold text-slate-950">{item.title || item}</p>
-                                {item.description && <p className="mt-1 text-sm text-slate-600">{item.description}</p>}
+                                {editableText(`${section.id}.highlight.${i}.title`, item.title || item, "p", "font-semibold text-slate-950")}
+                                {item.description && editableText(`${section.id}.highlight.${i}.description`, item.description, "p", "mt-1 text-sm text-slate-600", undefined, true)}
                               </div>
                             ))}
                           </div>
@@ -666,12 +690,12 @@ export default function SiteRenderer({
                         <div className="h-56 overflow-hidden rounded-xl bg-slate-200">
                           <ImageFrame src={detail.image || brand.preferredHeroImage} label={detail.title} attribution={brandPhotoAttribution(detail.image || brand.preferredHeroImage)} exportName={`detail-${detail.title || section.id}`} />
                         </div>
-                        {detail.priceHint && <p className="mt-5 text-lg font-bold" style={{ color: colors.accent }}>{detail.priceHint}</p>}
+                        {detail.priceHint && editableText(`${section.id}.price`, detail.priceHint, "p", "mt-5 text-lg font-bold", { color: colors.accent })}
                         {included.length > 0 && (
                           <div className="mt-5">
                             <p className="font-semibold text-slate-950">{isIndonesian ? "Yang termasuk" : "What's included"}</p>
                             <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                              {included.map((item: string) => <li key={item} className="flex gap-2"><CheckCircle2 size={16} className="mt-0.5 shrink-0" style={{ color: colors.accent }} />{item}</li>)}
+                              {included.map((item: string, i: number) => <li key={item} className="flex gap-2"><CheckCircle2 size={16} className="mt-0.5 shrink-0" style={{ color: colors.accent }} />{editableText(`${section.id}.included.${i}`, item, "span")}</li>)}
                             </ul>
                           </div>
                         )}
@@ -679,7 +703,7 @@ export default function SiteRenderer({
                           <div className="mt-5">
                             <p className="font-semibold text-slate-950">{isIndonesian ? "Cocok untuk" : "Best for"}</p>
                             <div className="mt-3 flex flex-wrap gap-2">
-                              {bestFor.map((item: string) => <span key={item} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">{item}</span>)}
+                              {bestFor.map((item: string, i: number) => <span key={item} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">{editableText(`${section.id}.bestFor.${i}`, item, "span")}</span>)}
                             </div>
                           </div>
                         )}
@@ -697,10 +721,10 @@ export default function SiteRenderer({
                     <div className="max-w-6xl mx-auto">
                       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
                         <div>
-                          <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{labels.reviewsEyebrow}</p>
-                          <h2 className="text-3xl md:text-4xl font-bold text-slate-950">{section.content?.title || labels.reviewsTitle}</h2>
+                          <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{editableText(`${section.id}.eyebrow`, labels.reviewsEyebrow, "span")}</p>
+                          {editableText(`${section.id}.title`, section.content?.title || labels.reviewsTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
                         </div>
-                        {trust.reviewSummary && <p className="max-w-xl text-slate-600">{trust.reviewSummary}</p>}
+                        {trust.reviewSummary && editableText(`${section.id}.summary`, trust.reviewSummary, "p", "max-w-xl text-slate-600", undefined, true)}
                       </div>
                       <div className="grid md:grid-cols-3 gap-5">
                         {reviews.map((review: any, i: number) => (
@@ -708,8 +732,8 @@ export default function SiteRenderer({
                             <div className="flex gap-1 mb-4" style={{ color: colors.accent }}>
                               {Array.from({ length: Math.round(review.rating || 5) }).map((_, idx) => <Star key={idx} size={16} fill="currentColor" />)}
                             </div>
-                            <p className="text-slate-700">"{review.text}"</p>
-                            <p className="mt-4 font-semibold text-slate-950">{review.authorName || review.author || "Google reviewer"}</p>
+                            <p className="text-slate-700">"{editableText(`${section.id}.review.${i}.text`, review.text, "span", "", undefined, true)}"</p>
+                            {editableText(`${section.id}.review.${i}.author`, review.authorName || review.author || "Google reviewer", "p", "mt-4 font-semibold text-slate-950")}
                           </div>
                         ))}
                       </div>
@@ -727,18 +751,18 @@ export default function SiteRenderer({
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
                         <div className="flex items-center gap-3 mb-5">
                           <Clock size={22} style={{ color: colors.accent }} />
-                          <h2 className="text-2xl font-bold text-slate-950">{section.content?.title || labels.hoursTitle}</h2>
+                          {editableText(`${section.id}.hoursTitle`, section.content?.title || labels.hoursTitle, "h2", "text-2xl font-bold text-slate-950")}
                         </div>
                         <div className="space-y-2 text-slate-700">
-                          {regularHours.map((item: any, i: number) => <p key={i}>{typeof item === "string" ? item : item.text || JSON.stringify(item)}</p>)}
+                          {regularHours.map((item: any, i: number) => editableText(`${section.id}.hours.${i}`, typeof item === "string" ? item : item.text || JSON.stringify(item), "p"))}
                         </div>
                       </div>
                       <div className="rounded-xl border border-slate-200 p-8 bg-white">
                         <div className="flex items-center gap-3 mb-5">
                           <MapPin size={22} style={{ color: colors.accent }} />
-                          <h2 className="text-2xl font-bold text-slate-950">{labels.locationTitle}</h2>
+                          {editableText(`${section.id}.locationTitle`, labels.locationTitle, "h2", "text-2xl font-bold text-slate-950")}
                         </div>
-                        <p className="text-slate-700">{section.content?.address || location.formattedAddress || businessProfile.address?.formatted || "Alamat belum tersedia."}</p>
+                        {editableText(`${section.id}.address`, section.content?.address || location.formattedAddress || businessProfile.address?.formatted || "Alamat belum tersedia.", "p", "text-slate-700", undefined, true)}
                         {(section.content?.phone || displayPhone) && !isPlaceholderPhone(section.content?.phone || displayPhone) && (
                           <div className="mt-3">
                             <a href={phoneHref(section.content?.phone || primaryPhone || displayPhone)} className="inline-flex w-fit items-center gap-2 font-semibold text-slate-950 hover:underline">
@@ -763,12 +787,12 @@ export default function SiteRenderer({
                 return (
                   <section key={section.id} className="py-20 px-6 bg-slate-50">
                     <div className="max-w-4xl mx-auto">
-                      <h2 className="text-3xl md:text-4xl font-bold text-slate-950 mb-8">{section.content?.title || "Pertanyaan Umum"}</h2>
+                      {editableText(`${section.id}.title`, section.content?.title || "Pertanyaan Umum", "h2", "text-3xl md:text-4xl font-bold text-slate-950 mb-8")}
                       <div className="space-y-3">
                         {items.map((item: any, i: number) => (
                           <div key={i} className="rounded-xl bg-white border border-slate-200 p-5">
-                            <h3 className="font-semibold text-slate-950">{item.question}</h3>
-                            <p className="mt-2 text-slate-600">{item.answer}</p>
+                            {editableText(`${section.id}.faq.${i}.question`, item.question, "h3", "font-semibold text-slate-950")}
+                            {editableText(`${section.id}.faq.${i}.answer`, item.answer, "p", "mt-2 text-slate-600", undefined, true)}
                           </div>
                         ))}
                       </div>
@@ -782,7 +806,7 @@ export default function SiteRenderer({
                   <section key={section.id} className="py-20 px-6">
                     <div className={`max-w-6xl mx-auto flex flex-col md:flex-row gap-12 items-center ${section.content.layout === "imageRight" ? "md:flex-row-reverse" : ""}`}>
                       <div className="flex-1">
-                        <h2 className="text-3xl font-bold mb-6">{section.content.title}</h2>
+                        {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold mb-6")}
                         <div className="opacity-80 prose max-w-none" dangerouslySetInnerHTML={{ __html: section.content.bodyHtml }} />
                       </div>
                       <div className="flex-1 w-full relative h-[400px] bg-gray-100 rounded-xl overflow-hidden shadow-lg border border-gray-200">
@@ -797,15 +821,15 @@ export default function SiteRenderer({
                 return (
                   <section key={section.id} className="py-20 px-6 bg-black/5">
                     <div className="max-w-6xl mx-auto">
-                      <h2 className="text-3xl font-bold text-center mb-12">{section.content.title}</h2>
+                      {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                         {section.content.members.map((member: any, i: number) => (
                           <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 text-center pb-6">
                             <div className="h-48 bg-gray-200 mb-4">
                               <ImageFrame src={member.image} label={member.name} attribution={brandPhotoAttribution(member.image)} exportName={`team-${member.name || i + 1}`} />
                             </div>
-                            <h3 className="text-lg font-semibold">{member.name}</h3>
-                            <p className="text-sm opacity-60 font-medium">{member.role}</p>
+                            {editableText(`${section.id}.member.${i}.name`, member.name, "h3", "text-lg font-semibold")}
+                            {editableText(`${section.id}.member.${i}.role`, member.role, "p", "text-sm opacity-60 font-medium")}
                           </div>
                         ))}
                       </div>
@@ -819,8 +843,8 @@ export default function SiteRenderer({
                   <section key={section.id} className="py-20 px-6">
                     <div className="max-w-6xl mx-auto">
                       <div className="text-center mb-12">
-                        <h2 className="text-3xl font-bold mb-4">{section.content.title}</h2>
-                        <p className="opacity-70 max-w-2xl mx-auto">{section.content.description}</p>
+                        {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold mb-4")}
+                        {editableText(`${section.id}.description`, section.content.description, "p", "opacity-70 max-w-2xl mx-auto", undefined, true)}
                       </div>
                       <div className="grid md:grid-cols-3 gap-8">
                         {section.content.cards.map((card: any, i: number) => (
@@ -829,9 +853,9 @@ export default function SiteRenderer({
                               <ImageFrame src={card.image} label={card.title} attribution={brandPhotoAttribution(card.image)} exportName={`card-${card.title || i + 1}`} />
                             </div>
                             <div className="p-6">
-                              <h3 className="text-xl font-bold mb-2">{card.title}</h3>
-                              <p className="opacity-70 mb-4">{card.description}</p>
-                              {card.price && <p className="font-semibold text-lg" style={{ color: colors.accent }}>{card.price}</p>}
+                              {editableText(`${section.id}.card.${i}.title`, card.title, "h3", "text-xl font-bold mb-2")}
+                              {editableText(`${section.id}.card.${i}.description`, card.description, "p", "opacity-70 mb-4", undefined, true)}
+                              {card.price && editableText(`${section.id}.card.${i}.price`, card.price, "p", "font-semibold text-lg", { color: colors.accent })}
                             </div>
                           </div>
                         ))}
@@ -845,7 +869,7 @@ export default function SiteRenderer({
                 return (
                   <section key={section.id} className="py-20 px-6 bg-black/5">
                     <div className="max-w-6xl mx-auto">
-                      <h2 className="text-3xl font-bold text-center mb-12">{section.content.title}</h2>
+                      {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {section.content.images.map((img: string, i: number) => (
                           <div key={i} className="h-64 bg-gray-200 rounded-xl overflow-hidden">
@@ -867,9 +891,9 @@ export default function SiteRenderer({
                   <section key={section.id} className="py-20 px-6">
                     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row border border-gray-100">
                       <div style={{ backgroundColor: colors.primary, color: "#fff" }} className="p-10 md:w-2/5">
-                        <h2 className="text-2xl font-bold mb-6">{section.content.title}</h2>
+                        {editableText(`${section.id}.title`, section.content.title, "h2", "text-2xl font-bold mb-6")}
                         <div className="space-y-4 text-sm opacity-90">
-                          <p><strong>Alamat:</strong><br />{section.content.address}</p>
+                          <p><strong>Alamat:</strong><br />{editableText(`${section.id}.contactAddress`, section.content.address, "span", "", undefined, true)}</p>
                           {contactPhone && (
                             <p>
                               <strong>Telepon:</strong><br />
@@ -885,13 +909,13 @@ export default function SiteRenderer({
                           <div>
                             <strong>Jam Operasional:</strong>
                             <ul className="mt-1 space-y-1">
-                              {(Array.isArray(section.content.openingHours) ? section.content.openingHours : []).map((h: string, i: number) => <li key={i}>{h}</li>)}
+                              {(Array.isArray(section.content.openingHours) ? section.content.openingHours : []).map((h: string, i: number) => <li key={i}>{editableText(`${section.id}.contactHours.${i}`, h, "span")}</li>)}
                             </ul>
                           </div>
                         </div>
                       </div>
                       <div className="p-10 md:w-3/5">
-                        <h3 className="text-xl font-bold mb-6">{section.content.formConfig.heading}</h3>
+                        {editableText(`${section.id}.formHeading`, section.content.formConfig.heading, "h3", "text-xl font-bold mb-6")}
                         <form
                           className="space-y-4"
                           data-wv-mailto={contactEmail}
@@ -919,7 +943,7 @@ export default function SiteRenderer({
                             const fieldName = normalizedFieldName(f, i);
                             return (
                               <div key={i}>
-                                <label className="block text-sm font-medium opacity-80 mb-1">{f.label}</label>
+                                <label className="block text-sm font-medium opacity-80 mb-1">{editableText(`${section.id}.field.${i}.label`, f.label, "span")}</label>
                                 {f.type === "textarea" ? (
                                   <textarea name={fieldName} required={f.required} className="w-full border border-gray-300 rounded-lg p-3 bg-transparent" rows={4}></textarea>
                                 ) : (
@@ -951,9 +975,9 @@ export default function SiteRenderer({
             <button type="button" data-wv-tab={homePageId} onClick={() => changeTab(homePageId)} className="mb-4 flex items-center gap-3 text-left text-lg font-bold hover:opacity-85">
               {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
               {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
-              <span>{meta.businessName}</span>
+              {editableText("footer.businessName", meta.businessName, "span")}
             </button>
-            <p className="max-w-sm opacity-80">{businessProfile.shortPitch || meta.seoDescription || globalConfig.footer.text}</p>
+            {editableText("footer.shortPitch", businessProfile.shortPitch || meta.seoDescription || globalConfig.footer.text, "p", "max-w-sm opacity-80", undefined, true)}
             <div className="mt-5 flex gap-2">
               {footerSocials.map((social: any) => (
                 <a key={social.platform} href={social.href || "#"} className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20" aria-label={social.platform}>
