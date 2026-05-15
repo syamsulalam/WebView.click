@@ -61,6 +61,27 @@ Renderer:
 - Caption default: `Photo from Google Business Profile`.
 - Jika `brand.photoAttributions` ada, caption menambahkan nama attribution.
 
+## Palette Strategy
+
+Current behavior:
+- Admin can pick one photo in `/admin/leads`; the browser extracts a dominant palette from that image via canvas and saves it to `places_prospects.selected_palette_json`.
+- `/admin/sites` uses the saved selected photo/palette when present.
+- If admin forgets to pick a photo, generation uses the first available Places photo as image fallback where possible.
+- If no palette is saved, generation uses a safe default palette (`#111827`, `#4F46E5`, `#F3F4F6`) rather than a random palette.
+
+Implemented / current direction:
+- `brand.paletteOptions` is supported in generated JSON as up to 5 palette choices, each tied to a different Places photo when available:
+  - `id`
+  - `label`
+  - `colors`
+  - `sourceImageUrl`
+  - `photoReference`
+  - `attributions`
+- `/admin/leads` extracts these palette options from the first 5 usable photos after `Gather data`.
+- Palette options are stored on the prospect in `places_prospects.palette_options_json` so they survive refresh and can be reused by `/admin/sites`.
+- The owner can choose among those palette options in `/:businessId` before download/setup, similar to the font pairing selector.
+- Keep `brand.palette` as the default active palette for rendering/export.
+
 ## Free vs Paid Behavior
 
 Free:

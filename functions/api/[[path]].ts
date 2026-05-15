@@ -189,6 +189,7 @@ const checkoutRequiredColumns: ColumnSpec[] = [
 const selectionRequiredColumns: ColumnSpec[] = [
   { table: "places_prospects", column: "selected_photo_json", definition: "TEXT" },
   { table: "places_prospects", column: "selected_palette_json", definition: "TEXT" },
+  { table: "places_prospects", column: "palette_options_json", definition: "TEXT" },
   { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
 ];
 
@@ -202,7 +203,18 @@ const prospectDetailsRequiredColumns: ColumnSpec[] = [
   { table: "places_prospects", column: "phone", definition: "TEXT" },
   { table: "places_prospects", column: "website_url", definition: "TEXT" },
   { table: "places_prospects", column: "maps_url", definition: "TEXT" },
+  { table: "places_prospects", column: "website_check_status", definition: "TEXT" },
+  { table: "places_prospects", column: "website_checked_at", definition: "DATETIME" },
   { table: "places_prospects", column: "details_loaded_at", definition: "DATETIME" },
+  { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
+];
+
+const prospectWebsiteCheckRequiredColumns: ColumnSpec[] = [
+  { table: "places_prospects", column: "phone", definition: "TEXT" },
+  { table: "places_prospects", column: "website_url", definition: "TEXT" },
+  { table: "places_prospects", column: "maps_url", definition: "TEXT" },
+  { table: "places_prospects", column: "website_check_status", definition: "TEXT" },
+  { table: "places_prospects", column: "website_checked_at", definition: "DATETIME" },
   { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
 ];
 
@@ -432,6 +444,9 @@ async function setupTables(db: D1Database) {
       details_json TEXT,
       selected_photo_json TEXT,
       selected_palette_json TEXT,
+      palette_options_json TEXT,
+      website_check_status TEXT,
+      website_checked_at DATETIME,
       generated_business_id TEXT,
       last_error TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -485,6 +500,9 @@ async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "places_prospects", "details_json", "TEXT");
   await addColumnIfMissing(db, "places_prospects", "selected_photo_json", "TEXT");
   await addColumnIfMissing(db, "places_prospects", "selected_palette_json", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "palette_options_json", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "website_check_status", "TEXT");
+  await addColumnIfMissing(db, "places_prospects", "website_checked_at", "DATETIME");
   await addColumnIfMissing(db, "places_prospects", "generated_business_id", "TEXT");
   await addColumnIfMissing(db, "places_prospects", "last_error", "TEXT");
   await addColumnIfMissing(db, "places_prospects", "generated_at", "DATETIME");
@@ -551,6 +569,29 @@ function visualStyleForBusiness(text: string): string {
   return "soft-rounded";
 }
 
+function fontPairingForBusiness(text: string) {
+  const key = text.toLowerCase();
+  if (/(contractor|concrete|roof|construction|builder|paving|masonry|mechanic|auto|security|locksmith)/i.test(key)) {
+    return { id: "bebas-source", label: "Bebas Neue + Source Sans Pro", headingFont: "Bebas Neue", bodyFont: "Source Sans Pro", headingCss: "'Bebas Neue', sans-serif", bodyCss: "'Source Sans Pro', sans-serif", mood: "strong, condensed, direct", allowedValues: ["bebas-source", "archivo-hind", "oswald-nunito", "fjalla-merriweather-sans", "alfa-chivo"] };
+  }
+  if (/(law|legal|attorney|finance|financial|insurance|accounting|consulting)/i.test(key)) {
+    return { id: "merriweather-lora", label: "Merriweather + Lora", headingFont: "Merriweather", bodyFont: "Lora", headingCss: "'Merriweather', serif", bodyCss: "'Lora', serif", mood: "serious, editorial, authoritative", allowedValues: ["merriweather-lora", "vollkorn-pt-sans", "gravitas-poppins", "ibm-plex", "montserrat-raleway"] };
+  }
+  if (/(dental|doctor|medical|clinic|health|wellness|spa|salon|beauty)/i.test(key)) {
+    return { id: "nixie-prompt", label: "Nixie One + Prompt", headingFont: "Nixie One", bodyFont: "Prompt", headingCss: "'Nixie One', serif", bodyCss: "'Prompt', sans-serif", mood: "light, modern, composed", allowedValues: ["nixie-prompt", "poiret-didact", "sacramento-barlow", "francois-karla", "arvo-roboto"] };
+  }
+  if (/(restaurant|cafe|coffee|bakery|bar|food)/i.test(key)) {
+    return { id: "lobster-open-sans", label: "Lobster + Open Sans", headingFont: "Lobster", bodyFont: "Open Sans", headingCss: "'Lobster', cursive", bodyCss: "'Open Sans', sans-serif", mood: "playful, friendly, casual", allowedValues: ["lobster-open-sans", "ultra-slabo", "abril-work-sans", "courgette-libre", "montserrat-raleway"] };
+  }
+  if (/(real estate|property|realtor|interior|architecture|design)/i.test(key)) {
+    return { id: "abril-work-sans", label: "Abril Fatface + Work Sans", headingFont: "Abril Fatface", bodyFont: "Work Sans", headingCss: "'Abril Fatface', serif", bodyCss: "'Work Sans', sans-serif", mood: "editorial, premium, confident", allowedValues: ["abril-work-sans", "gravitas-poppins", "architects-abel", "roboto-mono-spectral", "montserrat-raleway"] };
+  }
+  if (/(gym|fitness|trainer|boxing|sport|martial|crossfit)/i.test(key)) {
+    return { id: "fugaz-lato", label: "Fugaz One + Lato", headingFont: "Fugaz One", bodyFont: "Lato", headingCss: "'Fugaz One', sans-serif", bodyCss: "'Lato', sans-serif", mood: "dynamic, warm, sporty", allowedValues: ["fugaz-lato", "monoton-rubik", "bebas-source", "alfa-chivo", "oswald-nunito"] };
+  }
+  return { id: "montserrat-raleway", label: "Montserrat + Raleway", headingFont: "Montserrat", bodyFont: "Raleway", headingCss: "'Montserrat', sans-serif", bodyCss: "'Raleway', sans-serif", mood: "geometric, polished, approachable", allowedValues: ["montserrat-raleway", "arvo-roboto", "francois-karla", "rokkitt-raleway", "ibm-plex"] };
+}
+
 function asNumber(value: unknown): number | null {
   const numberValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numberValue) ? numberValue : null;
@@ -607,9 +648,11 @@ async function upsertProspectsFromPlaces(db: D1Database, queryKey: string, query
         query: prospect.query,
         business_name: prospect.businessName,
         address: prospect.address,
-        phone: prospect.phone,
-        website_url: prospect.websiteUrl,
-        maps_url: prospect.mapsUrl,
+        phone: ("formatted_phone_number" in place || "international_phone_number" in place || "nationalPhoneNumber" in place) ? prospect.phone : undefined,
+        website_url: ("website" in place || "websiteUri" in place) ? prospect.websiteUrl : undefined,
+        maps_url: ("url" in place || "googleMapsUri" in place) ? prospect.mapsUrl : undefined,
+        website_check_status: "websiteCheckStatus" in place ? placeString(place, ["websiteCheckStatus"]) : undefined,
+        website_checked_at: "websiteCheckedAt" in place ? placeString(place, ["websiteCheckedAt"]) : undefined,
         rating: prospect.rating,
         reviews: prospect.reviews,
         niche: prospect.niche,
@@ -891,6 +934,8 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
   const query = (url.searchParams.get("query") || "").trim();
   const queryKey = normalizeSearchQuery(query);
   const refresh = url.searchParams.get("refresh") === "1";
+  const websitePrecheck = url.searchParams.get("websitePrecheck") === "1";
+  const precheckLimit = Math.max(0, Math.min(20, Number(url.searchParams.get("precheckLimit") || 10)));
   const placesKey = await getSetting(db, env, "GOOGLE_PLACES_API_KEY");
 
   if (!queryKey) {
@@ -926,6 +971,11 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
         if (!isMissingColumnError(error)) throw error;
       }
 
+      let cachedResults = JSON.parse(cached.results_json);
+      if (websitePrecheck && placesKey && Array.isArray(cachedResults)) {
+        cachedResults = await precheckWebsiteForPlaces(db, placesKey, cachedResults, precheckLimit);
+      }
+
       return json({
         cached: true,
         status: cached.provider_status || "CACHE_HIT",
@@ -933,7 +983,8 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
         resultCount: cached.result_count || 0,
         updatedAt: cached.updated_at,
         expiresAt: cached.expires_at,
-        results: JSON.parse(cached.results_json),
+        websitePrecheck,
+        results: cachedResults,
       });
     }
   }
@@ -945,6 +996,8 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
     rating: 4.8,
     user_ratings_total: 120,
     business_status: "OPERATIONAL",
+    websiteCheckStatus: "no_website",
+    websiteCheckedAt: new Date().toISOString(),
   };
 
   if (!placesKey || placesKey.length < 10) {
@@ -982,7 +1035,8 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
       });
     }
 
-    const results = Array.isArray(data.results) ? data.results : [];
+    const rawResults = Array.isArray(data.results) ? data.results : [];
+    const results = websitePrecheck ? await precheckWebsiteForPlaces(db, placesKey, rawResults, precheckLimit) : rawResults;
     await upsertProspectsFromPlaces(db, queryKey, query, results);
     const cacheExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     try {
@@ -1023,6 +1077,7 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
     return json({
       status: data.status || "OK",
       cached: false,
+      websitePrecheck,
       results,
     });
   } catch (error) {
@@ -1034,6 +1089,93 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
       results: [],
     });
   }
+}
+
+async function fetchPlaceDetailsLegacy(placeId: string, placesKey: string, fields: string[]) {
+  const response = await fetch(
+    `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${encodeURIComponent(fields.join(","))}&key=${encodeURIComponent(placesKey)}`,
+  );
+  const data = await response.json() as { status?: string; result?: Record<string, unknown>; error_message?: string };
+  return { response, data };
+}
+
+async function precheckWebsiteForPlaces(db: D1Database, placesKey: string, results: unknown[], limit: number) {
+  if (!limit || !placesKey) return results;
+  await ensureRequiredColumns(db, prospectWebsiteCheckRequiredColumns);
+  const checkedAt = new Date().toISOString();
+  const next: unknown[] = [];
+
+  for (let index = 0; index < results.length; index += 1) {
+    const item = results[index];
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      next.push(item);
+      continue;
+    }
+
+    const place = item as Record<string, unknown>;
+    const placeId = placeIdFromPlace(place);
+    if (index >= limit || !placeId) {
+      next.push(place);
+      continue;
+    }
+
+    try {
+      const { data } = await fetchPlaceDetailsLegacy(placeId, placesKey, [
+        "place_id",
+        "name",
+        "formatted_phone_number",
+        "international_phone_number",
+        "website",
+        "url",
+        "types",
+        "business_status",
+      ]);
+      if (data.status && data.status !== "OK") {
+        const errored = { ...place, websiteCheckStatus: "error", websiteCheckedAt: checkedAt, websiteCheckError: data.error_message || data.status };
+        await updateProspectRecord(db, placeId, {
+          website_check_status: "error",
+          website_checked_at: checkedAt,
+        });
+        next.push(errored);
+        continue;
+      }
+
+      const detail = data.result && typeof data.result === "object" ? data.result : {};
+      const prospect = prospectFromPlace({ ...place, ...detail });
+      const status = prospect.websiteUrl ? "has_website" : "no_website";
+      const merged = {
+        ...place,
+        ...detail,
+        formatted_phone_number: prospect.phone,
+        website: prospect.websiteUrl,
+        url: prospect.mapsUrl,
+        websiteCheckStatus: status,
+        websiteCheckedAt: checkedAt,
+      };
+      await updateProspectRecord(db, placeId, {
+        phone: prospect.phone,
+        website_url: prospect.websiteUrl,
+        maps_url: prospect.mapsUrl,
+        website_check_status: status,
+        website_checked_at: checkedAt,
+      });
+      next.push(merged);
+    } catch (error) {
+      console.error("Places website precheck failed:", error);
+      await updateProspectRecord(db, placeId, {
+        website_check_status: "error",
+        website_checked_at: checkedAt,
+      });
+      next.push({
+        ...place,
+        websiteCheckStatus: "error",
+        websiteCheckedAt: checkedAt,
+        websiteCheckError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return next;
 }
 
 async function handlePlacesDetails(url: URL, db: D1Database, env: Env): Promise<Response> {
@@ -1066,10 +1208,7 @@ async function handlePlacesDetails(url: URL, db: D1Database, env: Env): Promise<
   ].join(",");
 
   try {
-    const response = await fetch(
-      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${encodeURIComponent(fields)}&key=${encodeURIComponent(placesKey)}`,
-    );
-    const data = await response.json() as { status?: string; result?: Record<string, unknown>; error_message?: string };
+    const { response, data } = await fetchPlaceDetailsLegacy(placeId, placesKey, fields.split(","));
 
     if (!response.ok || (data.status && data.status !== "OK")) {
       return json({
@@ -1087,6 +1226,8 @@ async function handlePlacesDetails(url: URL, db: D1Database, env: Env): Promise<
         phone: prospect.phone,
         website_url: prospect.websiteUrl,
         maps_url: prospect.mapsUrl,
+        website_check_status: prospect.websiteUrl ? "has_website" : "no_website",
+        website_checked_at: new Date().toISOString(),
         details_loaded_at: new Date().toISOString(),
       });
     }
@@ -1143,7 +1284,10 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
          FROM places_prospects p
          LEFT JOIN leads l ON l.business_id = p.generated_business_id
          WHERE (? = '' OR p.status = ?)
-           AND (? = '' OR (? = 'none' AND COALESCE(p.website_url, '') = '') OR (? = 'has' AND COALESCE(p.website_url, '') <> ''))
+           AND (? = ''
+             OR (? = 'none' AND COALESCE(p.website_url, '') = '' AND COALESCE(p.website_check_status, '') = 'no_website')
+             OR (? = 'unknown' AND COALESCE(p.website_url, '') = '' AND COALESCE(p.website_check_status, '') = '')
+             OR (? = 'has' AND COALESCE(p.website_url, '') <> ''))
            AND (? = '' OR lower(p.business_name || ' ' || COALESCE(p.address, '') || ' ' || COALESCE(p.query, '')) LIKE '%' || ? || '%')
            AND (? IS NULL OR COALESCE(p.rating, 0) >= ?)
            AND (? IS NULL OR COALESCE(p.reviews, 0) >= ?)
@@ -1156,6 +1300,7 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
       .bind(
         status,
         status,
+        website,
         website,
         website,
         website,
@@ -1188,6 +1333,9 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
         details_json?: string;
         selected_photo_json?: string;
         selected_palette_json?: string;
+        palette_options_json?: string;
+        website_check_status?: string;
+        website_checked_at?: string;
         generated_business_id?: string;
         last_error?: string;
         updated_at?: string;
@@ -1213,6 +1361,9 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
       searchQuery: row.query || "",
       selectedPhoto: parseJsonObject(row.selected_photo_json),
       selectedPalette: parseJsonArray(row.selected_palette_json),
+      paletteOptions: parseJsonArray(row.palette_options_json),
+      websiteCheckStatus: row.website_check_status || "",
+      websiteCheckedAt: row.website_checked_at || "",
       updatedAt: row.updated_at,
       detailsLoadedAt: row.details_loaded_at,
       generatedAt: row.generated_at,
@@ -1233,17 +1384,13 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
     const body = await readJsonBody(request);
     const photo = body.photo && typeof body.photo === "object" ? body.photo : {};
     const palette = Array.isArray(body.palette) ? body.palette.filter((item) => typeof item === "string") : [];
+    const paletteOptions = Array.isArray(body.paletteOptions) ? body.paletteOptions : [];
     await ensureRequiredColumns(db, selectionRequiredColumns);
-    await db
-      .prepare(
-        `UPDATE places_prospects
-         SET selected_photo_json = ?,
-             selected_palette_json = ?,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE place_id = ?`,
-      )
-      .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
-      .run();
+    const updates: Record<string, unknown> = {};
+    if ("photo" in body) updates.selected_photo_json = JSON.stringify(photo);
+    if ("palette" in body) updates.selected_palette_json = JSON.stringify(palette);
+    if ("paletteOptions" in body) updates.palette_options_json = JSON.stringify(paletteOptions);
+    await updateProspectRecord(db, placeId, updates);
     return json({ success: true });
   }
 
@@ -1340,6 +1487,7 @@ async function generateAiJson(
   const selectedLogoSource = asString(body.selectedLogoSource, selectedLogoImageUrl.startsWith("/api/places/photo") ? "google_places" : "");
   const selectedLogoAttributions = Array.isArray(body.selectedLogoAttributions) ? body.selectedLogoAttributions : [];
   const selectedLogoPriority = asString(body.selectedLogoPriority);
+  const paletteOptions = Array.isArray(body.paletteOptions) ? body.paletteOptions : [];
   const submittedJson = body.jsonContent && typeof body.jsonContent === "object" ? body.jsonContent : null;
 
   if (!provider || !model) {
@@ -1374,8 +1522,8 @@ async function generateAiJson(
   const systemMsg =
     `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
     `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. Also choose design.visualStyle from these exact values: soft-rounded, boxy-editorial, industrial-diagonal, clean-minimal, bold-sport. Use industrial-diagonal for contractors/concrete/roofing/auto/security when a harder boxy look with diagonal image edges fits; boxy-editorial for legal/finance/real estate; clean-minimal for clinics/cleaning/pool/service businesses; bold-sport for fitness/training; soft-rounded for friendly lifestyle businesses. Include design.visualStyleConfig with label, description, allowedValues, and selectionRule. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If a Submitted Scaffold JSON is provided, preserve its existing pageIds, detailPageIds, navigation hrefs, sourceData, photo URLs, and contact/map fields. In that case, focus on improving copy quality, specificity, service/product naming, FAQ depth, feature descriptions, and conversion text instead of restructuring the site. Mark meta.generatedWithAi true and meta.generationMode ai_assisted when you successfully enrich or generate the JSON. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
-  const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}\nSubmitted Scaffold JSON: ${submittedJson ? JSON.stringify(submittedJson) : "none"}`;
+    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. Also choose design.visualStyle from these exact values: soft-rounded, boxy-editorial, industrial-diagonal, clean-minimal, bold-sport. Use industrial-diagonal for contractors/concrete/roofing/auto/security when a harder boxy look with diagonal image edges fits; boxy-editorial for legal/finance/real estate; clean-minimal for clinics/cleaning/pool/service businesses; bold-sport for fitness/training; soft-rounded for friendly lifestyle businesses. Include design.visualStyleConfig with label, description, allowedValues, and selectionRule. Choose design.fontPairing from the schema examples/allowedValues or an industry-matched pairing id and include design.fontPairingConfig with label, headingFont, bodyFont, mood, allowedValues, and selectionRule; contractors should prefer strong condensed pairings, legal/finance should prefer authoritative serif pairings, clinics should prefer clean readable pairings, cafes/restaurants may use friendly display/script pairings, and fitness/auto may use energetic bold pairings. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If a Submitted Scaffold JSON is provided, preserve its existing pageIds, detailPageIds, navigation hrefs, sourceData, photo URLs, and contact/map fields. In that case, focus on improving copy quality, specificity, service/product naming, FAQ depth, feature descriptions, and conversion text instead of restructuring the site. Mark meta.generatedWithAi true and meta.generationMode ai_assisted when you successfully enrich or generate the JSON. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
+  const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nPalette options: ${JSON.stringify(paletteOptions)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}\nSubmitted Scaffold JSON: ${submittedJson ? JSON.stringify(submittedJson) : "none"}`;
 
   let responseContent = "";
 
@@ -1749,6 +1897,7 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       ? body.selectedLogoAttributions.filter((item) => typeof item === "string") as string[]
       : [];
     const selectedLogoPriority = asString(body.selectedLogoPriority);
+    const paletteOptions = Array.isArray(body.paletteOptions) ? body.paletteOptions : [];
     const originPlaceId = placeIdFromPlace(originData);
     const jobId = crypto.randomUUID();
 
@@ -1819,6 +1968,31 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
         selectionRule: "Use the visual structure that best matches the business niche and desired feel.",
       };
     }
+    const fontPairingMeta = fontPairingForBusiness([
+      businessName,
+      asString(originData.formatted_address, asString(originData.formattedAddress)),
+      Array.isArray(originData.types) ? originData.types.join(" ") : "",
+      asString(originData.searchQuery),
+    ].filter(Boolean).join(" "));
+    if (!asString(designConfig.fontPairing)) {
+      designConfig.fontPairing = fontPairingMeta.id;
+    }
+    if (!designConfig.fontPairingConfig || typeof designConfig.fontPairingConfig !== "object") {
+      designConfig.fontPairingConfig = {
+        label: fontPairingMeta.label,
+        headingFont: fontPairingMeta.headingFont,
+        bodyFont: fontPairingMeta.bodyFont,
+        mood: fontPairingMeta.mood,
+        allowedValues: fontPairingMeta.allowedValues,
+        selectionRule: "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download.",
+      };
+    }
+    const themeVariables = designConfig.themeVariables && typeof designConfig.themeVariables === "object" ? designConfig.themeVariables as Record<string, unknown> : {};
+    const typography = themeVariables.typography && typeof themeVariables.typography === "object" ? themeVariables.typography as Record<string, unknown> : {};
+    typography.headingFont = typography.headingFont || fontPairingMeta.headingCss;
+    typography.bodyFont = typography.bodyFont || fontPairingMeta.bodyCss;
+    themeVariables.typography = typography;
+    designConfig.themeVariables = themeVariables;
     finalJson.design = designConfig;
 
     const originMapsUrl = asString(originData.url, asString(originData.googleMapsUri));
@@ -1872,6 +2046,16 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       brand.photoAttributions = selectedLogoAttributions;
       if (selectedLogoPriority) {
         brand.selectedPhotoPriority = selectedLogoPriority;
+      }
+      finalJson.brand = brand;
+    }
+
+    if (paletteOptions.length) {
+      const brand = finalJson.brand && typeof finalJson.brand === "object" ? finalJson.brand as Record<string, unknown> : {};
+      brand.paletteOptions = paletteOptions;
+      if (!Array.isArray(brand.palette) || !(brand.palette as unknown[]).length) {
+        const firstOption = paletteOptions.find((option) => option && typeof option === "object" && Array.isArray((option as Record<string, unknown>).colors)) as Record<string, unknown> | undefined;
+        if (firstOption) brand.palette = firstOption.colors;
       }
       finalJson.brand = brand;
     }

@@ -3,6 +3,7 @@ import { Brain, ChevronDown, Database, Globe2, MapPin, Play, RefreshCw, RotateCw
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { getStylePreset, inferStylePresetFromText, inferVisualStyleFromText, siteVisualStyles } from "../../lib/siteStylePresets";
+import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 
 type SiteRow = {
   id: string;
@@ -54,6 +55,7 @@ type ProspectRow = {
     source?: string;
   };
   selectedPalette?: string[];
+  paletteOptions?: any[];
   updatedAt?: string;
   detailsLoadedAt?: string;
   generatedBusinessId?: string;
@@ -269,7 +271,7 @@ function faviconSvg(name: string, color = "#111827") {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="${color}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${initial}</text></svg>`;
 }
 
-function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", palette: string[] = []) {
+function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", palette: string[] = [], paletteOptions: any[] = []) {
   const businessName = place.name || "Untitled Business";
   const locale = inferLanguage(place);
   const isEnglish = locale.language === "en";
@@ -294,6 +296,9 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
   const stylePresetMeta = getStylePreset(stylePreset);
   const visualStyle = inferVisualStyleFromText(nicheText);
   const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
+  const fontPairing = inferFontPairingFromText(nicheText);
+  const fontPairingMeta = getFontPairing(fontPairing);
+  const fontPairingOptions = fontPairingsForText(nicheText, 5);
   const profile = industryCopyProfile({ businessName, nicheText, typeLabel, serviceArea, phone, isEnglish });
   const serviceTitle = profile.serviceTitle;
   const consultationTitle = profile.consultationTitle;
@@ -430,9 +435,18 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
         allowedValues: siteVisualStyles.map((item) => item.id),
         selectionRule: "Choose the visual structure that best matches the industry and desired feel.",
       },
+      fontPairing,
+      fontPairingConfig: {
+        label: fontPairingMeta.label,
+        headingFont: fontPairingMeta.headingFont,
+        bodyFont: fontPairingMeta.bodyFont,
+        mood: fontPairingMeta.mood,
+        allowedValues: fontPairingOptions.map((item) => item.id),
+        selectionRule: "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download.",
+      },
       themeVariables: {
         colors: { primary, secondary, accent, textMain: "#1F2937", textMuted: "#6B7280", background: "#FFFFFF" },
-        typography: { headingFont: "'Inter', sans-serif", bodyFont: "'Inter', sans-serif" },
+        typography: { headingFont: fontPairingMeta.headingCss, bodyFont: fontPairingMeta.bodyCss },
       },
     },
     brand: {
@@ -440,6 +454,7 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
       logoSvg: "",
       faviconSvg: faviconSvg(businessName, primary),
       palette,
+      paletteOptions,
       preferredHeroImage: imageUrl,
       photoSource: imageUrl ? "google_places" : "",
       googlePhotoReference: "",
@@ -649,6 +664,7 @@ export default function AdminSites() {
         googlePlace: prospect,
         selectedPhoto: prospect.selectedPhoto || {},
         selectedPalette: prospect.selectedPalette || [],
+        paletteOptions: prospect.paletteOptions || [],
       },
     });
   };
@@ -679,7 +695,10 @@ export default function AdminSites() {
       const selectedReference = selectedPhoto.reference || fallbackReference;
       const selectedImageUrl = selectedPhoto.url || (selectedReference ? `/api/places/photo?reference=${encodeURIComponent(selectedReference)}&maxwidth=320` : "");
       const businessId = businessSlug(prospect.name || originData.name || "business", placeId);
-      const selectedPalette = Array.isArray(prospect.selectedPalette) ? prospect.selectedPalette : [];
+      const paletteOptions = Array.isArray(prospect.paletteOptions) ? prospect.paletteOptions : [];
+      const selectedPalette = Array.isArray(prospect.selectedPalette) && prospect.selectedPalette.length > 0
+        ? prospect.selectedPalette
+        : Array.isArray(paletteOptions[0]?.colors) ? paletteOptions[0].colors : [];
       const fallbackJson = buildFallbackSiteJson(
         {
           ...originData,
@@ -689,6 +708,7 @@ export default function AdminSites() {
         businessId,
         selectedImageUrl,
         selectedPalette,
+        paletteOptions,
       );
       const response = await fetch("/api/sites/generate", {
         method: "POST",
@@ -703,6 +723,7 @@ export default function AdminSites() {
           phone: prospectPhone({ ...prospect, ...originData }),
           originData,
           brandPalette: selectedPalette,
+          paletteOptions,
           selectedLogoImageUrl: selectedImageUrl,
           selectedLogoReference: selectedReference,
           selectedLogoSource: selectedImageUrl ? (selectedPhoto.source || "google_places") : "",

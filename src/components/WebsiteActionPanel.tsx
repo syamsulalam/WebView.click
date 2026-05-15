@@ -1,12 +1,19 @@
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Download, Globe2, Loader2, X } from "lucide-react";
 import { buildDomain, domainExtensions, normalizeDomainLabel } from "../lib/domainExtensions";
+import type { FontPairing } from "../lib/fontPairings";
 
 type WebsiteActionPanelProps = {
   siteData: any;
   businessId?: string;
   variant: "demo" | "public";
   onDownloadZip?: () => void;
+  fontPairings?: FontPairing[];
+  selectedFontPairing?: string;
+  onFontPairingChange?: (id: string) => void;
+  paletteOptions?: any[];
+  selectedPaletteOption?: string;
+  onPaletteOptionChange?: (id: string) => void;
 };
 
 type DomainMode = "new" | "owned";
@@ -33,7 +40,18 @@ function normalizeFullDomain(value: string) {
     .replace(/^\.+|\.+$/g, "");
 }
 
-export default function WebsiteActionPanel({ siteData, businessId = "demo-site", variant, onDownloadZip }: WebsiteActionPanelProps) {
+export default function WebsiteActionPanel({
+  siteData,
+  businessId = "demo-site",
+  variant,
+  onDownloadZip,
+  fontPairings = [],
+  selectedFontPairing = "",
+  onFontPairingChange,
+  paletteOptions = [],
+  selectedPaletteOption = "",
+  onPaletteOptionChange,
+}: WebsiteActionPanelProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [setupStep, setSetupStep] = useState<SetupStep>("choice");
@@ -142,6 +160,52 @@ export default function WebsiteActionPanel({ siteData, businessId = "demo-site",
               </button>
             </div>
             <div className="space-y-3 p-4">
+              {fontPairings.length > 1 && onFontPairingChange && (
+                <label className="block rounded-xl border border-slate-200 bg-white p-3">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                    Font style
+                    <InfoTooltip text="Choose an industry-matched font pairing before download. The exported HTML keeps the selected look." />
+                  </span>
+                  <select
+                    value={selectedFontPairing}
+                    onChange={(event) => onFontPairingChange(event.target.value)}
+                    className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {fontPairings.map((pairing) => (
+                      <option key={pairing.id} value={pairing.id}>
+                        {pairing.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    {fontPairings.find((pairing) => pairing.id === selectedFontPairing)?.mood || fontPairings[0]?.mood}
+                  </span>
+                </label>
+              )}
+              {paletteOptions.length > 1 && onPaletteOptionChange && (
+                <label className="block rounded-xl border border-slate-200 bg-white p-3">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                    Color palette
+                    <InfoTooltip text="Choose a palette extracted from business photos before download. The exported HTML keeps the selected colors." />
+                  </span>
+                  <select
+                    value={selectedPaletteOption}
+                    onChange={(event) => onPaletteOptionChange(event.target.value)}
+                    className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {paletteOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label || option.id}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-2 flex overflow-hidden rounded-full border border-slate-200">
+                    {(paletteOptions.find((option) => option.id === selectedPaletteOption)?.colors || paletteOptions[0]?.colors || []).slice(0, 5).map((color: string) => (
+                      <span key={color} className="h-5 flex-1" style={{ backgroundColor: color }} />
+                    ))}
+                  </span>
+                </label>
+              )}
               {onDownloadZip && (
                 <button
                   type="button"

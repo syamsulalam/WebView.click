@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Briefcase,
   CheckCircle2,
@@ -19,6 +19,7 @@ import {
   Star,
 } from "lucide-react";
 import { normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
+import { fontPairingsForText, getFontPairing, googleFontImportUrl } from "../lib/fontPairings";
 import WebsiteActionPanel from "./WebsiteActionPanel";
 
 type SiteRendererProps = {
@@ -52,6 +53,7 @@ function normalizeSiteData(siteData: any) {
   const conversion = siteData?.conversion || {};
   const stylePreset = design.stylePreset || themeVariables.stylePreset || brand.visualStyle || "local-clean";
   const visualStyle = design.visualStyle || design.shapeStyle || brand.imageTreatment || "soft-rounded";
+  const fontPairing = design.fontPairing || typography.fontPairing || "montserrat-raleway";
 
   return {
     meta: {
@@ -73,11 +75,14 @@ function normalizeSiteData(siteData: any) {
     },
     stylePreset,
     visualStyle,
+    fontPairing,
+    fontPairingConfig: design.fontPairingConfig || {},
     brand: {
       logoImageUrl: brand.logoImageUrl || header.logoImageUrl || "",
       logoSvg: brand.logoSvg || header.logoSvg || "",
       preferredHeroImage: brand.preferredHeroImage || "",
       palette: Array.isArray(brand.palette) ? brand.palette : [],
+      paletteOptions: Array.isArray(brand.paletteOptions) ? brand.paletteOptions : [],
       photoSource: brand.photoSource || "",
       googlePhotoReference: brand.googlePhotoReference || "",
       photoCaption: brand.photoCaption || "",
@@ -290,7 +295,38 @@ export default function SiteRenderer({
   const [openMenuKey, setOpenMenuKey] = useState("");
   const navCloseTimer = useRef<number | undefined>(undefined);
 
-  const { meta, colors, typography, stylePreset, visualStyle, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const { meta, colors: baseColors, typography, stylePreset, visualStyle, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const fontContext = [
+    meta.businessName,
+    meta.niche,
+    businessProfile.typeLabel,
+    Array.isArray(businessProfile.categories) ? businessProfile.categories.join(" ") : "",
+    products.map((product: any) => product.title).join(" "),
+    services.map((service: any) => service.title).join(" "),
+  ].filter(Boolean).join(" ");
+  const availableFontPairings = fontPairingsForText(fontContext, 5);
+  const [selectedFontPairingId, setSelectedFontPairingId] = useState(fontPairing);
+  useEffect(() => {
+    setSelectedFontPairingId(fontPairing);
+  }, [fontPairing]);
+  const activeFontPairing = getFontPairing(selectedFontPairingId);
+  const fontImportUrl = googleFontImportUrl([activeFontPairing, ...availableFontPairings]);
+  const paletteOptions = Array.isArray(brand.paletteOptions) ? brand.paletteOptions.filter((option: any) => Array.isArray(option?.colors) && option.colors.length > 0) : [];
+  const paletteOptionKey = paletteOptions.map((option: any) => option.id).join("|");
+  const [selectedPaletteOptionId, setSelectedPaletteOptionId] = useState(paletteOptions[0]?.id || "");
+  useEffect(() => {
+    setSelectedPaletteOptionId(paletteOptions[0]?.id || "");
+  }, [paletteOptionKey]);
+  const activePaletteOption = paletteOptions.find((option: any) => option.id === selectedPaletteOptionId) || paletteOptions[0];
+  const activePalette = Array.isArray(activePaletteOption?.colors) ? activePaletteOption.colors : [];
+  const colors = activePalette.length > 0
+    ? {
+        ...baseColors,
+        primary: activePalette[0] || baseColors.primary,
+        accent: activePalette[1] || baseColors.accent,
+        secondary: activePalette[2] || baseColors.secondary,
+      }
+    : baseColors;
   const brandPhotoAttribution = (src?: string) => attributionText(src, brand.photoAttributions, brand.photoSource, brand.photoCaption);
   const presetClass = `wv-preset-${normalizeStylePreset(stylePreset)}`;
   const visualClass = `wv-visual-${normalizeVisualStyle(visualStyle)}`;
@@ -354,13 +390,22 @@ export default function SiteRenderer({
     "--color-accent": colors.accent,
     "--color-text": colors.textMain,
     "--color-bg": colors.background,
-    fontFamily: typography.bodyFont,
+    fontFamily: activeFontPairing.bodyCss || typography.bodyFont,
     backgroundColor: "var(--color-bg)",
     color: "var(--color-text)",
   } as React.CSSProperties;
 
   return (
     <div style={customStyles} className={`min-h-screen flex flex-col ${presetClass} ${visualClass}`} id="rendered-site">
+      <style>{`
+        ${fontImportUrl ? `@import url('${fontImportUrl}');` : ""}
+        #rendered-site h1,
+        #rendered-site h2,
+        #rendered-site h3,
+        #rendered-site .wv-heading {
+          font-family: ${activeFontPairing.headingCss || typography.headingFont};
+        }
+      `}</style>
       <header style={{ backgroundColor: colors.primary, color: "#fff" }} className="py-4 px-6 md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <button
           type="button"
@@ -464,7 +509,7 @@ export default function SiteRenderer({
                         <p className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: colors.accent }}>
                           {businessProfile.typeLabel}
                         </p>
-                        <h1 className="text-4xl md:text-6xl font-bold mb-6 leading-tight text-slate-950" style={{ fontFamily: typography.headingFont }}>
+                        <h1 className="text-4xl md:text-6xl font-bold mb-6 leading-tight text-slate-950">
                           {heroContent.headline || labels.heroFallback}
                         </h1>
                         <p className="text-lg md:text-xl mb-8 text-slate-600 max-w-2xl">
@@ -1003,6 +1048,12 @@ export default function SiteRenderer({
           businessId={businessId}
           variant="public"
           onDownloadZip={onDownloadZip}
+          fontPairings={availableFontPairings}
+          selectedFontPairing={activeFontPairing.id}
+          onFontPairingChange={setSelectedFontPairingId}
+          paletteOptions={paletteOptions}
+          selectedPaletteOption={activePaletteOption?.id || ""}
+          onPaletteOptionChange={setSelectedPaletteOptionId}
         />
       )}
 

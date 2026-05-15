@@ -4,6 +4,7 @@ import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { getStylePreset, inferStylePresetFromText, inferVisualStyleFromText, siteVisualStyles } from "../../lib/siteStylePresets";
+import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 
 export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -32,11 +33,15 @@ export default function AdminLeads() {
   const [isTrimmingCache, setIsTrimmingCache] = useState(false);
   const [cacheTrimMessage, setCacheTrimMessage] = useState("");
   const [detailsPanelPlace, setDetailsPanelPlace] = useState<any>(null);
+  const [searchActive, setSearchActive] = useState(false);
+  const [autoWebsitePrecheck, setAutoWebsitePrecheck] = useLocalStorageState("webview.adminLeads.autoWebsitePrecheck", "1");
+  const [websitePrecheckLimit, setWebsitePrecheckLimit] = useLocalStorageState("webview.adminLeads.websitePrecheckLimit", "10");
   const [aiProvider, setAiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
   const [aiModel, setAiModel] = useLocalStorageState("webview.adminLeads.aiModel", "~anthropic/claude-sonnet-latest");
   const [settings, setSettings] = useState<any>({});
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [logoSelections, setLogoSelections] = useState<Record<string, { url: string; reference: string; palette: string[]; attributions: string[]; priorityLabel: string; source: string }>>({});
+  const [paletteOptionsByPlace, setPaletteOptionsByPlace] = useState<Record<string, any[]>>({});
 
   const providers: Record<string, { label: string; models: { value: string; label: string }[] }> = {
     OpenAI: {
@@ -107,10 +112,20 @@ export default function AdminLeads() {
 
   const placeMapsUrl = (place: any) => place.url || place.googleMapsUri || place.maps_url || "";
 
+  const googleBusinessListingUrl = (place: any) => {
+    const direct = placeMapsUrl(place);
+    if (direct) return direct;
+    const placeId = place?.place_id || place?.id || "";
+    const query = [place?.name, place?.formatted_address || place?.formattedAddress || place?.vicinity].filter(Boolean).join(" ");
+    const params = new URLSearchParams({ api: "1", query: query || placeId || "Google Business Profile" });
+    if (placeId) params.set("query_place_id", placeId);
+    return `https://www.google.com/maps/search/?${params.toString()}`;
+  };
+
   const hasGatheredDetails = (place: any) => {
     const key = getPlaceKey(place);
     const details = placeDetails[key];
-    return Boolean(details || place.detailsLoadedAt || place.reviews || place.formatted_phone_number || place.international_phone_number || place.url || place.googleMapsUri);
+    return Boolean(details || place.detailsLoadedAt || place.prospectStatus === "details_loaded" || Array.isArray(place.reviews));
   };
 
   const mergePlaceWithDetails = (place: any) => {
@@ -175,6 +190,16 @@ export default function AdminLeads() {
         }, {});
         if (Object.keys(restoredSelections).length > 0) {
           setLogoSelections(prev => ({ ...restoredSelections, ...prev }));
+        }
+        const restoredPaletteOptions = rows.reduce((acc: Record<string, any[]>, item: any) => {
+          const key = getPlaceKey(item);
+          if (key && Array.isArray(item.paletteOptions) && item.paletteOptions.length > 0) {
+            acc[key] = item.paletteOptions;
+          }
+          return acc;
+        }, {});
+        if (Object.keys(restoredPaletteOptions).length > 0) {
+          setPaletteOptionsByPlace(prev => ({ ...restoredPaletteOptions, ...prev }));
         }
       })
       .catch(e => console.error(e));
@@ -350,6 +375,7 @@ export default function AdminLeads() {
         body: JSON.stringify({
           photo: { url: imageUrl, reference, attributions, priorityLabel, source: "google_places" },
           palette,
+          paletteOptions: paletteOptionsByPlace[placeId] || [],
         }),
       }).catch(() => {});
     } catch (error) {
@@ -362,9 +388,46 @@ export default function AdminLeads() {
         body: JSON.stringify({
           photo: { url: imageUrl, reference, attributions, priorityLabel, source: "google_places" },
           palette,
+          paletteOptions: paletteOptionsByPlace[placeId] || [],
         }),
       }).catch(() => {});
     }
+  };
+
+  const buildPaletteOptionsForPlace = async (placeKey: string, place: any) => {
+    if (!placeKey || paletteOptionsByPlace[placeKey]?.length > 0) return paletteOptionsByPlace[placeKey] || [];
+    const photos = sortedPhotosForPlace(place).slice(0, 5);
+    if (photos.length === 0) return [];
+    const options: any[] = [];
+    for (let index = 0; index < photos.length; index += 1) {
+      const photo = photos[index];
+      const sourceImageUrl = getPhotoUrl(photo, 480);
+      if (!sourceImageUrl) continue;
+      let colors = ["#111827", "#4F46E5", "#F3F4F6"];
+      try {
+        colors = normalizePaletteForContrast(await extractPaletteFromImage(sourceImageUrl));
+      } catch (error) {
+        console.error(error);
+      }
+      options.push({
+        id: `places-photo-${index + 1}`,
+        label: `${photoPriorityLabel(photo, place.name || "Business")} palette ${index + 1}`,
+        colors,
+        sourceImageUrl,
+        photoReference: getPhotoReference(photo),
+        attributions: getPhotoAttributions(photo),
+        priorityLabel: photoPriorityLabel(photo, place.name || "Business"),
+      });
+    }
+    if (options.length > 0) {
+      setPaletteOptionsByPlace(prev => ({ ...prev, [placeKey]: options }));
+      await fetch(`/api/prospects/${encodeURIComponent(placeKey)}/selection`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paletteOptions: options }),
+      }).catch(() => {});
+    }
+    return options;
   };
 
   const inferLocaleFromPlace = (place: any) => {
@@ -526,9 +589,18 @@ export default function AdminLeads() {
   const handleSearch = async (refresh = false) => {
     if (!searchQuery) return;
     setIsSearching(true);
-    setSearchMessage(refresh ? "Refreshing Google Places data..." : "Searching saved cache first...");
+    const shouldPrecheck = autoWebsitePrecheck === "1";
+    setSearchMessage(shouldPrecheck
+      ? "Searching and pre-checking website status from Place Details..."
+      : refresh ? "Refreshing Google Places data..." : "Searching saved cache first...");
     try {
-      const res = await fetch(`/api/places/search?query=${encodeURIComponent(searchQuery)}${refresh ? "&refresh=1" : ""}`);
+      const params = new URLSearchParams({ query: searchQuery });
+      if (refresh) params.set("refresh", "1");
+      if (shouldPrecheck) {
+        params.set("websitePrecheck", "1");
+        params.set("precheckLimit", websitePrecheckLimit || "10");
+      }
+      const res = await fetch(`/api/places/search?${params.toString()}`);
       const text = await res.text();
       let data: any = {};
       try {
@@ -541,17 +613,25 @@ export default function AdminLeads() {
         throw new Error(data.error || `Places API returned ${res.status}`);
       }
 
-      const results = Array.isArray(data.results) ? data.results.map((item: any) => ({ ...item, searchQuery })) : [];
+      const rawResults = Array.isArray(data.results) ? data.results.map((item: any) => ({ ...item, searchQuery })) : [];
+      const results = rawResults.filter((item: any) => {
+        const hasSite = Boolean(item.website || item.websiteUri);
+        if (websiteFilter === "has") return hasSite;
+        if (websiteFilter === "none") return !hasSite && item.websiteCheckStatus === "no_website";
+        if (websiteFilter === "unknown") return !hasSite && !item.websiteCheckStatus;
+        return true;
+      });
       setSearchResults(results);
+      setSearchActive(true);
       fetchProspectDrafts();
       setPlaceDetails({});
       setGenerationMessages({});
-      if (results.length === 0) {
+      if (rawResults.length === 0) {
         setSearchMessage(data.hint || data.error || `Tidak ada hasil untuk "${searchQuery}". Coba query lebih spesifik seperti "concrete contractor Dallas Texas".`);
       } else {
         setSearchMessage(data.mock
           ? "Mode mock aktif karena Google Places API Key belum terbaca."
-          : `${results.length} hasil ditemukan${data.cached ? " dari cache DB" : " dari Google Places"}.`);
+          : `${results.length} hasil ditampilkan dari ${rawResults.length} hasil${data.cached ? " cache DB" : " Google Places"}${data.websitePrecheck ? " setelah website pre-check" : ""}.`);
       }
     } catch (e) {
       console.error(e);
@@ -602,6 +682,7 @@ export default function AdminLeads() {
           ...prev,
           [placeKey]: { type: "success", text: `Google Places details gathered (${summary}). Ready to generate.` },
         }));
+        void buildPaletteOptionsForPlace(placeKey, hydratedPlace);
         return result;
       }
     } catch (error) {
@@ -672,7 +753,13 @@ export default function AdminLeads() {
     // A Real implementation would send 'place' to an OpenAI endpoint on our server
     const businessId = fullPlace.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + "-" + Math.floor(Math.random() * 1000);
     const logoSelection = logoSelections[fullPlace.place_id || fullPlace.name] || logoSelections[placeKey];
-    const brandPalette = logoSelection?.palette || [];
+    const fallbackPhoto = sortedPhotosForPlace(fullPlace)[0];
+    const fallbackImageUrl = fallbackPhoto ? getPhotoUrl(fallbackPhoto, 960) : "";
+    const selectedImageUrl = logoSelection?.url || fallbackImageUrl;
+    const selectedReference = logoSelection?.reference || (fallbackPhoto ? getPhotoReference(fallbackPhoto) : "");
+    const selectedAttributions = logoSelection?.attributions || (fallbackPhoto ? getPhotoAttributions(fallbackPhoto) : []);
+    const paletteOptions = paletteOptionsByPlace[placeKey] || fullPlace.paletteOptions || [];
+    const brandPalette = logoSelection?.palette || paletteOptions[0]?.colors || [];
     const primaryColor = brandPalette[0] || "#111827";
     const accentColor = brandPalette[1] || "#4F46E5";
     const secondaryColor = brandPalette[2] || "#F3F4F6";
@@ -690,11 +777,21 @@ export default function AdminLeads() {
       Array.isArray(fullPlace.types) ? fullPlace.types.join(" ") : "",
       fullPlace.searchQuery,
     ].filter(Boolean).join(" "));
+    const fontContext = [
+      fullPlace.name,
+      fullPlace.formatted_address,
+      fullPlace.formattedAddress,
+      Array.isArray(fullPlace.types) ? fullPlace.types.join(" ") : "",
+      fullPlace.searchQuery,
+    ].filter(Boolean).join(" ");
     const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
+    const fontPairing = inferFontPairingFromText(fontContext);
+    const fontPairingMeta = getFontPairing(fontPairing);
+    const fontPairingOptions = fontPairingsForText(fontContext, 5);
     const isEnglish = locale.language === "en";
     const googleReviews = Array.isArray(fullPlace.reviews) ? fullPlace.reviews : [];
     const offeringMode = inferProductServiceMode(fullPlace);
-    const offerings = buildOfferings(fullPlace, isEnglish, offeringMode, logoSelection?.url || "", mapsUrl);
+    const offerings = buildOfferings(fullPlace, isEnglish, offeringMode, selectedImageUrl, mapsUrl);
     const businessName = fullPlace.name;
     const address = fullPlace.formatted_address || fullPlace.formattedAddress || "";
     const typeLabel = meaningfulTypeLabel(fullPlace, isEnglish);
@@ -840,6 +937,15 @@ export default function AdminLeads() {
           allowedValues: siteVisualStyles.map((item) => item.id),
           selectionRule: "Choose the visual structure that best matches the industry and desired feel.",
         },
+        fontPairing,
+        fontPairingConfig: {
+          label: fontPairingMeta.label,
+          headingFont: fontPairingMeta.headingFont,
+          bodyFont: fontPairingMeta.bodyFont,
+          mood: fontPairingMeta.mood,
+          allowedValues: fontPairingOptions.map((item) => item.id),
+          selectionRule: "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download.",
+        },
         themeVariables: {
           colors: {
             primary: primaryColor,
@@ -850,21 +956,22 @@ export default function AdminLeads() {
             background: "#FFFFFF"
           },
           typography: {
-            headingFont: "'Inter', sans-serif",
-            bodyFont: "'Inter', sans-serif"
+            headingFont: fontPairingMeta.headingCss,
+            bodyFont: fontPairingMeta.bodyCss
           }
         }
       },
       brand: {
-        logoImageUrl: logoSelection?.url || "",
+        logoImageUrl: selectedImageUrl,
         logoSvg: "",
         faviconSvg: faviconSvgForBusiness(businessName, primaryColor),
         palette: brandPalette,
-        preferredHeroImage: logoSelection?.url || "",
-        photoSource: logoSelection?.source || "",
-        googlePhotoReference: logoSelection?.reference || "",
-        photoCaption: logoSelection?.source === "google_places" ? "Photo from Google Business Profile" : "",
-        photoAttributions: logoSelection?.attributions || [],
+        paletteOptions,
+        preferredHeroImage: selectedImageUrl,
+        photoSource: selectedImageUrl ? (logoSelection?.source || "google_places") : "",
+        googlePhotoReference: selectedReference,
+        photoCaption: selectedImageUrl ? "Photo from Google Business Profile" : "",
+        photoAttributions: selectedAttributions,
         selectedPhotoPriority: logoSelection?.priorityLabel || ""
       },
       businessProfile: {
@@ -993,7 +1100,7 @@ export default function AdminLeads() {
                   { text: isEnglish ? "Contact Us" : "Hubungi Kami", href: "#contact", style: "primary" },
                   { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl || "#contact", style: "outline" }
                 ],
-                image: logoSelection?.url || ""
+                image: selectedImageUrl
               }
             },
             { type: "trustBar", id: "trust-1", content: {} },
@@ -1051,10 +1158,11 @@ export default function AdminLeads() {
           phone,
           originData: fullPlace,
           brandPalette,
-          selectedLogoImageUrl: logoSelection?.url || "",
-          selectedLogoReference: logoSelection?.reference || "",
-          selectedLogoSource: logoSelection?.source || "",
-          selectedLogoAttributions: logoSelection?.attributions || [],
+          paletteOptions,
+          selectedLogoImageUrl: selectedImageUrl,
+          selectedLogoReference: selectedReference,
+          selectedLogoSource: selectedImageUrl ? (logoSelection?.source || "google_places") : "",
+          selectedLogoAttributions: selectedAttributions,
           selectedLogoPriority: logoSelection?.priorityLabel || ""
         })
       });
@@ -1099,8 +1207,23 @@ export default function AdminLeads() {
     fetchLeads();
   };
 
-  const visibleProspects = searchResults.length > 0 ? searchResults : prospectDrafts;
+  const visibleProspects = searchActive ? searchResults : prospectDrafts;
   const hasWebsite = (place: any) => Boolean(place.website || place.websiteUri);
+  const websiteBadge = (place: any) => {
+    if (hasWebsite(place)) {
+      return { label: "Has website", className: "bg-amber-100 text-amber-800", title: "Website found from Google Places data." };
+    }
+    if (place.websiteCheckStatus === "no_website") {
+      return { label: "No website verified", className: "bg-emerald-100 text-emerald-800", title: "Place Details pre-check did not return a website." };
+    }
+    if (place.websiteCheckStatus === "error") {
+      return { label: "Website check error", className: "bg-red-100 text-red-800", title: place.websiteCheckError || "Website pre-check failed. Try Gather data." };
+    }
+    if (!hasGatheredDetails(place)) {
+      return { label: "Website unknown", className: "bg-slate-100 text-slate-700", title: "Text Search often does not include website. Click Gather data to call Place Details." };
+    }
+    return { label: "No website verified", className: "bg-emerald-100 text-emerald-800", title: "No website returned by Google Place Details." };
+  };
   const selectedVisibleProspects = visibleProspects.filter((place) => selectedProspects[getPlaceKey(place)]);
 
   const toggleProspectSelection = (place: any, checked: boolean) => {
@@ -1224,7 +1347,8 @@ export default function AdminLeads() {
               onChange={(event) => setWebsiteFilter(event.target.value)}
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="none">No website first</option>
+              <option value="none">No website verified first</option>
+              <option value="unknown">Website unknown</option>
               <option value="has">Has website</option>
               <option value="all">All</option>
             </select>
@@ -1244,12 +1368,38 @@ export default function AdminLeads() {
           </label>
           <button
             type="button"
-            onClick={fetchProspectDrafts}
+            onClick={() => {
+              setSearchActive(false);
+              fetchProspectDrafts();
+            }}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
           >
             <RefreshCw size={15} />
             Reload drafts
           </button>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Search website check</span>
+            <select
+              value={autoWebsitePrecheck}
+              onChange={(event) => setAutoWebsitePrecheck(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="1">Auto pre-check websites</option>
+              <option value="0">Search only</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Pre-check limit</span>
+            <select
+              value={websitePrecheckLimit}
+              onChange={(event) => setWebsitePrecheckLimit(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="5">Top 5</option>
+              <option value="10">Top 10</option>
+              <option value="20">Top 20</option>
+            </select>
+          </label>
           <label className="text-sm">
             <span className="mb-1 block font-medium text-slate-700">Min reviews</span>
             <select
@@ -1409,6 +1559,8 @@ export default function AdminLeads() {
               const generationMessage = generationMessages[placeKey];
               const currentPhotos = sortedPhotosForPlace(displayPlace);
               const detailsReady = hasGatheredDetails(displayPlace);
+              const websiteStatus = websiteBadge(displayPlace);
+              const listingUrl = googleBusinessListingUrl(displayPlace);
 
               return (
               <div key={placeKey} className="p-4 border border-gray-100 rounded-xl bg-gray-50">
@@ -1423,9 +1575,12 @@ export default function AdminLeads() {
                   />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-gray-900">{displayPlace.name}</h3>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${hasWebsite(displayPlace) ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
-                      {hasWebsite(displayPlace) ? "Has website" : "No website"}
+                    <a href={listingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-gray-900 hover:text-indigo-700 hover:underline">
+                      {displayPlace.name}
+                      <ExternalLink size={13} />
+                    </a>
+                    <span title={websiteStatus.title} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${websiteStatus.className}`}>
+                      {websiteStatus.label}
                     </span>
                     {displayPlace.prospectStatus && (
                       <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
@@ -1507,22 +1662,10 @@ export default function AdminLeads() {
                   </div>
                 )}
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateProspectStatus(displayPlace, "details_loaded");
-                      loadPlaceDetails(displayPlace);
-                    }}
-                    disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={14} /> : <Images size={14} />}
-                    {detailsReady ? "Refresh gathered data" : "Gather data/details"}
-                  </button>
                   <span className="text-xs text-gray-500">
                     {detailsReady
                       ? currentPhotos.length > 0 ? `${currentPhotos.length} foto tersedia untuk dipilih.` : "Detail sudah diambil, tapi belum ada foto dari response ini."
-                      : "Ambil Place Details dulu sebelum generate agar data site lengkap."}
+                      : "Klik Gather data untuk mengambil website, phone, direct Maps URL, reviews, dan foto dari Place Details."}
                   </span>
                 </div>
                 {currentPhotos.length > 0 && (
@@ -1558,6 +1701,18 @@ export default function AdminLeads() {
                         <span className="text-xs text-gray-500">Palette:</span>
                         {logoSelections[placeKey].palette.map((color) => (
                           <span key={color} className="w-6 h-6 rounded-full border border-white shadow-sm" style={{ backgroundColor: color }} title={color} />
+                        ))}
+                      </div>
+                    )}
+                    {paletteOptionsByPlace[placeKey]?.length > 0 && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-gray-500">{paletteOptionsByPlace[placeKey].length} palette options:</span>
+                        {paletteOptionsByPlace[placeKey].map((option) => (
+                          <span key={option.id} className="inline-flex overflow-hidden rounded-full border border-slate-200" title={option.label}>
+                            {(option.colors || []).slice(0, 5).map((color: string) => (
+                              <span key={color} className="h-4 w-4" style={{ backgroundColor: color }} />
+                            ))}
+                          </span>
                         ))}
                       </div>
                     )}
@@ -1719,8 +1874,8 @@ export default function AdminLeads() {
                       {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={15} /> : <Images size={15} />}
                       Refresh details/photos
                     </button>
-                    {mergedPlace.url && (
-                      <a href={mergedPlace.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    {googleBusinessListingUrl(mergedPlace) && (
+                      <a href={googleBusinessListingUrl(mergedPlace)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                         Google Maps <ExternalLink size={15} />
                       </a>
                     )}

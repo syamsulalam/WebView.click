@@ -44,6 +44,7 @@ Logic penting:
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
 - Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
+- Renderer membaca `design.fontPairing` dan `design.fontPairingConfig`; registry Google Font pairing ada di `src/lib/fontPairings.ts` dan ringkasannya di `docs/FONT_PAIRING_GUIDE.md`.
 - Gambar dirender sebagai `<img>` jika URL usable (`http`, `/`, atau `data:`); filename placeholder tetap ditampilkan sebagai fallback supaya preview tidak blank.
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
@@ -88,6 +89,8 @@ Props penting:
 - `businessId`: fallback ID checkout.
 - `variant`: `demo` atau `public` untuk positioning/label kecil.
 - `onDownloadZip`: callback download zip, tersedia di demo dan public preview.
+- `fontPairings`, `selectedFontPairing`, `onFontPairingChange`: opsi font pairing yang cocok dengan industri agar owner bisa memilih style font sebelum download/setup.
+- `paletteOptions`, `selectedPaletteOption`, `onPaletteOptionChange`: opsi palette hasil ekstraksi foto bisnis agar owner bisa memilih warna sebelum download/setup.
 
 Logic penting:
 - Domain extension list berasal dari `src/lib/domainExtensions.ts`.
@@ -100,6 +103,8 @@ Logic penting:
 - Indikator hijau pada domain baru berarti `available` dari pre-check; indikator hijau pada domain sendiri berarti domain terdeteksi registered/usable untuk setup DNS, bukan tersedia untuk dibeli.
 - Domain sendiri hanya bisa lanjut jika RDAP/DNS memberi sinyal registered/aktif; hasil inconclusive tetap ditahan sebagai warning.
 - Mode mock checkout tetap mencatat lead `checkout_pending` jika Lemon Squeezy belum dikonfigurasi.
+- Jika font pairing selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti pilihan yang aktif saat download.
+- Jika palette selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti warna yang aktif saat download.
 
 Risiko debug:
 - Jika ada perubahan pada flow download/setup, ubah komponen ini agar `/demo` dan `/:businessId` tetap sinkron.
@@ -149,17 +154,24 @@ Logic penting:
 - Gambar logo diambil melalui proxy same-origin `/api/places/photo`, lalu canvas browser mengekstrak palette warna dominan.
 - Foto Places diurutkan best-effort: attribution yang mirip nama bisnis, lalu tanpa attribution, lalu UGC/attributed. Places API tidak menyediakan flag owner photo yang reliable.
 - Palette dikirim ke `/api/sites/generate` sebagai `brandPalette`.
+- Hingga 5 palette foto disimpan sebagai `brand.paletteOptions` dan dikirim ke `/api/sites/generate` sebagai `paletteOptions`.
 - Logo yang dipilih dikirim sebagai `selectedLogoImageUrl`.
 - Photo reference dan source dikirim sebagai `selectedLogoReference` dan `selectedLogoSource`.
 - Attribution foto yang dipilih dikirim sebagai `selectedLogoAttributions` dan disimpan di JSON sebagai `brand.photoAttributions`.
 - Admin harus menjalankan `Gather data` / Place Details sebelum `Generate Site`; tombol generate baru muncul setelah detail bisnis, foto, review, phone, dan direct Google Maps URL dicoba diambil.
 - Setelah `Gather data`, item tetap dipertahankan di list lokal dan tombol berubah menjadi `Generate Site`; hasil detail tidak langsung mem-filter ulang list walaupun Places menemukan website/metadata baru.
+- Badge website sebelum Place Details adalah `Website unknown`, bukan `No website`, karena Google Places Text Search tidak selalu menyertakan website. Setelah `Gather data`, badge baru berubah menjadi `Has website` atau `No website` dari Place Details.
+- Search dapat mengaktifkan `websitePrecheck=1`, yaitu Place Details minimal untuk hasil teratas agar status website diketahui sebelum admin melakukan gather data penuh. Ini memakai kuota Details, tetapi mencegah buang waktu/generate untuk bisnis yang sudah punya website.
+- Filter `No website first` berarti `website_check_status=no_website`, bukan sekadar kolom website kosong. Prospek yang belum dicek masuk kategori `Website unknown`.
+- Nama bisnis di list link ke Google Business/Maps listing. Jika exact `url` belum tersedia, fallback URL memakai `query_place_id` agar cross-check tetap menuju listing spesifik sebaik mungkin.
 - Search result diberi `searchQuery` agar generator tidak memakai tipe Places generik seperti `establishment` sebagai niche ketika Google tidak memberi kategori spesifik.
 - Untuk situs gratis, foto Google Places tetap hotlink/proxy runtime dan tidak di-upload ke R2.
 - JSON mock fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
+- Jika admin lupa memilih foto/palette, generator memakai foto pertama dari hasil Places sebagai fallback visual dan palette default aman; jika `paletteOptions` sudah ada, opsi pertama dipakai sebagai palette default.
 - Palette hasil ekstraksi digelapkan bila terlalu terang untuk teks putih; Function juga menormalisasi `primary` dan `accent` sebelum menyimpan JSON.
 - JSON mock fallback menentukan `meta.language` dari alamat/region Places: US default English, Indonesia default Indonesian.
 - JSON mock fallback menentukan `design.stylePreset`, `design.stylePresetConfig`, `design.visualStyle`, dan `design.visualStyleConfig` via `src/lib/siteStylePresets.ts`.
+- JSON mock fallback menentukan `design.fontPairing`, `design.fontPairingConfig`, dan `themeVariables.typography` via `src/lib/fontPairings.ts`.
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
 - Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
 - Prompt AI generator diminta memilih icon/inline `iconSvg` sesuai teks/intent CTA dan feature item; product/service detail page harus punya features section berikon.
@@ -178,6 +190,7 @@ Logic penting:
 - Checkbox prospect + `Generate selected` menjalankan batch generate queue secara sequential dari browser agar tidak menembak semua AI request paralel.
 - Tombol `Jobs` membaca `GET /api/generation-jobs` dan menampilkan 100 job terakhir.
 - Foto/palette yang dipilih admin disimpan via `PUT /api/prospects/:placeId/selection`, lalu dihydrate kembali saat prospect draft dibuka.
+- `PUT /api/prospects/:placeId/selection` juga dapat menyimpan `paletteOptions` tanpa menimpa selected photo/palette.
 
 Risiko debug:
 - Jika foto Google tidak muncul, cek Places API key dan apakah Text Search mengembalikan `photos`.
@@ -197,6 +210,7 @@ Fungsi:
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
 - Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini refresh Place Details, membangun fallback JSON lengkap dari gathered data, lalu memanggil `/api/sites/generate` dengan provider/model pilihan. Jika AI provider gagal, fallback JSON tetap disimpan agar generate tidak berhenti di 502.
 - Fallback JSON dari `/admin/sites` mengisi `meta.generatedWithAi=false`, `meta.generationMode=google_places_fallback`, `meta.sourcePhotoCount`, title-cased service names, generalized niche copy profiles, service-area copy inferred from address, detail pages, dan gallery section jika Places mengembalikan lebih dari satu foto.
+- Fallback JSON dari `/admin/sites` juga memilih `design.fontPairing` dan `fontPairingConfig` dari registry industri sehingga site tetap punya typography yang sesuai walaupun AI gagal.
 - Tombol `Regen` memakai dropdown:
   - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan untuk membuat ulang JSON via AI yang lebih pintar.
   - `Re-gather Google data + resave` wajib punya `sourceData.placeId`, mengambil Place Details lagi, lalu mengirim `provider`/`model` kosong agar data Google Places, termasuk Maps URL exact, disimpan ulang tanpa memaksa AI call.
@@ -426,15 +440,17 @@ Logic Places Cache:
 - `places_search_cache` menyimpan response `GET /api/places/search` selama 30 hari.
 - `GET /api/places/search?query=...` membaca cache jika masih valid.
 - `GET /api/places/search?query=...&refresh=1` melewati cache dan menyimpan response terbaru.
+- `GET /api/places/search?query=...&websitePrecheck=1&precheckLimit=10` menjalankan Place Details minimal untuk hasil teratas supaya `website_check_status` diketahui sejak list/search.
 - `POST /api/places/cache/trim` menghapus cache lama/expired; body: `{ "olderThanDays": 30 }`.
 
 Logic Prospect Drafts:
 - `places_prospects` menyimpan result Places per `place_id`.
 - Search dan mock search memanggil upsert prospect draft.
-- Place Details memperbarui `details_json`, phone, website, maps URL, dan `details_loaded_at`.
-- `GET /api/prospects` menerima filter `status`, `website=none|has|all`, `minRating`, `minReviews`, `city`, `state`, dan `niche`.
+- Place Details memperbarui `details_json`, phone, website, maps URL, `website_check_status`, `website_checked_at`, dan `details_loaded_at`.
+- Website pre-check memperbarui `phone`, `website_url`, `maps_url`, `website_check_status`, dan `website_checked_at` tanpa menandai `details_loaded_at`, sehingga admin tetap perlu `Gather data` sebelum generate.
+- `GET /api/prospects` menerima filter `status`, `website=none|unknown|has|all`, `minRating`, `minReviews`, `city`, `state`, dan `niche`.
 - `PUT /api/prospects/:placeId/status` mengubah status workflow (`new`, `details_loaded`, `site_generated`, `contacted`, `skipped`).
-- `PUT /api/prospects/:placeId/selection` menyimpan selected Google Places photo metadata dan palette.
+- `PUT /api/prospects/:placeId/selection` menyimpan selected Google Places photo metadata, selected palette, dan `paletteOptions`.
 
 Logic Generation Jobs:
 - `generation_jobs` mencatat setiap request `/api/sites/generate` dengan status `running`, `success`, atau `failed`.

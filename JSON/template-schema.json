@@ -29,6 +29,21 @@
       ],
       "selectionRule": "Choose soft-rounded for friendly/lifestyle brands, boxy-editorial for professional/legal/real estate, industrial-diagonal for contractors/auto/security, clean-minimal for clinics/cleaning/pool/service businesses, and bold-sport for fitness/training."
     },
+    "fontPairing": "lobster-open-sans",
+    "fontPairingConfig": {
+      "label": "Lobster + Open Sans",
+      "headingFont": "Lobster",
+      "bodyFont": "Open Sans",
+      "mood": "playful, friendly, casual",
+      "allowedValues": [
+        "lobster-open-sans",
+        "courgette-libre",
+        "montserrat-raleway",
+        "sacramento-barlow",
+        "abril-work-sans"
+      ],
+      "selectionRule": "Choose one industry-matched Google Font pairing. The renderer shows matching owner-facing options before download."
+    },
     "styleSystem": {
       "allowedPresets": [
         "local-clean",
@@ -60,8 +75,8 @@
         "background": "#FAFAFA"
       },
       "typography": {
-        "headingFont": "'Poppins', sans-serif",
-        "bodyFont": "'Inter', sans-serif"
+        "headingFont": "'Lobster', cursive",
+        "bodyFont": "'Open Sans', sans-serif"
       },
       "uiTokens": {
         "borderRadius": "12px",
@@ -88,6 +103,24 @@
     "logoSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☕</text></svg>",
     "logoImageUrl": "kopi-senja-jakarta-logo.png",
     "palette": ["#4E342E", "#FF7043", "#D7CCC8"],
+    "paletteOptions": [
+      {
+        "id": "warm-coffee",
+        "label": "Warm Coffee",
+        "colors": ["#4E342E", "#FF7043", "#D7CCC8"],
+        "sourceImageUrl": "kopi-senja-jakarta-hero.jpg",
+        "photoReference": "",
+        "attributions": []
+      },
+      {
+        "id": "clean-cream",
+        "label": "Clean Cream",
+        "colors": ["#2F3A33", "#C07A3D", "#F7F1E8"],
+        "sourceImageUrl": "kopi-senja-jakarta-interior.jpg",
+        "photoReference": "",
+        "attributions": []
+      }
+    ],
     "mood": "warm-local-premium",
     "visualStyle": "modern-local-cafe",
     "imageTreatment": "rounded-editorial",

@@ -4,19 +4,63 @@ import templateSchema from "../../../JSON/template-schema.json";
 import SiteRenderer from "../../components/SiteRenderer";
 import WebsiteActionPanel from "../../components/WebsiteActionPanel";
 import { downloadOwnerSiteZip } from "../../lib/exportSiteHtml";
+import { fontPairingsForText, getFontPairing } from "../../lib/fontPairings";
 import { siteStylePresets } from "../../lib/siteStylePresets";
 
 export default function DemoSite() {
   const baseSiteData = templateSchema as any;
   const [selectedPreset, setSelectedPreset] = useState(baseSiteData.design?.stylePreset || "cafe-warm");
+  const fontOptions = fontPairingsForText([
+    baseSiteData.meta?.businessName,
+    baseSiteData.meta?.niche,
+    baseSiteData.businessProfile?.typeLabel,
+    Array.isArray(baseSiteData.businessProfile?.categories) ? baseSiteData.businessProfile.categories.join(" ") : "",
+  ].filter(Boolean).join(" "), 5);
+  const [selectedFontPairing, setSelectedFontPairing] = useState(baseSiteData.design?.fontPairing || fontOptions[0]?.id || "montserrat-raleway");
+  const paletteOptions = Array.isArray(baseSiteData.brand?.paletteOptions) ? baseSiteData.brand.paletteOptions : [];
+  const [selectedPaletteOption, setSelectedPaletteOption] = useState(paletteOptions[0]?.id || "");
   const [inspectorMinimized, setInspectorMinimized] = useState(false);
   const [inspectorPosition, setInspectorPosition] = useState({ x: 16, y: 92 });
   const dragState = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const fontPairingMeta = getFontPairing(selectedFontPairing);
+  const activePaletteOption = paletteOptions.find((option: any) => option.id === selectedPaletteOption) || paletteOptions[0];
+  const activePalette = Array.isArray(activePaletteOption?.colors) ? activePaletteOption.colors : baseSiteData.brand?.palette || [];
+  const orderedPaletteOptions = activePaletteOption
+    ? [activePaletteOption, ...paletteOptions.filter((option: any) => option.id !== activePaletteOption.id)]
+    : paletteOptions;
   const siteData = {
     ...baseSiteData,
     design: {
       ...baseSiteData.design,
       stylePreset: selectedPreset,
+      fontPairing: selectedFontPairing,
+      fontPairingConfig: {
+        ...(baseSiteData.design?.fontPairingConfig || {}),
+        label: fontPairingMeta.label,
+        headingFont: fontPairingMeta.headingFont,
+        bodyFont: fontPairingMeta.bodyFont,
+        mood: fontPairingMeta.mood,
+        allowedValues: fontOptions.map((item) => item.id),
+      },
+      themeVariables: {
+        ...(baseSiteData.design?.themeVariables || {}),
+        typography: {
+          ...(baseSiteData.design?.themeVariables?.typography || {}),
+          headingFont: fontPairingMeta.headingCss,
+          bodyFont: fontPairingMeta.bodyCss,
+        },
+        colors: {
+          ...(baseSiteData.design?.themeVariables?.colors || {}),
+          primary: activePalette[0] || baseSiteData.design?.themeVariables?.colors?.primary,
+          accent: activePalette[1] || baseSiteData.design?.themeVariables?.colors?.accent,
+          secondary: activePalette[2] || baseSiteData.design?.themeVariables?.colors?.secondary,
+        },
+      },
+    },
+    brand: {
+      ...baseSiteData.brand,
+      palette: activePalette,
+      paletteOptions: orderedPaletteOptions,
     },
   };
   const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
@@ -144,6 +188,12 @@ export default function DemoSite() {
         businessId={siteData.meta.businessId}
         variant="demo"
         onDownloadZip={handleDownloadZip}
+        fontPairings={fontOptions}
+        selectedFontPairing={selectedFontPairing}
+        onFontPairingChange={setSelectedFontPairing}
+        paletteOptions={paletteOptions}
+        selectedPaletteOption={selectedPaletteOption}
+        onPaletteOptionChange={setSelectedPaletteOption}
       />
     </div>
   );
