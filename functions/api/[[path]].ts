@@ -209,6 +209,15 @@ const prospectDetailsRequiredColumns: ColumnSpec[] = [
   { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
 ];
 
+const prospectListRequiredColumns: ColumnSpec[] = [
+  { table: "places_prospects", column: "website_url", definition: "TEXT" },
+  { table: "places_prospects", column: "website_check_status", definition: "TEXT" },
+  { table: "places_prospects", column: "website_checked_at", definition: "DATETIME" },
+  { table: "places_prospects", column: "palette_options_json", definition: "TEXT" },
+  { table: "places_prospects", column: "generated_business_id", definition: "TEXT" },
+  { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
+];
+
 const prospectWebsiteCheckRequiredColumns: ColumnSpec[] = [
   { table: "places_prospects", column: "phone", definition: "TEXT" },
   { table: "places_prospects", column: "website_url", definition: "TEXT" },
@@ -1276,6 +1285,7 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
     const city = normalizeSearchQuery(url.searchParams.get("city") || "");
     const state = normalizeSearchQuery(url.searchParams.get("state") || "");
     const niche = normalizeSearchQuery(url.searchParams.get("niche") || "");
+    await ensureRequiredColumns(db, prospectListRequiredColumns);
     const rows = await db
       .prepare(
         `SELECT p.*,
