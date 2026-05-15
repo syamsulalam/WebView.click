@@ -18,6 +18,8 @@ type SiteRow = {
   updatedAt?: string;
   previewUrl: string;
   googleMapsUrl?: string;
+  r2JsonUrl?: string;
+  storageMode?: "r2" | "legacy_d1";
 };
 
 type RegenerateMode = "resave" | "ai";
@@ -992,7 +994,19 @@ export default function AdminSites() {
             <div key={site.businessId} className="grid grid-cols-[1.3fr_0.9fr_0.5fr_0.8fr_1.5fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0">
               <div className="min-w-0">
                 <p className="truncate font-semibold text-gray-900">{site.businessName}</p>
-                <p className="mt-1 truncate text-xs text-gray-500">{site.niche || "No niche"}{site.rating ? ` · ${site.rating.toFixed(1)} rating` : ""}{site.reviewCount ? ` · ${site.reviewCount} reviews` : ""}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                  <span className="truncate">{site.niche || "No niche"}{site.rating ? ` · ${site.rating.toFixed(1)} rating` : ""}{site.reviewCount ? ` · ${site.reviewCount} reviews` : ""}</span>
+                  <span
+                    title={site.storageMode === "r2" ? site.r2JsonUrl || "Full JSON is stored in R2." : "Full JSON is still stored in D1. Run migration from /admin/schema."}
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      site.storageMode === "r2"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-amber-100 text-amber-800"
+                    }`}
+                  >
+                    {site.storageMode === "r2" ? "R2 JSON" : "Legacy D1 JSON"}
+                  </span>
+                </div>
               </div>
               <code className="truncate rounded-lg bg-gray-50 px-2 py-1 text-xs text-gray-600">{site.businessId}</code>
               <span className="text-gray-600">{[site.language, site.region].filter(Boolean).join("-") || "-"}</span>

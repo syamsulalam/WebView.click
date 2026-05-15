@@ -169,6 +169,7 @@ API yang dipakai:
 - `GET /api/settings`
 - `GET /api/places/search?query=...`
 - `GET /api/places/search?query=...&refresh=1`
+- `GET /api/places/history`
 - `GET /api/places/details?placeId=...`
 - `GET /api/places/photo?reference=...`
 - `POST /api/sites/generate`
@@ -212,6 +213,8 @@ Logic penting:
 - Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.
 - Search default membaca cache D1 `places_search_cache`; tombol `Refresh` memaksa request baru ke Google Places.
 - Setiap result Google Places di-upsert ke `places_prospects` sebagai prospect draft agar pencarian lama tidak hilang.
+- Panel `Search history` membaca search term lama dari `places_search_cache`, lalu menghydrate setiap business card dari `places_prospects` berdasarkan Google `place_id`. Progress bisnis tetap current walaupun listing yang sama muncul di beberapa search term.
+- Klik search term history memuat prospect list dari cache tanpa panggil Google Places baru, tetap memakai action/status workflow yang sama seperti search aktif.
 - Filter prospect tersimpan memakai status, website/no website, minimum rating, minimum review count, city, state, dan niche. Default workflow memprioritaskan bisnis tanpa website.
 - Filter prospect juga punya minimum conversion score (`Any`, `50+`, `70+`, `85+`) untuk menyembunyikan prospek kualitas rendah dari list.
 - Default minimum conversion score dan bobot scoring dibaca dari `/admin/settings` (`SCORING_MIN_SCORE_DEFAULT`, `SCORING_WEIGHTS_JSON`) dengan fallback ke `src/lib/prospectScoring.ts`; `SCORING_PRESET` disimpan untuk UI Settings.
@@ -260,13 +263,15 @@ API yang dipakai:
 Logic penting:
 - Search lokal bisa mencari nama bisnis, slug, niche, bahasa, dan region.
 - Metadata tampilan diambil dari `meta`, `businessProfile`, dan `trust` di JSON site.
+- List Generated Sites menampilkan badge storage mode: `R2 JSON` jika D1 hanya manifest dan full JSON ada di R2, atau `Legacy D1 JSON` jika row lama masih menyimpan full JSON di D1.
 - Pilihan provider/model regenerate disimpan ke localStorage agar refresh halaman tetap memakai model terakhir yang dipilih admin.
 - Pilihan provider/model yang sama dipakai untuk `Generate` prospect gathered di section `Ready to Generate`.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
 
 Risiko debug:
-- Jika situs tidak muncul, cek apakah `/api/sites/generate` berhasil menyimpan row ke `json_sites`.
+- Jika situs tidak muncul, cek apakah `/api/sites/generate` berhasil menyimpan manifest row ke `json_sites` dan full JSON ke R2.
 - Jika preview 404, cek `json_sites.business_id` sama dengan slug di URL public.
+- Jika preview 502, kemungkinan D1 hanya punya manifest tetapi R2 JSON tidak bisa dibaca; cek binding `R2`, `r2_json_key`, dan object `sites/{businessId}/{businessId}.json`.
 
 ### `src/pages/admin/AdminSchema.tsx`
 
@@ -276,12 +281,14 @@ Fungsi:
 API yang dipakai:
 - `GET /api/schema`
 - `POST /api/schema/repair`
+- `POST /api/sites/migrate-r2`
 
 Logic penting:
 - Jika API error, halaman menampilkan pesan error sebagai text di area schema.
 - Tombol `Repair DB now` memanggil `/api/schema/repair`, menjalankan self-heal tabel/kolom D1, lalu menampilkan ringkasan jumlah kolom per tabel.
 - Gunakan tombol ini setelah deploy ketika halaman admin berat mulai error karena kolom D1 production belum termigrasi.
 - Setelah repair sukses, halaman menyimpan timestamp ke localStorage agar badge `DB repaired ... ago` muncul di admin sidebar.
+- Tombol `Migrate old site JSON to R2` memanggil `POST /api/sites/migrate-r2` batch 25 row, memindahkan row lama `json_sites.json_content` yang masih full JSON ke R2, lalu mengganti D1 dengan manifest kecil.
 
 ### `src/pages/admin/AdminSettings.tsx`
 
@@ -439,8 +446,10 @@ Endpoint:
 - `PUT /api/leads/:id/status`
 - `POST /api/leads/:business_id/ping`
 - `GET /api/places/search`
+- `GET /api/places/history`
 - `GET /api/places/photo`
 - `POST /api/sites/generate`
+- `POST /api/sites/migrate-r2`
 - `GET /api/sites`
 - `GET /api/sites/:business_id`
 - `POST /api/payments/checkout`
@@ -484,6 +493,10 @@ Logic R2:
   - Melewati Google Places photo URLs (`/api/places/photo`, Google photo media, `googleusercontent.com`) agar free preview tidak menyimpan ulang foto Google ke R2.
   - Meng-upload JSON final ke `sites/{businessId}/{businessId}.json`.
   - Menambahkan metadata `storage.r2JsonKey`, `storage.r2JsonUrl`, dan `storage.r2AssetKeys` ke JSON.
+- D1 `json_sites` tidak lagi menyimpan full JSON untuk situs baru jika R2 tersedia. D1 hanya menyimpan manifest/summary kecil di `json_content`, plus `r2_json_key`, `r2_json_url`, dan `json_summary`.
+- `GET /api/sites/:businessId` membaca full JSON dari R2 jika row D1 punya `r2_json_key`; row lama yang masih menyimpan full JSON di D1 tetap dibaca sebagai fallback.
+- `GET /api/sites` memakai `json_summary`/manifest dari D1 untuk list admin, sehingga tidak perlu membaca full JSON R2 untuk setiap row.
+- `POST /api/sites/migrate-r2` adalah maintenance action untuk row lama: upload full JSON D1 ke R2, update `storage.r2JsonKey`, lalu replace `json_content` dengan compact manifest. Jika R2 belum binding, endpoint gagal eksplisit.
 
 Risiko debug:
 - Jika asset tidak bisa dibuka, cek custom domain R2 `assets.webview.click`, bucket public/custom domain setting, dan env `R2_PUBLIC_BASE_URL`.
@@ -495,6 +508,7 @@ Logic Places Cache:
 - `GET /api/places/search?query=...` membaca cache jika masih valid.
 - `GET /api/places/search?query=...&refresh=1` melewati cache dan menyimpan response terbaru.
 - `GET /api/places/search?query=...&websitePrecheck=1&precheckLimit=10` menjalankan Place Details minimal untuk hasil teratas supaya `website_check_status` diketahui sejak list/search.
+- `GET /api/places/history?limit=30` mengembalikan daftar search term cache, summary progress, dan daftar prospects yang dihydrate dari `places_prospects` berdasarkan `place_id`.
 - `POST /api/places/cache/trim` menghapus cache lama/expired; body: `{ "olderThanDays": 30 }`.
 
 Logic Prospect Drafts:

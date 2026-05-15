@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, Images, PanelRightOpen, X, Play, ListChecks } from "lucide-react";
+import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, Images, PanelRightOpen, X, Play, ListChecks, History } from "lucide-react";
 import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
@@ -38,6 +38,9 @@ export default function AdminLeads() {
   const [cacheTrimMessage, setCacheTrimMessage] = useState("");
   const [detailsPanelPlace, setDetailsPanelPlace] = useState<any>(null);
   const [searchActive, setSearchActive] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<any[]>([]);
+  const [loadingSearchHistory, setLoadingSearchHistory] = useState(false);
+  const [selectedSearchHistoryKey, setSelectedSearchHistoryKey] = useState("");
   const [autoWebsitePrecheck, setAutoWebsitePrecheck] = useLocalStorageState("webview.adminLeads.autoWebsitePrecheck", "1");
   const [websitePrecheckLimit, setWebsitePrecheckLimit] = useLocalStorageState("webview.adminLeads.websitePrecheckLimit", "10");
   const [aiProvider, setAiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
@@ -214,6 +217,15 @@ export default function AdminLeads() {
       .then(r => r.ok ? r.json() : [])
       .then((data) => setGenerationJobs(Array.isArray(data) ? data : []))
       .catch(e => console.error(e));
+  };
+
+  const fetchSearchHistory = () => {
+    setLoadingSearchHistory(true);
+    fetch("/api/places/history?limit=30")
+      .then(r => r.ok ? r.json() : [])
+      .then((data) => setSearchHistory(Array.isArray(data) ? data : []))
+      .catch(e => console.error(e))
+      .finally(() => setLoadingSearchHistory(false));
   };
 
   const selectedPrice = estimateCostUsd(activeProviderKey, activeModel);
@@ -580,6 +592,7 @@ export default function AdminLeads() {
     fetchLeads();
     fetchProspectDrafts();
     fetchGenerationJobs();
+    fetchSearchHistory();
     fetch("/api/settings")
       .then(r => r.ok ? r.json() : {})
       .then(data => {
@@ -638,7 +651,9 @@ export default function AdminLeads() {
       });
       setSearchResults(results);
       setSearchActive(true);
+      setSelectedSearchHistoryKey(data.queryKey || "");
       fetchProspectDrafts();
+      fetchSearchHistory();
       setPlaceDetails({});
       setGenerationMessages({});
       if (rawResults.length === 0) {
@@ -726,11 +741,29 @@ export default function AdminLeads() {
         throw new Error(data.error || `Cache trim failed with HTTP ${res.status}`);
       }
       setCacheTrimMessage("Cache pencarian lama/expired sudah dibersihkan.");
+      fetchSearchHistory();
     } catch (error) {
       console.error(error);
       setCacheTrimMessage(error instanceof Error ? error.message : "Gagal membersihkan cache.");
     } finally {
       setIsTrimmingCache(false);
+    }
+  };
+
+  const applySearchHistory = (historyItem: any) => {
+    const prospects = Array.isArray(historyItem?.prospects) ? historyItem.prospects : [];
+    setSearchQuery(historyItem?.query || "");
+    setSearchResults(prospects.map((item: any) => ({ ...item, searchQuery: historyItem?.query || item.searchQuery || "" })));
+    setSearchActive(true);
+    setSelectedSearchHistoryKey(historyItem?.queryKey || "");
+    setGenerationMessages({});
+    const hydratedDetails = prospects.reduce((acc: Record<string, any>, item: any) => {
+      const key = getPlaceKey(item);
+      if (key && item.detailsLoadedAt) acc[key] = item;
+      return acc;
+    }, {});
+    if (Object.keys(hydratedDetails).length > 0) {
+      setPlaceDetails(prev => ({ ...prev, ...hydratedDetails }));
     }
   };
 
@@ -1407,6 +1440,63 @@ export default function AdminLeads() {
             {isTrimmingCache ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
             Trim cache 30d
           </button>
+        </div>
+        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                <History size={16} />
+                Search history
+                <HelpTooltip text="Each search term keeps its cached result list, while every business card is hydrated from the current Google place_id prospect record. This lets the same business keep one shared progress history across searches." />
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchSearchHistory}
+              disabled={loadingSearchHistory}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {loadingSearchHistory ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+              Refresh history
+            </button>
+          </div>
+          {searchHistory.length > 0 ? (
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {searchHistory.map((item) => {
+                const summary = item.summary || {};
+                const active = selectedSearchHistoryKey === item.queryKey;
+                return (
+                  <button
+                    key={item.queryKey || item.query}
+                    type="button"
+                    onClick={() => applySearchHistory(item)}
+                    className={`min-w-[260px] rounded-xl border p-3 text-left transition ${
+                      active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-slate-50 hover:bg-white"
+                    }`}
+                    title="Load this cached search term and show current progress per Google Business listing."
+                  >
+                    <span className="block truncate text-sm font-semibold text-slate-950">{item.query}</span>
+                    <span className="mt-1 block text-xs text-slate-500">
+                      {summary.total || item.resultCount || 0} results
+                      {item.updatedAt ? ` · ${new Date(item.updatedAt).toLocaleDateString()}` : ""}
+                    </span>
+                    <span className="mt-2 flex flex-wrap gap-1.5">
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">{summary.noWebsite || 0} no site</span>
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">{summary.detailsLoaded || 0} gathered</span>
+                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">{summary.generated || 0} generated</span>
+                      {(summary.errors || 0) > 0 && (
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800">{summary.errors} error</span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+              Search history will appear after Google Places searches are cached.
+            </div>
+          )}
         </div>
         <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
           <label className="text-sm">

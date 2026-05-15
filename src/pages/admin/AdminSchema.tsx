@@ -5,6 +5,9 @@ export default function AdminSchema() {
   const [repairing, setRepairing] = useState(false);
   const [repairMessage, setRepairMessage] = useState("");
   const [repairData, setRepairData] = useState<any>(null);
+  const [migratingR2, setMigratingR2] = useState(false);
+  const [migrationMessage, setMigrationMessage] = useState("");
+  const [migrationData, setMigrationData] = useState<any>(null);
 
   useEffect(() => {
     fetch('/api/schema')
@@ -52,6 +55,35 @@ export default function AdminSchema() {
     }
   };
 
+  const handleMigrateSitesToR2 = async () => {
+    setMigratingR2(true);
+    setMigrationMessage("");
+    setMigrationData(null);
+    try {
+      const response = await fetch("/api/sites/migrate-r2", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 25 }),
+      });
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`Migration response bukan JSON: ${text.slice(0, 160)}`);
+      }
+      if (!response.ok && response.status !== 207) {
+        throw new Error(data.error || `Migration failed with HTTP ${response.status}`);
+      }
+      setMigrationData(data);
+      setMigrationMessage(`R2 migration checked ${data.checked || 0} site rows. Migrated ${data.migratedCount || 0}, skipped ${data.skippedCount || 0}, failed ${data.failedCount || 0}.`);
+    } catch (error) {
+      setMigrationMessage(error instanceof Error ? error.message : "R2 migration failed.");
+    } finally {
+      setMigratingR2(false);
+    }
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto font-sans">
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -61,14 +93,25 @@ export default function AdminSchema() {
             This is the baseline schema used by the AI to generate content for prospects. The <code className="bg-gray-100 text-gray-800 px-1 rounded">pages</code> array supports dynamically adding sections like <code className="text-indigo-600 bg-indigo-50 px-1 rounded">hero</code>, <code className="text-indigo-600 bg-indigo-50 px-1 rounded">textImageBlock</code>, <code className="text-indigo-600 bg-indigo-50 px-1 rounded">teamGrid</code>, <code className="text-indigo-600 bg-indigo-50 px-1 rounded">gridCards</code>, <code className="text-indigo-600 bg-indigo-50 px-1 rounded">imageGallery</code>, and <code className="text-indigo-600 bg-indigo-50 px-1 rounded">contactForm</code>.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleRepairDb}
-          disabled={repairing}
-          className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-        >
-          {repairing ? "Repairing..." : "Repair DB now"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleRepairDb}
+            disabled={repairing}
+            className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            {repairing ? "Repairing..." : "Repair DB now"}
+          </button>
+          <button
+            type="button"
+            onClick={handleMigrateSitesToR2}
+            disabled={migratingR2}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            title="Move old full JSON site rows from D1 into R2 and leave only compact manifests in D1."
+          >
+            {migratingR2 ? "Migrating..." : "Migrate old site JSON to R2"}
+          </button>
+        </div>
       </div>
 
       {repairMessage && (
@@ -81,6 +124,28 @@ export default function AdminSchema() {
           {repairData?.tables && (
             <p className="mt-1 text-xs opacity-80">
               Tables: {Object.entries(repairData.tables).map(([table, columns]: any) => `${table} (${columns.length})`).join(", ")}
+            </p>
+          )}
+        </div>
+      )}
+
+      {migrationMessage && (
+        <div className={`mb-6 rounded-xl border px-4 py-3 text-sm ${
+          migrationData?.failedCount > 0
+            ? "border-amber-200 bg-amber-50 text-amber-900"
+            : migrationData
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-800"
+        }`}>
+          <p className="font-semibold">{migrationMessage}</p>
+          {migrationData?.migrated?.length > 0 && (
+            <p className="mt-1 text-xs opacity-80">
+              Migrated: {migrationData.migrated.map((item: any) => item.businessId).join(", ")}
+            </p>
+          )}
+          {migrationData?.failed?.length > 0 && (
+            <p className="mt-1 text-xs opacity-80">
+              Failed: {migrationData.failed.map((item: any) => `${item.businessId}: ${item.error}`).join("; ")}
             </p>
           )}
         </div>

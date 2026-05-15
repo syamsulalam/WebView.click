@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS json_sites (
     id TEXT PRIMARY KEY,
     business_id TEXT UNIQUE NOT NULL,
     json_content TEXT NOT NULL,
+    r2_json_key TEXT,
+    r2_json_url TEXT,
+    json_summary TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
