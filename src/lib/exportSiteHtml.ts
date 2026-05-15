@@ -246,6 +246,199 @@ function ownerInlineScript() {
 </script>`;
 }
 
+function ownerSetupGuide(siteData: any, businessId: string) {
+  const businessName = String(siteData?.meta?.businessName || siteData?.businessProfile?.name || "your business");
+  const filename = `${sanitizeFilePart(businessId, "website")}-website.zip`;
+  const downloadPageUrl = typeof window !== "undefined" ? window.location.href : "";
+  return `WEBSITE SETUP GUIDE FOR ${businessName.toUpperCase()}
+
+This zip contains a static website export for ${businessName}.
+
+Original preview/download page:
+${downloadPageUrl || "Not available in this export environment."}
+
+EASIER OPTION: DONE-FOR-YOU SETUP
+
+If you do not want to buy a domain, buy hosting, configure DNS, upload files, test SSL, and maintain the website yourself, we can handle the setup for you.
+
+Our setup service is free. You only pay the required third-party costs:
+
+- Domain: $17 / year
+- Hosting: $15 / month x 12 months = $180 / year
+- Total: $197 / year
+
+That includes domain purchase, hosting purchase, DNS setup, file upload, SSL check, and initial launch. If you prefer to manage everything yourself, follow the technical guide below.
+
+WHAT IS INSIDE THIS ZIP
+
+- index.html: the website page
+- img/: website images used by the page
+- SETUP-GUIDE.txt: this guide
+
+Keep index.html and the img folder together. If you move index.html without the img folder, images may break.
+
+TECHNICAL SELF-HOSTING GUIDE
+
+1. Buy a domain
+
+Buy a domain from a registrar such as Cloudflare Registrar, Namecheap, GoDaddy, Porkbun, Dynadot, or Google/Squarespace Domains.
+
+Examples:
+- yourbusiness.com
+- yourbusiness.net
+- yourbusiness.co
+
+After buying the domain, keep access to the registrar account. You will need it for DNS or nameserver changes.
+
+2. Buy hosting
+
+You need static website hosting or normal shared hosting that can serve plain HTML files.
+
+Possible hosting types:
+- Static hosting: Cloudflare Pages, Netlify, Vercel, GitHub Pages
+- Shared hosting: cPanel hosting, Hostinger, Bluehost, SiteGround, Namecheap hosting
+- VPS/server hosting: only use this if you understand server maintenance
+
+For a simple static HTML website, static hosting is usually enough.
+
+3. Upload the website files
+
+Upload index.html and the full img folder to the public web root of your hosting.
+
+Common public web root folders:
+- public_html
+- www
+- htdocs
+- /var/www/html
+
+The final structure should look like this:
+
+public_html/
+  index.html
+  img/
+    image-files-here.jpg
+
+Do not upload only the index.html file. The img folder must stay beside it.
+
+4. Connect the domain to hosting
+
+There are two common methods.
+
+METHOD A: Change nameservers
+
+Your hosting provider may give you nameservers like:
+
+- ns1.examplehost.com
+- ns2.examplehost.com
+
+Go to your domain registrar, find Nameservers, choose Custom Nameservers, and replace the current nameservers with the hosting provider nameservers.
+
+DNS propagation can take a few minutes to 48 hours.
+
+METHOD B: Keep registrar DNS and add records
+
+Your hosting provider may give you an IP address or CNAME target.
+
+Common DNS records:
+
+- A record:
+  Name: @
+  Value: hosting server IP address
+
+- CNAME record:
+  Name: www
+  Value: your root domain or hosting target
+
+If your hosting provider gives a special target such as cname.hostingprovider.com, follow their exact value.
+
+5. Enable SSL / HTTPS
+
+After DNS points to hosting, enable SSL in the hosting dashboard.
+
+Look for:
+- SSL
+- HTTPS
+- TLS
+- Free Let's Encrypt certificate
+- Cloudflare SSL/TLS
+
+Your website should load as:
+
+https://yourdomain.com
+
+If it only loads as http://, visitors may see browser warnings.
+
+6. Test the website
+
+Open your domain in a browser and check:
+
+- The homepage loads
+- Images load
+- Navigation tabs work
+- Phone links work
+- Email/contact links work
+- Mobile layout works
+
+Also test:
+
+https://yourdomain.com
+https://www.yourdomain.com
+
+7. Maintain the website
+
+This is a static export. Future edits require editing index.html and uploading it again.
+
+Maintenance checklist:
+- Renew domain every year
+- Renew hosting every month/year
+- Keep billing card active
+- Keep registrar and hosting login safe
+- Check SSL renewal
+- Re-upload files after content changes
+- Keep business phone, address, hours, and service text current
+
+If any of these steps feel too technical, use our done-for-you setup. The setup work is free; you only pay the third-party domain and hosting cost listed above.
+
+Export file: ${filename}
+`;
+}
+
+function ownerReadmeFirst(siteData: any) {
+  const businessName = String(siteData?.meta?.businessName || siteData?.businessProfile?.name || "your business");
+  const downloadPageUrl = typeof window !== "undefined" ? window.location.href : "";
+  return `README FIRST - WEBSITE SETUP FOR ${businessName.toUpperCase()}
+
+Your website files are included in this zip.
+
+Original preview/download page:
+${downloadPageUrl || "Not available in this export environment."}
+
+If you want to handle everything yourself, open SETUP-GUIDE.txt and follow the technical steps for buying a domain, buying hosting, connecting DNS, uploading files, enabling SSL, and maintaining the website.
+
+If you do not want to deal with the technical setup, we can handle it for you.
+
+DONE-FOR-YOU OPTION
+
+Our setup service is free. You only pay the required third-party costs:
+
+- Domain: $17 / year
+- Hosting: $15 / month x 12 months = $180 / year
+- Total: $197 / year
+
+We handle:
+
+- Domain purchase
+- Hosting purchase
+- DNS setup
+- Website upload
+- SSL / HTTPS check
+- Initial launch
+
+For self-setup, start with SETUP-GUIDE.txt.
+For done-for-you setup, use the setup option from the website preview page where you downloaded this zip.
+`;
+}
+
 export async function downloadOwnerSiteZip(siteData: any, businessId = "website") {
   const clone = cleanHtmlClone();
   const zip = new JSZip();
@@ -279,6 +472,8 @@ ${ownerInlineScript()}
 </html>`;
 
   zip.file("index.html", html);
+  zip.file("README-FIRST.txt", ownerReadmeFirst(siteData));
+  zip.file("SETUP-GUIDE.txt", ownerSetupGuide(siteData, businessId));
   const blob = await zip.generateAsync({ type: "blob" });
   saveAs(blob, `${businessId}-website.zip`);
 }

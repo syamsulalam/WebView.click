@@ -1,6 +1,6 @@
 # WebView.click Codebase Reference
 
-Terakhir diperbarui: 15 Mei 2026.
+Terakhir diperbarui: 16 Mei 2026.
 
 Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
 
@@ -77,6 +77,16 @@ Risiko debug:
 - Jika teks tidak ikut download, cek apakah field tersebut sudah dibungkus `EditableText` di `SiteRenderer`.
 - Jika key berubah karena page/section ID berubah, localStorage edit lama tidak akan terpakai.
 
+### `src/components/HelpTooltip.tsx`
+
+Fungsi:
+- Shared hover tooltip kecil untuk UI admin/visitor.
+- Menghindari copy penjelasan panjang langsung di halaman.
+
+Logic penting:
+- Default width `w-72`, bisa dioverride via `widthClass`.
+- Menerima `text` string atau `children` untuk konten custom.
+
 ### `src/components/AdminLayout.tsx`
 
 Fungsi:
@@ -87,6 +97,7 @@ Fungsi:
 Logic penting:
 - `NavContent` menampilkan link Dashboard, CRM Leads, JSON Schema Info, dan Settings.
 - `NavContent` juga menampilkan Generated Sites untuk melihat daftar JSON website yang sudah berhasil dibuat.
+- Sidebar menampilkan badge kecil `DB` setelah `/admin/schema` berhasil menjalankan `Repair DB now`; timestamp disimpan di localStorage key `webview.admin.lastDbRepairAt`.
 - `ClerkSecureLayout` hanya mengizinkan user dengan `publicMetadata.role === "admin"`.
 - Jika role belum admin, halaman menampilkan instruksi update metadata Clerk.
 
@@ -181,6 +192,9 @@ Logic penting:
 - Search dapat mengaktifkan `websitePrecheck=1`, yaitu Place Details minimal untuk hasil teratas agar status website diketahui sebelum admin melakukan gather data penuh. Ini memakai kuota Details, tetapi mencegah buang waktu/generate untuk bisnis yang sudah punya website.
 - Filter `No website first` berarti `website_check_status=no_website`, bukan sekadar kolom website kosong. Prospek yang belum dicek masuk kategori `Website unknown`.
 - List prospek otomatis diurutkan dengan conversion score: no website verified, rating 4.5+, review count 10-100, phone exists, US market, belum generated, dan details gathered menaikkan skor; bisnis yang sudah punya website diberi penalti besar.
+- Badge `Score` bisa diklik untuk membuka popover breakdown poin per faktor, berguna untuk tuning formula scoring.
+- Bobot scoring default berasal dari `src/lib/prospectScoring.ts`, lalu bisa dioverride dari `/admin/settings`.
+- Header list prospek menampilkan badge preset scoring aktif agar admin tahu ranking visible list sedang memakai preset apa.
 - Nama bisnis di list link ke Google Business/Maps listing. Jika exact `url` belum tersedia, fallback URL memakai `query_place_id` agar cross-check tetap menuju listing spesifik sebaik mungkin.
 - Search result diberi `searchQuery` agar generator tidak memakai tipe Places generik seperti `establishment` sebagai niche ketika Google tidak memberi kategori spesifik.
 - Untuk situs gratis, foto Google Places tetap hotlink/proxy runtime dan tidak di-upload ke R2.
@@ -199,6 +213,9 @@ Logic penting:
 - Search default membaca cache D1 `places_search_cache`; tombol `Refresh` memaksa request baru ke Google Places.
 - Setiap result Google Places di-upsert ke `places_prospects` sebagai prospect draft agar pencarian lama tidak hilang.
 - Filter prospect tersimpan memakai status, website/no website, minimum rating, minimum review count, city, state, dan niche. Default workflow memprioritaskan bisnis tanpa website.
+- Filter prospect juga punya minimum conversion score (`Any`, `50+`, `70+`, `85+`) untuk menyembunyikan prospek kualitas rendah dari list.
+- Default minimum conversion score dan bobot scoring dibaca dari `/admin/settings` (`SCORING_MIN_SCORE_DEFAULT`, `SCORING_WEIGHTS_JSON`) dengan fallback ke `src/lib/prospectScoring.ts`; `SCORING_PRESET` disimpan untuk UI Settings.
+- Penjelasan panjang di toolbar/filter CRM dipindahkan ke tooltip hover agar UI admin tetap ringkas.
 - Hasil pencarian tidak dikosongkan setelah generate, termasuk saat `/api/sites/generate` gagal.
 - Generate status ditampilkan per bisnis, dengan link preview jika sukses.
 - Tombol `Load more photos/details` memanggil Place Details agar admin bisa memilih lebih banyak foto sebelum generate dan menyimpan `details_json`.
@@ -206,6 +223,7 @@ Logic penting:
 - Tombol `Trim cache 30d` memanggil `POST /api/places/cache/trim` untuk membersihkan cache Places lama/expired.
 - Tombol `Skip` mengubah status prospect ke `skipped`; status lain bisa diubah dari drawer.
 - Checkbox prospect + `Generate selected` menjalankan batch generate queue secara sequential dari browser agar tidak menembak semua AI request paralel.
+- Tombol `Select score 70+` memilih hanya prospek visible dengan conversion score minimal 70 untuk batch generate.
 - Tombol `Jobs` membaca `GET /api/generation-jobs` dan menampilkan 100 job terakhir.
 - Foto/palette yang dipilih admin disimpan via `PUT /api/prospects/:placeId/selection`, lalu dihydrate kembali saat prospect draft dibuka.
 - `PUT /api/prospects/:placeId/selection` juga dapat menyimpan `paletteOptions` tanpa menimpa selected photo/palette.
@@ -257,9 +275,13 @@ Fungsi:
 
 API yang dipakai:
 - `GET /api/schema`
+- `POST /api/schema/repair`
 
 Logic penting:
 - Jika API error, halaman menampilkan pesan error sebagai text di area schema.
+- Tombol `Repair DB now` memanggil `/api/schema/repair`, menjalankan self-heal tabel/kolom D1, lalu menampilkan ringkasan jumlah kolom per tabel.
+- Gunakan tombol ini setelah deploy ketika halaman admin berat mulai error karena kolom D1 production belum termigrasi.
+- Setelah repair sukses, halaman menyimpan timestamp ke localStorage agar badge `DB repaired ... ago` muncul di admin sidebar.
 
 ### `src/pages/admin/AdminSettings.tsx`
 
@@ -279,6 +301,8 @@ Logic penting:
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - KIE.ai ditampilkan sebagai estimasi diskon karena pricing live berada di dashboard/pricing KIE.
 - Payment settings sekarang mencakup Lemon Squeezy API key, store ID, variant ID, dan nomor WhatsApp admin untuk mock/checkout notifications.
+- Section `Prospect Scoring` menyimpan preset, default threshold, dan bobot scoring ke D1 settings agar prioritas prospek bisa ditune dari UI tanpa edit kode.
+- Bobot scoring memakai angka positif/negatif. Reset weights mengembalikan default dari `src/lib/prospectScoring.ts`.
 
 Risiko debug:
 - Jika save gagal, form tetap menyimpan state lokal dan banner merah meminta retry.
@@ -364,6 +388,18 @@ Logic penting:
 - Membaca nilai awal dari localStorage saat component mount.
 - Menulis perubahan state ke localStorage.
 - Error storage diabaikan agar UI tetap jalan di private/restricted browsing.
+
+### `src/lib/prospectScoring.ts`
+
+Fungsi:
+- Registry default scoring prospek untuk `/admin/leads`.
+- Sumber label/hint field scoring untuk `/admin/settings`.
+
+Logic penting:
+- `defaultProspectScoreWeights` berisi bobot default seperti no website verified, rating, review range, phone, US market, generated status, dan details gathered.
+- `prospectScoringPresets` menyediakan preset `Balanced`, `No Website Hunter`, `US High Value`, dan `Ready to Generate`; memilih preset di Settings mengisi threshold dan weights sekaligus.
+- `parseProspectScoreWeights()` membaca override JSON dari D1 settings dan fallback per-field jika ada nilai rusak/hilang.
+- `scoreThresholdOptions` dipakai bersama oleh Settings dan Leads agar opsi filter tetap konsisten.
 
 ### `src/lib/siteStylePresets.ts`
 
@@ -481,6 +517,8 @@ Logic Owner HTML Export:
 - Export menghapus `<script>` internal, `.hide-in-export`, dan `[data-export-remove="true"]`.
 - Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
 - Export mengambil gambar yang sedang tampil di DOM, menyimpannya ke folder `/img` di dalam zip, lalu mengubah `<img src>` menjadi path relatif seperti `img/{businessId}-hero.jpg`. Ini termasuk foto Google Business Profile yang sedang diproxy via WebView.click saat tombol download diklik, sehingga HTML owner tidak perlu hotlink ke Google atau Function WebView.click untuk gambar.
+- Export menambahkan `README-FIRST.txt` sebagai ringkasan done-for-you `$197/year`, lalu `SETUP-GUIDE.txt` sebagai panduan teknis self-hosting domain/hosting/DNS/upload/SSL/maintenance.
+- Kedua file `.txt` tersebut menyertakan URL preview/download asli (`window.location.href`) supaya owner bisa kembali ke halaman tempat zip dibuat.
 - Export menambahkan Tailwind CSS/CDN hotlink, stylesheet production absolute, style tags renderer, favicon dari logo bisnis/fallback SVG, dan mengubah URL relatif non-gambar/link menjadi absolute URL.
 - Export menambahkan JS inline kecil untuk mengaktifkan tabbed navigation pada elemen `data-wv-tab` dan `data-wv-page` karena React handler tidak ikut dalam HTML statis.
 - Export JS juga mengaktifkan hover-persistent submenu dan contact form `mailto:` supaya HTML owner tetap interaktif tanpa React.

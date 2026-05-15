@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, Save } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, RotateCcw, Save, SlidersHorizontal } from "lucide-react";
 import { aiModelPrices, defaultInputTokens, defaultOutputTokens, estimateCostUsd, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
+import HelpTooltip from "../../components/HelpTooltip";
+import {
+  defaultProspectScoreWeights,
+  parseProspectScoreWeights,
+  prospectScoringPresets,
+  prospectScoreWeightFields,
+  scoreThresholdOptions,
+  serializeProspectScoreWeights,
+  type ProspectScoreWeightKey,
+} from "../../lib/prospectScoring";
 
 type ProviderKey = "OPENROUTER" | "OPENAI" | "GEMINI" | "KIE" | "OPENCODE";
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -20,6 +30,9 @@ const initialSettings: Record<string, string> = {
   LEMON_SQUEEZY_STORE_ID: "",
   LEMON_SQUEEZY_VARIANT_ID: "",
   ADMIN_WHATSAPP_NUMBER: "081233838173",
+  SCORING_PRESET: "balanced",
+  SCORING_MIN_SCORE_DEFAULT: "0",
+  SCORING_WEIGHTS_JSON: serializeProspectScoreWeights(defaultProspectScoreWeights),
 };
 
 const providerOptions: Array<{
@@ -186,6 +199,44 @@ export default function AdminSettings() {
     setDirty(true);
   };
 
+  const scoringWeights = useMemo(
+    () => parseProspectScoreWeights(settings.SCORING_WEIGHTS_JSON),
+    [settings.SCORING_WEIGHTS_JSON],
+  );
+
+  const updateScoringWeight = (key: ProspectScoreWeightKey, value: string) => {
+    const numeric = Number(value);
+    const nextWeights = {
+      ...scoringWeights,
+      [key]: Number.isFinite(numeric) ? numeric : 0,
+    };
+    setSettings((prev) => ({
+      ...prev,
+      SCORING_PRESET: "custom",
+      SCORING_WEIGHTS_JSON: serializeProspectScoreWeights(nextWeights),
+    }));
+    setDirty(true);
+  };
+
+  const applyScoringPreset = (presetKey: string) => {
+    const preset = prospectScoringPresets.find((item) => item.key === presetKey);
+    if (!preset) {
+      handleChange("SCORING_PRESET", presetKey);
+      return;
+    }
+    setSettings((prev) => ({
+      ...prev,
+      SCORING_PRESET: preset.key,
+      SCORING_MIN_SCORE_DEFAULT: preset.defaultThreshold,
+      SCORING_WEIGHTS_JSON: serializeProspectScoreWeights(preset.weights),
+    }));
+    setDirty(true);
+  };
+
+  const resetScoringWeights = () => {
+    applyScoringPreset("balanced");
+  };
+
   const handleManualSave = () => {
     void saveSettings(settings, false);
   };
@@ -349,6 +400,91 @@ export default function AdminSettings() {
               placeholder="Admin WhatsApp number"
               className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
             />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal size={19} className="text-indigo-600" />
+              <h2 className="text-lg font-semibold text-gray-900">Prospect Scoring</h2>
+              <HelpTooltip text="Setting ini dipakai oleh /admin/leads untuk mengurutkan dan menyaring prospek. Angka positif menaikkan prioritas, angka negatif menurunkan prioritas." />
+            </div>
+            <p className="mt-1 text-sm text-gray-500">Tune prioritas prospek tanpa edit kode.</p>
+          </div>
+          <button
+            type="button"
+            onClick={resetScoringWeights}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <RotateCcw size={16} />
+            Reset weights
+          </button>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-[260px_1fr]">
+          <div className="space-y-4">
+            <label className="text-sm">
+              <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
+                Preset
+                <HelpTooltip text="Preset mengisi threshold dan bobot scoring sekaligus. Mengubah weight manual akan menandai preset sebagai Custom." />
+              </span>
+              <select
+                value={settings.SCORING_PRESET || "balanced"}
+                onChange={(event) => applyScoringPreset(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+              >
+                {prospectScoringPresets.map((preset) => (
+                  <option key={preset.key} value={preset.key}>{preset.label}</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                {prospectScoringPresets.find((preset) => preset.key === settings.SCORING_PRESET)?.description || "Manual scoring weights."}
+              </p>
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
+                Default threshold
+                <HelpTooltip text="Nilai ini menjadi default filter Min score di /admin/leads setelah settings terbaca. Admin tetap bisa mengganti filter sementara di halaman leads." />
+              </span>
+              <select
+                value={settings.SCORING_MIN_SCORE_DEFAULT || "0"}
+                onChange={(event) => {
+                  setSettings((prev) => ({
+                    ...prev,
+                    SCORING_PRESET: "custom",
+                    SCORING_MIN_SCORE_DEFAULT: event.target.value,
+                  }));
+                  setDirty(true);
+                }}
+                className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+              >
+                {scoreThresholdOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {prospectScoreWeightFields.map((field) => (
+              <label key={field.key} className="text-sm">
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
+                  {field.label}
+                  <HelpTooltip text={field.hint} widthClass="w-64" />
+                </span>
+                <input
+                  type="number"
+                  value={scoringWeights[field.key]}
+                  onChange={(event) => updateScoringWeight(field.key, event.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                />
+              </label>
+            ))}
           </div>
         </div>
       </div>

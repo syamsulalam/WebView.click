@@ -5,6 +5,8 @@ import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { getStylePreset, inferStylePresetFromText, inferVisualStyleFromText, siteVisualStyles } from "../../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
+import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOptions } from "../../lib/prospectScoring";
+import HelpTooltip from "../../components/HelpTooltip";
 
 export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -15,10 +17,12 @@ export default function AdminLeads() {
   const [websiteFilter, setWebsiteFilter] = useLocalStorageState("webview.adminLeads.websiteFilter", "none");
   const [minRatingFilter, setMinRatingFilter] = useLocalStorageState("webview.adminLeads.minRatingFilter", "0");
   const [minReviewsFilter, setMinReviewsFilter] = useLocalStorageState("webview.adminLeads.minReviewsFilter", "0");
+  const [minScoreFilter, setMinScoreFilter] = useLocalStorageState("webview.adminLeads.minScoreFilter", "0");
   const [cityFilter, setCityFilter] = useLocalStorageState("webview.adminLeads.cityFilter", "");
   const [stateFilter, setStateFilter] = useLocalStorageState("webview.adminLeads.stateFilter", "");
   const [nicheFilter, setNicheFilter] = useLocalStorageState("webview.adminLeads.nicheFilter", "");
   const [selectedProspects, setSelectedProspects] = useState<Record<string, boolean>>({});
+  const [scorePopoverKey, setScorePopoverKey] = useState("");
   const [batchQueueRunning, setBatchQueueRunning] = useState(false);
   const [batchMessage, setBatchMessage] = useState("");
   const [generationJobs, setGenerationJobs] = useState<any[]>([]);
@@ -225,6 +229,9 @@ export default function AdminLeads() {
     !String(settings?.GOOGLE_PLACES_API_KEY || "").trim() ? "Google Places API Key" : "",
     !String(settings?.[settingsKey] || "").trim() ? `${activeProvider.label} Key` : "",
   ].filter(Boolean);
+  const scoreWeights = parseProspectScoreWeights(settings?.SCORING_WEIGHTS_JSON);
+  const activeScoringPreset = prospectScoringPresets.find((preset) => preset.key === settings?.SCORING_PRESET);
+  const activeScoringPresetLabel = activeScoringPreset?.label || (settings?.SCORING_PRESET === "custom" ? "Custom" : "Balanced");
 
   const getPhotoReference = (photo: any) => photo?.photo_reference || photo?.name || photo?.reference || "";
 
@@ -581,6 +588,14 @@ export default function AdminLeads() {
       })
       .catch(() => setLoadingSettings(false));
   }, []);
+
+  useEffect(() => {
+    if (loadingSettings) return;
+    const defaultThreshold = String(settings?.SCORING_MIN_SCORE_DEFAULT || "");
+    if (scoreThresholdOptions.some((option) => option.value === defaultThreshold)) {
+      setMinScoreFilter(defaultThreshold);
+    }
+  }, [loadingSettings, settings?.SCORING_MIN_SCORE_DEFAULT]);
 
   useEffect(() => {
     fetchProspectDrafts();
@@ -1240,58 +1255,55 @@ export default function AdminLeads() {
     const phone = placePhone(place);
     let score = 0;
     const reasons: string[] = [];
+    const breakdown: { label: string; points: number; detail: string }[] = [];
+    const addScore = (label: string, points: number, detail: string) => {
+      score += points;
+      reasons.push(label);
+      breakdown.push({ label, points, detail });
+    };
 
     if (place.websiteCheckStatus === "no_website" && !hasWebsite(place)) {
-      score += 45;
-      reasons.push("no website verified");
+      addScore("no website verified", scoreWeights.noWebsiteVerified, "Place Details did not return a website.");
     } else if (hasWebsite(place)) {
-      score -= 80;
-      reasons.push("has website");
+      addScore("has website", scoreWeights.hasWebsitePenalty, "Existing website lowers outreach priority.");
     } else {
-      score -= 8;
-      reasons.push("website unknown");
+      addScore("website unknown", scoreWeights.websiteUnknownPenalty, "Run website pre-check or gather data to confirm.");
     }
 
     if (rating >= 4.5) {
-      score += 18;
-      reasons.push("4.5+ rating");
+      addScore("4.5+ rating", scoreWeights.rating45Plus, `Rating: ${rating.toFixed(1)}.`);
     } else if (rating >= 4) {
-      score += 10;
-      reasons.push("4.0+ rating");
+      addScore("4.0+ rating", scoreWeights.rating40Plus, `Rating: ${rating.toFixed(1)}.`);
     }
 
     if (reviews >= 10 && reviews <= 100) {
-      score += 18;
-      reasons.push("10-100 reviews");
+      addScore("10-100 reviews", scoreWeights.reviews10To100, `${reviews} reviews is enough proof without looking too enterprise.`);
     } else if (reviews > 100 && reviews <= 300) {
-      score += 8;
-      reasons.push("established reviews");
+      addScore("established reviews", scoreWeights.reviews101To300, `${reviews} reviews.`);
     } else if (reviews > 0 && reviews < 10) {
-      score += 5;
-      reasons.push("some reviews");
+      addScore("some reviews", scoreWeights.reviews1To9, `${reviews} reviews.`);
     }
 
     if (phone) {
-      score += 14;
-      reasons.push("phone exists");
+      addScore("phone exists", scoreWeights.phoneExists, phone);
     }
     if (isUsMarket(place)) {
-      score += 18;
-      reasons.push("US market");
+      addScore("US market", scoreWeights.usMarket, "US leads fit the high-value target market.");
     }
     if (!place.generatedBusinessId) {
-      score += 8;
-      reasons.push("not generated yet");
+      addScore("not generated yet", scoreWeights.notGeneratedYet, "No generated site linked yet.");
     }
     if (hasGatheredDetails(place)) {
-      score += 5;
-      reasons.push("details gathered");
+      addScore("details gathered", scoreWeights.detailsGathered, "Ready for richer generation.");
     }
 
-    return { score: Math.max(0, Math.round(score)), reasons };
+    return { score: Math.max(0, Math.round(score)), rawScore: Math.round(score), reasons, breakdown };
   };
   const visibleProspectsRaw = searchActive ? searchResults : prospectDrafts;
-  const visibleProspects = [...visibleProspectsRaw].sort((a, b) => prospectScore(b).score - prospectScore(a).score);
+  const minScore = Number(minScoreFilter || 0);
+  const visibleProspects = [...visibleProspectsRaw]
+    .filter((place) => prospectScore(place).score >= minScore)
+    .sort((a, b) => prospectScore(b).score - prospectScore(a).score);
   const selectedVisibleProspects = visibleProspects.filter((place) => selectedProspects[getPlaceKey(place)]);
 
   const toggleProspectSelection = (place: any, checked: boolean) => {
@@ -1366,7 +1378,10 @@ export default function AdminLeads() {
         </div>
         <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div>
-            <p className="font-semibold text-slate-900">Perkiraan biaya generate JSON</p>
+            <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
+              Est. generate cost
+              <HelpTooltip text="Rough cost estimate for one JSON generation using the selected AI provider/model. Actual billing can vary by provider token accounting." />
+            </p>
             <p>
               {selectedPrice.total !== null
                 ? `${formatUsd(estimateGenerateCost().total)} per generate awal (${activeModel})`
@@ -1377,8 +1392,10 @@ export default function AdminLeads() {
         </div>
         <div className="mb-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="font-semibold text-slate-900">Cache pencarian Google Places</p>
-            <p>Search membaca cache DB dulu untuk mengurangi panggilan API. Pakai Refresh jika butuh data terbaru.</p>
+            <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
+              Places cache
+              <HelpTooltip text="Search reads cached Google Places results first to reduce API calls. Use Refresh to force a new Google request." />
+            </p>
             {cacheTrimMessage && <p className="mt-1 text-xs text-indigo-700">{cacheTrimMessage}</p>}
           </div>
           <button
@@ -1409,7 +1426,10 @@ export default function AdminLeads() {
             </select>
           </label>
           <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Website</span>
+            <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+              Website
+              <HelpTooltip text="No website verified means Place Details was checked and did not return a website. Unknown means the listing has not been checked yet." />
+            </span>
             <select
               value={websiteFilter}
               onChange={(event) => setWebsiteFilter(event.target.value)}
@@ -1446,7 +1466,10 @@ export default function AdminLeads() {
             Reload drafts
           </button>
           <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Search website check</span>
+            <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+              Website check
+              <HelpTooltip text="Auto pre-check calls lightweight Place Details for top search results so existing-website businesses can be deprioritized before gather/generate." />
+            </span>
             <select
               value={autoWebsitePrecheck}
               onChange={(event) => setAutoWebsitePrecheck(event.target.value)}
@@ -1457,7 +1480,10 @@ export default function AdminLeads() {
             </select>
           </label>
           <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Pre-check limit</span>
+            <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+              Check limit
+              <HelpTooltip text="Controls how many top Google Places results get website pre-check calls during search. Higher is more accurate but uses more Places Details requests." />
+            </span>
             <select
               value={websitePrecheckLimit}
               onChange={(event) => setWebsitePrecheckLimit(event.target.value)}
@@ -1480,6 +1506,21 @@ export default function AdminLeads() {
               <option value="25">25+</option>
               <option value="50">50+</option>
               <option value="100">100+</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+              Min score
+              <HelpTooltip text="Conversion score prioritizes verified no-website businesses with strong rating, useful review count, phone, US market, and no generated site yet." />
+            </span>
+            <select
+              value={minScoreFilter}
+              onChange={(event) => setMinScoreFilter(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {scoreThresholdOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
           <label className="text-sm">
@@ -1556,7 +1597,22 @@ export default function AdminLeads() {
             <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="font-semibold text-slate-900">{searchResults.length > 0 ? "Current search results" : "Saved prospect drafts"}</p>
-                <p>{visibleProspects.length} prospects ranked by conversion score. {selectedVisibleProspects.length} selected for batch.</p>
+                <p className="inline-flex items-center gap-1.5">
+                  {visibleProspects.length} visible. {selectedVisibleProspects.length} selected.
+                  <HelpTooltip text="Visible prospects are filtered by the current filters and sorted by conversion score from highest to lowest." />
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-800">
+                    Scoring preset: {activeScoringPresetLabel}
+                    <HelpTooltip
+                      widthClass="w-72"
+                      text={`Applied to the current visible list. Threshold: ${scoreThresholdOptions.find((option) => option.value === minScoreFilter)?.label || `${minScore}+`}. Tune this in /admin/settings.`}
+                    />
+                  </span>
+                  {activeScoringPreset?.description && (
+                    <span className="text-xs text-slate-500">{activeScoringPreset.description}</span>
+                  )}
+                </div>
                 {batchMessage && <p className="mt-1 text-xs text-indigo-700">{batchMessage}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1575,6 +1631,22 @@ export default function AdminLeads() {
                 >
                   <ListChecks size={14} />
                   {selectedVisibleProspects.length === visibleProspects.length ? "Clear selected" : "Select visible"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = { ...selectedProspects };
+                    visibleProspects.forEach((place) => {
+                      const key = getPlaceKey(place);
+                      if (key) next[key] = prospectScore(place).score >= 70;
+                    });
+                    setSelectedProspects(next);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                  title="Select visible prospects with conversion score 70 or higher."
+                >
+                  <ListChecks size={14} />
+                  Select score 70+
                 </button>
                 <button
                   type="button"
@@ -1651,8 +1723,36 @@ export default function AdminLeads() {
                     <span title={websiteStatus.title} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${websiteStatus.className}`}>
                       {websiteStatus.label}
                     </span>
-                    <span title={score.reasons.join(", ")} className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
-                      Score {score.score}
+                    <span className="relative inline-flex">
+                      <button
+                        type="button"
+                        onClick={() => setScorePopoverKey(scorePopoverKey === placeKey ? "" : placeKey)}
+                        className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800 hover:bg-indigo-200"
+                        title="Click for score breakdown"
+                      >
+                        Score {score.score}
+                      </button>
+                      {scorePopoverKey === placeKey && (
+                        <span className="absolute left-0 top-full z-[180] mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 text-left text-xs text-slate-700 shadow-2xl">
+                          <span className="mb-2 flex items-center justify-between">
+                            <span className="font-semibold text-slate-950">Score breakdown</span>
+                            <button type="button" onClick={() => setScorePopoverKey("")} className="text-slate-400 hover:text-slate-700">x</button>
+                          </span>
+                          <span className="block space-y-1.5">
+                            {score.breakdown.map((item) => (
+                              <span key={item.label} className="flex items-start justify-between gap-3 border-b border-slate-100 pb-1.5 last:border-0 last:pb-0">
+                                <span>
+                                  <span className="block font-medium text-slate-900">{item.label}</span>
+                                  <span className="block text-slate-500">{item.detail}</span>
+                                </span>
+                                <span className={item.points >= 0 ? "font-semibold text-emerald-700" : "font-semibold text-red-700"}>
+                                  {item.points >= 0 ? "+" : ""}{item.points}
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        </span>
+                      )}
                     </span>
                     {displayPlace.prospectStatus && (
                       <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
@@ -1743,9 +1843,9 @@ export default function AdminLeads() {
                 {currentPhotos.length > 0 && (
                   <div className="mt-4 border-t border-gray-200 pt-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Pilih gambar logo/brand untuk palet warna</p>
-                    <p className="text-xs text-gray-500 mb-3">
-                      Foto gratis akan dipakai runtime via proxy Google Places, tidak di-upload ke R2. Caption attribution ikut disimpan di JSON.
-                      Urutan tetap best-effort karena Places API tidak memberi flag owner photo.
+                    <p className="mb-3 inline-flex items-center gap-1.5 text-xs text-gray-500">
+                      Google Places photo source
+                      <HelpTooltip text="Free previews use Google Places photos via proxy with attribution. They are not uploaded to R2. Photo order is best-effort because Places API does not provide a reliable owner-photo flag." />
                     </p>
                     <div className="flex gap-3 overflow-x-auto pb-1">
                       {currentPhotos.slice(0, 10).map((photo: any, photoIdx: number) => {

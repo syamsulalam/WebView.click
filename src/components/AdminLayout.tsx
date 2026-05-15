@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { Globe2, LayoutDashboard, Users, UserCircle, Webhook, Settings } from "lucide-react";
 import { SignIn, useUser, useClerk } from "@clerk/clerk-react";
@@ -17,6 +18,7 @@ export default function AdminLayout() {
 // Komponen Navbar yang sama
 function NavContent({ onSignOut }: { onSignOut: () => void }) {
   const location = useLocation();
+  const [lastRepairAt, setLastRepairAt] = useState("");
   const links = [
     { to: "/admin", icon: <LayoutDashboard size={24} />, label: "Dashboard" },
     { to: "/admin/leads", icon: <Users size={24} />, label: "CRM Leads" },
@@ -24,6 +26,32 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
     { to: "/admin/schema", icon: <Webhook size={24} />, label: "JSON Schema Info" },
     { to: "/admin/settings", icon: <Settings size={24} />, label: "Settings" } // Ditambahkan setting
   ];
+
+  useEffect(() => {
+    const readRepairAt = () => setLastRepairAt(window.localStorage.getItem("webview.admin.lastDbRepairAt") || "");
+    readRepairAt();
+    window.addEventListener("storage", readRepairAt);
+    window.addEventListener("focus", readRepairAt);
+    const interval = window.setInterval(readRepairAt, 3000);
+    return () => {
+      window.removeEventListener("storage", readRepairAt);
+      window.removeEventListener("focus", readRepairAt);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const repairLabel = (() => {
+    if (!lastRepairAt) return "";
+    const time = new Date(lastRepairAt);
+    if (Number.isNaN(time.getTime())) return "";
+    const diffMs = Date.now() - time.getTime();
+    const minutes = Math.max(0, Math.round(diffMs / 60000));
+    if (minutes < 1) return "DB repaired just now";
+    if (minutes < 60) return `DB repaired ${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `DB repaired ${hours}h ago`;
+    return `DB repaired ${time.toLocaleDateString()}`;
+  })();
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden w-full">
@@ -42,6 +70,19 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
             </span>
           </Link>
         ))}
+
+        {repairLabel && (
+          <Link
+            to="/admin/schema"
+            className="group relative mt-1 flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+            aria-label={repairLabel}
+          >
+            DB
+            <span className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-[9999] pointer-events-none">
+              {repairLabel}
+            </span>
+          </Link>
+        )}
         
         <button 
           onClick={onSignOut}

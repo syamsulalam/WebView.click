@@ -526,6 +526,22 @@ async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "generation_jobs", "updated_at", "DATETIME");
 }
 
+async function databaseRepairReport(db: D1Database) {
+  const startedAt = new Date().toISOString();
+  await setupTables(db);
+  const tables = ["leads", "subscriptions", "crm_activities", "json_sites", "system_settings", "places_search_cache", "places_prospects", "generation_jobs"];
+  const summary: Record<string, string[]> = {};
+  for (const table of tables) {
+    summary[table] = Array.from(await tableColumns(db, table)).sort();
+  }
+  return {
+    success: true,
+    repairedAt: new Date().toISOString(),
+    startedAt,
+    tables: summary,
+  };
+}
+
 async function getSetting(db: D1Database, env: Env, key: keyof Env & string): Promise<string | undefined> {
   const row = await db.prepare("SELECT value FROM system_settings WHERE key = ?").bind(key).first<SettingRow>();
   return row?.value || (typeof env[key] === "string" ? env[key] : undefined);
@@ -2448,6 +2464,10 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (request.method === "GET" && segments[0] === "schema") {
       return json(templateSchema);
+    }
+
+    if (request.method === "POST" && segments[0] === "schema" && segments[1] === "repair") {
+      return json(await databaseRepairReport(db));
     }
 
     if (request.method === "GET" && segments[0] === "activities") {
