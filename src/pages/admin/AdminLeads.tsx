@@ -3,7 +3,7 @@ import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, 
 import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
-import { getStylePreset, inferStylePresetFromText } from "../../lib/siteStylePresets";
+import { getStylePreset, inferStylePresetFromText, inferVisualStyleFromText, siteVisualStyles } from "../../lib/siteStylePresets";
 
 export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -683,6 +683,14 @@ export default function AdminLeads() {
     const locale = inferLocaleFromPlace(fullPlace);
     const stylePreset = inferStylePresetFromPlace(fullPlace);
     const stylePresetMeta = getStylePreset(stylePreset);
+    const visualStyle = inferVisualStyleFromText([
+      fullPlace.name,
+      fullPlace.formatted_address,
+      fullPlace.formattedAddress,
+      Array.isArray(fullPlace.types) ? fullPlace.types.join(" ") : "",
+      fullPlace.searchQuery,
+    ].filter(Boolean).join(" "));
+    const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
     const isEnglish = locale.language === "en";
     const googleReviews = Array.isArray(fullPlace.reviews) ? fullPlace.reviews : [];
     const offeringMode = inferProductServiceMode(fullPlace);
@@ -824,6 +832,13 @@ export default function AdminLeads() {
           mood: stylePresetMeta.mood,
           industries: stylePresetMeta.industries,
           recommendedColors: stylePresetMeta.recommendedColors,
+        },
+        visualStyle,
+        visualStyleConfig: {
+          label: visualStyleMeta.label,
+          description: visualStyleMeta.description,
+          allowedValues: siteVisualStyles.map((item) => item.id),
+          selectionRule: "Choose the visual structure that best matches the industry and desired feel.",
         },
         themeVariables: {
           colors: {

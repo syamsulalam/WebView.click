@@ -43,7 +43,7 @@ Logic penting:
 - Pergantian tab menjalankan scroll-to-top.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
-- Renderer membaca `design.stylePreset` untuk niche style modifier. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
+- Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
 - Gambar dirender sebagai `<img>` jika URL usable (`http`, `/`, atau `data:`); filename placeholder tetap ditampilkan sebagai fallback supaya preview tidak blank.
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
@@ -157,7 +157,7 @@ Logic penting:
 - JSON mock fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
 - Palette hasil ekstraksi digelapkan bila terlalu terang untuk teks putih; Function juga menormalisasi `primary` dan `accent` sebelum menyimpan JSON.
 - JSON mock fallback menentukan `meta.language` dari alamat/region Places: US default English, Indonesia default Indonesian.
-- JSON mock fallback menentukan `design.stylePreset` dan `design.stylePresetConfig` via `src/lib/siteStylePresets.ts`.
+- JSON mock fallback menentukan `design.stylePreset`, `design.stylePresetConfig`, `design.visualStyle`, dan `design.visualStyleConfig` via `src/lib/siteStylePresets.ts`.
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
 - Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
 - Prompt AI generator diminta memilih icon/inline `iconSvg` sesuai teks/intent CTA dan feature item; product/service detail page harus punya features section berikon.
@@ -193,7 +193,7 @@ Fungsi:
 - Memberi link preview/open ke `/:businessId` supaya hasil generate tidak hilang dari workflow admin.
 - Memberi link Google Maps/Google Business listing dari `sourceData.googleMapsUri` atau `businessProfile.contact.directionsUrl` untuk membandingkan hasil generate dengan listing asli.
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
-- Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini refresh Place Details lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true` agar tidak diam-diam menyimpan template kosong jika API key/model gagal.
+- Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini mengecek API key provider dari `/api/settings`, refresh Place Details, lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true` agar tidak diam-diam menyimpan template kosong jika API key/model gagal.
 - Tombol `Regen` memakai dropdown:
   - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan untuk membuat ulang JSON via AI yang lebih pintar.
   - `Re-gather Google data + resave` wajib punya `sourceData.placeId`, mengambil Place Details lagi, lalu mengirim `provider`/`model` kosong agar data Google Places, termasuk Maps URL exact, disimpan ulang tanpa memaksa AI call.
@@ -336,10 +336,12 @@ Fungsi:
 - Registry style preset niche untuk site builder.
 - Menyediakan metadata label, industri, mood, recommended colors, dan keyword matching.
 - Mengekspor CSS modifier yang diinjeksi oleh `SiteRenderer`.
+- Menyediakan `siteVisualStyles`, `normalizeVisualStyle()`, dan `inferVisualStyleFromText()` untuk shape language seperti `soft-rounded`, `boxy-editorial`, `industrial-diagonal`, `clean-minimal`, dan `bold-sport`.
 
 Logic penting:
 - `inferStylePresetFromText()` dipakai CRM generate untuk memilih preset dari nama bisnis, alamat, dan Places types.
 - `normalizeStylePreset()` memastikan nilai JSON yang tidak dikenal fallback ke `local-clean`.
+- `inferVisualStyleFromText()` memilih visual treatment dari niche; `industrial-diagonal` memberi boxy/diagonal image edge untuk contractor/auto/security.
 
 ### `src/lib/domainExtensions.ts`
 
@@ -390,7 +392,7 @@ Logic AI:
   - `kie/gpt-5-2` via `https://api.kie.ai/gpt-5-2/v1/chat/completions`
   - `kie/gemini-3.1-pro` via `https://api.kie.ai/gemini-3.1-pro/v1/chat/completions`
   - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
-- Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI tidak mengembalikan JSON. Ini dipakai oleh `/admin/sites` untuk prospect gathered yang belum punya fallback JSON site.
+- Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI key hilang, provider/model tidak valid, provider mengembalikan HTTP error, response kosong, atau JSON invalid. Ini dipakai oleh `/admin/sites` untuk prospect gathered yang belum punya fallback JSON site.
 
 Logic Google Places/logo:
 - `/api/places/search` memakai Google Places Text Search.
@@ -468,7 +470,7 @@ Fungsi:
 - Baseline struktur JSON website yang diberikan ke model AI.
 - Sample kini berisi schema baru untuk site builder: `sourceData`, `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, `conversion`, dan `seo`.
 - Sample juga berisi `productServiceStrategy`, `products`, `services`, submenu `navigation.headerMenu[].children`, dan halaman detail produk/layanan.
-- `design` berisi `stylePreset`, `stylePresetConfig`, dan `styleSystem.allowedPresets` agar AI memilih nuansa niche yang valid.
+- `design` berisi `stylePreset`, `stylePresetConfig`, `visualStyle`, `visualStyleConfig`, dan `styleSystem.allowedPresets` agar AI memilih nuansa niche serta shape/image treatment yang valid.
 - Homepage sample memakai section modern: `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, dan `faq`.
 - Halaman detail produk/layanan memakai `offeringDetail` plus review relevan, FAQ, dan CTA kontak/lokasi agar tidak thin.
 

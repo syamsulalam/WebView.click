@@ -20,6 +20,14 @@ type SiteRow = {
 
 type RegenerateMode = "resave" | "ai";
 
+const providerApiKeyMap: Record<string, string> = {
+  OpenRouter: "OPENROUTER_API_KEY",
+  OpenAI: "OPENAI_API_KEY",
+  Gemini: "GEMINI_API_KEY",
+  KIE: "KIE_API_KEY",
+  Opencode: "OPENCODE_API_KEY",
+};
+
 type ProspectRow = {
   place_id: string;
   name: string;
@@ -105,6 +113,7 @@ export default function AdminSites() {
   const [regeneratingId, setRegeneratingId] = useState("");
   const [generatingProspectId, setGeneratingProspectId] = useState("");
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
+  const [settings, setSettings] = useState<Record<string, string>>({});
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
   const [regenerateModel, setRegenerateModel] = useLocalStorageState("webview.adminSites.regenerateModel", "~anthropic/claude-sonnet-latest");
 
@@ -147,6 +156,12 @@ export default function AdminSites() {
       setGatheredProspects(Array.isArray(prospectData)
         ? (prospectData as ProspectRow[]).filter((item) => item.place_id && !item.generatedBusinessId)
         : []);
+
+      const settingsResponse = await fetch("/api/settings");
+      if (settingsResponse.ok) {
+        const settingsData = await settingsResponse.json().catch(() => ({}));
+        setSettings(settingsData && typeof settingsData === "object" ? settingsData : {});
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal memuat daftar situs.");
     } finally {
@@ -234,6 +249,10 @@ export default function AdminSites() {
     setGeneratingProspectId(placeId);
     setActionMessage("");
     try {
+      const requiredKey = providerApiKeyMap[activeRegenerateProvider];
+      if (!requiredKey || !String(settings?.[requiredKey] || "").trim()) {
+        throw new Error(`Set ${activeRegenerateProvider} API key in /admin/settings before generating from gathered prospects.`);
+      }
       let originData: any = { ...prospect };
       const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
       const detailsText = await detailsResponse.text();

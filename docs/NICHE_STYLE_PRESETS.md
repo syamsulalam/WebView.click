@@ -2,7 +2,7 @@
 
 Last updated: 14 Mei 2026.
 
-Dokumen ini merancang sistem `design.stylePreset` agar site builder tidak hanya mengganti warna, tetapi juga mengganti nuansa visual per niche.
+Dokumen ini merancang sistem `design.stylePreset` dan `design.visualStyle` agar site builder tidak hanya mengganti warna, tetapi juga mengganti nuansa visual per niche.
 
 ## Implementation Contract
 
@@ -11,7 +11,8 @@ JSON field:
 ```json
 {
   "design": {
-    "stylePreset": "contractor-rugged"
+    "stylePreset": "contractor-rugged",
+    "visualStyle": "industrial-diagonal"
   }
 }
 ```
@@ -19,6 +20,8 @@ JSON field:
 Renderer:
 - `SiteRenderer` membaca `design.stylePreset`, `design.themeVariables.stylePreset`, atau fallback `brand.visualStyle`.
 - Renderer menambahkan class `wv-preset-{preset}` di root site.
+- `SiteRenderer` juga membaca `design.visualStyle` / `design.shapeStyle` / fallback `brand.imageTreatment`.
+- Renderer menambahkan class `wv-visual-{visualStyle}` di root site.
 - Registry preset ada di `src/lib/siteStylePresets.ts`.
 - CSS preset diekspor sebagai `siteStylePresetCss` dan diinjeksi oleh `SiteRenderer` sebagai layer kecil di atas Tailwind.
 - Preset tidak boleh menyembunyikan CTA, attribution, atau konten penting.
@@ -26,6 +29,8 @@ Renderer:
 JSON sample juga membawa:
 - `design.stylePreset`
 - `design.stylePresetConfig`
+- `design.visualStyle`
+- `design.visualStyleConfig`
 - `design.styleSystem.allowedPresets`
 - `design.styleSystem.selectionRule`
 
@@ -218,6 +223,48 @@ Niche:
 - Bookkeeping
 - Financial advisor
 - Mortgage broker
+
+## Visual Styles Implemented in Code
+
+`visualStyle` adalah layer shape/layout treatment di atas `stylePreset`. `stylePreset` menjawab "industri dan mood", sedangkan `visualStyle` menjawab "bentuk UI, radius, shadow, dan treatment gambar".
+
+### `soft-rounded`
+
+Default friendly.
+- Rounded cards/images.
+- Gentle shadows.
+- Cocok untuk cafe, salon, clinic, school, pet care.
+
+### `boxy-editorial`
+
+Sharper professional look.
+- Rectangular cards.
+- Boxy shadow offset.
+- Cocok untuk legal, finance, real estate, consulting.
+
+### `industrial-diagonal`
+
+Harder contractor/industrial look.
+- Square edges.
+- Diagonal image clip path.
+- Stronger shadow and subtle diagonal section texture.
+- Cocok untuk concrete, construction, roofing, auto, security.
+
+### `clean-minimal`
+
+Precise service-business look.
+- Low radius.
+- Minimal shadow.
+- Light borders.
+- Cocok untuk medical, cleaning, pool service, repair/maintenance.
+
+### `bold-sport`
+
+High-energy look.
+- Stronger contrast.
+- Tighter radius.
+- More saturated/contrasty images.
+- Cocok untuk fitness, gyms, boxing, martial arts.
 
 Visual:
 - Conservative layout.

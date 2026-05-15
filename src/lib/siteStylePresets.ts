@@ -7,6 +7,14 @@ export type SiteStylePreset = {
   keywords: RegExp;
 };
 
+export type SiteVisualStyle = {
+  id: string;
+  label: string;
+  description: string;
+  bestFor: string[];
+  keywords: RegExp;
+};
+
 export const siteStylePresets: SiteStylePreset[] = [
   {
     id: "local-clean",
@@ -150,6 +158,54 @@ export function getStylePreset(value = "local-clean") {
 export function inferStylePresetFromText(value: string) {
   const text = value.toLowerCase();
   return siteStylePresets.find((preset) => preset.id !== "local-clean" && preset.keywords.test(text))?.id || "local-clean";
+}
+
+export const siteVisualStyles: SiteVisualStyle[] = [
+  {
+    id: "soft-rounded",
+    label: "Soft Rounded",
+    description: "Friendly rounded cards and images with gentle shadows.",
+    bestFor: ["cafes", "salons", "clinics", "education", "pet care"],
+    keywords: /(cafe|coffee|salon|spa|beauty|clinic|dental|school|tutor|pet|vet|friendly|soft|warm)/i,
+  },
+  {
+    id: "boxy-editorial",
+    label: "Boxy Editorial",
+    description: "Sharper rectangular cards, measured spacing, and magazine-like composition.",
+    bestFor: ["legal", "financial", "real estate", "professional services"],
+    keywords: /(law|legal|attorney|finance|financial|real estate|property|accounting|consulting|professional)/i,
+  },
+  {
+    id: "industrial-diagonal",
+    label: "Industrial Diagonal",
+    description: "Boxy layout with diagonal image edges and stronger industrial shadows.",
+    bestFor: ["contractors", "concrete", "roofing", "auto", "security"],
+    keywords: /(contractor|concrete|roof|construction|builder|paving|masonry|auto|mechanic|security|locksmith|industrial)/i,
+  },
+  {
+    id: "clean-minimal",
+    label: "Clean Minimal",
+    description: "Low radius, light borders, fewer heavy shadows, and a precise service-business feel.",
+    bestFor: ["medical", "cleaning", "pool service", "B2B local services"],
+    keywords: /(medical|doctor|cleaning|pool|service|repair|maintenance|fresh|minimal)/i,
+  },
+  {
+    id: "bold-sport",
+    label: "Bold Sport",
+    description: "High contrast, tighter radius, stronger typography, and energetic motion cues.",
+    bestFor: ["fitness", "gyms", "martial arts", "training"],
+    keywords: /(gym|fitness|trainer|boxing|martial|crossfit|sport|energy)/i,
+  },
+];
+
+export function normalizeVisualStyle(value = "soft-rounded") {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return siteVisualStyles.some((style) => style.id === normalized) ? normalized : "soft-rounded";
+}
+
+export function inferVisualStyleFromText(value: string) {
+  const text = value.toLowerCase();
+  return siteVisualStyles.find((style) => style.id !== "soft-rounded" && style.keywords.test(text))?.id || "soft-rounded";
 }
 
 export const siteStylePresetCss = `
@@ -360,5 +416,121 @@ export const siteStylePresetCss = `
   .wv-preset-financial-trust .shadow-sm,
   .wv-preset-financial-trust .shadow-xl {
     box-shadow: var(--wv-card-shadow);
+  }
+
+  .wv-visual-soft-rounded {
+    --wv-visual-radius: 18px;
+    --wv-image-radius: 20px;
+    --wv-visual-shadow: 0 20px 52px rgba(15, 23, 42, 0.12);
+  }
+
+  .wv-visual-soft-rounded .rounded-xl,
+  .wv-visual-soft-rounded .rounded-2xl,
+  .wv-visual-soft-rounded .rounded-3xl {
+    border-radius: var(--wv-visual-radius);
+  }
+
+  .wv-visual-soft-rounded img {
+    border-radius: var(--wv-image-radius);
+  }
+
+  [data-wv-image-role="logo"] {
+    border-radius: 9999px !important;
+    clip-path: none !important;
+  }
+
+  .wv-visual-boxy-editorial {
+    --wv-visual-radius: 2px;
+    --wv-image-radius: 0px;
+    --wv-visual-shadow: 8px 8px 0 rgba(15, 23, 42, 0.10);
+  }
+
+  .wv-visual-boxy-editorial .rounded-lg,
+  .wv-visual-boxy-editorial .rounded-xl,
+  .wv-visual-boxy-editorial .rounded-2xl,
+  .wv-visual-boxy-editorial .rounded-3xl {
+    border-radius: var(--wv-visual-radius);
+  }
+
+  .wv-visual-boxy-editorial .shadow-sm,
+  .wv-visual-boxy-editorial .shadow-lg,
+  .wv-visual-boxy-editorial .shadow-xl {
+    box-shadow: var(--wv-visual-shadow);
+  }
+
+  .wv-visual-boxy-editorial img {
+    border-radius: var(--wv-image-radius);
+  }
+
+  .wv-visual-industrial-diagonal {
+    --wv-visual-radius: 0px;
+    --wv-image-radius: 0px;
+    --wv-visual-shadow: 10px 10px 0 rgba(15, 23, 42, 0.18);
+  }
+
+  .wv-visual-industrial-diagonal .rounded-lg,
+  .wv-visual-industrial-diagonal .rounded-xl,
+  .wv-visual-industrial-diagonal .rounded-2xl,
+  .wv-visual-industrial-diagonal .rounded-3xl {
+    border-radius: var(--wv-visual-radius);
+  }
+
+  .wv-visual-industrial-diagonal .shadow-sm,
+  .wv-visual-industrial-diagonal .shadow-lg,
+  .wv-visual-industrial-diagonal .shadow-xl {
+    box-shadow: var(--wv-visual-shadow);
+  }
+
+  .wv-visual-industrial-diagonal img {
+    border-radius: 0;
+    clip-path: polygon(0 0, 100% 0, 92% 100%, 0 100%);
+  }
+
+  .wv-visual-industrial-diagonal [data-wv-image-role] {
+    outline: 3px solid rgba(15, 23, 42, 0.16);
+    outline-offset: -3px;
+  }
+
+  .wv-visual-industrial-diagonal section:nth-of-type(even) {
+    background-image: repeating-linear-gradient(135deg, rgba(15,23,42,0.04) 0 2px, transparent 2px 16px);
+  }
+
+  .wv-visual-clean-minimal {
+    --wv-visual-radius: 6px;
+    --wv-image-radius: 6px;
+    --wv-visual-shadow: none;
+  }
+
+  .wv-visual-clean-minimal .rounded-xl,
+  .wv-visual-clean-minimal .rounded-2xl,
+  .wv-visual-clean-minimal .rounded-3xl {
+    border-radius: var(--wv-visual-radius);
+  }
+
+  .wv-visual-clean-minimal .shadow-sm,
+  .wv-visual-clean-minimal .shadow-lg,
+  .wv-visual-clean-minimal .shadow-xl {
+    box-shadow: var(--wv-visual-shadow);
+  }
+
+  .wv-visual-clean-minimal img {
+    border-radius: var(--wv-image-radius);
+  }
+
+  .wv-visual-bold-sport {
+    --wv-visual-radius: 10px;
+    --wv-image-radius: 10px;
+    --wv-visual-shadow: 0 24px 0 rgba(15, 23, 42, 0.12);
+  }
+
+  .wv-visual-bold-sport .rounded-xl,
+  .wv-visual-bold-sport .rounded-2xl,
+  .wv-visual-bold-sport .rounded-3xl {
+    border-radius: var(--wv-visual-radius);
+  }
+
+  .wv-visual-bold-sport img {
+    border-radius: var(--wv-image-radius);
+    filter: contrast(1.06) saturate(1.08);
   }
 `;

@@ -16,6 +16,19 @@
       "industries": ["cafe", "coffee shop", "bakery", "restaurant"],
       "recommendedColors": ["#4E342E", "#FF7043", "#FAFAFA"]
     },
+    "visualStyle": "soft-rounded",
+    "visualStyleConfig": {
+      "label": "Soft Rounded",
+      "description": "Friendly rounded cards and images with gentle shadows.",
+      "allowedValues": [
+        "soft-rounded",
+        "boxy-editorial",
+        "industrial-diagonal",
+        "clean-minimal",
+        "bold-sport"
+      ],
+      "selectionRule": "Choose soft-rounded for friendly/lifestyle brands, boxy-editorial for professional/legal/real estate, industrial-diagonal for contractors/auto/security, clean-minimal for clinics/cleaning/pool/service businesses, and bold-sport for fitness/training."
+    },
     "styleSystem": {
       "allowedPresets": [
         "local-clean",

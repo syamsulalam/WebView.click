@@ -18,7 +18,7 @@ import {
   PhoneCall,
   Star,
 } from "lucide-react";
-import { normalizeStylePreset, siteStylePresetCss } from "../lib/siteStylePresets";
+import { normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
 import WebsiteActionPanel from "./WebsiteActionPanel";
 
 type SiteRendererProps = {
@@ -51,6 +51,7 @@ function normalizeSiteData(siteData: any) {
   const hours = siteData?.hours || {};
   const conversion = siteData?.conversion || {};
   const stylePreset = design.stylePreset || themeVariables.stylePreset || brand.visualStyle || "local-clean";
+  const visualStyle = design.visualStyle || design.shapeStyle || brand.imageTreatment || "soft-rounded";
 
   return {
     meta: {
@@ -71,6 +72,7 @@ function normalizeSiteData(siteData: any) {
       bodyFont: typography.bodyFont || "'Inter', sans-serif",
     },
     stylePreset,
+    visualStyle,
     brand: {
       logoImageUrl: brand.logoImageUrl || header.logoImageUrl || "",
       logoSvg: brand.logoSvg || header.logoSvg || "",
@@ -274,9 +276,10 @@ export default function SiteRenderer({
   const [openMenuKey, setOpenMenuKey] = useState("");
   const navCloseTimer = useRef<number | undefined>(undefined);
 
-  const { meta, colors, typography, stylePreset, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const { meta, colors, typography, stylePreset, visualStyle, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const brandPhotoAttribution = (src?: string) => attributionText(src, brand.photoAttributions, brand.photoSource, brand.photoCaption);
   const presetClass = `wv-preset-${normalizeStylePreset(stylePreset)}`;
+  const visualClass = `wv-visual-${normalizeVisualStyle(visualStyle)}`;
   const homePageId = pages[0]?.pageId || "home";
   const isIndonesian = meta.language === "id";
   const labels = {
@@ -342,7 +345,7 @@ export default function SiteRenderer({
   } as React.CSSProperties;
 
   return (
-    <div style={customStyles} className={`min-h-screen flex flex-col ${presetClass}`} id="rendered-site">
+    <div style={customStyles} className={`min-h-screen flex flex-col ${presetClass} ${visualClass}`} id="rendered-site">
       <header style={{ backgroundColor: colors.primary, color: "#fff" }} className="py-4 px-6 md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <button
           type="button"

@@ -542,6 +542,15 @@ function isWeakGoogleMapsSearchUrl(value: unknown): boolean {
   }
 }
 
+function visualStyleForBusiness(text: string): string {
+  const key = text.toLowerCase();
+  if (/(contractor|concrete|roof|construction|builder|paving|masonry|auto|mechanic|security|locksmith)/i.test(key)) return "industrial-diagonal";
+  if (/(law|legal|attorney|finance|financial|real estate|property|accounting|consulting)/i.test(key)) return "boxy-editorial";
+  if (/(medical|doctor|cleaning|pool|service|repair|maintenance|clinic|dental)/i.test(key)) return "clean-minimal";
+  if (/(gym|fitness|trainer|boxing|martial|crossfit|sport)/i.test(key)) return "bold-sport";
+  return "soft-rounded";
+}
+
 function asNumber(value: unknown): number | null {
   const numberValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numberValue) ? numberValue : null;
@@ -1322,6 +1331,7 @@ async function generateAiJson(
 ): Promise<Record<string, unknown> | null> {
   const provider = asString(body.provider);
   const model = asString(body.model);
+  const requireAi = body.requireAi === true;
   const businessName = asString(body.businessName);
   const originData = body.originData || {};
   const brandPalette = Array.isArray(body.brandPalette) ? body.brandPalette : [];
@@ -1332,20 +1342,45 @@ async function generateAiJson(
   const selectedLogoPriority = asString(body.selectedLogoPriority);
 
   if (!provider || !model) {
+    if (requireAi) {
+      throw new Error("AI provider and model are required for this generate action.");
+    }
     return null;
   }
+
+  const missingKey = (label: string) => {
+    if (requireAi) {
+      throw new Error(`${label} API key is not configured. Set it in /admin/settings first.`);
+    }
+    return null;
+  };
+
+  const apiError = async (providerName: string, response: Response) => {
+    const text = await response.text().catch(() => "");
+    let message = text.slice(0, 240);
+    try {
+      const payload = text ? JSON.parse(text) : {};
+      message = asString(payload.error?.message, asString(payload.message, message));
+    } catch {
+      // Keep raw text snippet.
+    }
+    const finalMessage = `${providerName} API returned HTTP ${response.status}${message ? `: ${message}` : ""}`;
+    if (requireAi) throw new Error(finalMessage);
+    console.error(finalMessage);
+    return null;
+  };
 
   const systemMsg =
     `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
     `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
+    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. Also choose design.visualStyle from these exact values: soft-rounded, boxy-editorial, industrial-diagonal, clean-minimal, bold-sport. Use industrial-diagonal for contractors/concrete/roofing/auto/security when a harder boxy look with diagonal image edges fits; boxy-editorial for legal/finance/real estate; clean-minimal for clinics/cleaning/pool/service businesses; bold-sport for fitness/training; soft-rounded for friendly lifestyle businesses. Include design.visualStyleConfig with label, description, allowedValues, and selectionRule. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
   const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}`;
 
   let responseContent = "";
 
   if (provider === "OpenRouter") {
     const key = await getSetting(db, env, "OPENROUTER_API_KEY");
-    if (!key) return null;
+    if (!key) return missingKey("OpenRouter");
     const apiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1361,11 +1396,12 @@ async function generateAiJson(
         ],
       }),
     });
+    if (!apiRes.ok) return apiError("OpenRouter", apiRes);
     const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
     responseContent = aiJson.choices?.[0]?.message?.content || "";
   } else if (provider === "OpenAI") {
     const key = await getSetting(db, env, "OPENAI_API_KEY");
-    if (!key) return null;
+    if (!key) return missingKey("OpenAI");
     const apiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1381,11 +1417,12 @@ async function generateAiJson(
         ],
       }),
     });
+    if (!apiRes.ok) return apiError("OpenAI", apiRes);
     const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
     responseContent = aiJson.choices?.[0]?.message?.content || "";
   } else if (provider === "Gemini") {
     const key = await getSetting(db, env, "GEMINI_API_KEY");
-    if (!key) return null;
+    if (!key) return missingKey("Gemini");
     const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
       method: "POST",
       headers: {
@@ -1397,11 +1434,12 @@ async function generateAiJson(
         generationConfig: { responseMimeType: "application/json" },
       }),
     });
+    if (!apiRes.ok) return apiError("Gemini", apiRes);
     const aiJson = await apiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     responseContent = aiJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
   } else if (provider === "KIE") {
     const key = await getSetting(db, env, "KIE_API_KEY");
-    if (!key) return null;
+    if (!key) return missingKey("KIE.ai");
 
     const kieModelMap: Record<string, { endpoint: string; model?: string; mode: "chat" | "responses" }> = {
       "kie/gpt-5-5": { endpoint: "https://api.kie.ai/codex/v1/responses", model: "gpt-5-5", mode: "responses" },
@@ -1432,6 +1470,7 @@ async function generateAiJson(
           reasoning: { effort: "high" },
         }),
       });
+      if (!apiRes.ok) return apiError("KIE.ai", apiRes);
       const aiJson = await apiRes.json() as { output?: Array<{ content?: Array<{ text?: string }> }> };
       responseContent = aiJson.output
         ?.flatMap((item) => item.content || [])
@@ -1453,13 +1492,14 @@ async function generateAiJson(
           reasoning_effort: "high",
         }),
       });
+      if (!apiRes.ok) return apiError("KIE.ai", apiRes);
       const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
       responseContent = aiJson.choices?.[0]?.message?.content || "";
     }
   } else if (provider === "Opencode") {
     const key = await getSetting(db, env, "OPENCODE_API_KEY");
     const endpoint = await getSetting(db, env, "OPENCODE_BASE_URL") || "https://api.opencode.example.com/v1/chat/completions";
-    if (!key) return null;
+    if (!key) return missingKey("Opencode");
     const apiRes = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -1475,16 +1515,29 @@ async function generateAiJson(
         ],
       }),
     });
+    if (!apiRes.ok) return apiError("Opencode", apiRes);
     const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
     responseContent = aiJson.choices?.[0]?.message?.content || "";
+  } else if (requireAi) {
+    throw new Error(`Unsupported AI provider: ${provider}`);
   }
 
   if (!responseContent) {
+    if (requireAi) {
+      throw new Error(`${provider} did not return JSON content for model ${model}.`);
+    }
     return null;
   }
 
   const cleaned = responseContent.replace(/```json/g, "").replace(/```/g, "").trim();
-  return JSON.parse(cleaned) as Record<string, unknown>;
+  try {
+    return JSON.parse(cleaned) as Record<string, unknown>;
+  } catch (error) {
+    if (requireAi) {
+      throw new Error(`${provider} returned invalid JSON for model ${model}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    throw error;
+  }
 }
 
 function isImageField(key: string) {
@@ -1740,6 +1793,26 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     }
     finalJson.meta = metaConfig;
 
+    const designConfig = finalJson.design && typeof finalJson.design === "object" ? finalJson.design as Record<string, unknown> : {};
+    const allowedVisualStyles = ["soft-rounded", "boxy-editorial", "industrial-diagonal", "clean-minimal", "bold-sport"];
+    if (!allowedVisualStyles.includes(asString(designConfig.visualStyle))) {
+      designConfig.visualStyle = visualStyleForBusiness([
+        businessName,
+        asString(originData.formatted_address, asString(originData.formattedAddress)),
+        Array.isArray(originData.types) ? originData.types.join(" ") : "",
+        asString(originData.searchQuery),
+      ].filter(Boolean).join(" "));
+    }
+    if (!designConfig.visualStyleConfig || typeof designConfig.visualStyleConfig !== "object") {
+      designConfig.visualStyleConfig = {
+        label: asString(designConfig.visualStyle).replace(/-/g, " "),
+        description: "Controls shape language, image treatment, borders, and visual edge style on top of the industry preset.",
+        allowedValues: allowedVisualStyles,
+        selectionRule: "Use the visual structure that best matches the business niche and desired feel.",
+      };
+    }
+    finalJson.design = designConfig;
+
     const originMapsUrl = asString(originData.url, asString(originData.googleMapsUri));
     const originWebsiteUrl = asString(originData.website, asString(originData.websiteUri));
     const sourceData = finalJson.sourceData && typeof finalJson.sourceData === "object" ? finalJson.sourceData as Record<string, unknown> : {};
@@ -1880,7 +1953,10 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       const message = error instanceof Error ? error.message : String(error);
       await updateGenerationJob(db, jobId, { status: "failed", error: message });
       await updateProspectRecord(db, originPlaceId, { last_error: message });
-      return errorJson(message, 500);
+      const statusCode = body.requireAi === true
+        ? (/api key|provider and model|required|unsupported/i.test(message) ? 400 : 502)
+        : 500;
+      return errorJson(message, statusCode);
     }
   }
 
