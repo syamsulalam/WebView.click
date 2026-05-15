@@ -328,6 +328,23 @@ export default function AdminLeads() {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${background}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${initial}</text></svg>`;
   };
 
+  const iconSvgForText = (text: string) => {
+    const key = text.toLowerCase();
+    if (key.includes("contact") || key.includes("hubung") || key.includes("call")) {
+      return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.34 1.9.63 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.2a2 2 0 0 1 2.11-.45c.91.29 1.85.5 2.81.63A2 2 0 0 1 22 16.92z'/></svg>";
+    }
+    if (key.includes("local") || key.includes("lokal") || key.includes("maps") || key.includes("location")) {
+      return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 10c0 4.99-5.54 10.18-7.4 11.78a1 1 0 0 1-1.2 0C9.54 20.18 4 14.99 4 10a8 8 0 0 1 16 0z'/><circle cx='12' cy='10' r='3'/></svg>";
+    }
+    if (key.includes("fast") || key.includes("cepat") || key.includes("response")) {
+      return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 13a8 8 0 0 1 7-7.94'/><path d='M12 2v4'/><path d='m13 12 4-4'/><path d='M20.49 15A8 8 0 1 1 5 8'/></svg>";
+    }
+    if (key.includes("product") || key.includes("produk") || key.includes("order")) {
+      return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7.5 4.27 9 5.15'/><path d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/><path d='m3.3 7 8.7 5 8.7-5'/><path d='M12 22V12'/></svg>";
+    }
+    return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>";
+  };
+
   const inferProductServiceMode = (place: any) => {
     const text = [place.name, ...(Array.isArray(place.types) ? place.types : [])].join(" ").toLowerCase();
     const productSignals = ["store", "shop", "restaurant", "cafe", "bakery", "meal", "food", "bar", "florist", "clothing", "furniture", "jewelry"];
@@ -597,6 +614,30 @@ export default function AdminLeads() {
           },
         },
         {
+          type: "features",
+          id: `${item.id}-features`,
+          content: {
+            title: isEnglish ? `Why choose ${item.title}` : `Kenapa memilih ${item.title}`,
+            items: [
+              {
+                title: item.type === "product" ? (isEnglish ? "Clear product fit" : "Produk mudah dipahami") : (isEnglish ? "Clear service fit" : "Layanan mudah dipahami"),
+                description: item.summary,
+                iconSvg: iconSvgForText(item.type === "product" ? "product" : "service"),
+              },
+              {
+                title: isEnglish ? "Fast next step" : "Langkah berikutnya cepat",
+                description: isEnglish ? "Visitors can call, ask questions, or open maps from this page." : "Pengunjung bisa telepon, bertanya, atau membuka maps dari halaman ini.",
+                iconSvg: iconSvgForText("fast contact"),
+              },
+              {
+                title: isEnglish ? "Local context" : "Konteks lokal",
+                description: place.formatted_address || place.formattedAddress || (isEnglish ? "Built around local customer intent." : "Disusun sesuai kebutuhan pelanggan lokal."),
+                iconSvg: iconSvgForText("local maps"),
+              },
+            ],
+          },
+        },
+        {
           type: "reviews",
           id: `${item.id}-reviews`,
           content: {
@@ -827,9 +868,9 @@ export default function AdminLeads() {
               content: {
                 title: isEnglish ? "Why this business stands out" : "Kenapa bisnis ini relevan",
                 items: [
-                  { title: isEnglish ? "Active Google profile" : "Profil Google aktif", description: place.business_status || (isEnglish ? "Business data is available from Google Places." : "Data bisnis tersedia dari Google Places.") },
-                  { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: phone !== "0000000000" ? phone : (isEnglish ? "Contact details can be completed by admin." : "Kontak bisa dilengkapi oleh admin.") },
-                  { title: isEnglish ? "Website-ready" : "Siap dibuatkan website", description: place.website || place.websiteUri ? (isEnglish ? "Already has a website, good for redesign." : "Sudah punya website, cocok untuk redesign.") : (isEnglish ? "No website detected yet." : "Belum terdeteksi punya website.") }
+                  { title: isEnglish ? "Active Google profile" : "Profil Google aktif", description: place.business_status || (isEnglish ? "Business data is available from Google Places." : "Data bisnis tersedia dari Google Places."), iconSvg: iconSvgForText("local maps") },
+                  { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: phone !== "0000000000" ? phone : (isEnglish ? "Contact details can be completed by admin." : "Kontak bisa dilengkapi oleh admin."), iconSvg: iconSvgForText("contact call") },
+                  { title: isEnglish ? "Website-ready" : "Siap dibuatkan website", description: place.website || place.websiteUri ? (isEnglish ? "Already has a website, good for redesign." : "Sudah punya website, cocok untuk redesign.") : (isEnglish ? "No website detected yet." : "Belum terdeteksi punya website."), iconSvg: iconSvgForText("website ready") }
                 ]
               }
             },

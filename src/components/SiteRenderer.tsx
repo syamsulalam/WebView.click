@@ -218,6 +218,7 @@ function normalizedFieldName(field: any, index: number) {
 
 function offeringHref(item: any) {
   if (typeof item?.href === "string" && item.href) return item.href;
+  if (typeof item?.cta?.href === "string" && item.cta.href) return item.cta.href;
   if (typeof item?.detailPageId === "string" && item.detailPageId) return `#${item.detailPageId}`;
   return "";
 }
@@ -508,9 +509,13 @@ export default function SiteRenderer({
                       <div className="grid md:grid-cols-3 gap-8">
                         {items.map((item: any, i: number) => (
                           <div key={i} className="bg-white p-7 rounded-xl shadow-sm hover:shadow-md transition border border-slate-100">
-                            {item.iconSvg && (
-                              <div className="w-10 h-10 mb-4 text-indigo-500" dangerouslySetInnerHTML={{ __html: item.iconSvg }} />
-                            )}
+                            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl" style={{ backgroundColor: colors.secondary, color: colors.accent }}>
+                              {item.iconSvg ? (
+                                <span className="h-6 w-6 [&>svg]:h-6 [&>svg]:w-6" dangerouslySetInnerHTML={{ __html: item.iconSvg }} />
+                              ) : (
+                                buttonIcon(item.title || item.label || "", "")
+                              )}
+                            </div>
                             <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
                             <p className="opacity-70">{item.description}</p>
                           </div>
@@ -652,12 +657,14 @@ export default function SiteRenderer({
                         </div>
                         <p className="text-slate-700">{section.content?.address || location.formattedAddress || businessProfile.address?.formatted || "Alamat belum tersedia."}</p>
                         {(section.content?.phone || businessProfile.contact?.phoneNational) && (
-                          <a href={phoneHref(section.content?.phone || primaryPhone || businessProfile.contact.phoneNational)} className="mt-3 inline-flex items-center gap-2 font-semibold text-slate-950 hover:underline">
-                            <Phone size={16} /> {section.content?.phone || businessProfile.contact.phoneNational}
-                          </a>
+                          <div className="mt-3">
+                            <a href={phoneHref(section.content?.phone || primaryPhone || businessProfile.contact.phoneNational)} className="inline-flex w-fit items-center gap-2 font-semibold text-slate-950 hover:underline">
+                              <Phone size={16} /> {section.content?.phone || businessProfile.contact.phoneNational}
+                            </a>
+                          </div>
                         )}
                         {(section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl) && (
-                          <a href={section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl} className="inline-flex mt-5 items-center gap-2 px-5 py-3 rounded-lg text-white font-semibold" style={{ backgroundColor: colors.primary }}>
+                          <a href={section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl} className="mt-5 inline-flex w-fit items-center gap-2 px-5 py-3 rounded-lg text-white font-semibold" style={{ backgroundColor: colors.primary }}>
                             <MapPin size={16} />
                             Buka Google Maps
                           </a>

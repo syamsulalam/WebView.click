@@ -154,7 +154,8 @@ Logic penting:
 - JSON mock fallback menentukan `design.stylePreset` dan `design.stylePresetConfig` via `src/lib/siteStylePresets.ts`.
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
 - Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
-- Mock fallback di `AdminLeads` juga membuat product/service detail pages memakai section `hero`, `offeringDetail`, `reviews`, `faq`, dan `hoursLocation`.
+- Prompt AI generator diminta memilih icon/inline `iconSvg` sesuai teks/intent CTA dan feature item; product/service detail page harus punya features section berikon.
+- Mock fallback di `AdminLeads` juga membuat product/service detail pages memakai section `hero`, `offeringDetail`, `features`, `reviews`, `faq`, dan `hoursLocation`.
 - Place Details mengambil field `reviews`; detail page bisa memakai review Google yang relevan via keyword best-effort.
 - Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.
 - Search default membaca cache D1 `places_search_cache`; tombol `Refresh` memaksa request baru ke Google Places.
@@ -234,7 +235,7 @@ Logic penting:
 - Import JSON sample langsung dari repo.
 - Menampilkan floating inspector kecil berisi nama bisnis dan daftar `pageId:sectionType` yang sedang tersedia.
 - Inspector menampilkan field JSON yang hilang jika renderer sedang memakai fallback.
-- Inspector bisa diminimize agar tidak menutup preview.
+- Inspector bisa diminimize dan di-drag agar tidak menutup navbar/preview.
 - Menggunakan `SiteRenderer` dengan `showProspectPanel={false}` agar demo fokus ke hasil render website.
 
 Risiko debug:
@@ -340,7 +341,8 @@ Logic D1:
 - `setupTables()` membuat tabel jika belum ada.
 - `addColumnIfMissing()` menjalankan migrasi ringan berbasis `PRAGMA table_info`.
 - `addColumnIfMissing()` menangani duplicate-column race dan retry tanpa `DEFAULT` jika D1 menolak alter tertentu.
-- Write path penting tetap defensif terhadap schema production lama: `/api/sites/generate`, `/api/payments/checkout`, `/api/leads/:business_id/ping`, dan `/api/prospects/:placeId/selection` akan mencoba self-heal kolom lalu fallback query tanpa kolom baru bila perlu.
+- Write path penting tetap defensif terhadap schema production lama: `/api/sites/generate`, `/api/payments/checkout`, `/api/places/details`, dan `/api/prospects/:placeId/selection` menjalankan self-heal kolom penting terlebih dahulu, lalu menulis dengan kolom lengkap.
+- Kolom penting tidak boleh diam-diam dilewati. Jika `ALTER TABLE` gagal atau kolom masih hilang setelah self-heal, Function mengembalikan error eksplisit agar schema D1 diperbaiki, bukan menyimpan data setengah lengkap.
 - `/api/stats`, `/api/activities`, dan `/api/settings` punya fallback JSON agar admin tidak blank saat DB belum sempurna.
 
 Logic AI:

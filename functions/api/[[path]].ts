@@ -120,7 +120,7 @@ function errorMessage(error: unknown) {
 
 function isMissingColumnError(error: unknown, column?: string) {
   const message = errorMessage(error).toLowerCase();
-  return message.includes("no column named") && (!column || message.includes(column.toLowerCase()));
+  return (message.includes("no column named") || message.includes("no such column")) && (!column || message.includes(column.toLowerCase()));
 }
 
 async function ensureColumn(db: D1Database, table: string, column: string, definition: string) {
@@ -128,6 +128,216 @@ async function ensureColumn(db: D1Database, table: string, column: string, defin
     await addColumnIfMissing(db, table, column, definition);
   } catch (error) {
     console.error(`D1 self-healing failed for ${table}.${column}:`, error);
+  }
+}
+
+type ColumnSpec = { table: string; column: string; definition: string };
+
+async function ensureRequiredColumn(db: D1Database, table: string, column: string, definition: string) {
+  await addColumnIfMissing(db, table, column, definition);
+  const columns = await tableColumns(db, table);
+  if (!columns.has(column)) {
+    throw new Error(`D1 self-healing failed: ${table}.${column} is still missing after ALTER TABLE.`);
+  }
+}
+
+async function ensureRequiredColumns(db: D1Database, specs: ColumnSpec[]) {
+  for (const spec of specs) {
+    await ensureRequiredColumn(db, spec.table, spec.column, spec.definition);
+  }
+}
+
+const generateRequiredColumns: ColumnSpec[] = [
+  { table: "leads", column: "niche", definition: "TEXT" },
+  { table: "leads", column: "phone", definition: "TEXT" },
+  { table: "leads", column: "website_url", definition: "TEXT" },
+  { table: "leads", column: "rating", definition: "REAL" },
+  { table: "leads", column: "reviews", definition: "INTEGER" },
+  { table: "leads", column: "address", definition: "TEXT" },
+  { table: "leads", column: "status", definition: "TEXT DEFAULT 'scraped'" },
+  { table: "leads", column: "view_count", definition: "INTEGER DEFAULT 0" },
+  { table: "leads", column: "updated_at", definition: "DATETIME" },
+  { table: "json_sites", column: "id", definition: "TEXT" },
+  { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+  { table: "generation_jobs", column: "business_id", definition: "TEXT" },
+  { table: "generation_jobs", column: "place_id", definition: "TEXT" },
+  { table: "generation_jobs", column: "provider", definition: "TEXT" },
+  { table: "generation_jobs", column: "model", definition: "TEXT" },
+  { table: "generation_jobs", column: "status", definition: "TEXT" },
+  { table: "generation_jobs", column: "error", definition: "TEXT" },
+  { table: "generation_jobs", column: "metadata_json", definition: "TEXT" },
+  { table: "generation_jobs", column: "updated_at", definition: "DATETIME" },
+  { table: "places_prospects", column: "status", definition: "TEXT DEFAULT 'new'" },
+  { table: "places_prospects", column: "generated_business_id", definition: "TEXT" },
+  { table: "places_prospects", column: "last_error", definition: "TEXT" },
+  { table: "places_prospects", column: "generated_at", definition: "DATETIME" },
+  { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
+  { table: "crm_activities", column: "staff_id", definition: "TEXT" },
+  { table: "crm_activities", column: "description", definition: "TEXT" },
+];
+
+const checkoutRequiredColumns: ColumnSpec[] = [
+  { table: "leads", column: "niche", definition: "TEXT" },
+  { table: "leads", column: "email", definition: "TEXT" },
+  { table: "leads", column: "status", definition: "TEXT DEFAULT 'scraped'" },
+  { table: "leads", column: "view_count", definition: "INTEGER DEFAULT 0" },
+  { table: "leads", column: "updated_at", definition: "DATETIME" },
+  { table: "crm_activities", column: "staff_id", definition: "TEXT" },
+  { table: "crm_activities", column: "description", definition: "TEXT" },
+];
+
+const selectionRequiredColumns: ColumnSpec[] = [
+  { table: "places_prospects", column: "selected_photo_json", definition: "TEXT" },
+  { table: "places_prospects", column: "selected_palette_json", definition: "TEXT" },
+  { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
+];
+
+const prospectStatusRequiredColumns: ColumnSpec[] = [
+  { table: "places_prospects", column: "status", definition: "TEXT DEFAULT 'new'" },
+  { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
+];
+
+const prospectDetailsRequiredColumns: ColumnSpec[] = [
+  { table: "places_prospects", column: "details_json", definition: "TEXT" },
+  { table: "places_prospects", column: "phone", definition: "TEXT" },
+  { table: "places_prospects", column: "website_url", definition: "TEXT" },
+  { table: "places_prospects", column: "maps_url", definition: "TEXT" },
+  { table: "places_prospects", column: "details_loaded_at", definition: "DATETIME" },
+  { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
+];
+
+async function upsertLeadRecord(db: D1Database, values: Record<string, unknown>) {
+  const columns = await tableColumns(db, "leads");
+  const missingProvidedColumns = Object.entries(values)
+    .filter(([, value]) => value !== undefined)
+    .map(([column]) => column)
+    .filter((column) => !columns.has(column));
+  if (missingProvidedColumns.length) {
+    throw new Error(`D1 schema is missing required leads column(s): ${missingProvidedColumns.join(", ")}`);
+  }
+  const entries = Object.entries(values).filter(([column, value]) => columns.has(column) && value !== undefined);
+  if (!entries.some(([column]) => column === "business_id")) {
+    throw new Error("Cannot upsert lead without business_id column.");
+  }
+  const insertColumns = entries.map(([column]) => column);
+  const placeholders = entries.map(() => "?");
+  const updateColumns = insertColumns.filter((column) => !["id", "business_id"].includes(column));
+  const updateClause = updateColumns.length
+    ? updateColumns.map((column) => `${column} = excluded.${column}`).join(", ")
+    : "business_id = excluded.business_id";
+
+  await db
+    .prepare(
+      `INSERT INTO leads (${insertColumns.join(", ")})
+       VALUES (${placeholders.join(", ")})
+       ON CONFLICT(business_id) DO UPDATE SET ${updateClause}`,
+    )
+    .bind(...entries.map(([, value]) => value))
+    .run();
+}
+
+async function saveJsonSiteRecord(db: D1Database, businessId: string, jsonContent: string) {
+  const columns = await tableColumns(db, "json_sites");
+  const values: Record<string, unknown> = {
+    id: crypto.randomUUID(),
+    business_id: businessId,
+    json_content: jsonContent,
+    updated_at: new Date().toISOString(),
+  };
+  const missingProvidedColumns = Object.keys(values).filter((column) => !columns.has(column));
+  if (missingProvidedColumns.length) {
+    throw new Error(`D1 schema is missing required json_sites column(s): ${missingProvidedColumns.join(", ")}`);
+  }
+  const entries = Object.entries(values).filter(([column]) => columns.has(column));
+  const updateColumns = entries.map(([column]) => column).filter((column) => !["id", "business_id"].includes(column));
+  const updateClause = updateColumns.length
+    ? updateColumns.map((column) => `${column} = excluded.${column}`).join(", ")
+    : "json_content = excluded.json_content";
+
+  await db
+    .prepare(
+      `INSERT INTO json_sites (${entries.map(([column]) => column).join(", ")})
+       VALUES (${entries.map(() => "?").join(", ")})
+       ON CONFLICT(business_id) DO UPDATE SET ${updateClause}`,
+    )
+    .bind(...entries.map(([, value]) => value))
+    .run();
+}
+
+async function createGenerationJob(db: D1Database, values: Record<string, unknown>) {
+  const columns = await tableColumns(db, "generation_jobs");
+  const allValues = {
+    ...values,
+    updated_at: new Date().toISOString(),
+  };
+  const missingProvidedColumns = Object.keys(allValues).filter((column) => !columns.has(column));
+  if (missingProvidedColumns.length) {
+    throw new Error(`D1 schema is missing required generation_jobs column(s): ${missingProvidedColumns.join(", ")}`);
+  }
+  const entries = Object.entries({
+    ...allValues,
+  }).filter(([column]) => columns.has(column));
+  if (!entries.length) return;
+  await db
+    .prepare(
+      `INSERT INTO generation_jobs (${entries.map(([column]) => column).join(", ")})
+       VALUES (${entries.map(() => "?").join(", ")})`,
+    )
+    .bind(...entries.map(([, value]) => value))
+    .run();
+}
+
+async function updateGenerationJob(db: D1Database, jobId: string, values: Record<string, unknown>) {
+  const columns = await tableColumns(db, "generation_jobs");
+  const allValues = {
+    ...values,
+    updated_at: new Date().toISOString(),
+  };
+  const missingProvidedColumns = Object.keys(allValues).filter((column) => !columns.has(column));
+  if (missingProvidedColumns.length) {
+    throw new Error(`D1 schema is missing required generation_jobs column(s): ${missingProvidedColumns.join(", ")}`);
+  }
+  const entries = Object.entries(allValues).filter(([column]) => columns.has(column));
+  if (!entries.length) return;
+  await db
+    .prepare(`UPDATE generation_jobs SET ${entries.map(([column]) => `${column} = ?`).join(", ")} WHERE id = ?`)
+    .bind(...entries.map(([, value]) => value), jobId)
+    .run();
+}
+
+async function updateProspectRecord(db: D1Database, placeId: string, values: Record<string, unknown>) {
+  if (!placeId) return;
+  const columns = await tableColumns(db, "places_prospects");
+  const allValues = {
+    ...values,
+    updated_at: new Date().toISOString(),
+  };
+  const missingProvidedColumns = Object.keys(allValues).filter((column) => !columns.has(column));
+  if (missingProvidedColumns.length) {
+    throw new Error(`D1 schema is missing required places_prospects column(s): ${missingProvidedColumns.join(", ")}`);
+  }
+  const entries = Object.entries(allValues).filter(([column]) => columns.has(column));
+  if (!entries.length) return;
+  await db
+    .prepare(`UPDATE places_prospects SET ${entries.map(([column]) => `${column} = ?`).join(", ")} WHERE place_id = ?`)
+    .bind(...entries.map(([, value]) => value), placeId)
+    .run();
+}
+
+async function insertCrmActivitySafe(db: D1Database, values: Record<string, unknown>) {
+  try {
+    const columns = await tableColumns(db, "crm_activities");
+    const entries = Object.entries(values).filter(([column]) => columns.has(column));
+    if (!entries.length) return;
+    await db
+      .prepare(
+        `INSERT INTO crm_activities (${entries.map(([column]) => column).join(", ")})
+         VALUES (${entries.map(() => "?").join(", ")})`,
+      )
+      .bind(...entries.map(([, value]) => value))
+      .run();
+  } catch (error) {
+    console.error("CRM activity insert failed, continuing:", error);
   }
 }
 
@@ -367,44 +577,39 @@ function prospectFromPlace(place: Record<string, unknown>, fallbackQuery = "", f
 }
 
 async function upsertProspectsFromPlaces(db: D1Database, queryKey: string, query: string, results: unknown[]) {
+  const columns = await tableColumns(db, "places_prospects");
   const statements = results
     .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
     .map((place) => {
       const prospect = prospectFromPlace(place, query, queryKey);
+      const values: Record<string, unknown> = {
+        place_id: prospect.placeId,
+        query_key: prospect.queryKey,
+        query: prospect.query,
+        business_name: prospect.businessName,
+        address: prospect.address,
+        phone: prospect.phone,
+        website_url: prospect.websiteUrl,
+        maps_url: prospect.mapsUrl,
+        rating: prospect.rating,
+        reviews: prospect.reviews,
+        niche: prospect.niche,
+        status: "new",
+        result_json: JSON.stringify(place),
+        updated_at: new Date().toISOString(),
+      };
+      const entries = Object.entries(values).filter(([column]) => columns.has(column));
+      const updateColumns = entries.map(([column]) => column).filter((column) => !["place_id", "status"].includes(column));
+      const updateClause = updateColumns.length
+        ? updateColumns.map((column) => `${column} = excluded.${column}`).join(", ")
+        : "place_id = excluded.place_id";
       return db
         .prepare(
-          `INSERT INTO places_prospects (
-             place_id, query_key, query, business_name, address, phone, website_url, maps_url, rating, reviews, niche, status, result_json, updated_at
-           )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, CURRENT_TIMESTAMP)
-           ON CONFLICT(place_id) DO UPDATE SET
-             query_key = excluded.query_key,
-             query = excluded.query,
-             business_name = excluded.business_name,
-             address = excluded.address,
-             phone = COALESCE(NULLIF(excluded.phone, ''), phone),
-             website_url = COALESCE(NULLIF(excluded.website_url, ''), website_url),
-             maps_url = COALESCE(NULLIF(excluded.maps_url, ''), maps_url),
-             rating = COALESCE(excluded.rating, rating),
-             reviews = COALESCE(excluded.reviews, reviews),
-             niche = excluded.niche,
-             result_json = excluded.result_json,
-             updated_at = CURRENT_TIMESTAMP`,
+          `INSERT INTO places_prospects (${entries.map(([column]) => column).join(", ")})
+           VALUES (${entries.map(() => "?").join(", ")})
+           ON CONFLICT(place_id) DO UPDATE SET ${updateClause}`,
         )
-        .bind(
-          prospect.placeId,
-          prospect.queryKey,
-          prospect.query,
-          prospect.businessName,
-          prospect.address,
-          prospect.phone,
-          prospect.websiteUrl,
-          prospect.mapsUrl,
-          prospect.rating,
-          prospect.reviews,
-          prospect.niche,
-          JSON.stringify(place),
-        );
+        .bind(...entries.map(([, value]) => value));
     });
 
   if (statements.length) {
@@ -468,17 +673,25 @@ async function handleSettings(request: Request, db: D1Database): Promise<Respons
 
   if (request.method === "POST") {
     const settings = await readJsonBody(request);
+    const columns = await tableColumns(db, "system_settings");
     const statements = Object.entries(settings)
       .filter(([, value]) => value !== undefined && value !== null)
-      .map(([key, value]) =>
-        db
+      .map(([key, value]) => {
+        const values: Record<string, unknown> = {
+          key,
+          value: String(value),
+          updated_at: new Date().toISOString(),
+        };
+        const entries = Object.entries(values).filter(([column]) => columns.has(column));
+        const updateColumns = entries.map(([column]) => column).filter((column) => column !== "key");
+        return db
           .prepare(
-            `INSERT INTO system_settings (key, value, updated_at)
-             VALUES (?, ?, CURRENT_TIMESTAMP)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+            `INSERT INTO system_settings (${entries.map(([column]) => column).join(", ")})
+             VALUES (${entries.map(() => "?").join(", ")})
+             ON CONFLICT(key) DO UPDATE SET ${updateColumns.map((column) => `${column} = excluded.${column}`).join(", ")}`,
           )
-          .bind(key, String(value)),
-      );
+          .bind(...entries.map(([, entryValue]) => entryValue));
+      });
 
     if (statements.length > 0) {
       await db.batch(statements);
@@ -553,15 +766,24 @@ async function handleLeads(request: Request, db: D1Database, segments: string[])
     const status = asString(body.status, "scraped");
     const staffId = asString(body.staffId, "system");
 
-    await db.batch([
-      db.prepare("UPDATE leads SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(status, id),
-      db
-        .prepare(
-          `INSERT INTO crm_activities (id, lead_id, staff_id, activity_type, description)
-           VALUES (?, ?, ?, ?, ?)`,
-        )
-        .bind(crypto.randomUUID(), id, staffId, "status_changed", `Status updated to ${status}`),
-    ]);
+    const leadColumns = await tableColumns(db, "leads");
+    const leadUpdates = [
+      leadColumns.has("status") ? { column: "status", value: status } : null,
+      leadColumns.has("updated_at") ? { column: "updated_at", value: new Date().toISOString() } : null,
+    ].filter(Boolean) as Array<{ column: string; value: unknown }>;
+    if (leadUpdates.length) {
+      await db
+        .prepare(`UPDATE leads SET ${leadUpdates.map((item) => `${item.column} = ?`).join(", ")} WHERE id = ?`)
+        .bind(...leadUpdates.map((item) => item.value), id)
+        .run();
+    }
+    await insertCrmActivitySafe(db, {
+      id: crypto.randomUUID(),
+      lead_id: id,
+      staff_id: staffId,
+      activity_type: "status_changed",
+      description: `Status updated to ${status}`,
+    });
 
     return json({ success: true });
   }
@@ -605,20 +827,33 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
   }
 
   if (!refresh) {
-    const cached = await db
-      .prepare(
-        `SELECT query, results_json, provider_status, result_count, updated_at, expires_at
-         FROM places_search_cache
-         WHERE query_key = ? AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))`,
-      )
-      .bind(queryKey)
-      .first<{ query: string; results_json: string; provider_status?: string; result_count?: number; updated_at?: string; expires_at?: string }>();
+    let cached: { query: string; results_json: string; provider_status?: string; result_count?: number; updated_at?: string; expires_at?: string } | null = null;
+    try {
+      cached = await db
+        .prepare(
+          `SELECT query, results_json, provider_status, result_count, updated_at, expires_at
+           FROM places_search_cache
+           WHERE query_key = ? AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))`,
+        )
+        .bind(queryKey)
+        .first<{ query: string; results_json: string; provider_status?: string; result_count?: number; updated_at?: string; expires_at?: string }>();
+    } catch (error) {
+      if (!isMissingColumnError(error)) throw error;
+      cached = await db
+        .prepare("SELECT query, results_json FROM places_search_cache WHERE query_key = ?")
+        .bind(queryKey)
+        .first<{ query: string; results_json: string }>();
+    }
 
     if (cached?.results_json) {
-      await db
-        .prepare("UPDATE places_search_cache SET hit_count = COALESCE(hit_count, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE query_key = ?")
-        .bind(queryKey)
-        .run();
+      try {
+        await db
+          .prepare("UPDATE places_search_cache SET hit_count = COALESCE(hit_count, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE query_key = ?")
+          .bind(queryKey)
+          .run();
+      } catch (error) {
+        if (!isMissingColumnError(error)) throw error;
+      }
 
       return json({
         cached: true,
@@ -679,20 +914,32 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
     const results = Array.isArray(data.results) ? data.results : [];
     await upsertProspectsFromPlaces(db, queryKey, query, results);
     const cacheExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    await db
-      .prepare(
-        `INSERT INTO places_search_cache (query_key, query, results_json, provider_status, result_count, expires_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(query_key) DO UPDATE SET
-           query = excluded.query,
-           results_json = excluded.results_json,
-           provider_status = excluded.provider_status,
-           result_count = excluded.result_count,
-           expires_at = excluded.expires_at,
-           updated_at = CURRENT_TIMESTAMP`,
-      )
-      .bind(queryKey, query, JSON.stringify(results), data.status || "OK", results.length, cacheExpiresAt)
-      .run();
+    try {
+      await db
+        .prepare(
+          `INSERT INTO places_search_cache (query_key, query, results_json, provider_status, result_count, expires_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(query_key) DO UPDATE SET
+             query = excluded.query,
+             results_json = excluded.results_json,
+             provider_status = excluded.provider_status,
+             result_count = excluded.result_count,
+             expires_at = excluded.expires_at,
+             updated_at = CURRENT_TIMESTAMP`,
+        )
+        .bind(queryKey, query, JSON.stringify(results), data.status || "OK", results.length, cacheExpiresAt)
+        .run();
+    } catch (error) {
+      if (!isMissingColumnError(error)) throw error;
+      await db
+        .prepare(
+          `INSERT INTO places_search_cache (query_key, query, results_json)
+           VALUES (?, ?, ?)
+           ON CONFLICT(query_key) DO UPDATE SET query = excluded.query, results_json = excluded.results_json`,
+        )
+        .bind(queryKey, query, JSON.stringify(results))
+        .run();
+    }
 
     if (results.length === 0) {
       return json({
@@ -763,19 +1010,14 @@ async function handlePlacesDetails(url: URL, db: D1Database, env: Env): Promise<
 
     if (data.result && typeof data.result === "object") {
       const prospect = prospectFromPlace(data.result);
-      await db
-        .prepare(
-          `UPDATE places_prospects
-           SET details_json = ?,
-               phone = COALESCE(NULLIF(?, ''), phone),
-               website_url = COALESCE(NULLIF(?, ''), website_url),
-               maps_url = COALESCE(NULLIF(?, ''), maps_url),
-               details_loaded_at = CURRENT_TIMESTAMP,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE place_id = ?`,
-        )
-        .bind(JSON.stringify(data.result), prospect.phone, prospect.websiteUrl, prospect.mapsUrl, placeId)
-        .run();
+      await ensureRequiredColumns(db, prospectDetailsRequiredColumns);
+      await updateProspectRecord(db, placeId, {
+        details_json: JSON.stringify(data.result),
+        phone: prospect.phone,
+        website_url: prospect.websiteUrl,
+        maps_url: prospect.mapsUrl,
+        details_loaded_at: new Date().toISOString(),
+      });
     }
 
     return json({
@@ -907,10 +1149,8 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
     const placeId = decodeURIComponent(segments[1]);
     const body = await readJsonBody(request);
     const status = asString(body.status, "new");
-    await db
-      .prepare("UPDATE places_prospects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE place_id = ?")
-      .bind(status, placeId)
-      .run();
+    await ensureRequiredColumns(db, prospectStatusRequiredColumns);
+    await updateProspectRecord(db, placeId, { status });
     return json({ success: true });
   }
 
@@ -919,46 +1159,17 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
     const body = await readJsonBody(request);
     const photo = body.photo && typeof body.photo === "object" ? body.photo : {};
     const palette = Array.isArray(body.palette) ? body.palette.filter((item) => typeof item === "string") : [];
-    try {
-      await db
-        .prepare(
-          `UPDATE places_prospects
-           SET selected_photo_json = ?,
-               selected_palette_json = ?,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE place_id = ?`,
-        )
-        .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
-        .run();
-    } catch (error) {
-      if (!isMissingColumnError(error)) throw error;
-      await ensureColumn(db, "places_prospects", "selected_photo_json", "TEXT");
-      await ensureColumn(db, "places_prospects", "selected_palette_json", "TEXT");
-      await ensureColumn(db, "places_prospects", "updated_at", "DATETIME");
-      try {
-        await db
-          .prepare(
-            `UPDATE places_prospects
-             SET selected_photo_json = ?,
-                 selected_palette_json = ?,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE place_id = ?`,
-          )
-          .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
-          .run();
-      } catch (retryError) {
-        if (!isMissingColumnError(retryError, "updated_at")) throw retryError;
-        await db
-          .prepare(
-            `UPDATE places_prospects
-             SET selected_photo_json = ?,
-                 selected_palette_json = ?
-             WHERE place_id = ?`,
-          )
-          .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
-          .run();
-      }
-    }
+    await ensureRequiredColumns(db, selectionRequiredColumns);
+    await db
+      .prepare(
+        `UPDATE places_prospects
+         SET selected_photo_json = ?,
+             selected_palette_json = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE place_id = ?`,
+      )
+      .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
+      .run();
     return json({ success: true });
   }
 
@@ -1062,7 +1273,7 @@ async function generateAiJson(
   const systemMsg =
     `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
     `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
+    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
   const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}`;
 
   let responseContent = "";
@@ -1378,13 +1589,17 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     const originPlaceId = placeIdFromPlace(originData);
     const jobId = crypto.randomUUID();
 
-    await db
-      .prepare(
-        `INSERT INTO generation_jobs (id, business_id, place_id, provider, model, status, metadata_json, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'running', ?, CURRENT_TIMESTAMP)`,
-      )
-      .bind(jobId, businessId, originPlaceId, provider, model, JSON.stringify({ businessName, selectedLogoReference, selectedLogoPriority }))
-      .run();
+    await ensureRequiredColumns(db, generateRequiredColumns);
+
+    await createGenerationJob(db, {
+      id: jobId,
+      business_id: businessId,
+      place_id: originPlaceId,
+      provider,
+      model,
+      status: "running",
+      metadata_json: JSON.stringify({ businessName, selectedLogoReference, selectedLogoPriority }),
+    });
 
     try {
 
@@ -1472,107 +1687,47 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     const rating = typeof originData.rating === "number" ? originData.rating : null;
     const reviews = typeof originData.user_ratings_total === "number" ? originData.user_ratings_total : null;
 
-    try {
-      await db
-        .prepare(
-          `INSERT INTO leads (id, business_id, business_name, niche, phone, website_url, rating, reviews, address, status, view_count, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scraped', 0, CURRENT_TIMESTAMP)
-           ON CONFLICT(business_id) DO UPDATE SET
-             business_name = excluded.business_name,
-             niche = excluded.niche,
-             phone = excluded.phone,
-             website_url = excluded.website_url,
-             rating = excluded.rating,
-             reviews = excluded.reviews,
-             address = excluded.address,
-             updated_at = CURRENT_TIMESTAMP`,
-        )
-        .bind(leadId, businessId, businessName, niche, phone, websiteUrl, rating, reviews, address)
-        .run();
-    } catch (error) {
-      if (!isMissingColumnError(error, "view_count")) throw error;
-      await ensureColumn(db, "leads", "view_count", "INTEGER DEFAULT 0");
-      await db
-        .prepare(
-          `INSERT INTO leads (id, business_id, business_name, niche, phone, website_url, rating, reviews, address, status, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scraped', CURRENT_TIMESTAMP)
-           ON CONFLICT(business_id) DO UPDATE SET
-             business_name = excluded.business_name,
-             niche = excluded.niche,
-             phone = excluded.phone,
-             website_url = excluded.website_url,
-             rating = excluded.rating,
-             reviews = excluded.reviews,
-             address = excluded.address,
-             updated_at = CURRENT_TIMESTAMP`,
-        )
-        .bind(leadId, businessId, businessName, niche, phone, websiteUrl, rating, reviews, address)
-        .run();
-    }
+    await upsertLeadRecord(db, {
+      id: leadId,
+      business_id: businessId,
+      business_name: businessName,
+      niche,
+      phone,
+      website_url: websiteUrl,
+      rating,
+      reviews,
+      address,
+      status: "scraped",
+      view_count: 0,
+      updated_at: new Date().toISOString(),
+    });
 
-    try {
-      await db
-        .prepare(
-          `INSERT INTO json_sites (id, business_id, json_content, updated_at)
-           VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-           ON CONFLICT(business_id) DO UPDATE SET json_content = excluded.json_content, updated_at = CURRENT_TIMESTAMP`,
-        )
-        .bind(crypto.randomUUID(), businessId, JSON.stringify(finalJson))
-        .run();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.toLowerCase().includes("no column named id")) {
-        throw error;
-      }
-      await db
-        .prepare(
-          `INSERT INTO json_sites (business_id, json_content)
-           VALUES (?, ?)
-           ON CONFLICT(business_id) DO UPDATE SET json_content = excluded.json_content, updated_at = CURRENT_TIMESTAMP`,
-        )
-        .bind(businessId, JSON.stringify(finalJson))
-        .run();
-    }
+    await saveJsonSiteRecord(db, businessId, JSON.stringify(finalJson));
 
     const leadRow = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
     if (leadRow?.id) {
-      await db
-        .prepare(
-          `INSERT INTO crm_activities (id, lead_id, staff_id, activity_type, description)
-           VALUES (?, ?, ?, ?, ?)`,
-        )
-        .bind(crypto.randomUUID(), leadRow.id, "system", "note_added", `AI Website generated successfully using ${provider} (${model}).`)
-        .run();
+      await insertCrmActivitySafe(db, {
+        id: crypto.randomUUID(),
+        lead_id: leadRow.id,
+        staff_id: "system",
+        activity_type: "note_added",
+        description: `AI Website generated successfully using ${provider} (${model}).`,
+      });
     }
 
-    await db
-      .prepare("UPDATE generation_jobs SET status = 'success', error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .bind(jobId)
-      .run();
-    await db
-      .prepare(
-        `UPDATE places_prospects
-         SET status = 'site_generated',
-             generated_business_id = ?,
-             last_error = NULL,
-             generated_at = CURRENT_TIMESTAMP,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE place_id = ?`,
-      )
-      .bind(businessId, originPlaceId)
-      .run();
+    await updateGenerationJob(db, jobId, { status: "success", error: null });
+    await updateProspectRecord(db, originPlaceId, {
+      status: "site_generated",
+      generated_business_id: businessId,
+      last_error: null,
+      generated_at: new Date().toISOString(),
+    });
 
     return json({ success: true, businessId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await db
-        .prepare("UPDATE generation_jobs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .bind(message, jobId)
-        .run();
-      await db
-        .prepare("UPDATE places_prospects SET last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE place_id = ?")
-        .bind(message, originPlaceId)
-        .run();
+      await updateGenerationJob(db, jobId, { status: "failed", error: message });
+      await updateProspectRecord(db, originPlaceId, { last_error: message });
       return errorJson(message, 500);
     }
   }
@@ -1611,46 +1766,29 @@ async function handlePayments(request: Request, db: D1Database, env: Env, segmen
   );
   const adminNotifyUrl = `https://wa.me/${normalizeWhatsAppNumber(adminWhatsApp)}?text=${notifyText}`;
 
+  await ensureRequiredColumns(db, checkoutRequiredColumns);
+
   const leadId = crypto.randomUUID();
-  try {
-    await db
-      .prepare(
-        `INSERT INTO leads (id, business_id, business_name, niche, email, status, view_count, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'checkout_pending', 0, CURRENT_TIMESTAMP)
-         ON CONFLICT(business_id) DO UPDATE SET
-           business_name = excluded.business_name,
-           email = COALESCE(excluded.email, email),
-           status = 'checkout_pending',
-           updated_at = CURRENT_TIMESTAMP`,
-      )
-      .bind(leadId, businessId, businessName, "demo", customerEmail)
-      .run();
-  } catch (error) {
-    if (!isMissingColumnError(error, "view_count")) throw error;
-    await ensureColumn(db, "leads", "view_count", "INTEGER DEFAULT 0");
-    await db
-      .prepare(
-        `INSERT INTO leads (id, business_id, business_name, niche, email, status, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'checkout_pending', CURRENT_TIMESTAMP)
-         ON CONFLICT(business_id) DO UPDATE SET
-           business_name = excluded.business_name,
-           email = COALESCE(excluded.email, email),
-           status = 'checkout_pending',
-           updated_at = CURRENT_TIMESTAMP`,
-      )
-      .bind(leadId, businessId, businessName, "demo", customerEmail)
-      .run();
-  }
+  await upsertLeadRecord(db, {
+    id: leadId,
+    business_id: businessId,
+    business_name: businessName,
+    niche: "demo",
+    email: customerEmail,
+    status: "checkout_pending",
+    view_count: 0,
+    updated_at: new Date().toISOString(),
+  });
 
   const row = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
   if (row?.id) {
-    await db
-      .prepare(
-        `INSERT INTO crm_activities (id, lead_id, staff_id, activity_type, description)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      .bind(crypto.randomUUID(), row.id, "system", "checkout_pending", `Domain request: ${requestedDomain || "not provided"} (${domainMode}). Admin WA: ${adminNotifyUrl}`)
-      .run();
+    await insertCrmActivitySafe(db, {
+      id: crypto.randomUUID(),
+      lead_id: row.id,
+      staff_id: "system",
+      activity_type: "checkout_pending",
+      description: `Domain request: ${requestedDomain || "not provided"} (${domainMode}). Admin WA: ${adminNotifyUrl}`,
+    });
   }
 
   if (!apiKey || !storeId || !variantId) {

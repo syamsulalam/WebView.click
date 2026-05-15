@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { type PointerEvent, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, GripHorizontal } from "lucide-react";
 import templateSchema from "../../../JSON/template-schema.json";
 import SiteRenderer from "../../components/SiteRenderer";
 import WebsiteActionPanel from "../../components/WebsiteActionPanel";
@@ -10,6 +10,8 @@ export default function DemoSite() {
   const baseSiteData = templateSchema as any;
   const [selectedPreset, setSelectedPreset] = useState(baseSiteData.design?.stylePreset || "cafe-warm");
   const [inspectorMinimized, setInspectorMinimized] = useState(false);
+  const [inspectorPosition, setInspectorPosition] = useState({ x: 16, y: 92 });
+  const dragState = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const siteData = {
     ...baseSiteData,
     design: {
@@ -34,13 +36,49 @@ export default function DemoSite() {
     await downloadOwnerSiteZip(siteData, siteData.meta?.businessId || "webview-demo");
   };
 
+  const beginInspectorDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, select")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragState.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: inspectorPosition.x,
+      originY: inspectorPosition.y,
+    };
+  };
+
+  const moveInspector = (event: PointerEvent<HTMLDivElement>) => {
+    if (!dragState.current) return;
+    const maxX = Math.max(8, window.innerWidth - (inspectorMinimized ? 220 : 380));
+    const maxY = Math.max(8, window.innerHeight - (inspectorMinimized ? 52 : 280));
+    setInspectorPosition({
+      x: Math.min(maxX, Math.max(8, dragState.current.originX + event.clientX - dragState.current.startX)),
+      y: Math.min(maxY, Math.max(8, dragState.current.originY + event.clientY - dragState.current.startY)),
+    });
+  };
+
+  const endInspectorDrag = () => {
+    dragState.current = null;
+  };
+
   return (
     <div className="relative">
-      <div className="hide-in-export fixed top-4 right-4 z-[200] w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white/95 backdrop-blur shadow-xl p-4 text-sm text-slate-700">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+      <div
+        className={`hide-in-export fixed z-[200] rounded-2xl border border-slate-200 bg-white/95 text-sm text-slate-700 shadow-xl backdrop-blur ${inspectorMinimized ? "w-auto max-w-[min(220px,calc(100vw-1rem))] px-2 py-1.5" : "w-[min(360px,calc(100vw-2rem))] p-4"}`}
+        style={{ left: inspectorPosition.x, top: inspectorPosition.y }}
+        onPointerDown={beginInspectorDrag}
+        onPointerMove={moveInspector}
+        onPointerUp={endInspectorDrag}
+        onPointerCancel={endInspectorDrag}
+      >
+        <div className={`flex items-start justify-between gap-3 ${inspectorMinimized ? "items-center" : ""}`}>
+          <div className="flex min-w-0 items-start gap-2">
+            <GripHorizontal size={16} className="mt-0.5 shrink-0 cursor-grab text-slate-400" />
+            <div className="min-w-0">
             <p className="font-semibold text-slate-950">Demo JSON Sample</p>
             {!inspectorMinimized && <p className="text-xs text-slate-500 mt-1">Source: JSON/template-schema.json</p>}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {!inspectorMinimized && <a href="/admin/schema" className="text-xs font-medium text-indigo-700 hover:underline">Schema</a>}
@@ -55,7 +93,7 @@ export default function DemoSite() {
           </div>
         </div>
         {inspectorMinimized ? (
-          <p className="mt-2 text-xs text-slate-500">{siteData.meta.businessName} · {sections.length} sections · {selectedPreset}</p>
+          <p className="sr-only">{siteData.meta.businessName} · {sections.length} sections · {selectedPreset}</p>
         ) : (
           <>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">

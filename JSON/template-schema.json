@@ -425,6 +425,18 @@
           }
         },
         {
+          "type": "features",
+          "id": "signature-coffee-features",
+          "content": {
+            "title": "Kenapa Signature Coffee layak dicoba",
+            "items": [
+              { "title": "Rasa konsisten", "description": "Komposisi espresso, susu, dan gula aren dibuat stabil untuk repeat order." },
+              { "title": "Bisa dine-in atau takeaway", "description": "Cocok untuk duduk santai di kedai atau dibawa saat perjalanan." },
+              { "title": "Pairing mudah", "description": "Rasanya cocok dipadukan dengan pastry harian atau menu ringan." }
+            ]
+          }
+        },
+        {
           "type": "reviews",
           "id": "signature-coffee-reviews",
           "content": {
@@ -549,6 +561,18 @@
             "highlights": [
               { "title": "Suasana fokus", "description": "Area duduk dibuat nyaman untuk kerja tanpa terasa terlalu formal." },
               { "title": "Mudah reservasi", "description": "Hubungi tim untuk rekomendasi jam yang lebih tenang." }
+            ]
+          }
+        },
+        {
+          "type": "features",
+          "id": "work-friendly-table-features",
+          "content": {
+            "title": "Fasilitas untuk kerja lebih nyaman",
+            "items": [
+              { "title": "Wi-Fi cepat", "description": "Mendukung kebutuhan kerja ringan, meeting online, dan browsing." },
+              { "title": "Meja nyaman", "description": "Area duduk disiapkan untuk pelanggan yang ingin fokus lebih lama." },
+              { "title": "Akses kontak mudah", "description": "Reservasi atau tanya jam terbaik bisa langsung lewat kontak bisnis." }
             ]
           }
         },
