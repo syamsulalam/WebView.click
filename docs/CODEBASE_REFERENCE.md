@@ -49,6 +49,7 @@ Logic penting:
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
 - Footer dirender lebih lengkap: brand/about, sosial, halaman, highlights/offers, kontak, alamat, dan jam operasional jika tersedia.
 - Footer highlights memprioritaskan `products + services` daripada `offers`, supaya link footer menuju halaman detail `detailPageId` masing-masing. Jika tidak ada produk/layanan, footer fallback ke offers/capabilities.
+- Product/service labels in navbar submenu and footer highlights are title-cased for presentation, while preserving the underlying `detailPageId` target.
 - Nomor telepon dirender sebagai `tel:` link dan email sebagai `mailto:` link.
 - Contact form membuat `mailto:` URL berisi nama, email, pesan, dan semua field form yang diisi.
 - Visitor action panel untuk download/setup dirender lewat shared component `WebsiteActionPanel`, bukan logic lokal di renderer.
@@ -80,6 +81,7 @@ Risiko debug:
 Fungsi:
 - Shared visitor action panel untuk `/demo` dan public preview `/:businessId`.
 - Menangani download free, domain selection, domain availability/ownership pre-check, dan checkout setup `$197/year`.
+- Floating trigger text is `Download / Setup` for both demo and public preview; pricing is shown inside the opened panel/checkout flow, not on the collapsed button.
 
 Props penting:
 - `siteData`: dipakai untuk business name/business ID default.
@@ -194,6 +196,7 @@ Fungsi:
 - Memberi link Google Maps/Google Business listing dari `sourceData.googleMapsUri` atau `businessProfile.contact.directionsUrl` untuk membandingkan hasil generate dengan listing asli.
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
 - Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini refresh Place Details, membangun fallback JSON lengkap dari gathered data, lalu memanggil `/api/sites/generate` dengan provider/model pilihan. Jika AI provider gagal, fallback JSON tetap disimpan agar generate tidak berhenti di 502.
+- Fallback JSON dari `/admin/sites` mengisi `meta.generatedWithAi=false`, `meta.generationMode=google_places_fallback`, `meta.sourcePhotoCount`, title-cased service names, generalized niche copy profiles, service-area copy inferred from address, detail pages, dan gallery section jika Places mengembalikan lebih dari satu foto.
 - Tombol `Regen` memakai dropdown:
   - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan untuk membuat ulang JSON via AI yang lebih pintar.
   - `Re-gather Google data + resave` wajib punya `sourceData.placeId`, mengambil Place Details lagi, lalu mengirim `provider`/`model` kosong agar data Google Places, termasuk Maps URL exact, disimpan ulang tanpa memaksa AI call.
@@ -393,6 +396,7 @@ Logic AI:
   - `kie/gemini-3.1-pro` via `https://api.kie.ai/gemini-3.1-pro/v1/chat/completions`
   - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
 - Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI key hilang, provider/model tidak valid, provider mengembalikan HTTP error, response kosong, atau JSON invalid. Flow `/admin/sites` untuk prospect gathered sekarang mengirim fallback `jsonContent`, sehingga tidak memakai `requireAi: true` dan tetap bisa menyimpan situs saat AI provider gagal.
+- Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, prompt AI menginstruksikan model untuk mempertahankan `pageId`, `detailPageId`, navigation href, sourceData, photo URL, dan contact/maps fields, lalu fokus memperkaya copy, FAQ, feature descriptions, naming, dan conversion text.
 
 Logic Google Places/logo:
 - `/api/places/search` memakai Google Places Text Search.

@@ -116,6 +116,154 @@ function meaningfulType(place: any) {
   return types.find((type: string) => !["establishment", "point_of_interest"].includes(type)) || types[0] || "local business";
 }
 
+function toTitleCase(value = "") {
+  const stopWords = new Set(["and", "or", "for", "of", "the", "a", "an", "to", "in", "on", "at", "by", "with"]);
+  return value
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && stopWords.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
+function inferServiceArea(address = "", fallback = "the local area") {
+  const parts = address.split(",").map((part) => part.trim()).filter(Boolean);
+  const usStatePattern = /\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/;
+  const usCity = parts.find((part, index) => index > 0 && !usStatePattern.test(part) && !/\bUSA\b/i.test(part));
+  if (usCity) return `${usCity}-area`;
+  const idCity = parts.find((part) => /jakarta|bandung|surabaya|denpasar|medan|bekasi|tangerang|bogor|semarang|yogyakarta/i.test(part));
+  if (idCity) return `area ${idCity}`;
+  return parts.length > 1 ? `${parts[parts.length - 2]} area` : fallback;
+}
+
+function industryCopyProfile({
+  businessName,
+  nicheText,
+  typeLabel,
+  serviceArea,
+  phone,
+  isEnglish,
+}: {
+  businessName: string;
+  nicheText: string;
+  typeLabel: string;
+  serviceArea: string;
+  phone: string;
+  isEnglish: boolean;
+}) {
+  const lower = nicheText.toLowerCase();
+  const directContact = phone
+    ? (isEnglish ? `Visitors can call ${phone} directly.` : `Pengunjung bisa langsung menelepon ${phone}.`)
+    : (isEnglish ? "Contact details can be completed by admin." : "Detail kontak bisa dilengkapi admin.");
+  const base = {
+    serviceTitle: isEnglish ? `${typeLabel} Services` : `Layanan ${typeLabel}`,
+    consultationTitle: isEnglish ? "Fast Consultation" : "Konsultasi Cepat",
+    summary: isEnglish ? `Local ${typeLabel} help from ${businessName}.` : `Bantuan ${typeLabel} lokal dari ${businessName}.`,
+    description: isEnglish
+      ? `This page turns gathered Google Business Profile data into a clearer service page so visitors understand what ${businessName} can help with before they call, visit, or request details.`
+      : `Halaman ini mengubah data Google Business Profile menjadi halaman layanan yang lebih jelas agar pengunjung memahami bantuan yang ditawarkan ${businessName}.`,
+    bestFor: isEnglish ? ["Local customers", "Fast inquiry", "Custom needs"] : ["Pelanggan lokal", "Pertanyaan cepat", "Kebutuhan khusus"],
+    included: isEnglish ? ["Initial consultation", "Clear next steps", "Local support"] : ["Konsultasi awal", "Langkah berikutnya jelas", "Dukungan lokal"],
+    highlights: [
+      { title: isEnglish ? "Local Context" : "Konteks Lokal", description: isEnglish ? `Built around customer intent in the ${serviceArea}.` : `Disusun untuk kebutuhan pelanggan di ${serviceArea}.` },
+      { title: isEnglish ? "Easy Next Step" : "Langkah Mudah", description: directContact },
+    ],
+    detailFeatures: [
+      { title: isEnglish ? "Clear Fit" : "Kebutuhan Jelas", description: isEnglish ? "Visitors can quickly understand whether this service matches their need." : "Pengunjung bisa cepat memahami apakah layanan ini cocok untuk kebutuhan mereka." },
+      { title: isEnglish ? "Local Context" : "Konteks Lokal", description: serviceArea },
+      { title: isEnglish ? "Simple Contact" : "Kontak Sederhana", description: directContact },
+    ],
+    shortPitch: isEnglish ? `A trusted local business serving customers in the ${serviceArea}.` : `Bisnis lokal terpercaya yang melayani pelanggan di ${serviceArea}.`,
+    homeFeatureTitle: isEnglish ? "Service Positioning" : "Posisi Layanan",
+    homeFeatureDescription: isEnglish ? "The page expands a Google profile into clearer customer-facing service content." : "Halaman ini mengubah profil Google menjadi konten layanan yang lebih jelas.",
+    consultationSummary: isEnglish ? "Ask questions and get clear next steps." : "Tanyakan kebutuhan dan dapatkan langkah berikutnya.",
+    consultationDescription: isEnglish ? "Useful for visitors who need availability, pricing, and timing before booking or visiting." : "Berguna untuk pengunjung yang ingin tahu ketersediaan, harga, dan waktu sebelum datang atau booking.",
+    consultationBestFor: isEnglish ? ["Price questions", "Availability", "Planning"] : ["Pertanyaan harga", "Ketersediaan", "Perencanaan"],
+    consultationIncluded: isEnglish ? ["Question intake", "Basic recommendation", "Contact handoff"] : ["Input pertanyaan", "Rekomendasi dasar", "Arahan kontak"],
+    consultationHighlightTitle: isEnglish ? "Low Friction" : "Mudah Dihubungi",
+  };
+
+  if (/concrete|foundation|slab|driveway|patio|walkway|garage|general contractor|construction|roof|paving|masonry/i.test(lower)) {
+    return {
+      ...base,
+      serviceTitle: /concrete|slab|driveway|patio|walkway/i.test(lower) ? "Concrete Repair and Flatwork" : "Project Repair and Construction Services",
+      consultationTitle: "Estimate and Project Consultation",
+      summary: `${businessName} helps ${serviceArea} property owners understand repair needs, project scope, and practical next steps.`,
+      description: "Use this page to explain the problems customers commonly search for: visible damage, worn surfaces, safety concerns, project timing, estimate questions, and whether the work is right for a home or commercial property. The owner can later replace examples with exact services, but this gives visitors a stronger starting point than a bare business listing.",
+      bestFor: ["Repair needs", "Project estimates", "Home or property improvements"],
+      included: ["Issue review", "Scope discussion", "Clear next step for estimate"],
+      highlights: [
+        { title: "Repair-Focused Copy", description: "Explains customer problems instead of repeating a generic Google category." },
+        { title: "Estimate Ready", description: directContact },
+      ],
+      detailFeatures: [
+        { title: "Problem-Focused", description: "Frames the service around visible issues, timing, and project scope." },
+        { title: toTitleCase(serviceArea), description: `Built around local customer intent in the ${serviceArea}.` },
+        { title: "Clear Next Step", description: directContact },
+      ],
+      shortPitch: `${businessName} gives ${serviceArea} property owners a clearer path for repair questions, project planning, and estimate requests.`,
+      homeFeatureTitle: "Project-Focused Positioning",
+      homeFeatureDescription: "The page turns a generic contractor category into customer intent around repairs, estimates, and next steps.",
+      consultationSummary: "A focused next step for homeowners or property managers who need project scope before scheduling.",
+      consultationDescription: "This page can be used to turn Google profile visitors into estimate requests by asking about location, surface or project type, approximate size, visible damage, timing, and preferred contact method.",
+      consultationBestFor: ["Repair estimates", "Project timing", "Scope questions"],
+      consultationIncluded: ["Project intake", "Photo-ready questions", "Scheduling handoff"],
+      consultationHighlightTitle: "Built for Estimate Requests",
+    };
+  }
+
+  if (/law|legal|attorney|notary|immigration|tax|accounting|bookkeeping|financial|insurance|mortgage/i.test(lower)) {
+    return {
+      ...base,
+      serviceTitle: `${typeLabel} Guidance`,
+      consultationTitle: "Confidential Consultation Request",
+      summary: `${businessName} helps ${serviceArea} clients understand their options and choose a practical next step.`,
+      description: "This page should clarify service fit, explain when to reach out, reduce uncertainty, and encourage visitors to request a consultation without making unsupported claims.",
+      bestFor: ["Private questions", "Document review", "Next-step planning"],
+      included: ["Initial intake", "Fit review", "Clear follow-up path"],
+      shortPitch: `${businessName} supports ${serviceArea} clients with professional guidance and a clear path to contact.`,
+      homeFeatureTitle: "Professional Trust",
+      homeFeatureDescription: "Content is structured to reduce uncertainty and guide visitors toward a consultation.",
+    };
+  }
+
+  if (/dentist|dental|clinic|medical|doctor|therapy|chiropractor|health/i.test(lower)) {
+    return {
+      ...base,
+      serviceTitle: `${typeLabel} Care`,
+      consultationTitle: "Appointment and Care Questions",
+      summary: `${businessName} helps ${serviceArea} patients understand care options and appointment next steps.`,
+      description: "This page should explain patient-friendly benefits, appointment expectations, contact options, and trust signals from the Google profile without inventing medical claims.",
+      bestFor: ["New patients", "Care questions", "Appointment planning"],
+      included: ["Care inquiry", "Availability questions", "Contact handoff"],
+      shortPitch: `${businessName} gives ${serviceArea} patients a clearer path to ask questions and plan a visit.`,
+      homeFeatureTitle: "Patient-Friendly Flow",
+      homeFeatureDescription: "The page organizes contact, reviews, hours, and care questions into a simple visitor path.",
+    };
+  }
+
+  if (/landscap|garden|lawn|tree|pool|spa|cleaning|janitorial|maid|pressure washing|auto|mechanic|tire|salon|beauty|fitness|gym|restaurant|cafe|coffee|bakery|real estate|realtor|property/i.test(lower)) {
+    return {
+      ...base,
+      serviceTitle: `${typeLabel} Services`,
+      consultationTitle: isEnglish ? "Service Questions and Booking" : "Pertanyaan dan Booking Layanan",
+      summary: `${businessName} helps ${serviceArea} customers compare options, ask practical questions, and take the next step.`,
+      description: "This page should expand the Google profile into useful customer-facing content: what visitors can ask about, what kind of help is available, what to prepare before contacting the business, and why the listing looks trustworthy.",
+      bestFor: ["Local service needs", "Availability questions", "Planning before booking"],
+      included: ["Need review", "Availability questions", "Contact handoff"],
+      shortPitch: `${businessName} helps ${serviceArea} customers move from search intent to a practical next step.`,
+      homeFeatureTitle: "Local Service Fit",
+      homeFeatureDescription: "The page turns profile data into clear service context, trust signals, and contact paths.",
+    };
+  }
+
+  return base;
+}
+
 function faviconSvg(name: string, color = "#111827") {
   const initial = (name.trim()[0] || "W").toUpperCase();
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="${color}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${initial}</text></svg>`;
@@ -129,7 +277,8 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
   const phone = prospectPhone(place);
   const mapsUrl = place.url || place.googleMapsUri || "";
   const websiteUrl = place.website || place.websiteUri || "";
-  const typeLabel = meaningfulType(place).replace(/_/g, " ");
+  const typeLabel = toTitleCase(meaningfulType(place));
+  const serviceArea = inferServiceArea(address, isEnglish ? "the local area" : "area sekitar");
   const rating = Number(place.rating || 0);
   const reviewCount = Number(place.user_ratings_total || place.userRatingCount || 0);
   const primary = palette[0] || "#111827";
@@ -145,10 +294,19 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
   const stylePresetMeta = getStylePreset(stylePreset);
   const visualStyle = inferVisualStyleFromText(nicheText);
   const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
-  const serviceTitle = isEnglish ? `${typeLabel} services` : `Layanan ${typeLabel}`;
+  const profile = industryCopyProfile({ businessName, nicheText, typeLabel, serviceArea, phone, isEnglish });
+  const serviceTitle = profile.serviceTitle;
+  const consultationTitle = profile.consultationTitle;
   const serviceId = "core-service";
   const servicePageId = `service-${serviceId}`;
   const consultationPageId = "service-fast-consultation";
+  const photoUrls = Array.isArray(place.photos)
+    ? place.photos
+        .map((photo: any) => photoReference(photo))
+        .filter(Boolean)
+        .slice(0, 8)
+        .map((reference: string) => `/api/places/photo?reference=${encodeURIComponent(reference)}&maxwidth=960`)
+    : [];
   const reviews = Array.isArray(place.reviews) ? place.reviews.slice(0, 3).map((review: any) => ({
     authorName: review.author_name || review.authorName || "Google reviewer",
     rating: Number(review.rating || 5),
@@ -161,33 +319,28 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
       id: serviceId,
       type: "service",
       title: serviceTitle,
-      summary: isEnglish ? `Local ${typeLabel} help from ${businessName}.` : `Bantuan ${typeLabel} lokal dari ${businessName}.`,
-      description: isEnglish
-        ? `A practical service page built from gathered Google Business Profile data so visitors understand what ${businessName} can help with.`
-        : `Halaman layanan yang dibangun dari data Google Business Profile agar pengunjung memahami bantuan yang ditawarkan ${businessName}.`,
+      summary: profile.summary,
+      description: profile.description,
       priceHint: isEnglish ? "Contact for estimate" : "Hubungi untuk estimasi",
       image: imageUrl,
       detailPageId: servicePageId,
-      bestFor: isEnglish ? ["Local customers", "Fast inquiry", "Custom needs"] : ["Pelanggan lokal", "Pertanyaan cepat", "Kebutuhan khusus"],
-      included: isEnglish ? ["Initial consultation", "Clear next steps", "Local support"] : ["Konsultasi awal", "Langkah berikutnya jelas", "Dukungan lokal"],
-      highlights: [
-        { title: isEnglish ? "Local context" : "Konteks lokal", description: address || (isEnglish ? "Built around local customer intent." : "Disusun untuk kebutuhan pelanggan lokal.") },
-        { title: isEnglish ? "Easy next step" : "Langkah mudah", description: phone ? (isEnglish ? "Visitors can call directly." : "Pengunjung bisa langsung menelepon.") : (isEnglish ? "Contact details can be completed by admin." : "Detail kontak bisa dilengkapi admin.") },
-      ],
+      bestFor: profile.bestFor,
+      included: profile.included,
+      highlights: profile.highlights,
       relatedReviewKeywords: ["service", "help", "professional", "fast", "local"],
     },
     {
       id: "fast-consultation",
       type: "service",
-      title: isEnglish ? "Fast consultation" : "Konsultasi cepat",
-      summary: isEnglish ? "Ask questions and get clear next steps." : "Tanyakan kebutuhan dan dapatkan langkah berikutnya.",
-      description: isEnglish ? "Useful for visitors who need availability, pricing, and timing before booking or visiting." : "Berguna untuk pengunjung yang ingin tahu ketersediaan, harga, dan waktu sebelum datang atau booking.",
+      title: consultationTitle,
+      summary: profile.consultationSummary,
+      description: profile.consultationDescription,
       priceHint: isEnglish ? "Fast response" : "Respons cepat",
       image: imageUrl,
       detailPageId: consultationPageId,
-      bestFor: isEnglish ? ["Price questions", "Availability", "Planning"] : ["Pertanyaan harga", "Ketersediaan", "Perencanaan"],
-      included: isEnglish ? ["Question intake", "Basic recommendation", "Contact handoff"] : ["Input pertanyaan", "Rekomendasi dasar", "Arahan kontak"],
-      highlights: [{ title: isEnglish ? "Low friction" : "Mudah dihubungi", description: isEnglish ? "Customers can call or open maps directly." : "Pelanggan bisa menelepon atau membuka maps langsung." }],
+      bestFor: profile.consultationBestFor,
+      included: profile.consultationIncluded,
+      highlights: [{ title: profile.consultationHighlightTitle, description: isEnglish ? "Customers can call or open maps directly." : "Pelanggan bisa menelepon atau membuka maps langsung." }],
       relatedReviewKeywords: ["fast", "quick", "response", "help"],
     },
   ];
@@ -215,9 +368,7 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
         content: {
           title: isEnglish ? `Why choose ${service.title}` : `Kenapa memilih ${service.title}`,
           items: [
-            { title: isEnglish ? "Clear fit" : "Kebutuhan jelas", description: service.summary },
-            { title: isEnglish ? "Local data" : "Data lokal", description: address || businessName },
-            { title: isEnglish ? "Simple contact" : "Kontak sederhana", description: phone ? phone : (isEnglish ? "Contact can be completed by admin." : "Kontak bisa dilengkapi admin.") },
+            ...profile.detailFeatures,
           ],
         },
       },
@@ -247,6 +398,10 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
       seoDescription: isEnglish ? `Official website for ${businessName}.` : `Website resmi untuk ${businessName}.`,
       faviconSvg: faviconSvg(businessName, primary),
       brandPalette: palette,
+      generatedWithAi: false,
+      generationMode: "google_places_fallback",
+      generationNote: "Generated from gathered Google Places data because AI output was unavailable or not required.",
+      sourcePhotoCount: photoUrls.length,
     },
     sourceData: {
       provider: "google_places",
@@ -289,14 +444,14 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
       photoSource: imageUrl ? "google_places" : "",
       googlePhotoReference: "",
       photoCaption: imageUrl ? "Photo from Google Business Profile" : "",
-      photoAttributions: [],
+      photoAttributions: Array.isArray(place.selectedPhoto?.attributions) ? place.selectedPhoto.attributions : [],
     },
     businessProfile: {
       name: businessName,
       primaryType: typeLabel,
       typeLabel,
       categories: Array.isArray(place.types) ? place.types : [],
-      shortPitch: isEnglish ? `A trusted local business serving customers around ${address || "the local area"}.` : `Bisnis lokal terpercaya di ${address || "area sekitar"}.`,
+      shortPitch: profile.shortPitch,
       address: { formatted: address },
       contact: { phoneNational: phone, phoneInternational: phone, directionsUrl: mapsUrl },
     },
@@ -343,8 +498,9 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
         sections: [
           { type: "hero", id: "hero", content: { headline: isEnglish ? `${businessName} is ready to help locally` : `${businessName} siap membantu pelanggan lokal`, subheadline: address, image: imageUrl, buttons: [{ text: isEnglish ? "Contact Us" : "Hubungi Kami", href: "#contact", style: "primary" }, { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl || "#contact", style: "outline" }] } },
           { type: "trustBar", id: "trust", content: { items: [{ label: "Google Rating", value: rating ? rating.toFixed(1) : "-" }, { label: "Reviews", value: reviewCount ? `${reviewCount}+` : "-" }, { label: "Phone", value: phone || (isEnglish ? "Available soon" : "Segera tersedia") }] } },
-          { type: "features", id: "features", content: { title: isEnglish ? "Why this business stands out" : "Keunggulan bisnis ini", items: [{ title: isEnglish ? "Active Google profile" : "Profil Google aktif", description: place.business_status || "OPERATIONAL" }, { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: phone || (isEnglish ? "Contact can be completed by admin." : "Kontak bisa dilengkapi admin.") }, { title: isEnglish ? "Website-ready" : "Siap dibuatkan website", description: websiteUrl ? "Website detected." : "No website detected yet." }] } },
+          { type: "features", id: "features", content: { title: isEnglish ? "Why this business stands out" : "Keunggulan bisnis ini", items: [{ title: profile.homeFeatureTitle, description: profile.homeFeatureDescription }, { title: isEnglish ? "Easy to Contact" : "Mudah Dihubungi", description: phone || (isEnglish ? "Contact can be completed by admin." : "Kontak bisa dilengkapi admin.") }, { title: isEnglish ? "Website Ready" : "Siap Dibuatkan Website", description: websiteUrl ? "Website detected." : "No website detected yet." }] } },
           { type: "offers", id: "services", content: { title: isEnglish ? "Services to highlight" : "Layanan utama", items: services } },
+          ...(photoUrls.length > 1 ? [{ type: "imageGallery", id: "gallery", content: { title: isEnglish ? "Project and profile photos" : "Foto profil dan pekerjaan", images: photoUrls } }] : []),
           { type: "reviews", id: "reviews", content: { title: isEnglish ? "Google social proof" : "Bukti sosial Google", reviews } },
           { type: "hoursLocation", id: "contact", content: { title: isEnglish ? "Location and contact" : "Lokasi & Kontak", address, phone, directionsUrl: mapsUrl } },
           { type: "faq", id: "faq", content: { title: isEnglish ? "Common questions" : "Pertanyaan umum", items: [{ question: isEnglish ? "How do I contact this business?" : "Bagaimana menghubungi bisnis ini?", answer: phone ? (isEnglish ? `Call ${phone}.` : `Hubungi ${phone}.`) : (isEnglish ? "Phone number can be completed manually." : "Nomor telepon bisa dilengkapi manual.") }, { question: isEnglish ? "Can this data be edited?" : "Apakah data ini bisa diedit?", answer: isEnglish ? "Yes. The generated JSON can be corrected before the final website is used." : "Bisa. JSON hasil generate dapat dikoreksi sebelum website final dipakai." }] } },

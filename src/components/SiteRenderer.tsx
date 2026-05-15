@@ -231,6 +231,20 @@ function offeringHref(item: any) {
   return "";
 }
 
+function titleCaseLabel(value = "") {
+  const stopWords = new Set(["and", "or", "for", "of", "the", "a", "an", "to", "in", "on", "at", "by", "with"]);
+  return String(value)
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && stopWords.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 function ImageFrame({
   src,
   label,
@@ -401,7 +415,7 @@ export default function SiteRenderer({
                         >
                           <span className="mt-0.5 shrink-0 text-slate-500">{menuIcon(child.label, child.href)}</span>
                           <span>
-                            <span className="block text-sm font-semibold">{child.label}</span>
+                            <span className="block text-sm font-semibold">{titleCaseLabel(child.label)}</span>
                             {child.description && <span className="mt-0.5 block text-xs text-slate-500">{child.description}</span>}
                           </span>
                         </button>
@@ -919,7 +933,7 @@ export default function SiteRenderer({
             <div className="space-y-2 opacity-85">
               {footerHighlights.slice(0, 6).map((item: any) => {
                 const href = offeringHref(item);
-                const label = item.title || item.label;
+                const label = titleCaseLabel(item.title || item.label);
                 if (href.startsWith("#")) {
                   const pageId = href.replace("#", "");
                   return (

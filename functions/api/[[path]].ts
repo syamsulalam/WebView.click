@@ -1340,6 +1340,7 @@ async function generateAiJson(
   const selectedLogoSource = asString(body.selectedLogoSource, selectedLogoImageUrl.startsWith("/api/places/photo") ? "google_places" : "");
   const selectedLogoAttributions = Array.isArray(body.selectedLogoAttributions) ? body.selectedLogoAttributions : [];
   const selectedLogoPriority = asString(body.selectedLogoPriority);
+  const submittedJson = body.jsonContent && typeof body.jsonContent === "object" ? body.jsonContent : null;
 
   if (!provider || !model) {
     if (requireAi) {
@@ -1373,8 +1374,8 @@ async function generateAiJson(
   const systemMsg =
     `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
     `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. Also choose design.visualStyle from these exact values: soft-rounded, boxy-editorial, industrial-diagonal, clean-minimal, bold-sport. Use industrial-diagonal for contractors/concrete/roofing/auto/security when a harder boxy look with diagonal image edges fits; boxy-editorial for legal/finance/real estate; clean-minimal for clinics/cleaning/pool/service businesses; bold-sport for fitness/training; soft-rounded for friendly lifestyle businesses. Include design.visualStyleConfig with label, description, allowedValues, and selectionRule. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
-  const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}`;
+    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. Also choose design.visualStyle from these exact values: soft-rounded, boxy-editorial, industrial-diagonal, clean-minimal, bold-sport. Use industrial-diagonal for contractors/concrete/roofing/auto/security when a harder boxy look with diagonal image edges fits; boxy-editorial for legal/finance/real estate; clean-minimal for clinics/cleaning/pool/service businesses; bold-sport for fitness/training; soft-rounded for friendly lifestyle businesses. Include design.visualStyleConfig with label, description, allowedValues, and selectionRule. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If a Submitted Scaffold JSON is provided, preserve its existing pageIds, detailPageIds, navigation hrefs, sourceData, photo URLs, and contact/map fields. In that case, focus on improving copy quality, specificity, service/product naming, FAQ depth, feature descriptions, and conversion text instead of restructuring the site. Mark meta.generatedWithAi true and meta.generationMode ai_assisted when you successfully enrich or generate the JSON. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
+  const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}\nSubmitted Scaffold JSON: ${submittedJson ? JSON.stringify(submittedJson) : "none"}`;
 
   let responseContent = "";
 
@@ -1768,11 +1769,13 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     let finalJson = body.jsonContent && typeof body.jsonContent === "object"
       ? body.jsonContent as Record<string, unknown>
       : structuredClone(templateSchema) as Record<string, unknown>;
+    let aiGenerated = false;
 
     try {
       const generated = await generateAiJson(db, env, body);
       if (generated) {
         finalJson = generated;
+        aiGenerated = true;
       } else if (body.requireAi === true) {
         throw new Error("AI generation did not return JSON. Check provider/model/API key settings.");
       }
@@ -1785,6 +1788,11 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
 
     const metaConfig = finalJson.meta && typeof finalJson.meta === "object" ? finalJson.meta as Record<string, unknown> : {};
     metaConfig.businessId = businessId;
+    metaConfig.generatedWithAi = aiGenerated;
+    metaConfig.generationMode = aiGenerated ? "ai_assisted" : asString(metaConfig.generationMode, provider && model ? "submitted_json_ai_fallback" : "submitted_json");
+    metaConfig.aiProvider = provider || "";
+    metaConfig.aiModel = model || "";
+    metaConfig.generatedAt = new Date().toISOString();
     if (brandPalette.length) {
       metaConfig.brandPalette = brandPalette;
     }

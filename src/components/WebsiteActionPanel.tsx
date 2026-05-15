@@ -128,7 +128,7 @@ export default function WebsiteActionPanel({ siteData, businessId = "demo-site",
 
   const panelPosition = variant === "demo"
     ? "fixed bottom-5 right-5 z-[210] hide-in-export"
-    : "fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 hide-in-export";
+    : "fixed bottom-5 right-5 z-[100] hide-in-export";
 
   return (
     <>
@@ -186,7 +186,7 @@ export default function WebsiteActionPanel({ siteData, businessId = "demo-site",
             : "inline-flex items-center gap-3 rounded-full border border-gray-200 bg-white/90 px-6 py-4 text-sm font-semibold text-gray-900 shadow-2xl backdrop-blur-md hover:bg-white"}
         >
           <Download size={18} />
-          {variant === "demo" ? "Download / Setup" : "Download / Setup ($197/year)"}
+          Download / Setup
         </button>
       </div>
 
