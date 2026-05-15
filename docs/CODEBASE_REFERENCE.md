@@ -150,8 +150,11 @@ Logic penting:
 - Logo yang dipilih dikirim sebagai `selectedLogoImageUrl`.
 - Photo reference dan source dikirim sebagai `selectedLogoReference` dan `selectedLogoSource`.
 - Attribution foto yang dipilih dikirim sebagai `selectedLogoAttributions` dan disimpan di JSON sebagai `brand.photoAttributions`.
+- Admin harus menjalankan `Gather data` / Place Details sebelum `Generate Site`; tombol generate baru muncul setelah detail bisnis, foto, review, phone, dan direct Google Maps URL dicoba diambil.
+- Search result diberi `searchQuery` agar generator tidak memakai tipe Places generik seperti `establishment` sebagai niche ketika Google tidak memberi kategori spesifik.
 - Untuk situs gratis, foto Google Places tetap hotlink/proxy runtime dan tidak di-upload ke R2.
 - JSON mock fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
+- Palette hasil ekstraksi digelapkan bila terlalu terang untuk teks putih; Function juga menormalisasi `primary` dan `accent` sebelum menyimpan JSON.
 - JSON mock fallback menentukan `meta.language` dari alamat/region Places: US default English, Indonesia default Indonesian.
 - JSON mock fallback menentukan `design.stylePreset` dan `design.stylePresetConfig` via `src/lib/siteStylePresets.ts`.
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
@@ -186,6 +189,11 @@ Risiko debug:
 Fungsi:
 - Menampilkan daftar situs yang sudah berhasil dibuat dan tersimpan di D1 `json_sites`.
 - Memberi link preview/open ke `/:businessId` supaya hasil generate tidak hilang dari workflow admin.
+- Memberi link Google Maps/Google Business listing dari `sourceData.googleMapsUri` atau `businessProfile.contact.directionsUrl` untuk membandingkan hasil generate dengan listing asli.
+- Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
+- Tombol `Regen` memakai dropdown:
+  - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan untuk membuat ulang JSON via AI yang lebih pintar.
+  - `Refresh / resave data only` memakai flow yang sama tetapi mengirim `provider`/`model` kosong agar JSON disimpan ulang tanpa memaksa AI call.
 
 API yang dipakai:
 - `GET /api/sites`
@@ -193,6 +201,7 @@ API yang dipakai:
 Logic penting:
 - Search lokal bisa mencari nama bisnis, slug, niche, bahasa, dan region.
 - Metadata tampilan diambil dari `meta`, `businessProfile`, dan `trust` di JSON site.
+- Pilihan provider/model regenerate disimpan ke localStorage agar refresh halaman tetap memakai model terakhir yang dipilih admin.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
 
 Risiko debug:

@@ -108,7 +108,7 @@ function normalizeSiteData(siteData: any) {
     hours,
     conversion: {
       primaryCta: conversion.primaryCta || header.ctaButton || { text: "Hubungi Kami", href: "#contact" },
-      secondaryCta: conversion.secondaryCta || { text: "Lihat Lokasi", href: "#contact" },
+      secondaryCta: conversion.secondaryCta || { text: meta.language === "id" ? "Lihat Lokasi" : "View Location", href: "#contact" },
       stickyMobileCta: Boolean(conversion.stickyMobileCta),
       ...conversion,
     },
@@ -192,9 +192,15 @@ function buttonIcon(label = "", href = "") {
 
 function phoneHref(value = "") {
   if (!value) return "";
+  if (isPlaceholderPhone(value)) return "";
   if (value.startsWith("tel:")) return value;
   const normalized = value.replace(/[^\d+]/g, "");
   return normalized ? `tel:${normalized}` : "";
+}
+
+function isPlaceholderPhone(value = "") {
+  const digits = value.replace(/\D/g, "");
+  return !digits || /^0+$/.test(digits);
 }
 
 function mailHref(email = "", subject = "", body = "") {
@@ -278,6 +284,18 @@ export default function SiteRenderer({
     highlights: isIndonesian ? "Unggulan" : "Highlights",
     contact: isIndonesian ? "Kontak" : "Contact",
     learnMore: isIndonesian ? "Pelajari Lebih Lanjut" : "Learn More",
+    manyReviews: isIndonesian ? "banyak" : "many",
+    reviews: isIndonesian ? "review" : "reviews",
+    offersEyebrow: isIndonesian ? "Layanan" : "Services",
+    offersTitle: isIndonesian ? "Yang Kami Tawarkan" : "What We Offer",
+    reviewsEyebrow: isIndonesian ? "Ulasan Pelanggan" : "Customer Reviews",
+    reviewsTitle: isIndonesian ? "Dipercaya pelanggan lokal" : "Trusted by local customers",
+    hoursTitle: isIndonesian ? "Jam Operasional" : "Business Hours",
+    locationTitle: isIndonesian ? "Lokasi & Kontak" : "Location & Contact",
+    openMaps: isIndonesian ? "Buka Google Maps" : "Open Google Maps",
+    heroFallback: isIndonesian ? `Website resmi ${meta.businessName}` : `${meta.businessName} official website`,
+    featuresFallback: isIndonesian ? "Mengapa Memilih Kami?" : "Why Choose Us?",
+    capabilityFallback: isIndonesian ? "Tersedia di lokasi ini." : "Available from this business.",
   };
   const changeTab = (pageId: string) => {
     const nextPageId = pageId || homePageId;
@@ -306,8 +324,10 @@ export default function SiteRenderer({
       ];
   const footerHours = Array.isArray(hours.regular) ? hours.regular.slice(0, 3) : [];
   const footerHighlights = offers.length > 0 ? offers : products.length > 0 ? products : services.length > 0 ? services : capabilities;
-  const primaryPhone = businessProfile.contact?.phoneInternational || businessProfile.contact?.phoneNational || "";
-  const displayPhone = businessProfile.contact?.phoneNational || businessProfile.contact?.phoneInternational || "";
+  const rawPrimaryPhone = businessProfile.contact?.phoneInternational || businessProfile.contact?.phoneNational || "";
+  const rawDisplayPhone = businessProfile.contact?.phoneNational || businessProfile.contact?.phoneInternational || "";
+  const primaryPhone = isPlaceholderPhone(rawPrimaryPhone) ? "" : rawPrimaryPhone;
+  const displayPhone = isPlaceholderPhone(rawDisplayPhone) ? "" : rawDisplayPhone;
   const displayEmail = businessProfile.contact?.email || businessProfile.email || globalConfig.footer.email || "";
 
   const customStyles = {
@@ -427,7 +447,7 @@ export default function SiteRenderer({
                           {businessProfile.typeLabel}
                         </p>
                         <h1 className="text-4xl md:text-6xl font-bold mb-6 leading-tight text-slate-950" style={{ fontFamily: typography.headingFont }}>
-                          {heroContent.headline || `Website resmi ${meta.businessName}`}
+                          {heroContent.headline || labels.heroFallback}
                         </h1>
                         <p className="text-lg md:text-xl mb-8 text-slate-600 max-w-2xl">
                           {heroContent.subheadline || businessProfile.shortPitch}
@@ -456,12 +476,12 @@ export default function SiteRenderer({
                             );
                           })}
                         </div>
-                        {(trust.rating > 0 || businessProfile.contact?.phoneNational) && (
+                        {(trust.rating > 0 || displayPhone) && (
                           <div className="mt-8 flex flex-wrap gap-4 text-sm text-slate-600">
-                            {trust.rating > 0 && <span className="inline-flex items-center gap-2"><Star size={16} fill={colors.accent} color={colors.accent} /> {trust.rating.toFixed(1)} dari {trust.reviewCount || "banyak"} review</span>}
-                            {businessProfile.contact?.phoneNational && (
-                              <a href={phoneHref(primaryPhone || businessProfile.contact.phoneNational)} className="inline-flex items-center gap-2 hover:underline">
-                                <Phone size={16} /> {businessProfile.contact.phoneNational}
+                            {trust.rating > 0 && <span className="inline-flex items-center gap-2"><Star size={16} fill={colors.accent} color={colors.accent} /> {trust.rating.toFixed(1)} {isIndonesian ? "dari" : "from"} {trust.reviewCount || labels.manyReviews} {labels.reviews}</span>}
+                            {displayPhone && (
+                              <a href={phoneHref(primaryPhone || displayPhone)} className="inline-flex items-center gap-2 hover:underline">
+                                <Phone size={16} /> {displayPhone}
                               </a>
                             )}
                           </div>
@@ -479,7 +499,7 @@ export default function SiteRenderer({
                 const items = section.content?.items || [
                   trust.rating ? { label: "Google Rating", value: trust.rating.toFixed(1), icon: "star" } : null,
                   trust.reviewCount ? { label: "Reviews", value: `${trust.reviewCount}+`, icon: "check" } : null,
-                  businessProfile.contact?.phoneNational ? { label: "Phone", value: businessProfile.contact.phoneNational, icon: "phone" } : null,
+                  displayPhone ? { label: "Phone", value: displayPhone, icon: "phone" } : null,
                 ].filter(Boolean);
                 return (
                   <section key={section.id} className="px-6 py-6 bg-slate-50 border-y border-slate-200">
@@ -501,11 +521,11 @@ export default function SiteRenderer({
               }
 
               if (section.type === "features") {
-                const items = section.content?.items || capabilities.filter((item: any) => item.enabled !== false).map((item: any) => ({ title: item.label, description: item.description || "Tersedia di lokasi ini." }));
+                const items = section.content?.items || capabilities.filter((item: any) => item.enabled !== false).map((item: any) => ({ title: item.label, description: item.description || labels.capabilityFallback }));
                 return (
                   <section key={section.id} className="py-20 px-6 bg-black/5">
                     <div className="max-w-6xl mx-auto">
-                      <h2 className="text-3xl font-bold text-center mb-12">{section.content?.title || "Mengapa Memilih Kami?"}</h2>
+                      <h2 className="text-3xl font-bold text-center mb-12">{section.content?.title || labels.featuresFallback}</h2>
                       <div className="grid md:grid-cols-3 gap-8">
                         {items.map((item: any, i: number) => (
                           <div key={i} className="bg-white p-7 rounded-xl shadow-sm hover:shadow-md transition border border-slate-100">
@@ -533,8 +553,8 @@ export default function SiteRenderer({
                   <section key={section.id} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto">
                       <div className="max-w-2xl mb-10">
-                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>Layanan</p>
-                        <h2 className="text-3xl md:text-4xl font-bold text-slate-950">{section.content?.title || "Yang Kami Tawarkan"}</h2>
+                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{labels.offersEyebrow}</p>
+                        <h2 className="text-3xl md:text-4xl font-bold text-slate-950">{section.content?.title || labels.offersTitle}</h2>
                         {section.content?.description && <p className="mt-3 text-slate-600">{section.content.description}</p>}
                       </div>
                       <div className="grid md:grid-cols-3 gap-5">
@@ -614,8 +634,8 @@ export default function SiteRenderer({
                     <div className="max-w-6xl mx-auto">
                       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
                         <div>
-                          <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>Ulasan Pelanggan</p>
-                          <h2 className="text-3xl md:text-4xl font-bold text-slate-950">{section.content?.title || "Dipercaya pelanggan lokal"}</h2>
+                          <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{labels.reviewsEyebrow}</p>
+                          <h2 className="text-3xl md:text-4xl font-bold text-slate-950">{section.content?.title || labels.reviewsTitle}</h2>
                         </div>
                         {trust.reviewSummary && <p className="max-w-xl text-slate-600">{trust.reviewSummary}</p>}
                       </div>
@@ -644,7 +664,7 @@ export default function SiteRenderer({
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
                         <div className="flex items-center gap-3 mb-5">
                           <Clock size={22} style={{ color: colors.accent }} />
-                          <h2 className="text-2xl font-bold text-slate-950">{section.content?.title || "Jam Operasional"}</h2>
+                          <h2 className="text-2xl font-bold text-slate-950">{section.content?.title || labels.hoursTitle}</h2>
                         </div>
                         <div className="space-y-2 text-slate-700">
                           {regularHours.map((item: any, i: number) => <p key={i}>{typeof item === "string" ? item : item.text || JSON.stringify(item)}</p>)}
@@ -653,20 +673,20 @@ export default function SiteRenderer({
                       <div className="rounded-xl border border-slate-200 p-8 bg-white">
                         <div className="flex items-center gap-3 mb-5">
                           <MapPin size={22} style={{ color: colors.accent }} />
-                          <h2 className="text-2xl font-bold text-slate-950">Lokasi & Kontak</h2>
+                          <h2 className="text-2xl font-bold text-slate-950">{labels.locationTitle}</h2>
                         </div>
                         <p className="text-slate-700">{section.content?.address || location.formattedAddress || businessProfile.address?.formatted || "Alamat belum tersedia."}</p>
-                        {(section.content?.phone || businessProfile.contact?.phoneNational) && (
+                        {(section.content?.phone || displayPhone) && !isPlaceholderPhone(section.content?.phone || displayPhone) && (
                           <div className="mt-3">
-                            <a href={phoneHref(section.content?.phone || primaryPhone || businessProfile.contact.phoneNational)} className="inline-flex w-fit items-center gap-2 font-semibold text-slate-950 hover:underline">
-                              <Phone size={16} /> {section.content?.phone || businessProfile.contact.phoneNational}
+                            <a href={phoneHref(section.content?.phone || primaryPhone || displayPhone)} className="inline-flex w-fit items-center gap-2 font-semibold text-slate-950 hover:underline">
+                              <Phone size={16} /> {section.content?.phone || displayPhone}
                             </a>
                           </div>
                         )}
                         {(section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl) && (
                           <a href={section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl} className="mt-5 inline-flex w-fit items-center gap-2 px-5 py-3 rounded-lg text-white font-semibold" style={{ backgroundColor: colors.primary }}>
                             <MapPin size={16} />
-                            Buka Google Maps
+                            {labels.openMaps}
                           </a>
                         )}
                       </div>
@@ -777,7 +797,8 @@ export default function SiteRenderer({
 
               if (section.type === "contactForm") {
                 const contactEmail = section.content?.email || displayEmail;
-                const contactPhone = section.content?.phone || displayPhone;
+                const rawContactPhone = section.content?.phone || displayPhone;
+                const contactPhone = isPlaceholderPhone(rawContactPhone) ? "" : rawContactPhone;
                 const formFields = Array.isArray(section.content?.formConfig?.fields) ? section.content.formConfig.fields : [];
                 return (
                   <section key={section.id} className="py-20 px-6">
@@ -952,7 +973,7 @@ export default function SiteRenderer({
           {conversion.secondaryCta?.href && (
             <a href={conversion.secondaryCta.href} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 font-semibold border border-slate-300 text-slate-800">
               {buttonIcon(conversion.secondaryCta.text, conversion.secondaryCta.href)}
-              {conversion.secondaryCta.text || "Lokasi"}
+              {conversion.secondaryCta.text || (isIndonesian ? "Lokasi" : "Location")}
             </a>
           )}
         </div>

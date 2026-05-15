@@ -659,6 +659,58 @@ function faviconSvgFromBusinessName(name: string, background = "#111827") {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${safeBackground}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${initial}</text></svg>`;
 }
 
+function hexToRgb(hex: string) {
+  const normalized = hex.trim().replace("#", "");
+  const expanded = normalized.length === 3 ? normalized.split("").map((char) => char + char).join("") : normalized;
+  if (!/^[0-9a-f]{6}$/i.test(expanded)) return null;
+  return {
+    r: parseInt(expanded.slice(0, 2), 16),
+    g: parseInt(expanded.slice(2, 4), 16),
+    b: parseInt(expanded.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+  return `#${[r, g, b].map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function relativeLuminance(hex: string) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const channel = (value: number) => {
+    const normalized = value / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+}
+
+function darkenForWhiteText(hex: string) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  let factor = 0.82;
+  let current = hex;
+  while (relativeLuminance(current) > 0.32 && factor > 0.32) {
+    current = rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
+    factor -= 0.12;
+  }
+  return current;
+}
+
+function normalizeSiteColorContrast(finalJson: Record<string, unknown>) {
+  const design = finalJson.design && typeof finalJson.design === "object" ? finalJson.design as Record<string, unknown> : {};
+  const themeVariables = design.themeVariables && typeof design.themeVariables === "object" ? design.themeVariables as Record<string, unknown> : {};
+  const colors = themeVariables.colors && typeof themeVariables.colors === "object" ? themeVariables.colors as Record<string, unknown> : {};
+  for (const key of ["primary", "accent"]) {
+    const value = colors[key];
+    if (typeof value === "string" && value.startsWith("#") && relativeLuminance(value) > 0.32) {
+      colors[key] = darkenForWhiteText(value);
+    }
+  }
+  themeVariables.colors = colors;
+  design.themeVariables = themeVariables;
+  finalJson.design = design;
+}
+
 async function handleSettings(request: Request, db: D1Database): Promise<Response> {
   if (request.method === "GET") {
     try {
@@ -1120,6 +1172,7 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
         generated_business_id?: string;
         last_error?: string;
         updated_at?: string;
+        details_loaded_at?: string;
         generated_at?: string;
       }>();
 
@@ -1138,9 +1191,11 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
       prospectStatus: row.status || "new",
       generatedBusinessId: row.generated_business_id || "",
       lastError: row.last_error || "",
+      searchQuery: row.query || "",
       selectedPhoto: parseJsonObject(row.selected_photo_json),
       selectedPalette: parseJsonArray(row.selected_palette_json),
       updatedAt: row.updated_at,
+      detailsLoadedAt: row.details_loaded_at,
       generatedAt: row.generated_at,
     })));
   }
@@ -1595,6 +1650,8 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       const meta = parsed.meta && typeof parsed.meta === "object" ? parsed.meta as Record<string, unknown> : {};
       const businessProfile = parsed.businessProfile && typeof parsed.businessProfile === "object" ? parsed.businessProfile as Record<string, unknown> : {};
       const trust = parsed.trust && typeof parsed.trust === "object" ? parsed.trust as Record<string, unknown> : {};
+      const sourceData = parsed.sourceData && typeof parsed.sourceData === "object" ? parsed.sourceData as Record<string, unknown> : {};
+      const contact = businessProfile.contact && typeof businessProfile.contact === "object" ? businessProfile.contact as Record<string, unknown> : {};
       return {
         id: row.id || row.business_id,
         businessId: row.business_id,
@@ -1607,6 +1664,7 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
         createdAt: row.created_at || "",
         updatedAt: row.updated_at || row.created_at || "",
         previewUrl: `/${row.business_id}`,
+        googleMapsUrl: asString(sourceData.googleMapsUri, asString(contact.directionsUrl, "")),
       };
     }));
   }
@@ -1667,6 +1725,30 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     }
     finalJson.meta = metaConfig;
 
+    const originMapsUrl = asString(originData.url, asString(originData.googleMapsUri));
+    const originWebsiteUrl = asString(originData.website, asString(originData.websiteUri));
+    const sourceData = finalJson.sourceData && typeof finalJson.sourceData === "object" ? finalJson.sourceData as Record<string, unknown> : {};
+    sourceData.provider = sourceData.provider || "google_places";
+    sourceData.placeId = sourceData.placeId || originPlaceId;
+    sourceData.googleMapsUri = sourceData.googleMapsUri || originMapsUrl;
+    sourceData.websiteUri = sourceData.websiteUri || originWebsiteUrl || null;
+    sourceData.hasWebsite = Boolean(sourceData.hasWebsite || originWebsiteUrl);
+    sourceData.businessStatus = sourceData.businessStatus || asString(originData.business_status, asString(originData.businessStatus));
+    sourceData.lastSyncedAt = sourceData.lastSyncedAt || new Date().toISOString();
+    finalJson.sourceData = sourceData;
+
+    if (originMapsUrl || phone) {
+      const businessProfile = finalJson.businessProfile && typeof finalJson.businessProfile === "object" ? finalJson.businessProfile as Record<string, unknown> : {};
+      const contact = businessProfile.contact && typeof businessProfile.contact === "object" ? businessProfile.contact as Record<string, unknown> : {};
+      if (originMapsUrl) contact.directionsUrl = contact.directionsUrl || originMapsUrl;
+      if (phone) {
+        contact.phoneNational = contact.phoneNational || phone;
+        contact.phoneInternational = contact.phoneInternational || phone;
+      }
+      businessProfile.contact = contact;
+      finalJson.businessProfile = businessProfile;
+    }
+
     if (selectedLogoImageUrl) {
       const globalConfig = finalJson.global && typeof finalJson.global === "object" ? finalJson.global as Record<string, unknown> : {};
       const headerConfig = globalConfig.header && typeof globalConfig.header === "object" ? globalConfig.header as Record<string, unknown> : {};
@@ -1697,6 +1779,8 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       design.themeVariables = themeVariables;
       finalJson.design = design;
     }
+
+    normalizeSiteColorContrast(finalJson);
 
     try {
       normalizeImageFilenames(finalJson, businessId);

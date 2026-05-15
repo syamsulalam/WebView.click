@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Globe2, RefreshCw, Search, Sparkles } from "lucide-react";
+import { Brain, ChevronDown, Database, Globe2, MapPin, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
+import { aiModelPrices } from "../../lib/aiPricing";
+import { useLocalStorageState } from "../../lib/localStorageState";
 
 type SiteRow = {
   id: string;
@@ -13,13 +15,44 @@ type SiteRow = {
   createdAt?: string;
   updatedAt?: string;
   previewUrl: string;
+  googleMapsUrl?: string;
 };
+
+type RegenerateMode = "resave" | "ai";
+
+function gatheredSnapshot(siteData: any) {
+  return {
+    sourceData: siteData?.sourceData || {},
+    businessProfile: siteData?.businessProfile || {},
+    location: siteData?.location || {},
+    hours: siteData?.hours || {},
+    trust: siteData?.trust || {},
+    brand: siteData?.brand || {},
+    productServiceStrategy: siteData?.productServiceStrategy || {},
+    products: Array.isArray(siteData?.products) ? siteData.products : [],
+    services: Array.isArray(siteData?.services) ? siteData.services : [],
+  };
+}
 
 export default function AdminSites() {
   const [sites, setSites] = useState<SiteRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [activeData, setActiveData] = useState<{ site: SiteRow; data: any } | null>(null);
+  const [actionMessage, setActionMessage] = useState("");
+  const [regeneratingId, setRegeneratingId] = useState("");
+  const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
+  const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
+  const [regenerateModel, setRegenerateModel] = useLocalStorageState("webview.adminSites.regenerateModel", "~anthropic/claude-sonnet-latest");
+
+  const providerOptions = useMemo<string[]>(() => Array.from(new Set(aiModelPrices.map((item) => item.provider))), []);
+  const activeRegenerateProvider = providerOptions.includes(regenerateProvider) ? regenerateProvider : "OpenRouter";
+  const regenerateModels = aiModelPrices.filter((item) => item.provider === activeRegenerateProvider);
+  const activeRegenerateModel = regenerateModels.some((item) => item.model === regenerateModel)
+    ? regenerateModel
+    : regenerateModels[0]?.model || "";
+  const activeRegenerateModelLabel = regenerateModels.find((item) => item.model === activeRegenerateModel)?.label || activeRegenerateModel;
 
   const fetchSites = async () => {
     setIsLoading(true);
@@ -48,6 +81,16 @@ export default function AdminSites() {
     fetchSites();
   }, []);
 
+  useEffect(() => {
+    if (activeRegenerateProvider !== regenerateProvider) {
+      setRegenerateProvider(activeRegenerateProvider);
+      return;
+    }
+    if (regenerateModels.length > 0 && !regenerateModels.some((item) => item.model === regenerateModel)) {
+      setRegenerateModel(regenerateModels[0].model);
+    }
+  }, [activeRegenerateProvider, regenerateProvider, regenerateModel, regenerateModels, setRegenerateProvider, setRegenerateModel]);
+
   const filteredSites = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return sites;
@@ -59,6 +102,93 @@ export default function AdminSites() {
       site.region,
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [query, sites]);
+
+  const fetchSiteJson = async (site: SiteRow) => {
+    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}`);
+    const text = await response.text();
+    let data: any = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Response bukan JSON: ${text.slice(0, 120)}`);
+    }
+    if (!response.ok || data.error) {
+      throw new Error(data.error || `Site JSON returned ${response.status}`);
+    }
+    return data;
+  };
+
+  const handleSeeGatheredData = async (site: SiteRow) => {
+    setActionMessage("");
+    try {
+      const siteJson = await fetchSiteJson(site);
+      setActiveData({ site, data: gatheredSnapshot(siteJson) });
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Gagal memuat gathered data.");
+    }
+  };
+
+  const handleRegenerate = async (site: SiteRow, mode: RegenerateMode) => {
+    setRegeneratingId(site.businessId);
+    setActionMessage("");
+    try {
+      const siteJson = await fetchSiteJson(site);
+      const sourceData = siteJson?.sourceData || {};
+      let originData: any = {
+        name: site.businessName,
+        place_id: sourceData.placeId || "",
+        url: sourceData.googleMapsUri || site.googleMapsUrl || "",
+        website: sourceData.websiteUri || "",
+        rating: site.rating || undefined,
+        user_ratings_total: site.reviewCount || undefined,
+      };
+
+      if (sourceData.placeId) {
+        const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(sourceData.placeId)}`);
+        const details = await detailsResponse.json().catch(() => ({}));
+        if (detailsResponse.ok && details.result) {
+          originData = { ...originData, ...details.result };
+        }
+      }
+
+      const contact = siteJson?.businessProfile?.contact || {};
+      const provider = mode === "ai" ? activeRegenerateProvider : "";
+      const model = mode === "ai" ? activeRegenerateModel : "";
+      const response = await fetch("/api/sites/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          model,
+          jsonContent: siteJson,
+          businessId: site.businessId,
+          businessName: site.businessName,
+          phone: contact.phoneInternational || contact.phoneNational || "",
+          originData,
+          brandPalette: siteJson?.meta?.brandPalette || siteJson?.brand?.palette || [],
+          selectedLogoImageUrl: siteJson?.brand?.logoImageUrl || "",
+          selectedLogoReference: siteJson?.brand?.googlePhotoReference || "",
+          selectedLogoSource: siteJson?.brand?.photoSource || "",
+          selectedLogoAttributions: siteJson?.brand?.photoAttributions || [],
+          selectedLogoPriority: siteJson?.brand?.selectedPhotoPriority || "",
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.error) {
+        throw new Error(result.error || `Regenerate failed with HTTP ${response.status}`);
+      }
+      setActionMessage(
+        mode === "ai"
+          ? `AI regenerated ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`
+          : `Refreshed and resaved ${site.businessName} without an AI call.`
+      );
+      fetchSites();
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Regenerate gagal.");
+    } finally {
+      setRegeneratingId("");
+    }
+  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -93,9 +223,14 @@ export default function AdminSites() {
           {error}
         </div>
       )}
+      {actionMessage && (
+        <div className="mb-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800">
+          {actionMessage}
+        </div>
+      )}
 
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="grid grid-cols-[1.4fr_1fr_0.6fr_0.8fr_0.8fr] gap-4 border-b border-gray-100 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+      <div className="overflow-visible rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="grid grid-cols-[1.3fr_0.9fr_0.5fr_0.8fr_1.5fr] gap-4 border-b border-gray-100 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <span>Business</span>
           <span>Slug</span>
           <span>Locale</span>
@@ -116,7 +251,7 @@ export default function AdminSites() {
           </div>
         ) : (
           filteredSites.map((site) => (
-            <div key={site.businessId} className="grid grid-cols-[1.4fr_1fr_0.6fr_0.8fr_0.8fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0">
+            <div key={site.businessId} className="grid grid-cols-[1.3fr_0.9fr_0.5fr_0.8fr_1.5fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0">
               <div className="min-w-0">
                 <p className="truncate font-semibold text-gray-900">{site.businessName}</p>
                 <p className="mt-1 truncate text-xs text-gray-500">{site.niche || "No niche"}{site.rating ? ` · ${site.rating.toFixed(1)} rating` : ""}{site.reviewCount ? ` · ${site.reviewCount} reviews` : ""}</p>
@@ -134,18 +269,128 @@ export default function AdminSites() {
                   <Globe2 size={14} />
                   Preview
                 </a>
-                <a
-                  href={site.previewUrl}
+                {site.googleMapsUrl && (
+                  <a
+                    href={site.googleMapsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    <MapPin size={14} />
+                    Maps
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleSeeGatheredData(site)}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 >
-                  <ExternalLink size={14} />
-                  Open
-                </a>
+                  <Database size={14} />
+                  Data
+                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setOpenRegenerateMenu(openRegenerateMenu === site.businessId ? "" : site.businessId)}
+                    disabled={Boolean(regeneratingId)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <RotateCw size={14} className={regeneratingId === site.businessId ? "animate-spin" : ""} />
+                    Regen
+                    <ChevronDown size={14} />
+                  </button>
+                  {openRegenerateMenu === site.businessId && (
+                    <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl">
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold text-gray-900">Regenerate option</p>
+                        <p className="mt-1 text-[11px] leading-4 text-gray-500">Use no-AI refresh for schema/data repair. Use AI regenerate when the JSON quality needs a smarter model.</p>
+                      </div>
+
+                      <div className="mb-3 grid grid-cols-1 gap-2">
+                        <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                          Provider
+                          <select
+                            value={activeRegenerateProvider}
+                            onChange={(event) => {
+                              const nextProvider = event.target.value;
+                              const firstModel = aiModelPrices.find((item) => item.provider === nextProvider)?.model || "";
+                              setRegenerateProvider(nextProvider);
+                              setRegenerateModel(firstModel);
+                            }}
+                            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold normal-case tracking-normal text-gray-800 outline-none focus:border-indigo-400"
+                          >
+                            {providerOptions.map((provider) => (
+                              <option key={provider} value={provider}>{provider}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                          Model
+                          <select
+                            value={activeRegenerateModel}
+                            onChange={(event) => setRegenerateModel(event.target.value)}
+                            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold normal-case tracking-normal text-gray-800 outline-none focus:border-indigo-400"
+                          >
+                            {regenerateModels.map((model) => (
+                              <option key={model.model} value={model.model}>{model.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenRegenerateMenu("");
+                            handleRegenerate(site, "ai");
+                          }}
+                          disabled={!activeRegenerateModel || Boolean(regeneratingId)}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          <Brain size={14} />
+                          AI regenerate with selected model
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenRegenerateMenu("");
+                            handleRegenerate(site, "resave");
+                          }}
+                          disabled={Boolean(regeneratingId)}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <RotateCw size={14} />
+                          Refresh / resave data only
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {activeData && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[86vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Gathered data</p>
+                <p className="text-xs text-gray-500">{activeData.site.businessName} · {activeData.site.businessId}</p>
+              </div>
+              <button type="button" onClick={() => setActiveData(null)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100">
+                <X size={18} />
+              </button>
+            </div>
+            <pre className="max-h-[70vh] overflow-auto bg-slate-950 p-5 text-xs leading-relaxed text-slate-100">
+              {JSON.stringify(activeData.data, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

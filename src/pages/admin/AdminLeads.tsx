@@ -95,6 +95,34 @@ export default function AdminLeads() {
 
   const getPlaceKey = (place: any) => String(place?.place_id || place?.id || place?.name || "");
 
+  const isPlaceholderPhone = (value?: string) => {
+    const digits = String(value || "").replace(/\D/g, "");
+    return !digits || /^0+$/.test(digits);
+  };
+
+  const placePhone = (place: any) => {
+    const phone = place.formatted_phone_number || place.international_phone_number || place.nationalPhoneNumber || "";
+    return isPlaceholderPhone(phone) ? "" : phone;
+  };
+
+  const placeMapsUrl = (place: any) => place.url || place.googleMapsUri || place.maps_url || "";
+
+  const hasGatheredDetails = (place: any) => {
+    const key = getPlaceKey(place);
+    const details = placeDetails[key];
+    return Boolean(details || place.detailsLoadedAt || place.reviews || place.formatted_phone_number || place.international_phone_number || place.url || place.googleMapsUri);
+  };
+
+  const mergePlaceWithDetails = (place: any) => {
+    const key = getPlaceKey(place);
+    const details = placeDetails[key] || {};
+    return {
+      ...place,
+      ...details,
+      photos: Array.isArray(details.photos) && details.photos.length > 0 ? details.photos : place.photos,
+    };
+  };
+
   useEffect(() => {
     const provider = providers[aiProvider] ? aiProvider : "OpenRouter";
     if (provider !== aiProvider) {
@@ -266,12 +294,55 @@ export default function AdminLeads() {
     img.src = imageUrl;
   });
 
+  const hexToRgb = (hex: string) => {
+    const normalized = hex.trim().replace("#", "");
+    const expanded = normalized.length === 3 ? normalized.split("").map((char) => char + char).join("") : normalized;
+    if (!/^[0-9a-f]{6}$/i.test(expanded)) return null;
+    return {
+      r: parseInt(expanded.slice(0, 2), 16),
+      g: parseInt(expanded.slice(2, 4), 16),
+      b: parseInt(expanded.slice(4, 6), 16),
+    };
+  };
+
+  const rgbToHex = (r: number, g: number, b: number) =>
+    `#${[r, g, b].map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0")).join("")}`;
+
+  const relativeLuminance = (hex: string) => {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return 0;
+    const channel = (value: number) => {
+      const normalized = value / 255;
+      return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+  };
+
+  const darkenForWhiteText = (hex: string) => {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return hex;
+    let factor = 0.82;
+    let current = hex;
+    while (relativeLuminance(current) > 0.32 && factor > 0.32) {
+      current = rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
+      factor -= 0.12;
+    }
+    return current;
+  };
+
+  const normalizePaletteForContrast = (palette: string[]) => {
+    const next = [...palette];
+    if (next[0]) next[0] = darkenForWhiteText(next[0]);
+    if (next[1]) next[1] = darkenForWhiteText(next[1]);
+    return next;
+  };
+
   const selectLogoPhoto = async (placeId: string, imageUrl: string, photo: any, businessName: string) => {
     const attributions = getPhotoAttributions(photo);
     const priorityLabel = photoPriorityLabel(photo, businessName);
     const reference = getPhotoReference(photo);
     try {
-      const palette = await extractPaletteFromImage(imageUrl);
+      const palette = normalizePaletteForContrast(await extractPaletteFromImage(imageUrl));
       setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, reference, palette, attributions, priorityLabel, source: "google_places" } }));
       await fetch(`/api/prospects/${encodeURIComponent(placeId)}/selection`, {
         method: "PUT",
@@ -365,8 +436,18 @@ export default function AdminLeads() {
     return (matching.length ? matching : reviews).slice(0, 3);
   };
 
+  const meaningfulTypeLabel = (place: any, isEnglish: boolean) => {
+    const rawTypes = Array.isArray(place.types) ? place.types.map((item: string) => String(item).replace(/_/g, " ")) : [];
+    const generic = new Set(["establishment", "point of interest", "store", "local business"]);
+    const fromType = rawTypes.find((type) => type && !generic.has(type.toLowerCase()));
+    if (fromType) return fromType;
+    const fromQuery = String(place.searchQuery || searchQuery || "").replace(/\b(near me|texas|dallas|usa|united states)\b/gi, "").trim();
+    if (fromQuery) return fromQuery;
+    return isEnglish ? "local service" : "layanan lokal";
+  };
+
   const buildOfferings = (place: any, isEnglish: boolean, mode: string, imageUrl: string, mapsUrl: string) => {
-    const typeLabel = Array.isArray(place.types) ? String(place.types[0] || "local business").replace(/_/g, " ") : "local business";
+    const typeLabel = meaningfulTypeLabel(place, isEnglish);
     const serviceBase = [
       {
         id: "core-service",
@@ -460,7 +541,7 @@ export default function AdminLeads() {
         throw new Error(data.error || `Places API returned ${res.status}`);
       }
 
-      const results = Array.isArray(data.results) ? data.results : [];
+      const results = Array.isArray(data.results) ? data.results.map((item: any) => ({ ...item, searchQuery })) : [];
       setSearchResults(results);
       fetchProspectDrafts();
       setPlaceDetails({});
@@ -483,7 +564,7 @@ export default function AdminLeads() {
   const loadPlaceDetails = async (place: any) => {
     const placeKey = getPlaceKey(place);
     const placeId = place?.place_id || place?.id;
-    if (!placeId || placeDetailsLoading[placeKey]) return;
+    if (!placeId || placeDetailsLoading[placeKey]) return null;
 
     setPlaceDetailsLoading(prev => ({ ...prev, [placeKey]: true }));
     try {
@@ -501,6 +582,18 @@ export default function AdminLeads() {
       if (data.result) {
         setPlaceDetails(prev => ({ ...prev, [placeKey]: data.result }));
         fetchProspectDrafts();
+        const result = data.result;
+        const summary = [
+          Array.isArray(result.photos) ? `${result.photos.length} photos` : "0 photos",
+          Array.isArray(result.reviews) ? `${result.reviews.length} reviews` : "0 reviews",
+          placePhone(result) ? "phone" : "no phone",
+          placeMapsUrl(result) ? "direct Maps URL" : "no direct Maps URL",
+        ].join(", ");
+        setGenerationMessages(prev => ({
+          ...prev,
+          [placeKey]: { type: "success", text: `Google Places details gathered (${summary}). Ready to generate.` },
+        }));
+        return result;
       }
     } catch (error) {
       console.error(error);
@@ -511,6 +604,7 @@ export default function AdminLeads() {
     } finally {
       setPlaceDetailsLoading(prev => ({ ...prev, [placeKey]: false }));
     }
+    return null;
   };
 
   const trimPlacesCache = async () => {
@@ -548,30 +642,44 @@ export default function AdminLeads() {
   };
 
   const handleGenerateSite = async (place: any) => {
-    setIsGenerating(true);
     const placeKey = getPlaceKey(place);
+    if (!hasGatheredDetails(place)) {
+      setGenerationMessages(prev => ({
+        ...prev,
+        [placeKey]: { type: "error", text: "Gather Google Places details first so the generated site has phone, direct Maps URL, reviews, and photos." },
+      }));
+      return;
+    }
+
+    const fullPlace = mergePlaceWithDetails(place);
+    setIsGenerating(true);
     setGeneratingPlaceKey(placeKey);
     setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: "Generating site JSON..." } }));
     
     // Simulate AI generation process with a mock JSON
     // A Real implementation would send 'place' to an OpenAI endpoint on our server
-    const businessId = place.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + "-" + Math.floor(Math.random() * 1000);
-    const logoSelection = logoSelections[place.place_id || place.name];
+    const businessId = fullPlace.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + "-" + Math.floor(Math.random() * 1000);
+    const logoSelection = logoSelections[fullPlace.place_id || fullPlace.name] || logoSelections[placeKey];
     const brandPalette = logoSelection?.palette || [];
     const primaryColor = brandPalette[0] || "#111827";
     const accentColor = brandPalette[1] || "#4F46E5";
     const secondaryColor = brandPalette[2] || "#F3F4F6";
-    const phone = place.formatted_phone_number || place.international_phone_number || place.nationalPhoneNumber || "0000000000";
-    const mapsUrl = place.url || place.googleMapsUri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}`;
-    const rating = Number(place.rating || 0);
-    const reviewCount = Number(place.user_ratings_total || place.userRatingCount || 0);
-    const locale = inferLocaleFromPlace(place);
-    const stylePreset = inferStylePresetFromPlace(place);
+    const phone = placePhone(fullPlace);
+    const mapsUrl = placeMapsUrl(fullPlace);
+    const rating = Number(fullPlace.rating || 0);
+    const reviewCount = Number(fullPlace.user_ratings_total || fullPlace.userRatingCount || 0);
+    const locale = inferLocaleFromPlace(fullPlace);
+    const stylePreset = inferStylePresetFromPlace(fullPlace);
     const stylePresetMeta = getStylePreset(stylePreset);
     const isEnglish = locale.language === "en";
-    const googleReviews = Array.isArray(place.reviews) ? place.reviews : [];
-    const offeringMode = inferProductServiceMode(place);
-    const offerings = buildOfferings(place, isEnglish, offeringMode, logoSelection?.url || "", mapsUrl);
+    const googleReviews = Array.isArray(fullPlace.reviews) ? fullPlace.reviews : [];
+    const offeringMode = inferProductServiceMode(fullPlace);
+    const offerings = buildOfferings(fullPlace, isEnglish, offeringMode, logoSelection?.url || "", mapsUrl);
+    const businessName = fullPlace.name;
+    const address = fullPlace.formatted_address || fullPlace.formattedAddress || "";
+    const typeLabel = meaningfulTypeLabel(fullPlace, isEnglish);
+    const businessStatus = fullPlace.business_status || fullPlace.businessStatus || "";
+    const websiteUrl = fullPlace.website || fullPlace.websiteUri || "";
     const products = offerings.filter((item) => item.type === "product");
     const services = offerings.filter((item) => item.type === "service");
     const offeringMenuChildren = offerings.map((item) => ({
@@ -589,7 +697,7 @@ export default function AdminLeads() {
           type: "hero",
           id: `${item.id}-hero`,
           content: {
-            headline: isEnglish ? `${item.title} from ${place.name}` : `${item.title} dari ${place.name}`,
+            headline: isEnglish ? `${item.title} from ${businessName}` : `${item.title} dari ${businessName}`,
             subheadline: item.summary,
             buttons: [
               { text: isEnglish ? "Ask about this" : "Tanya layanan/produk ini", href: "#contact", style: "primary" },
@@ -631,7 +739,7 @@ export default function AdminLeads() {
               },
               {
                 title: isEnglish ? "Local context" : "Konteks lokal",
-                description: place.formatted_address || place.formattedAddress || (isEnglish ? "Built around local customer intent." : "Disusun sesuai kebutuhan pelanggan lokal."),
+                description: address || (isEnglish ? "Built around local customer intent." : "Disusun sesuai kebutuhan pelanggan lokal."),
                 iconSvg: iconSvgForText("local maps"),
               },
             ],
@@ -667,7 +775,7 @@ export default function AdminLeads() {
           id: `${item.id}-contact`,
           content: {
             title: isEnglish ? "Contact and location" : "Kontak dan lokasi",
-            address: place.formatted_address || place.formattedAddress || "",
+            address,
             phone,
             directionsUrl: mapsUrl,
           },
@@ -676,25 +784,25 @@ export default function AdminLeads() {
     }));
     const mockJson = {
       meta: {
-        businessName: place.name,
+        businessName,
         businessId: businessId,
-        niche: Array.isArray(place.types) ? place.types[0] : "general",
+        niche: typeLabel,
         language: locale.language,
         region: locale.region,
-        seoDescription: isEnglish ? `Official website for ${place.name}.` : `Website resmi untuk ${place.name}.`,
-        faviconSvg: faviconSvgForBusiness(place.name, primaryColor),
+        seoDescription: isEnglish ? `Official website for ${businessName}.` : `Website resmi untuk ${businessName}.`,
+        faviconSvg: faviconSvgForBusiness(businessName, primaryColor),
         brandPalette,
       },
       sourceData: {
         provider: "google_places",
-        placeId: place.place_id || place.id || "",
-        resourceName: place.name?.startsWith?.("places/") ? place.name : "",
+        placeId: fullPlace.place_id || fullPlace.id || "",
+        resourceName: fullPlace.name?.startsWith?.("places/") ? fullPlace.name : "",
         googleMapsUri: mapsUrl,
         lastSyncedAt: new Date().toISOString(),
-        businessStatus: place.business_status || place.businessStatus || "",
-        pureServiceAreaBusiness: Boolean(place.pureServiceAreaBusiness),
-        hasWebsite: Boolean(place.website || place.websiteUri),
-        websiteUri: place.website || place.websiteUri || null,
+        businessStatus,
+        pureServiceAreaBusiness: Boolean(fullPlace.pureServiceAreaBusiness),
+        hasWebsite: Boolean(websiteUrl),
+        websiteUri: websiteUrl || null,
         attributions: logoSelection?.attributions || []
       },
       design: {
@@ -723,7 +831,7 @@ export default function AdminLeads() {
       brand: {
         logoImageUrl: logoSelection?.url || "",
         logoSvg: "",
-        faviconSvg: faviconSvgForBusiness(place.name, primaryColor),
+        faviconSvg: faviconSvgForBusiness(businessName, primaryColor),
         palette: brandPalette,
         preferredHeroImage: logoSelection?.url || "",
         photoSource: logoSelection?.source || "",
@@ -733,15 +841,15 @@ export default function AdminLeads() {
         selectedPhotoPriority: logoSelection?.priorityLabel || ""
       },
       businessProfile: {
-        name: place.name,
-        primaryType: Array.isArray(place.types) ? place.types[0] : "local_business",
-        typeLabel: Array.isArray(place.types) ? String(place.types[0]).replace(/_/g, " ") : "Local business",
-        categories: Array.isArray(place.types) ? place.types : [],
+        name: businessName,
+        primaryType: typeLabel,
+        typeLabel,
+        categories: Array.isArray(fullPlace.types) ? fullPlace.types : [],
         shortPitch: isEnglish
-          ? `A trusted local business serving customers around ${place.formatted_address || "the local area"}.`
-          : `Layanan lokal terpercaya di ${place.formatted_address || "area sekitar"}.`,
+          ? `A trusted ${typeLabel} serving customers around ${address || "the local area"}.`
+          : `Layanan lokal terpercaya di ${address || "area sekitar"}.`,
         address: {
-          formatted: place.formatted_address || place.formattedAddress || "",
+          formatted: address,
         },
         contact: {
           phoneNational: phone,
@@ -754,8 +862,8 @@ export default function AdminLeads() {
         reviewCount,
         reviewSummary: reviewCount
           ? isEnglish
-            ? `${place.name} has a ${rating.toFixed(1)} rating from ${reviewCount} Google reviews.`
-            : `${place.name} memiliki rating ${rating.toFixed(1)} dari ${reviewCount} review Google.`
+            ? `${businessName} has a ${rating.toFixed(1)} rating from ${reviewCount} Google reviews.`
+            : `${businessName} memiliki rating ${rating.toFixed(1)} dari ${reviewCount} review Google.`
           : "",
         reviews: googleReviews.slice(0, 3).map((review: any) => ({
           authorName: review.author_name || review.authorName || "Google reviewer",
@@ -765,9 +873,9 @@ export default function AdminLeads() {
           attribution: "Google",
         })),
         badges: [
-          place.business_status === "OPERATIONAL" ? "Operational" : "",
-          place.website || place.websiteUri ? "Has website" : "No website lead",
-          phone !== "0000000000" ? "Has phone" : ""
+          businessStatus === "OPERATIONAL" ? "Operational" : "",
+          websiteUrl ? "Has website" : "No website lead",
+          phone ? "Has phone" : ""
         ].filter(Boolean)
       },
       productServiceStrategy: {
@@ -794,40 +902,40 @@ export default function AdminLeads() {
         cta: { text: isEnglish ? "View details" : "Lihat detail", href: `#${item.detailPageId}` },
       })),
       capabilities: [
-        { label: "Bisnis lokal", enabled: true, source: "google_places.types", description: "Profil bisnis diambil dari data Google Places." },
-        { label: "Rating Google", enabled: rating > 0, source: "google_places.rating", description: reviewCount ? `${reviewCount} review tersedia.` : "Rating belum tersedia." },
-        { label: "Kontak langsung", enabled: phone !== "0000000000", source: "google_places.phone", description: "CTA diarahkan ke kontak bisnis." }
+        { label: isEnglish ? "Local business" : "Bisnis lokal", enabled: true, source: "google_places.types", description: isEnglish ? "Business profile data is gathered from Google Places." : "Profil bisnis diambil dari data Google Places." },
+        { label: "Google rating", enabled: rating > 0, source: "google_places.rating", description: reviewCount ? (isEnglish ? `${reviewCount} reviews available.` : `${reviewCount} review tersedia.`) : (isEnglish ? "Rating is not available yet." : "Rating belum tersedia.") },
+        { label: isEnglish ? "Direct contact" : "Kontak langsung", enabled: Boolean(phone), source: "google_places.phone", description: isEnglish ? "CTA points to the business contact when available." : "CTA diarahkan ke kontak bisnis." }
       ],
       location: {
-        formattedAddress: place.formatted_address || place.formattedAddress || "",
+        formattedAddress: address,
         directionsUrl: mapsUrl,
-        isServiceAreaBusiness: Boolean(place.pureServiceAreaBusiness)
+        isServiceAreaBusiness: Boolean(fullPlace.pureServiceAreaBusiness)
       },
       hours: {
         timezone: "",
-        openNow: Boolean(place.opening_hours?.open_now),
-        regular: Array.isArray(place.opening_hours?.weekday_text) ? place.opening_hours.weekday_text : [],
+        openNow: Boolean(fullPlace.opening_hours?.open_now),
+        regular: Array.isArray(fullPlace.opening_hours?.weekday_text) ? fullPlace.opening_hours.weekday_text : [],
         current: []
       },
       conversion: {
-        primaryCta: { text: "Hubungi Sekarang", href: phone !== "0000000000" ? `tel:${phone}` : "#contact" },
-        secondaryCta: { text: "Buka Maps", href: mapsUrl },
+        primaryCta: { text: isEnglish ? "Call Now" : "Hubungi Sekarang", href: phone ? `tel:${phone}` : "#contact" },
+        secondaryCta: { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl || "#contact" },
         stickyMobileCta: true,
         leadForm: { enabled: true, fields: ["name", "phone", "message"], submitLabel: "Kirim Pesan" }
       },
       seo: {
-        title: `${place.name} - Website Resmi`,
-        description: `Website resmi untuk ${place.name} di ${place.formatted_address || "area lokal"}.`,
+        title: isEnglish ? `${businessName} - Official Website` : `${businessName} - Website Resmi`,
+        description: isEnglish ? `Official website for ${businessName} in ${address || "the local area"}.` : `Website resmi untuk ${businessName} di ${address || "area lokal"}.`,
         localBusinessSchema: {},
-        keywords: Array.isArray(place.types) ? place.types : [],
-        cityLandingPhrase: place.formatted_address || ""
+        keywords: Array.isArray(fullPlace.types) ? fullPlace.types : [],
+        cityLandingPhrase: address
       },
       global: {
         header: {
           logoImageUrl: logoSelection?.url || "",
-          ctaButton: { text: isEnglish ? "Call Now" : "Hubungi", href: phone !== "0000000000" ? `tel:${phone}` : "#contact" }
+          ctaButton: { text: isEnglish ? "Call Now" : "Hubungi", href: phone ? `tel:${phone}` : "#contact" }
         },
-        footer: { text: `© 2026 ${place.name}. All rights reserved.` }
+        footer: { text: `© 2026 ${businessName}. All rights reserved.` }
       },
       navigation: {
         headerMenu: [
@@ -852,11 +960,11 @@ export default function AdminLeads() {
               type: "hero",
               id: "hero-1",
               content: {
-                headline: isEnglish ? `${place.name} is ready to help locally` : `${place.name} siap membantu kebutuhan lokal Anda`,
-                subheadline: place.formatted_address || (isEnglish ? "Business information from Google Places." : "Informasi bisnis dari Google Places."),
+                headline: isEnglish ? `${businessName} is ready to help locally` : `${businessName} siap membantu kebutuhan lokal Anda`,
+                subheadline: address || (isEnglish ? "Business information from Google Places." : "Informasi bisnis dari Google Places."),
                 buttons: [
                   { text: isEnglish ? "Contact Us" : "Hubungi Kami", href: "#contact", style: "primary" },
-                  { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl, style: "outline" }
+                  { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl || "#contact", style: "outline" }
                 ],
                 image: logoSelection?.url || ""
               }
@@ -868,9 +976,9 @@ export default function AdminLeads() {
               content: {
                 title: isEnglish ? "Why this business stands out" : "Kenapa bisnis ini relevan",
                 items: [
-                  { title: isEnglish ? "Active Google profile" : "Profil Google aktif", description: place.business_status || (isEnglish ? "Business data is available from Google Places." : "Data bisnis tersedia dari Google Places."), iconSvg: iconSvgForText("local maps") },
-                  { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: phone !== "0000000000" ? phone : (isEnglish ? "Contact details can be completed by admin." : "Kontak bisa dilengkapi oleh admin."), iconSvg: iconSvgForText("contact call") },
-                  { title: isEnglish ? "Website-ready" : "Siap dibuatkan website", description: place.website || place.websiteUri ? (isEnglish ? "Already has a website, good for redesign." : "Sudah punya website, cocok untuk redesign.") : (isEnglish ? "No website detected yet." : "Belum terdeteksi punya website."), iconSvg: iconSvgForText("website ready") }
+                  { title: isEnglish ? "Verified Google profile" : "Profil Google aktif", description: businessStatus || (isEnglish ? "Business data is available from Google Places." : "Data bisnis tersedia dari Google Places."), iconSvg: iconSvgForText("local maps") },
+                  { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: phone || (isEnglish ? "Contact details can be completed by admin." : "Kontak bisa dilengkapi oleh admin."), iconSvg: iconSvgForText("contact call") },
+                  { title: isEnglish ? "Website-ready" : "Siap dibuatkan website", description: websiteUrl ? (isEnglish ? "Already has a website, good for redesign." : "Sudah punya website, cocok untuk redesign.") : (isEnglish ? "No website detected yet." : "Belum terdeteksi punya website."), iconSvg: iconSvgForText("website ready") }
                 ]
               }
             },
@@ -881,7 +989,7 @@ export default function AdminLeads() {
               id: "location-1",
               content: {
                 title: isEnglish ? "Location and contact" : "Lokasi dan kontak",
-                address: place.formatted_address || "",
+                address,
                 phone,
                 directionsUrl: mapsUrl
               }
@@ -892,7 +1000,7 @@ export default function AdminLeads() {
               content: {
                 title: isEnglish ? "Common questions" : "Pertanyaan umum",
                 items: [
-                  { question: isEnglish ? "How do I contact this business?" : "Bagaimana cara menghubungi bisnis ini?", "answer": phone !== "0000000000" ? (isEnglish ? `Call directly at ${phone}.` : `Hubungi langsung di ${phone}.`) : (isEnglish ? "Phone number is not available yet and can be completed manually." : "Nomor telepon belum tersedia dan bisa dilengkapi manual.") },
+                  { question: isEnglish ? "How do I contact this business?" : "Bagaimana cara menghubungi bisnis ini?", "answer": phone ? (isEnglish ? `Call directly at ${phone}.` : `Hubungi langsung di ${phone}.`) : (isEnglish ? "Phone number is not available yet and can be completed manually." : "Nomor telepon belum tersedia dan bisa dilengkapi manual.") },
                   { question: isEnglish ? "Can this data be edited?" : "Apakah data ini bisa diedit?", "answer": isEnglish ? "Yes. The generated JSON can be corrected before the final website is used." : "Bisa. JSON hasil generate dapat dikoreksi sebelum dipakai sebagai website final." }
                 ]
               }
@@ -912,9 +1020,9 @@ export default function AdminLeads() {
           provider: activeProviderKey,
           jsonContent: mockJson,
           businessId,
-          businessName: place.name,
+          businessName,
           phone,
-          originData: place,
+          originData: fullPlace,
           brandPalette,
           selectedLogoImageUrl: logoSelection?.url || "",
           selectedLogoReference: logoSelection?.reference || "",
@@ -1270,14 +1378,10 @@ export default function AdminLeads() {
             )}
             {visibleProspects.map((place, idx) => {
               const placeKey = getPlaceKey(place) || String(idx);
-              const details = placeDetails[placeKey] || {};
-              const displayPlace = {
-                ...place,
-                ...details,
-                photos: Array.isArray(details.photos) && details.photos.length > 0 ? details.photos : place.photos,
-              };
+              const displayPlace = mergePlaceWithDetails(place);
               const generationMessage = generationMessages[placeKey];
               const currentPhotos = sortedPhotosForPlace(displayPlace);
+              const detailsReady = hasGatheredDetails(displayPlace);
 
               return (
               <div key={placeKey} className="p-4 border border-gray-100 rounded-xl bg-gray-50">
@@ -1332,13 +1436,28 @@ export default function AdminLeads() {
                   >
                     Skip
                   </button>
-                  <button
-                    onClick={() => handleGenerateSite(displayPlace)}
-                    disabled={isGenerating}
-                    className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition"
-                  >
-                    {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
-                  </button>
+                  {!detailsReady ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateProspectStatus(displayPlace, "details_loaded");
+                        loadPlaceDetails(displayPlace);
+                      }}
+                      disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id}
+                      className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={18} /> : <ListChecks size={18} />}
+                      Gather data
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleGenerateSite(displayPlace)}
+                      disabled={isGenerating}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
+                    </button>
+                  )}
                 </div>
                 </div>
                 {generationMessage && (
@@ -1371,10 +1490,12 @@ export default function AdminLeads() {
                     className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
                     {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={14} /> : <Images size={14} />}
-                    Load more photos/details
+                    {detailsReady ? "Refresh gathered data" : "Gather data/details"}
                   </button>
                   <span className="text-xs text-gray-500">
-                    {currentPhotos.length > 0 ? `${currentPhotos.length} foto tersedia untuk dipilih.` : "Belum ada foto dari response ini."}
+                    {detailsReady
+                      ? currentPhotos.length > 0 ? `${currentPhotos.length} foto tersedia untuk dipilih.` : "Detail sudah diambil, tapi belum ada foto dari response ini."
+                      : "Ambil Place Details dulu sebelum generate agar data site lengkap."}
                   </span>
                 </div>
                 {currentPhotos.length > 0 && (

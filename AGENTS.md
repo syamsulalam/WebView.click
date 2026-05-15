@@ -8,7 +8,7 @@
 - Do not run a local development server for this repo.
 - Do not run `npm run dev`, `npm run preview`, `npm run start`, or other commands that start a local HTTP server unless the user explicitly asks to override this rule.
 - The user intends to test changes directly in production at https://webview.click.
-- Prefer verification commands that do not start a server, such as `npm run lint` and `npm run build`.
+- Do not run `npm run lint` for this repo anymore. The workspace intentionally may not have local TypeScript dependencies installed, and the user wants to avoid dependency/storage churn. Prefer lightweight checks such as `git diff --check`, JSON parsing, and targeted static inspection.
 
 ## Editing Guidelines
 - Keep changes narrowly scoped to the requested behavior.
