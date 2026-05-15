@@ -99,7 +99,35 @@ async function tableColumns(db: D1Database, table: string): Promise<Set<string>>
 async function addColumnIfMissing(db: D1Database, table: string, column: string, definition: string) {
   const columns = await tableColumns(db, table);
   if (!columns.has(column)) {
-    await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    try {
+      await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.toLowerCase().includes("duplicate column name")) return;
+      if (definition.toLowerCase().includes("default")) {
+        const definitionWithoutDefault = definition.replace(/\s+DEFAULT\s+('[^']*'|"[^"]*"|[^\s,]+)/i, "");
+        await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definitionWithoutDefault}`);
+        return;
+      }
+      throw error;
+    }
+  }
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isMissingColumnError(error: unknown, column?: string) {
+  const message = errorMessage(error).toLowerCase();
+  return message.includes("no column named") && (!column || message.includes(column.toLowerCase()));
+}
+
+async function ensureColumn(db: D1Database, table: string, column: string, definition: string) {
+  try {
+    await addColumnIfMissing(db, table, column, definition);
+  } catch (error) {
+    console.error(`D1 self-healing failed for ${table}.${column}:`, error);
   }
 }
 
@@ -540,16 +568,26 @@ async function handleLeads(request: Request, db: D1Database, segments: string[])
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "ping") {
     const businessId = segments[1];
-    await db
-      .prepare(
-        `UPDATE leads
-         SET view_count = COALESCE(view_count, 0) + 1,
-             last_viewed_at = CURRENT_TIMESTAMP,
-             status = CASE WHEN status = 'contacted' THEN 'viewed' ELSE status END
-         WHERE business_id = ?`,
-      )
-      .bind(businessId)
-      .run();
+    try {
+      await db
+        .prepare(
+          `UPDATE leads
+           SET view_count = COALESCE(view_count, 0) + 1,
+               last_viewed_at = CURRENT_TIMESTAMP,
+               status = CASE WHEN status = 'contacted' THEN 'viewed' ELSE status END
+           WHERE business_id = ?`,
+        )
+        .bind(businessId)
+        .run();
+    } catch (error) {
+      if (!isMissingColumnError(error)) throw error;
+      await ensureColumn(db, "leads", "view_count", "INTEGER DEFAULT 0");
+      await ensureColumn(db, "leads", "last_viewed_at", "DATETIME");
+      await db
+        .prepare("UPDATE leads SET status = CASE WHEN status = 'contacted' THEN 'viewed' ELSE status END WHERE business_id = ?")
+        .bind(businessId)
+        .run();
+    }
     return json({ success: true });
   }
 
@@ -881,16 +919,46 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
     const body = await readJsonBody(request);
     const photo = body.photo && typeof body.photo === "object" ? body.photo : {};
     const palette = Array.isArray(body.palette) ? body.palette.filter((item) => typeof item === "string") : [];
-    await db
-      .prepare(
-        `UPDATE places_prospects
-         SET selected_photo_json = ?,
-             selected_palette_json = ?,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE place_id = ?`,
-      )
-      .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
-      .run();
+    try {
+      await db
+        .prepare(
+          `UPDATE places_prospects
+           SET selected_photo_json = ?,
+               selected_palette_json = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE place_id = ?`,
+        )
+        .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
+        .run();
+    } catch (error) {
+      if (!isMissingColumnError(error)) throw error;
+      await ensureColumn(db, "places_prospects", "selected_photo_json", "TEXT");
+      await ensureColumn(db, "places_prospects", "selected_palette_json", "TEXT");
+      await ensureColumn(db, "places_prospects", "updated_at", "DATETIME");
+      try {
+        await db
+          .prepare(
+            `UPDATE places_prospects
+             SET selected_photo_json = ?,
+                 selected_palette_json = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE place_id = ?`,
+          )
+          .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
+          .run();
+      } catch (retryError) {
+        if (!isMissingColumnError(retryError, "updated_at")) throw retryError;
+        await db
+          .prepare(
+            `UPDATE places_prospects
+             SET selected_photo_json = ?,
+                 selected_palette_json = ?
+             WHERE place_id = ?`,
+          )
+          .bind(JSON.stringify(photo), JSON.stringify(palette), placeId)
+          .run();
+      }
+    }
     return json({ success: true });
   }
 
@@ -1404,22 +1472,43 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     const rating = typeof originData.rating === "number" ? originData.rating : null;
     const reviews = typeof originData.user_ratings_total === "number" ? originData.user_ratings_total : null;
 
-    await db
-      .prepare(
-        `INSERT INTO leads (id, business_id, business_name, niche, phone, website_url, rating, reviews, address, status, view_count, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scraped', 0, CURRENT_TIMESTAMP)
-         ON CONFLICT(business_id) DO UPDATE SET
-           business_name = excluded.business_name,
-           niche = excluded.niche,
-           phone = excluded.phone,
-           website_url = excluded.website_url,
-           rating = excluded.rating,
-           reviews = excluded.reviews,
-           address = excluded.address,
-           updated_at = CURRENT_TIMESTAMP`,
-      )
-      .bind(leadId, businessId, businessName, niche, phone, websiteUrl, rating, reviews, address)
-      .run();
+    try {
+      await db
+        .prepare(
+          `INSERT INTO leads (id, business_id, business_name, niche, phone, website_url, rating, reviews, address, status, view_count, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scraped', 0, CURRENT_TIMESTAMP)
+           ON CONFLICT(business_id) DO UPDATE SET
+             business_name = excluded.business_name,
+             niche = excluded.niche,
+             phone = excluded.phone,
+             website_url = excluded.website_url,
+             rating = excluded.rating,
+             reviews = excluded.reviews,
+             address = excluded.address,
+             updated_at = CURRENT_TIMESTAMP`,
+        )
+        .bind(leadId, businessId, businessName, niche, phone, websiteUrl, rating, reviews, address)
+        .run();
+    } catch (error) {
+      if (!isMissingColumnError(error, "view_count")) throw error;
+      await ensureColumn(db, "leads", "view_count", "INTEGER DEFAULT 0");
+      await db
+        .prepare(
+          `INSERT INTO leads (id, business_id, business_name, niche, phone, website_url, rating, reviews, address, status, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scraped', CURRENT_TIMESTAMP)
+           ON CONFLICT(business_id) DO UPDATE SET
+             business_name = excluded.business_name,
+             niche = excluded.niche,
+             phone = excluded.phone,
+             website_url = excluded.website_url,
+             rating = excluded.rating,
+             reviews = excluded.reviews,
+             address = excluded.address,
+             updated_at = CURRENT_TIMESTAMP`,
+        )
+        .bind(leadId, businessId, businessName, niche, phone, websiteUrl, rating, reviews, address)
+        .run();
+    }
 
     try {
       await db
@@ -1523,18 +1612,35 @@ async function handlePayments(request: Request, db: D1Database, env: Env, segmen
   const adminNotifyUrl = `https://wa.me/${normalizeWhatsAppNumber(adminWhatsApp)}?text=${notifyText}`;
 
   const leadId = crypto.randomUUID();
-  await db
-    .prepare(
-      `INSERT INTO leads (id, business_id, business_name, niche, email, status, view_count, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'checkout_pending', 0, CURRENT_TIMESTAMP)
-       ON CONFLICT(business_id) DO UPDATE SET
-         business_name = excluded.business_name,
-         email = COALESCE(excluded.email, email),
-         status = 'checkout_pending',
-         updated_at = CURRENT_TIMESTAMP`,
-    )
-    .bind(leadId, businessId, businessName, "demo", customerEmail)
-    .run();
+  try {
+    await db
+      .prepare(
+        `INSERT INTO leads (id, business_id, business_name, niche, email, status, view_count, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'checkout_pending', 0, CURRENT_TIMESTAMP)
+         ON CONFLICT(business_id) DO UPDATE SET
+           business_name = excluded.business_name,
+           email = COALESCE(excluded.email, email),
+           status = 'checkout_pending',
+           updated_at = CURRENT_TIMESTAMP`,
+      )
+      .bind(leadId, businessId, businessName, "demo", customerEmail)
+      .run();
+  } catch (error) {
+    if (!isMissingColumnError(error, "view_count")) throw error;
+    await ensureColumn(db, "leads", "view_count", "INTEGER DEFAULT 0");
+    await db
+      .prepare(
+        `INSERT INTO leads (id, business_id, business_name, niche, email, status, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'checkout_pending', CURRENT_TIMESTAMP)
+         ON CONFLICT(business_id) DO UPDATE SET
+           business_name = excluded.business_name,
+           email = COALESCE(excluded.email, email),
+           status = 'checkout_pending',
+           updated_at = CURRENT_TIMESTAMP`,
+      )
+      .bind(leadId, businessId, businessName, "demo", customerEmail)
+      .run();
+  }
 
   const row = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
   if (row?.id) {

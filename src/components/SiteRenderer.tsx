@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Briefcase,
   CheckCircle2,
@@ -181,11 +181,64 @@ function socialIcon(platform = "") {
   return <Globe size={18} />;
 }
 
-function ImageFrame({ src, label, className = "", attribution = "" }: { src?: string; label?: string; className?: string; attribution?: string }) {
+function buttonIcon(label = "", href = "") {
+  const key = `${label} ${href}`.toLowerCase();
+  if (key.includes("tel:") || key.includes("phone") || key.includes("telepon") || key.includes("call") || key.includes("hubungi")) return <PhoneCall size={16} />;
+  if (key.includes("mailto:") || key.includes("email") || key.includes("contact") || key.includes("kontak")) return <Mail size={16} />;
+  if (key.includes("map") || key.includes("direction") || key.includes("lokasi")) return <MapPin size={16} />;
+  if (key.includes("service") || key.includes("product") || key.includes("layanan") || key.includes("produk")) return <Briefcase size={16} />;
+  return <CheckCircle2 size={16} />;
+}
+
+function phoneHref(value = "") {
+  if (!value) return "";
+  if (value.startsWith("tel:")) return value;
+  const normalized = value.replace(/[^\d+]/g, "");
+  return normalized ? `tel:${normalized}` : "";
+}
+
+function mailHref(email = "", subject = "", body = "") {
+  const cleanEmail = email.trim();
+  if (!cleanEmail) return "";
+  const params = new URLSearchParams();
+  if (subject) params.set("subject", subject);
+  if (body) params.set("body", body);
+  const query = params.toString();
+  return `mailto:${cleanEmail}${query ? `?${query}` : ""}`;
+}
+
+function normalizedFieldName(field: any, index: number) {
+  const raw = String(field?.name || field?.id || field?.label || `field_${index}`).toLowerCase();
+  if (raw.includes("email")) return "email";
+  if (raw.includes("nama") || raw.includes("name")) return "name";
+  if (raw.includes("pesan") || raw.includes("message") || raw.includes("note")) return "message";
+  if (raw.includes("phone") || raw.includes("telepon") || raw.includes("whatsapp")) return "phone";
+  return raw.replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || `field_${index}`;
+}
+
+function offeringHref(item: any) {
+  if (typeof item?.href === "string" && item.href) return item.href;
+  if (typeof item?.detailPageId === "string" && item.detailPageId) return `#${item.detailPageId}`;
+  return "";
+}
+
+function ImageFrame({
+  src,
+  label,
+  className = "",
+  attribution = "",
+  exportName = "",
+}: {
+  src?: string;
+  label?: string;
+  className?: string;
+  attribution?: string;
+  exportName?: string;
+}) {
   if (isUsableImage(src)) {
     return (
       <div className={`relative w-full h-full ${className}`}>
-        <img src={src} alt={label || ""} className="w-full h-full object-cover" />
+        <img src={src} alt={label || ""} data-wv-image-role={exportName || undefined} className="w-full h-full object-cover" />
         {attribution && (
           <div className="absolute left-2 right-2 bottom-2 rounded bg-black/65 px-2 py-1 text-[11px] leading-snug text-white">
             {attribution}
@@ -211,6 +264,8 @@ export default function SiteRenderer({
 }: SiteRendererProps) {
   const initialPage = siteData?.pages?.[0]?.pageId || "home";
   const [activeTab, setActiveTab] = useState(initialPage);
+  const [openMenuKey, setOpenMenuKey] = useState("");
+  const navCloseTimer = useRef<number | undefined>(undefined);
 
   const { meta, colors, typography, stylePreset, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const brandPhotoAttribution = (src?: string) => attributionText(src, brand.photoAttributions, brand.photoSource, brand.photoCaption);
@@ -224,8 +279,22 @@ export default function SiteRenderer({
     learnMore: isIndonesian ? "Pelajari Lebih Lanjut" : "Learn More",
   };
   const changeTab = (pageId: string) => {
-    setActiveTab(pageId || homePageId);
+    const nextPageId = pageId || homePageId;
+    if (!pages.some((page: any) => page.pageId === nextPageId)) {
+      const target = document.getElementById(nextPageId);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    setActiveTab(nextPageId);
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  };
+  const openNavMenu = (key: string) => {
+    if (navCloseTimer.current) window.clearTimeout(navCloseTimer.current);
+    setOpenMenuKey(key);
+  };
+  const scheduleNavMenuClose = () => {
+    if (navCloseTimer.current) window.clearTimeout(navCloseTimer.current);
+    navCloseTimer.current = window.setTimeout(() => setOpenMenuKey(""), 1800);
   };
   const footerSocials = Array.isArray(globalConfig.footer.socials) && globalConfig.footer.socials.length > 0
     ? globalConfig.footer.socials
@@ -235,6 +304,10 @@ export default function SiteRenderer({
         { platform: "LinkedIn", href: "#" },
       ];
   const footerHours = Array.isArray(hours.regular) ? hours.regular.slice(0, 3) : [];
+  const footerHighlights = offers.length > 0 ? offers : products.length > 0 ? products : services.length > 0 ? services : capabilities;
+  const primaryPhone = businessProfile.contact?.phoneInternational || businessProfile.contact?.phoneNational || "";
+  const displayPhone = businessProfile.contact?.phoneNational || businessProfile.contact?.phoneInternational || "";
+  const displayEmail = businessProfile.contact?.email || businessProfile.email || globalConfig.footer.email || "";
 
   const customStyles = {
     "--color-primary": colors.primary,
@@ -258,15 +331,23 @@ export default function SiteRenderer({
           aria-label={`Go to ${meta.businessName} home`}
         >
           {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
-          {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : null}
+          {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
           <span>{meta.businessName}</span>
         </button>
         <nav className="hidden md:flex gap-6">
           {navigation.headerMenu.map((menu: any, idx: number) => {
             const pageId = menu.href.replace("#", "");
             const children = Array.isArray(menu.children) ? menu.children : [];
+            const menuKey = `${pageId}-${idx}`;
+            const submenuOpen = openMenuKey === menuKey;
             return (
-              <div key={idx} className="relative group">
+              <div
+                key={idx}
+                className="relative"
+                data-wv-menu={menuKey}
+                onMouseEnter={() => openNavMenu(menuKey)}
+                onMouseLeave={scheduleNavMenuClose}
+              >
                 <button
                   onClick={() => changeTab(pageId)}
                   data-wv-tab={pageId}
@@ -277,7 +358,12 @@ export default function SiteRenderer({
                   {children.length > 0 && <span className="text-xs opacity-80">▾</span>}
                 </button>
                 {children.length > 0 && (
-                  <div className="invisible absolute left-0 top-full z-[80] mt-3 w-72 translate-y-2 rounded-xl border border-slate-200 bg-white p-2 text-slate-900 opacity-0 shadow-2xl transition group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
+                  <div
+                    data-wv-submenu
+                    onMouseEnter={() => openNavMenu(menuKey)}
+                    onMouseLeave={scheduleNavMenuClose}
+                    className={`${submenuOpen ? "visible translate-y-0 opacity-100 pointer-events-auto" : "invisible translate-y-2 opacity-0 pointer-events-none"} absolute left-0 top-full z-[80] mt-3 w-72 rounded-xl border border-slate-200 bg-white p-2 text-slate-900 shadow-2xl transition duration-200`}
+                  >
                     {children.map((child: any) => {
                       const childPageId = String(child.href || "").replace("#", "");
                       return (
@@ -286,10 +372,13 @@ export default function SiteRenderer({
                           type="button"
                           data-wv-tab={childPageId}
                           onClick={() => changeTab(childPageId)}
-                          className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                          className="flex w-full gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
                         >
-                          <span className="block text-sm font-semibold">{child.label}</span>
-                          {child.description && <span className="mt-0.5 block text-xs text-slate-500">{child.description}</span>}
+                          <span className="mt-0.5 shrink-0 text-slate-500">{menuIcon(child.label, child.href)}</span>
+                          <span>
+                            <span className="block text-sm font-semibold">{child.label}</span>
+                            {child.description && <span className="mt-0.5 block text-xs text-slate-500">{child.description}</span>}
+                          </span>
                         </button>
                       );
                     })}
@@ -301,10 +390,18 @@ export default function SiteRenderer({
         </nav>
         <a
           href={globalConfig.header.ctaButton.href}
+          data-wv-tab={String(globalConfig.header.ctaButton.href || "").startsWith("#") ? String(globalConfig.header.ctaButton.href).replace("#", "") : undefined}
+          onClick={(event) => {
+            const href = String(globalConfig.header.ctaButton.href || "");
+            if (href.startsWith("#")) {
+              event.preventDefault();
+              changeTab(href.replace("#", ""));
+            }
+          }}
           style={{ backgroundColor: colors.accent }}
           className="px-5 py-2 rounded-lg text-white font-medium hover:opacity-90 transition text-sm inline-flex items-center gap-2"
         >
-          <PhoneCall size={16} />
+          {buttonIcon(globalConfig.header.ctaButton.text, globalConfig.header.ctaButton.href)}
           {globalConfig.header.ctaButton.text}
         </a>
       </header>
@@ -346,11 +443,13 @@ export default function SiteRenderer({
                                   color: btn.style === "primary" ? "#fff" : colors.textMain,
                                   border: `1px solid ${btn.style === "primary" ? colors.accent : "#CBD5E1"}`,
                                 }}
-                                className="px-6 py-3 rounded-lg font-semibold transition hover:translate-y-[-1px]"
+                                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-semibold transition hover:translate-y-[-1px]"
                                 onClick={() => {
                                   if (href.startsWith("#")) changeTab(href.replace("#", ""));
+                                  else if (href) window.location.href = href;
                                 }}
                               >
+                                {buttonIcon(btn.text, href)}
                                 {btn.text || labels.learnMore}
                               </button>
                             );
@@ -359,12 +458,16 @@ export default function SiteRenderer({
                         {(trust.rating > 0 || businessProfile.contact?.phoneNational) && (
                           <div className="mt-8 flex flex-wrap gap-4 text-sm text-slate-600">
                             {trust.rating > 0 && <span className="inline-flex items-center gap-2"><Star size={16} fill={colors.accent} color={colors.accent} /> {trust.rating.toFixed(1)} dari {trust.reviewCount || "banyak"} review</span>}
-                            {businessProfile.contact?.phoneNational && <span className="inline-flex items-center gap-2"><Phone size={16} /> {businessProfile.contact.phoneNational}</span>}
+                            {businessProfile.contact?.phoneNational && (
+                              <a href={phoneHref(primaryPhone || businessProfile.contact.phoneNational)} className="inline-flex items-center gap-2 hover:underline">
+                                <Phone size={16} /> {businessProfile.contact.phoneNational}
+                              </a>
+                            )}
                           </div>
                         )}
                       </div>
                       <div className="h-[360px] md:h-[520px] rounded-2xl overflow-hidden border border-slate-200 shadow-xl bg-slate-100">
-                        <ImageFrame src={heroImage} label={heroContent.image || meta.businessName} attribution={brandPhotoAttribution(heroImage)} />
+                        <ImageFrame src={heroImage} label={heroContent.image || meta.businessName} attribution={brandPhotoAttribution(heroImage)} exportName="hero" />
                       </div>
                     </div>
                   </section>
@@ -433,7 +536,7 @@ export default function SiteRenderer({
                         {items.map((offer: any, i: number) => (
                           <div key={i} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
                             <div className="h-44">
-                              <ImageFrame src={offer.image} label={offer.title} attribution={brandPhotoAttribution(offer.image)} />
+                              <ImageFrame src={offer.image} label={offer.title} attribution={brandPhotoAttribution(offer.image)} exportName={`offer-${offer.title || i + 1}`} />
                             </div>
                             <div className="p-6">
                               <h3 className="text-lg font-bold text-slate-950">{offer.title}</h3>
@@ -473,7 +576,7 @@ export default function SiteRenderer({
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
                         <div className="h-56 overflow-hidden rounded-xl bg-slate-200">
-                          <ImageFrame src={detail.image || brand.preferredHeroImage} label={detail.title} attribution={brandPhotoAttribution(detail.image || brand.preferredHeroImage)} />
+                          <ImageFrame src={detail.image || brand.preferredHeroImage} label={detail.title} attribution={brandPhotoAttribution(detail.image || brand.preferredHeroImage)} exportName={`detail-${detail.title || section.id}`} />
                         </div>
                         {detail.priceHint && <p className="mt-5 text-lg font-bold" style={{ color: colors.accent }}>{detail.priceHint}</p>}
                         {included.length > 0 && (
@@ -548,9 +651,14 @@ export default function SiteRenderer({
                           <h2 className="text-2xl font-bold text-slate-950">Lokasi & Kontak</h2>
                         </div>
                         <p className="text-slate-700">{section.content?.address || location.formattedAddress || businessProfile.address?.formatted || "Alamat belum tersedia."}</p>
-                        {(section.content?.phone || businessProfile.contact?.phoneNational) && <p className="mt-3 font-semibold text-slate-950">{section.content?.phone || businessProfile.contact.phoneNational}</p>}
+                        {(section.content?.phone || businessProfile.contact?.phoneNational) && (
+                          <a href={phoneHref(section.content?.phone || primaryPhone || businessProfile.contact.phoneNational)} className="mt-3 inline-flex items-center gap-2 font-semibold text-slate-950 hover:underline">
+                            <Phone size={16} /> {section.content?.phone || businessProfile.contact.phoneNational}
+                          </a>
+                        )}
                         {(section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl) && (
-                          <a href={section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl} className="inline-flex mt-5 px-5 py-3 rounded-lg text-white font-semibold" style={{ backgroundColor: colors.primary }}>
+                          <a href={section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl} className="inline-flex mt-5 items-center gap-2 px-5 py-3 rounded-lg text-white font-semibold" style={{ backgroundColor: colors.primary }}>
+                            <MapPin size={16} />
                             Buka Google Maps
                           </a>
                         )}
@@ -588,7 +696,7 @@ export default function SiteRenderer({
                         <div className="opacity-80 prose max-w-none" dangerouslySetInnerHTML={{ __html: section.content.bodyHtml }} />
                       </div>
                       <div className="flex-1 w-full relative h-[400px] bg-gray-100 rounded-xl overflow-hidden shadow-lg border border-gray-200">
-                        <ImageFrame src={section.content.image} label={section.content.title} attribution={brandPhotoAttribution(section.content.image)} />
+                        <ImageFrame src={section.content.image} label={section.content.title} attribution={brandPhotoAttribution(section.content.image)} exportName={`section-${section.content.title || section.id}`} />
                       </div>
                     </div>
                   </section>
@@ -604,7 +712,7 @@ export default function SiteRenderer({
                         {section.content.members.map((member: any, i: number) => (
                           <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 text-center pb-6">
                             <div className="h-48 bg-gray-200 mb-4">
-                              <ImageFrame src={member.image} label={member.name} attribution={brandPhotoAttribution(member.image)} />
+                              <ImageFrame src={member.image} label={member.name} attribution={brandPhotoAttribution(member.image)} exportName={`team-${member.name || i + 1}`} />
                             </div>
                             <h3 className="text-lg font-semibold">{member.name}</h3>
                             <p className="text-sm opacity-60 font-medium">{member.role}</p>
@@ -628,7 +736,7 @@ export default function SiteRenderer({
                         {section.content.cards.map((card: any, i: number) => (
                           <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100">
                             <div className="h-48 bg-gray-200">
-                              <ImageFrame src={card.image} label={card.title} attribution={brandPhotoAttribution(card.image)} />
+                              <ImageFrame src={card.image} label={card.title} attribution={brandPhotoAttribution(card.image)} exportName={`card-${card.title || i + 1}`} />
                             </div>
                             <div className="p-6">
                               <h3 className="text-xl font-bold mb-2">{card.title}</h3>
@@ -651,7 +759,7 @@ export default function SiteRenderer({
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {section.content.images.map((img: string, i: number) => (
                           <div key={i} className="h-64 bg-gray-200 rounded-xl overflow-hidden">
-                            <ImageFrame src={img} label={`Gallery ${i + 1}`} attribution={brandPhotoAttribution(img)} />
+                            <ImageFrame src={img} label={`Gallery ${i + 1}`} attribution={brandPhotoAttribution(img)} exportName={`gallery-${i + 1}`} />
                           </div>
                         ))}
                       </div>
@@ -661,6 +769,9 @@ export default function SiteRenderer({
               }
 
               if (section.type === "contactForm") {
+                const contactEmail = section.content?.email || displayEmail;
+                const contactPhone = section.content?.phone || displayPhone;
+                const formFields = Array.isArray(section.content?.formConfig?.fields) ? section.content.formConfig.fields : [];
                 return (
                   <section key={section.id} className="py-20 px-6">
                     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row border border-gray-100">
@@ -668,30 +779,66 @@ export default function SiteRenderer({
                         <h2 className="text-2xl font-bold mb-6">{section.content.title}</h2>
                         <div className="space-y-4 text-sm opacity-90">
                           <p><strong>Alamat:</strong><br />{section.content.address}</p>
-                          <p><strong>Telepon:</strong><br />{section.content.phone}</p>
-                          <p><strong>Email:</strong><br />{section.content.email}</p>
+                          {contactPhone && (
+                            <p>
+                              <strong>Telepon:</strong><br />
+                              <a href={phoneHref(contactPhone)} className="inline-flex items-center gap-2 hover:underline"><Phone size={15} />{contactPhone}</a>
+                            </p>
+                          )}
+                          {contactEmail && (
+                            <p>
+                              <strong>Email:</strong><br />
+                              <a href={mailHref(contactEmail)} className="inline-flex items-center gap-2 hover:underline"><Mail size={15} />{contactEmail}</a>
+                            </p>
+                          )}
                           <div>
                             <strong>Jam Operasional:</strong>
                             <ul className="mt-1 space-y-1">
-                              {section.content.openingHours.map((h: string, i: number) => <li key={i}>{h}</li>)}
+                              {(Array.isArray(section.content.openingHours) ? section.content.openingHours : []).map((h: string, i: number) => <li key={i}>{h}</li>)}
                             </ul>
                           </div>
                         </div>
                       </div>
                       <div className="p-10 md:w-3/5">
                         <h3 className="text-xl font-bold mb-6">{section.content.formConfig.heading}</h3>
-                        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); }}>
-                          {section.content.formConfig.fields.map((f: any, i: number) => (
-                            <div key={i}>
-                              <label className="block text-sm font-medium opacity-80 mb-1">{f.label}</label>
-                              {f.type === "textarea" ? (
-                                <textarea required={f.required} className="w-full border border-gray-300 rounded-lg p-3 bg-transparent" rows={4}></textarea>
-                              ) : (
-                                <input required={f.required} type={f.type} className="w-full border border-gray-300 rounded-lg p-3 bg-transparent" />
-                              )}
-                            </div>
-                          ))}
-                          <button style={{ backgroundColor: colors.accent, color: "#fff" }} className="px-6 py-3 rounded-lg font-medium hover:opacity-90 transition pt-2">
+                        <form
+                          className="space-y-4"
+                          data-wv-mailto={contactEmail}
+                          data-wv-business={meta.businessName}
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            const entries = Array.from(formData.entries()).map(([key, value]) => `${key}: ${String(value)}`);
+                            const name = String(formData.get("name") || "");
+                            const email = String(formData.get("email") || "");
+                            const message = String(formData.get("message") || "");
+                            const body = [
+                              name ? `Name: ${name}` : "",
+                              email ? `Email: ${email}` : "",
+                              message ? `Message:\n${message}` : "",
+                              entries.length ? `\nAll fields:\n${entries.join("\n")}` : "",
+                            ].filter(Boolean).join("\n");
+                            const subject = `Website inquiry for ${meta.businessName}`;
+                            const mailto = mailHref(contactEmail, subject, body || `New inquiry for ${meta.businessName}`)
+                              || `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body || `New inquiry for ${meta.businessName}`)}`;
+                            window.location.href = mailto;
+                          }}
+                        >
+                          {formFields.map((f: any, i: number) => {
+                            const fieldName = normalizedFieldName(f, i);
+                            return (
+                              <div key={i}>
+                                <label className="block text-sm font-medium opacity-80 mb-1">{f.label}</label>
+                                {f.type === "textarea" ? (
+                                  <textarea name={fieldName} required={f.required} className="w-full border border-gray-300 rounded-lg p-3 bg-transparent" rows={4}></textarea>
+                                ) : (
+                                  <input name={fieldName} required={f.required} type={f.type} className="w-full border border-gray-300 rounded-lg p-3 bg-transparent" />
+                                )}
+                              </div>
+                            );
+                          })}
+                          <button type="submit" style={{ backgroundColor: colors.accent, color: "#fff" }} className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium hover:opacity-90 transition pt-2">
+                            <Mail size={16} />
                             {section.content.formConfig.buttonText}
                           </button>
                         </form>
@@ -712,7 +859,7 @@ export default function SiteRenderer({
           <div>
             <button type="button" data-wv-tab={homePageId} onClick={() => changeTab(homePageId)} className="mb-4 flex items-center gap-3 text-left text-lg font-bold hover:opacity-85">
               {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
-              {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : null}
+              {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
               <span>{meta.businessName}</span>
             </button>
             <p className="max-w-sm opacity-80">{businessProfile.shortPitch || meta.seoDescription || globalConfig.footer.text}</p>
@@ -728,7 +875,8 @@ export default function SiteRenderer({
             <p className="mb-4 font-semibold">{labels.pages}</p>
             <div className="space-y-2 opacity-85">
               {navigation.headerMenu.map((menu: any) => (
-                <button key={menu.href} type="button" data-wv-tab={menu.href.replace("#", "")} onClick={() => changeTab(menu.href.replace("#", ""))} className="block hover:opacity-100">
+                <button key={menu.href} type="button" data-wv-tab={menu.href.replace("#", "")} onClick={() => changeTab(menu.href.replace("#", ""))} className="flex items-center gap-2 hover:opacity-100">
+                  {menuIcon(menu.label, menu.href)}
                   {menu.label}
                 </button>
               ))}
@@ -737,17 +885,42 @@ export default function SiteRenderer({
           <div>
             <p className="mb-4 font-semibold">{labels.highlights}</p>
             <div className="space-y-2 opacity-85">
-              {offers.slice(0, 4).map((offer: any) => <p key={offer.title}>{offer.title}</p>)}
-              {offers.length === 0 && products.slice(0, 4).map((item: any) => <p key={item.title}>{item.title}</p>)}
-              {offers.length === 0 && products.length === 0 && services.slice(0, 4).map((item: any) => <p key={item.title}>{item.title}</p>)}
-              {offers.length === 0 && products.length === 0 && services.length === 0 && capabilities.slice(0, 4).map((item: any) => <p key={item.label}>{item.label}</p>)}
+              {footerHighlights.slice(0, 6).map((item: any) => {
+                const href = offeringHref(item);
+                const label = item.title || item.label;
+                if (href.startsWith("#")) {
+                  const pageId = href.replace("#", "");
+                  return (
+                    <button key={label} type="button" data-wv-tab={pageId} onClick={() => changeTab(pageId)} className="block text-left hover:opacity-100 hover:underline">
+                      {label}
+                    </button>
+                  );
+                }
+                if (href) {
+                  return <a key={label} href={href} className="block hover:opacity-100 hover:underline">{label}</a>;
+                }
+                return <p key={label}>{label}</p>;
+              })}
             </div>
           </div>
           <div>
             <p className="mb-4 font-semibold">{labels.contact}</p>
             <div className="space-y-3 opacity-85">
-              {(businessProfile.contact?.phoneNational || globalConfig.header.ctaButton?.href) && (
-                <p className="flex gap-2"><Phone size={16} className="mt-0.5 shrink-0" /> <span>{businessProfile.contact?.phoneNational || globalConfig.header.ctaButton.href}</span></p>
+              {(displayPhone || globalConfig.header.ctaButton?.href) && (
+                <p className="flex gap-2">
+                  <Phone size={16} className="mt-0.5 shrink-0" />
+                  {phoneHref(primaryPhone || displayPhone || globalConfig.header.ctaButton.href) ? (
+                    <a href={phoneHref(primaryPhone || displayPhone || globalConfig.header.ctaButton.href)} className="hover:underline">{displayPhone || globalConfig.header.ctaButton.href}</a>
+                  ) : (
+                    <span>{displayPhone || globalConfig.header.ctaButton.href}</span>
+                  )}
+                </p>
+              )}
+              {displayEmail && (
+                <p className="flex gap-2">
+                  <Mail size={16} className="mt-0.5 shrink-0" />
+                  <a href={mailHref(displayEmail)} className="hover:underline">{displayEmail}</a>
+                </p>
               )}
               {(location.formattedAddress || businessProfile.address?.formatted) && (
                 <p className="flex gap-2"><MapPin size={16} className="mt-0.5 shrink-0" /> <span>{location.formattedAddress || businessProfile.address.formatted}</span></p>
@@ -765,11 +938,13 @@ export default function SiteRenderer({
 
       {conversion.stickyMobileCta && (
         <div className="md:hidden fixed bottom-0 inset-x-0 z-[110] bg-white border-t border-slate-200 p-3 flex gap-2">
-          <a href={conversion.primaryCta?.href || globalConfig.header.ctaButton.href} className="flex-1 text-center rounded-lg px-4 py-3 text-white font-semibold" style={{ backgroundColor: colors.accent }}>
+          <a href={conversion.primaryCta?.href || globalConfig.header.ctaButton.href} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 text-white font-semibold" style={{ backgroundColor: colors.accent }}>
+            {buttonIcon(conversion.primaryCta?.text || globalConfig.header.ctaButton.text, conversion.primaryCta?.href || globalConfig.header.ctaButton.href)}
             {conversion.primaryCta?.text || globalConfig.header.ctaButton.text}
           </a>
           {conversion.secondaryCta?.href && (
-            <a href={conversion.secondaryCta.href} className="flex-1 text-center rounded-lg px-4 py-3 font-semibold border border-slate-300 text-slate-800">
+            <a href={conversion.secondaryCta.href} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 font-semibold border border-slate-300 text-slate-800">
+              {buttonIcon(conversion.secondaryCta.text, conversion.secondaryCta.href)}
               {conversion.secondaryCta.text || "Lokasi"}
             </a>
           )}

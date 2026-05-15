@@ -1,6 +1,6 @@
 # WebView.click Codebase Reference
 
-Terakhir diperbarui: 14 Mei 2026.
+Terakhir diperbarui: 15 Mei 2026.
 
 Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
 
@@ -38,6 +38,7 @@ Logic penting:
 - State `activeTab` dipakai untuk navigasi antar page dari `navigation.headerMenu`.
 - Header logo/title bisa diklik untuk kembali ke tab home.
 - Navbar dan CTA memakai icon lucide.
+- Navbar product/service submenu memakai hover persistence agar dropdown tidak langsung hilang saat cursor bergerak ke child menu.
 - Pergantian tab menjalankan scroll-to-top.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
@@ -46,6 +47,9 @@ Logic penting:
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
 - Footer dirender lebih lengkap: brand/about, sosial, halaman, highlights/offers, kontak, alamat, dan jam operasional jika tersedia.
+- Footer highlights/offers/products/services menjadi link tab jika item punya `detailPageId` atau `href`.
+- Nomor telepon dirender sebagai `tel:` link dan email sebagai `mailto:` link.
+- Contact form membuat `mailto:` URL berisi nama, email, pesan, dan semua field form yang diisi.
 - Visitor action panel untuk download/setup dirender lewat shared component `WebsiteActionPanel`, bukan logic lokal di renderer.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
 
@@ -335,6 +339,8 @@ Logic D1:
 - Binding wajib: `DB`.
 - `setupTables()` membuat tabel jika belum ada.
 - `addColumnIfMissing()` menjalankan migrasi ringan berbasis `PRAGMA table_info`.
+- `addColumnIfMissing()` menangani duplicate-column race dan retry tanpa `DEFAULT` jika D1 menolak alter tertentu.
+- Write path penting tetap defensif terhadap schema production lama: `/api/sites/generate`, `/api/payments/checkout`, `/api/leads/:business_id/ping`, dan `/api/prospects/:placeId/selection` akan mencoba self-heal kolom lalu fallback query tanpa kolom baru bila perlu.
 - `/api/stats`, `/api/activities`, dan `/api/settings` punya fallback JSON agar admin tidak blank saat DB belum sempurna.
 
 Logic AI:
@@ -393,10 +399,12 @@ Logic Owner HTML Export:
 - `src/lib/exportSiteHtml.ts` membuat zip owner berisi hanya `index.html`.
 - Export menghapus `<script>` internal, `.hide-in-export`, dan `[data-export-remove="true"]`.
 - Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
-- Export menambahkan Tailwind CSS/CDN hotlink, stylesheet production absolute, style tags renderer, favicon dari logo bisnis/fallback SVG, dan mengubah URL relatif gambar/link menjadi absolute URL.
+- Export mengambil gambar yang sedang tampil di DOM, menyimpannya ke folder `/img` di dalam zip, lalu mengubah `<img src>` menjadi path relatif seperti `img/{businessId}-hero.jpg`. Ini termasuk foto Google Business Profile yang sedang diproxy via WebView.click saat tombol download diklik, sehingga HTML owner tidak perlu hotlink ke Google atau Function WebView.click untuk gambar.
+- Export menambahkan Tailwind CSS/CDN hotlink, stylesheet production absolute, style tags renderer, favicon dari logo bisnis/fallback SVG, dan mengubah URL relatif non-gambar/link menjadi absolute URL.
 - Export menambahkan JS inline kecil untuk mengaktifkan tabbed navigation pada elemen `data-wv-tab` dan `data-wv-page` karena React handler tidak ikut dalam HTML statis.
+- Export JS juga mengaktifkan hover-persistent submenu dan contact form `mailto:` supaya HTML owner tetap interaktif tanpa React.
 - Favicon export memakai inline SVG dari `meta.faviconSvg` / `brand.faviconSvg` / `brand.logoSvg`, atau fallback SVG monogram; tidak memanggil favicon remote WebView.click.
-- Google Places photo tetap hotlink/proxy dari URL WebView.click sehingga file HTML owner tetap menampilkan gambar tanpa menyimpan asset ke zip.
+- Jika gambar gagal di-fetch saat export karena network/CORS/provider error, exporter mencatat warning di console dan mempertahankan URL absolute sebagai fallback terakhir.
 
 Logic Payments:
 - `/api/payments/checkout` membuat checkout Lemon Squeezy jika `LEMON_SQUEEZY_API_KEY`, `LEMON_SQUEEZY_STORE_ID`, dan `LEMON_SQUEEZY_VARIANT_ID` sudah ada.
