@@ -326,7 +326,8 @@ export default function SiteRenderer({
         { platform: "LinkedIn", href: "#" },
       ];
   const footerHours = Array.isArray(hours.regular) ? hours.regular.slice(0, 3) : [];
-  const footerHighlights = offers.length > 0 ? offers : products.length > 0 ? products : services.length > 0 ? services : capabilities;
+  const footerOfferings = [...products, ...services];
+  const footerHighlights = footerOfferings.length > 0 ? footerOfferings : offers.length > 0 ? offers : capabilities;
   const rawPrimaryPhone = businessProfile.contact?.phoneInternational || businessProfile.contact?.phoneNational || "";
   const rawDisplayPhone = businessProfile.contact?.phoneNational || businessProfile.contact?.phoneInternational || "";
   const primaryPhone = isPlaceholderPhone(rawPrimaryPhone) ? "" : rawPrimaryPhone;
