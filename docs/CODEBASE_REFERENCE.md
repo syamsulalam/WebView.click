@@ -151,6 +151,7 @@ Logic penting:
 - Photo reference dan source dikirim sebagai `selectedLogoReference` dan `selectedLogoSource`.
 - Attribution foto yang dipilih dikirim sebagai `selectedLogoAttributions` dan disimpan di JSON sebagai `brand.photoAttributions`.
 - Admin harus menjalankan `Gather data` / Place Details sebelum `Generate Site`; tombol generate baru muncul setelah detail bisnis, foto, review, phone, dan direct Google Maps URL dicoba diambil.
+- Setelah `Gather data`, item tetap dipertahankan di list lokal dan tombol berubah menjadi `Generate Site`; hasil detail tidak langsung mem-filter ulang list walaupun Places menemukan website/metadata baru.
 - Search result diberi `searchQuery` agar generator tidak memakai tipe Places generik seperti `establishment` sebagai niche ketika Google tidak memberi kategori spesifik.
 - Untuk situs gratis, foto Google Places tetap hotlink/proxy runtime dan tidak di-upload ke R2.
 - JSON mock fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
@@ -193,7 +194,7 @@ Fungsi:
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
 - Tombol `Regen` memakai dropdown:
   - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan untuk membuat ulang JSON via AI yang lebih pintar.
-  - `Refresh / resave data only` memakai flow yang sama tetapi mengirim `provider`/`model` kosong agar JSON disimpan ulang tanpa memaksa AI call.
+  - `Re-gather Google data + resave` wajib punya `sourceData.placeId`, mengambil Place Details lagi, lalu mengirim `provider`/`model` kosong agar data Google Places, termasuk Maps URL exact, disimpan ulang tanpa memaksa AI call.
 
 API yang dipakai:
 - `GET /api/sites`
@@ -390,6 +391,7 @@ Logic Google Places/logo:
 - `brandPalette` dan `selectedLogoImageUrl` dikirim dari `AdminLeads` ke generator.
 - `selectedLogoReference`, `selectedLogoSource`, `selectedLogoAttributions`, dan `selectedLogoPriority` ikut dikirim agar JSON final menyimpan provenance foto.
 - Function memaksa `businessId` masuk ke `meta.businessId` dan menjaga `logoImageUrl` jika dipilih admin.
+- Function menganggap `https://www.google.com/maps/search/?api=1&query=...` sebagai URL fallback lemah. Saat Place Details memberi `url` exact, Function menimpa `sourceData.googleMapsUri`, `businessProfile.contact.directionsUrl`, dan `location.directionsUrl`.
 - Jika logo dipilih, Function juga menulis `brand.logoImageUrl`, `brand.photoSource`, `brand.googlePhotoReference`, `brand.photoCaption`, `brand.photoAttributions`, dan `brand.selectedPhotoPriority`.
 
 Logic R2:

@@ -580,9 +580,18 @@ export default function AdminLeads() {
         throw new Error(data.error || `Place details returned ${res.status}`);
       }
       if (data.result) {
-        setPlaceDetails(prev => ({ ...prev, [placeKey]: data.result }));
-        fetchProspectDrafts();
         const result = data.result;
+        const hydratedPlace = {
+          ...place,
+          ...result,
+          place_id: placeId,
+          prospectStatus: "details_loaded",
+          detailsLoadedAt: new Date().toISOString(),
+          photos: Array.isArray(result.photos) && result.photos.length > 0 ? result.photos : place.photos,
+        };
+        setPlaceDetails(prev => ({ ...prev, [placeKey]: result }));
+        setSearchResults(prev => prev.map((item) => getPlaceKey(item) === placeKey ? hydratedPlace : item));
+        setProspectDrafts(prev => prev.map((item) => getPlaceKey(item) === placeKey ? hydratedPlace : item));
         const summary = [
           Array.isArray(result.photos) ? `${result.photos.length} photos` : "0 photos",
           Array.isArray(result.reviews) ? `${result.reviews.length} reviews` : "0 reviews",
@@ -637,8 +646,11 @@ export default function AdminLeads() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    setSearchResults(prev => prev.filter((item) => getPlaceKey(item) !== placeKey || status !== "skipped"));
-    fetchProspectDrafts();
+    const applyStatus = (items: any[]) => status === "skipped"
+      ? items.filter((item) => getPlaceKey(item) !== placeKey)
+      : items.map((item) => getPlaceKey(item) === placeKey ? { ...item, prospectStatus: status } : item);
+    setSearchResults(applyStatus);
+    setProspectDrafts(applyStatus);
   };
 
   const handleGenerateSite = async (place: any) => {

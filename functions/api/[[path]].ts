@@ -532,6 +532,16 @@ function normalizeSearchQuery(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function isWeakGoogleMapsSearchUrl(value: unknown): boolean {
+  if (typeof value !== "string" || !value.trim()) return true;
+  try {
+    const url = new URL(value);
+    return url.hostname.includes("google.") && url.pathname.includes("/maps/search") && url.searchParams.has("query");
+  } catch {
+    return false;
+  }
+}
+
 function asNumber(value: unknown): number | null {
   const numberValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numberValue) ? numberValue : null;
@@ -1730,23 +1740,35 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     const sourceData = finalJson.sourceData && typeof finalJson.sourceData === "object" ? finalJson.sourceData as Record<string, unknown> : {};
     sourceData.provider = sourceData.provider || "google_places";
     sourceData.placeId = sourceData.placeId || originPlaceId;
-    sourceData.googleMapsUri = sourceData.googleMapsUri || originMapsUrl;
+    if (originMapsUrl && isWeakGoogleMapsSearchUrl(sourceData.googleMapsUri)) {
+      sourceData.googleMapsUri = originMapsUrl;
+    }
     sourceData.websiteUri = sourceData.websiteUri || originWebsiteUrl || null;
     sourceData.hasWebsite = Boolean(sourceData.hasWebsite || originWebsiteUrl);
     sourceData.businessStatus = sourceData.businessStatus || asString(originData.business_status, asString(originData.businessStatus));
-    sourceData.lastSyncedAt = sourceData.lastSyncedAt || new Date().toISOString();
+    sourceData.lastSyncedAt = new Date().toISOString();
     finalJson.sourceData = sourceData;
 
     if (originMapsUrl || phone) {
       const businessProfile = finalJson.businessProfile && typeof finalJson.businessProfile === "object" ? finalJson.businessProfile as Record<string, unknown> : {};
       const contact = businessProfile.contact && typeof businessProfile.contact === "object" ? businessProfile.contact as Record<string, unknown> : {};
-      if (originMapsUrl) contact.directionsUrl = contact.directionsUrl || originMapsUrl;
+      if (originMapsUrl && isWeakGoogleMapsSearchUrl(contact.directionsUrl)) {
+        contact.directionsUrl = originMapsUrl;
+      }
       if (phone) {
         contact.phoneNational = contact.phoneNational || phone;
         contact.phoneInternational = contact.phoneInternational || phone;
       }
       businessProfile.contact = contact;
       finalJson.businessProfile = businessProfile;
+    }
+
+    if (originMapsUrl) {
+      const location = finalJson.location && typeof finalJson.location === "object" ? finalJson.location as Record<string, unknown> : {};
+      if (isWeakGoogleMapsSearchUrl(location.directionsUrl)) {
+        location.directionsUrl = originMapsUrl;
+      }
+      finalJson.location = location;
     }
 
     if (selectedLogoImageUrl) {

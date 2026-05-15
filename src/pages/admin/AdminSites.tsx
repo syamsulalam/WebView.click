@@ -142,13 +142,31 @@ export default function AdminSites() {
         rating: site.rating || undefined,
         user_ratings_total: site.reviewCount || undefined,
       };
+      let detailsGathered = false;
+      let detailsError = "";
 
       if (sourceData.placeId) {
         const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(sourceData.placeId)}`);
-        const details = await detailsResponse.json().catch(() => ({}));
+        const detailsText = await detailsResponse.text();
+        let details: any = {};
+        try {
+          details = detailsText ? JSON.parse(detailsText) : {};
+        } catch {
+          details = { error: `Place Details response bukan JSON: ${detailsText.slice(0, 120)}` };
+        }
         if (detailsResponse.ok && details.result) {
           originData = { ...originData, ...details.result };
+          detailsGathered = true;
+        } else {
+          detailsError = details.error || `Place Details returned HTTP ${detailsResponse.status}`;
         }
+      }
+
+      if (mode === "resave" && !sourceData.placeId) {
+        throw new Error("Site lama ini belum punya sourceData.placeId, jadi Google Places tidak bisa di-gather ulang.");
+      }
+      if (mode === "resave" && !detailsGathered) {
+        throw new Error(detailsError || "Google Places details belum berhasil di-gather ulang.");
       }
 
       const contact = siteJson?.businessProfile?.contact || {};
@@ -180,7 +198,7 @@ export default function AdminSites() {
       setActionMessage(
         mode === "ai"
           ? `AI regenerated ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`
-          : `Refreshed and resaved ${site.businessName} without an AI call.`
+          : `Re-gathered Google data and resaved ${site.businessName} without an AI call.`
       );
       fetchSites();
     } catch (err) {
@@ -303,7 +321,7 @@ export default function AdminSites() {
                     <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl">
                       <div className="mb-3">
                         <p className="text-xs font-semibold text-gray-900">Regenerate option</p>
-                        <p className="mt-1 text-[11px] leading-4 text-gray-500">Use no-AI refresh for schema/data repair. Use AI regenerate when the JSON quality needs a smarter model.</p>
+                        <p className="mt-1 text-[11px] leading-4 text-gray-500">Re-gather fixes stale Google data like fallback Maps URLs. AI regenerate rebuilds the JSON with a smarter model.</p>
                       </div>
 
                       <div className="mb-3 grid grid-cols-1 gap-2">
@@ -361,7 +379,7 @@ export default function AdminSites() {
                           className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         >
                           <RotateCw size={14} />
-                          Refresh / resave data only
+                          Re-gather Google data + resave
                         </button>
                       </div>
                     </div>
