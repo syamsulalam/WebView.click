@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users, UserCircle, Webhook, Settings } from "lucide-react";
+import { Globe2, LayoutDashboard, Users, UserCircle, Webhook, Settings } from "lucide-react";
 import { SignIn, useUser, useClerk } from "@clerk/clerk-react";
 
 export default function AdminLayout() {
@@ -20,6 +20,7 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
   const links = [
     { to: "/admin", icon: <LayoutDashboard size={24} />, label: "Dashboard" },
     { to: "/admin/leads", icon: <Users size={24} />, label: "CRM Leads" },
+    { to: "/admin/sites", icon: <Globe2 size={24} />, label: "Generated Sites" },
     { to: "/admin/schema", icon: <Webhook size={24} />, label: "JSON Schema Info" },
     { to: "/admin/settings", icon: <Settings size={24} />, label: "Settings" } // Ditambahkan setting
   ];

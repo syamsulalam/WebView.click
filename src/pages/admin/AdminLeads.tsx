@@ -1353,6 +1353,11 @@ export default function AdminLeads() {
                         Open preview
                       </a>
                     )}
+                    {generationMessage.type === "success" && (
+                      <a href="/admin/sites" className="ml-3 font-semibold underline">
+                        View all sites
+                      </a>
+                    )}
                   </div>
                 )}
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4">

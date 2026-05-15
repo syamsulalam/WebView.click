@@ -1570,6 +1570,47 @@ async function uploadJsonToR2(finalJson: Record<string, unknown>, env: Env, busi
 }
 
 async function handleSites(request: Request, db: D1Database, env: Env, segments: string[]): Promise<Response> {
+  if (request.method === "GET" && segments.length === 1) {
+    const columns = await tableColumns(db, "json_sites");
+    const selectedColumns = [
+      columns.has("id") ? "id" : "",
+      "business_id",
+      "json_content",
+      columns.has("created_at") ? "created_at" : "",
+      columns.has("updated_at") ? "updated_at" : "",
+    ].filter(Boolean);
+
+    const orderColumn = columns.has("updated_at") ? "updated_at" : columns.has("created_at") ? "created_at" : "business_id";
+    const rows = await db
+      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites ORDER BY ${orderColumn} DESC`)
+      .all<{ id?: string; business_id: string; json_content: string; created_at?: string; updated_at?: string }>();
+
+    return json((rows.results || []).map((row) => {
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = JSON.parse(row.json_content) as Record<string, unknown>;
+      } catch {
+        parsed = {};
+      }
+      const meta = parsed.meta && typeof parsed.meta === "object" ? parsed.meta as Record<string, unknown> : {};
+      const businessProfile = parsed.businessProfile && typeof parsed.businessProfile === "object" ? parsed.businessProfile as Record<string, unknown> : {};
+      const trust = parsed.trust && typeof parsed.trust === "object" ? parsed.trust as Record<string, unknown> : {};
+      return {
+        id: row.id || row.business_id,
+        businessId: row.business_id,
+        businessName: asString(meta.businessName, asString(businessProfile.name, row.business_id)),
+        niche: asString(meta.niche, asString(businessProfile.typeLabel, "")),
+        language: asString(meta.language, ""),
+        region: asString(meta.region, ""),
+        rating: typeof trust.rating === "number" ? trust.rating : null,
+        reviewCount: typeof trust.reviewCount === "number" ? trust.reviewCount : null,
+        createdAt: row.created_at || "",
+        updatedAt: row.updated_at || row.created_at || "",
+        previewUrl: `/${row.business_id}`,
+      };
+    }));
+  }
+
   if (request.method === "POST" && segments.length === 2 && segments[1] === "generate") {
     const body = await readJsonBody(request);
     const businessName = asString(body.businessName, "Untitled Business");

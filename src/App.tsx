@@ -5,6 +5,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminLeads from './pages/admin/AdminLeads';
+import AdminSites from './pages/admin/AdminSites';
 import AdminSchema from './pages/admin/AdminSchema';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminLayout from './components/AdminLayout';
@@ -20,6 +21,7 @@ export default function App() {
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<AdminDashboard />} />
         <Route path="leads" element={<AdminLeads />} />
+        <Route path="sites" element={<AdminSites />} />
         <Route path="schema" element={<AdminSchema />} />
         <Route path="settings" element={<AdminSettings />} />
       </Route>

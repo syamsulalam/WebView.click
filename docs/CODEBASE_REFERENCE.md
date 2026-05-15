@@ -13,6 +13,7 @@ Routes utama:
 - `/demo` -> `DemoSite`
 - `/admin` -> `AdminLayout` + `AdminDashboard`
 - `/admin/leads` -> `AdminLeads`
+- `/admin/sites` -> `AdminSites`
 - `/admin/schema` -> `AdminSchema`
 - `/admin/settings` -> `AdminSettings`
 - `/:businessId` -> `PublicViewer`
@@ -66,6 +67,7 @@ Fungsi:
 
 Logic penting:
 - `NavContent` menampilkan link Dashboard, CRM Leads, JSON Schema Info, dan Settings.
+- `NavContent` juga menampilkan Generated Sites untuk melihat daftar JSON website yang sudah berhasil dibuat.
 - `ClerkSecureLayout` hanya mengizinkan user dengan `publicMetadata.role === "admin"`.
 - Jika role belum admin, halaman menampilkan instruksi update metadata Clerk.
 
@@ -178,6 +180,24 @@ Risiko debug:
 - Error `API keys with referer restrictions cannot be used with this API` berarti key Google Places masih dibatasi HTTP referrer. Untuk Pages Functions/server-side, pakai server key tanpa application restriction dan batasi hanya API-nya di Google Cloud.
 - Canvas palette butuh image same-origin/CORS; karena itu foto harus lewat proxy `/api/places/photo`, bukan langsung URL Google.
 - Audit dan roadmap admin disimpan di `docs/ADMIN_WORKFLOW_AUDIT.md`.
+
+### `src/pages/admin/AdminSites.tsx`
+
+Fungsi:
+- Menampilkan daftar situs yang sudah berhasil dibuat dan tersimpan di D1 `json_sites`.
+- Memberi link preview/open ke `/:businessId` supaya hasil generate tidak hilang dari workflow admin.
+
+API yang dipakai:
+- `GET /api/sites`
+
+Logic penting:
+- Search lokal bisa mencari nama bisnis, slug, niche, bahasa, dan region.
+- Metadata tampilan diambil dari `meta`, `businessProfile`, dan `trust` di JSON site.
+- Tombol Refresh membaca ulang list dari API setelah batch generate.
+
+Risiko debug:
+- Jika situs tidak muncul, cek apakah `/api/sites/generate` berhasil menyimpan row ke `json_sites`.
+- Jika preview 404, cek `json_sites.business_id` sama dengan slug di URL public.
 
 ### `src/pages/admin/AdminSchema.tsx`
 
@@ -332,6 +352,7 @@ Endpoint:
 - `GET /api/places/search`
 - `GET /api/places/photo`
 - `POST /api/sites/generate`
+- `GET /api/sites`
 - `GET /api/sites/:business_id`
 - `POST /api/payments/checkout`
 - `GET /api/domains/check`
