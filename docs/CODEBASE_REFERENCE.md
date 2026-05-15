@@ -189,20 +189,26 @@ Risiko debug:
 
 Fungsi:
 - Menampilkan daftar situs yang sudah berhasil dibuat dan tersimpan di D1 `json_sites`.
+- Menampilkan section `Ready to Generate` untuk prospect `details_loaded` yang sudah punya gathered Google Places data tetapi belum punya `generatedBusinessId`.
 - Memberi link preview/open ke `/:businessId` supaya hasil generate tidak hilang dari workflow admin.
 - Memberi link Google Maps/Google Business listing dari `sourceData.googleMapsUri` atau `businessProfile.contact.directionsUrl` untuk membandingkan hasil generate dengan listing asli.
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
+- Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini refresh Place Details lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true` agar tidak diam-diam menyimpan template kosong jika API key/model gagal.
 - Tombol `Regen` memakai dropdown:
   - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan untuk membuat ulang JSON via AI yang lebih pintar.
   - `Re-gather Google data + resave` wajib punya `sourceData.placeId`, mengambil Place Details lagi, lalu mengirim `provider`/`model` kosong agar data Google Places, termasuk Maps URL exact, disimpan ulang tanpa memaksa AI call.
 
 API yang dipakai:
 - `GET /api/sites`
+- `GET /api/prospects?status=details_loaded`
+- `GET /api/places/details?placeId=...`
+- `POST /api/sites/generate`
 
 Logic penting:
 - Search lokal bisa mencari nama bisnis, slug, niche, bahasa, dan region.
 - Metadata tampilan diambil dari `meta`, `businessProfile`, dan `trust` di JSON site.
 - Pilihan provider/model regenerate disimpan ke localStorage agar refresh halaman tetap memakai model terakhir yang dipilih admin.
+- Pilihan provider/model yang sama dipakai untuk `Generate` prospect gathered di section `Ready to Generate`.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
 
 Risiko debug:
@@ -384,6 +390,7 @@ Logic AI:
   - `kie/gpt-5-2` via `https://api.kie.ai/gpt-5-2/v1/chat/completions`
   - `kie/gemini-3.1-pro` via `https://api.kie.ai/gemini-3.1-pro/v1/chat/completions`
   - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
+- Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI tidak mengembalikan JSON. Ini dipakai oleh `/admin/sites` untuk prospect gathered yang belum punya fallback JSON site.
 
 Logic Google Places/logo:
 - `/api/places/search` memakai Google Places Text Search.

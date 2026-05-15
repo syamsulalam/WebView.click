@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, ChevronDown, Database, Globe2, MapPin, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
+import { Brain, ChevronDown, Database, Globe2, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 
@@ -20,6 +20,36 @@ type SiteRow = {
 
 type RegenerateMode = "resave" | "ai";
 
+type ProspectRow = {
+  place_id: string;
+  name: string;
+  formatted_address?: string;
+  formattedAddress?: string;
+  formatted_phone_number?: string;
+  international_phone_number?: string;
+  nationalPhoneNumber?: string;
+  website?: string;
+  websiteUri?: string;
+  url?: string;
+  googleMapsUri?: string;
+  rating?: number | null;
+  user_ratings_total?: number | null;
+  userRatingCount?: number | null;
+  types?: string[];
+  photos?: any[];
+  selectedPhoto?: {
+    url?: string;
+    reference?: string;
+    attributions?: string[];
+    priorityLabel?: string;
+    source?: string;
+  };
+  selectedPalette?: string[];
+  updatedAt?: string;
+  detailsLoadedAt?: string;
+  generatedBusinessId?: string;
+};
+
 function gatheredSnapshot(siteData: any) {
   return {
     sourceData: siteData?.sourceData || {},
@@ -34,14 +64,46 @@ function gatheredSnapshot(siteData: any) {
   };
 }
 
+function businessSlug(name: string, placeId = "") {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "business";
+  const suffix = placeId.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(-6);
+  return suffix ? `${slug}-${suffix}` : slug;
+}
+
+function isPlaceholderPhone(value?: string) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return !digits || /^0+$/.test(digits);
+}
+
+function prospectPhone(prospect: ProspectRow) {
+  const phone = prospect.formatted_phone_number || prospect.international_phone_number || prospect.nationalPhoneNumber || "";
+  return isPlaceholderPhone(phone) ? "" : phone;
+}
+
+function photoReference(photo: any) {
+  return String(photo?.photo_reference || photo?.name || photo?.reference || "");
+}
+
+function photoAttributions(photo: any) {
+  if (Array.isArray(photo?.html_attributions)) {
+    return photo.html_attributions.map((value: string) => String(value).replace(/<[^>]*>/g, "").trim()).filter(Boolean);
+  }
+  if (Array.isArray(photo?.authorAttributions)) {
+    return photo.authorAttributions.map((item: any) => item?.displayName || item?.uri || item?.photoUri || "").filter(Boolean);
+  }
+  return [];
+}
+
 export default function AdminSites() {
   const [sites, setSites] = useState<SiteRow[]>([]);
+  const [gatheredProspects, setGatheredProspects] = useState<ProspectRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [activeData, setActiveData] = useState<{ site: SiteRow; data: any } | null>(null);
+  const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
   const [actionMessage, setActionMessage] = useState("");
   const [regeneratingId, setRegeneratingId] = useState("");
+  const [generatingProspectId, setGeneratingProspectId] = useState("");
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
   const [regenerateModel, setRegenerateModel] = useLocalStorageState("webview.adminSites.regenerateModel", "~anthropic/claude-sonnet-latest");
@@ -70,6 +132,21 @@ export default function AdminSites() {
         throw new Error((data as { error?: string }).error || `Sites API returned ${response.status}`);
       }
       setSites(Array.isArray(data) ? (data as SiteRow[]) : []);
+
+      const prospectResponse = await fetch("/api/prospects?status=details_loaded");
+      const prospectText = await prospectResponse.text();
+      let prospectData: unknown = [];
+      try {
+        prospectData = prospectText ? JSON.parse(prospectText) : [];
+      } catch {
+        throw new Error(`Prospects response bukan JSON: ${prospectText.slice(0, 120)}`);
+      }
+      if (!prospectResponse.ok) {
+        throw new Error((prospectData as { error?: string }).error || `Prospects API returned ${prospectResponse.status}`);
+      }
+      setGatheredProspects(Array.isArray(prospectData)
+        ? (prospectData as ProspectRow[]).filter((item) => item.place_id && !item.generatedBusinessId)
+        : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal memuat daftar situs.");
     } finally {
@@ -103,6 +180,18 @@ export default function AdminSites() {
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [query, sites]);
 
+  const filteredGatheredProspects = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return gatheredProspects;
+    return gatheredProspects.filter((prospect) => [
+      prospect.name,
+      prospect.place_id,
+      prospect.formatted_address,
+      prospect.formattedAddress,
+      Array.isArray(prospect.types) ? prospect.types.join(" ") : "",
+    ].filter(Boolean).join(" ").toLowerCase().includes(needle));
+  }, [gatheredProspects, query]);
+
   const fetchSiteJson = async (site: SiteRow) => {
     const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}`);
     const text = await response.text();
@@ -122,9 +211,80 @@ export default function AdminSites() {
     setActionMessage("");
     try {
       const siteJson = await fetchSiteJson(site);
-      setActiveData({ site, data: gatheredSnapshot(siteJson) });
+      setActiveData({ title: "Gathered data", subtitle: `${site.businessName} · ${site.businessId}`, data: gatheredSnapshot(siteJson) });
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : "Gagal memuat gathered data.");
+    }
+  };
+
+  const handleSeeProspectData = (prospect: ProspectRow) => {
+    setActiveData({
+      title: "Gathered prospect data",
+      subtitle: `${prospect.name} · ${prospect.place_id}`,
+      data: {
+        googlePlace: prospect,
+        selectedPhoto: prospect.selectedPhoto || {},
+        selectedPalette: prospect.selectedPalette || [],
+      },
+    });
+  };
+
+  const handleGenerateProspect = async (prospect: ProspectRow) => {
+    const placeId = prospect.place_id;
+    setGeneratingProspectId(placeId);
+    setActionMessage("");
+    try {
+      let originData: any = { ...prospect };
+      const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
+      const detailsText = await detailsResponse.text();
+      let details: any = {};
+      try {
+        details = detailsText ? JSON.parse(detailsText) : {};
+      } catch {
+        details = { error: `Place Details response bukan JSON: ${detailsText.slice(0, 120)}` };
+      }
+      if (detailsResponse.ok && details.result) {
+        originData = { ...originData, ...details.result };
+      } else {
+        throw new Error(details.error || `Place Details returned HTTP ${detailsResponse.status}`);
+      }
+
+      const selectedPhoto = prospect.selectedPhoto || {};
+      const fallbackPhoto = Array.isArray(originData.photos) ? originData.photos.find((photo: any) => photoReference(photo)) : null;
+      const fallbackReference = fallbackPhoto ? photoReference(fallbackPhoto) : "";
+      const selectedReference = selectedPhoto.reference || fallbackReference;
+      const selectedImageUrl = selectedPhoto.url || (selectedReference ? `/api/places/photo?reference=${encodeURIComponent(selectedReference)}&maxwidth=320` : "");
+      const response = await fetch("/api/sites/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requireAi: true,
+          provider: activeRegenerateProvider,
+          model: activeRegenerateModel,
+          businessId: businessSlug(prospect.name || originData.name || "business", placeId),
+          businessName: prospect.name || originData.name || "Untitled Business",
+          phone: prospectPhone({ ...prospect, ...originData }),
+          originData,
+          brandPalette: Array.isArray(prospect.selectedPalette) ? prospect.selectedPalette : [],
+          selectedLogoImageUrl: selectedImageUrl,
+          selectedLogoReference: selectedReference,
+          selectedLogoSource: selectedImageUrl ? (selectedPhoto.source || "google_places") : "",
+          selectedLogoAttributions: Array.isArray(selectedPhoto.attributions) && selectedPhoto.attributions.length > 0
+            ? selectedPhoto.attributions
+            : fallbackPhoto ? photoAttributions(fallbackPhoto) : [],
+          selectedLogoPriority: selectedPhoto.priorityLabel || "",
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.error) {
+        throw new Error(result.error || `Generate failed with HTTP ${response.status}`);
+      }
+      setActionMessage(`Generated ${prospect.name} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`);
+      fetchSites();
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Generate gagal.");
+    } finally {
+      setGeneratingProspectId("");
     }
   };
 
@@ -246,6 +406,103 @@ export default function AdminSites() {
           {actionMessage}
         </div>
       )}
+
+      <div className="mb-6 overflow-visible rounded-2xl border border-emerald-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-emerald-100 bg-emerald-50 px-5 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-emerald-900">Ready to Generate</p>
+            <p className="text-xs text-emerald-700">Prospect yang sudah gather data tapi belum dibuatkan site.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <select
+              value={activeRegenerateProvider}
+              onChange={(event) => {
+                const nextProvider = event.target.value;
+                const firstModel = aiModelPrices.find((item) => item.provider === nextProvider)?.model || "";
+                setRegenerateProvider(nextProvider);
+                setRegenerateModel(firstModel);
+              }}
+              className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-gray-800 outline-none focus:border-emerald-400"
+            >
+              {providerOptions.map((provider) => (
+                <option key={provider} value={provider}>{provider}</option>
+              ))}
+            </select>
+            <select
+              value={activeRegenerateModel}
+              onChange={(event) => setRegenerateModel(event.target.value)}
+              className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-gray-800 outline-none focus:border-emerald-400"
+            >
+              {regenerateModels.map((model) => (
+                <option key={model.model} value={model.model}>{model.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-[1.4fr_0.8fr_0.7fr_0.8fr_1.1fr] gap-4 border-b border-gray-100 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <span>Business</span>
+          <span>Place ID</span>
+          <span>Rating</span>
+          <span>Gathered</span>
+          <span className="text-right">Actions</span>
+        </div>
+
+        {isLoading ? (
+          <div className="flex items-center gap-3 px-5 py-8 text-sm text-gray-500">
+            <RefreshCw size={18} className="animate-spin" />
+            Memuat gathered prospects...
+          </div>
+        ) : filteredGatheredProspects.length === 0 ? (
+          <div className="px-5 py-8 text-sm text-gray-500">
+            Belum ada prospect gathered yang menunggu generate.
+          </div>
+        ) : (
+          filteredGatheredProspects.map((prospect) => (
+            <div key={prospect.place_id} className="grid grid-cols-[1.4fr_0.8fr_0.7fr_0.8fr_1.1fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-gray-900">{prospect.name}</p>
+                <p className="mt-1 truncate text-xs text-gray-500">{prospect.formatted_address || prospect.formattedAddress || "No address"}</p>
+              </div>
+              <code className="truncate rounded-lg bg-gray-50 px-2 py-1 text-xs text-gray-600">{prospect.place_id}</code>
+              <span className="text-xs text-gray-600">
+                {Number(prospect.rating || 0).toFixed(1)} / {Number(prospect.user_ratings_total || prospect.userRatingCount || 0)}
+              </span>
+              <span className="text-xs text-gray-500">{prospect.detailsLoadedAt ? new Date(prospect.detailsLoadedAt).toLocaleString() : "-"}</span>
+              <div className="flex justify-end gap-2">
+                {(prospect.url || prospect.googleMapsUri) && (
+                  <a
+                    href={prospect.url || prospect.googleMapsUri}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    <MapPin size={14} />
+                    Maps
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleSeeProspectData(prospect)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  <Database size={14} />
+                  Data
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGenerateProspect(prospect)}
+                  disabled={!activeRegenerateModel || Boolean(generatingProspectId || regeneratingId)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {generatingProspectId === prospect.place_id ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
+                  Generate
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
       <div className="overflow-visible rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div className="grid grid-cols-[1.3fr_0.9fr_0.5fr_0.8fr_1.5fr] gap-4 border-b border-gray-100 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -396,8 +653,8 @@ export default function AdminSites() {
           <div className="max-h-[86vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
               <div>
-                <p className="text-sm font-semibold text-gray-900">Gathered data</p>
-                <p className="text-xs text-gray-500">{activeData.site.businessName} · {activeData.site.businessId}</p>
+                <p className="text-sm font-semibold text-gray-900">{activeData.title}</p>
+                <p className="text-xs text-gray-500">{activeData.subtitle}</p>
               </div>
               <button type="button" onClick={() => setActiveData(null)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100">
                 <X size={18} />

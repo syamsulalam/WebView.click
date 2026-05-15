@@ -1720,8 +1720,13 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       const generated = await generateAiJson(db, env, body);
       if (generated) {
         finalJson = generated;
+      } else if (body.requireAi === true) {
+        throw new Error("AI generation did not return JSON. Check provider/model/API key settings.");
       }
     } catch (error) {
+      if (body.requireAi === true) {
+        throw error;
+      }
       console.error("AI generation failed, using submitted JSON:", error);
     }
 
