@@ -1469,6 +1469,7 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
   const offset = Math.min(100000, Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0));
   const status = String(url.searchParams.get("status") || "").trim().toLowerCase();
   const patch = String(url.searchParams.get("patch") || "").trim().toLowerCase();
+  const aiRewrite = String(url.searchParams.get("aiRewrite") || "").trim().toLowerCase();
   const query = String(url.searchParams.get("q") || "").trim().slice(0, 120);
   const includeCounts = url.searchParams.get("counts") === "1";
   const allowedStatuses = new Set(["running", "success", "failed"]);
@@ -1492,6 +1493,9 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
     where.push(`j.metadata_json LIKE '%"copyPatchApplied":true%'`);
   } else if (patch === "fallback") {
     where.push(`(j.metadata_json IS NULL OR j.metadata_json NOT LIKE '%"copyPatchApplied":true%')`);
+  }
+  if (aiRewrite === "zero") {
+    where.push(`j.metadata_json LIKE '%"copyPatchApplied":true%' AND j.metadata_json LIKE '%"aiRewritten":0%'`);
   }
 
   bindings.push(limit, offset);
@@ -1541,14 +1545,15 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
         COUNT(*) AS all_count,
         SUM(CASE WHEN j.status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
         SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS patch_count,
-        SUM(CASE WHEN j.metadata_json IS NULL OR j.metadata_json NOT LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS fallback_count
+        SUM(CASE WHEN j.metadata_json IS NULL OR j.metadata_json NOT LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS fallback_count,
+        SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' AND j.metadata_json LIKE '%"aiRewritten":0%' THEN 1 ELSE 0 END) AS no_rewrite_count
        FROM generation_jobs j
        LEFT JOIN places_prospects p ON p.place_id = j.place_id
        ${searchWhereSql}`,
     );
     const counts = searchBindings.length
-      ? await countsStatement.bind(...searchBindings).first<{ all_count?: number; failed_count?: number; patch_count?: number; fallback_count?: number }>()
-      : await countsStatement.first<{ all_count?: number; failed_count?: number; patch_count?: number; fallback_count?: number }>();
+      ? await countsStatement.bind(...searchBindings).first<{ all_count?: number; failed_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number }>()
+      : await countsStatement.first<{ all_count?: number; failed_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number }>();
     return json({
       jobs,
       counts: {
@@ -1556,6 +1561,7 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
         failed: Number(counts?.failed_count || 0),
         fallback: Number(counts?.fallback_count || 0),
         patch: Number(counts?.patch_count || 0),
+        noRewrite: Number(counts?.no_rewrite_count || 0),
       },
     });
   }
@@ -1668,6 +1674,178 @@ function applyTextIfPresent(target: Record<string, unknown>, key: string, source
   if (!(sourceKey in source)) return;
   const value = safeCopyText(source[sourceKey], maxLength);
   if (value) target[key] = value;
+}
+
+type AiCopyAuditTarget = {
+  path: Array<string | number>;
+  pathLabel: string;
+  label: string;
+  before: string;
+};
+
+type AiCopyAuditItem = {
+  path: string;
+  label: string;
+  before: string;
+  after: string;
+  status: "ai_rewritten" | "ai_filled_blank" | "source_kept" | "fallback_source" | "missing_after";
+};
+
+function copyAuditText(value: unknown, maxLength = 260) {
+  return safeCopyText(value, maxLength);
+}
+
+function copyAuditPathLabel(path: Array<string | number>) {
+  return path.reduce((result, part) => (
+    typeof part === "number" ? `${result}[${part}]` : result ? `${result}.${part}` : part
+  ), "" as string);
+}
+
+function readCopyAuditPath(root: unknown, path: Array<string | number>) {
+  let cursor = root;
+  for (const part of path) {
+    if (typeof part === "number") {
+      if (!Array.isArray(cursor)) return undefined;
+      cursor = cursor[part];
+    } else {
+      const source = objectValue(cursor);
+      if (!(part in source)) return undefined;
+      cursor = source[part];
+    }
+  }
+  return cursor;
+}
+
+function pushCopyAuditTarget(
+  targets: AiCopyAuditTarget[],
+  path: Array<string | number>,
+  label: string,
+  value: unknown,
+  includeBlank = false,
+) {
+  const before = copyAuditText(value);
+  if (!before && !includeBlank) return;
+  targets.push({ path, pathLabel: copyAuditPathLabel(path), label, before });
+}
+
+function collectSectionCopyAuditTargets(
+  targets: AiCopyAuditTarget[],
+  section: Record<string, unknown>,
+  path: Array<string | number>,
+) {
+  const content = objectValue(section.content);
+  const sectionName = asString(section.id, asString(section.type, "section"));
+  (["title", "headline", "subheadline", "description", "summary"] as const).forEach((field) => {
+    pushCopyAuditTarget(targets, [...path, "content", field], `${sectionName} ${field}`, content[field]);
+  });
+
+  const items = Array.isArray(content.items) ? content.items as Array<Record<string, unknown>> : [];
+  items.slice(0, 8).forEach((item, index) => {
+    (["title", "label", "value", "description", "question", "answer"] as const).forEach((field) => {
+      pushCopyAuditTarget(targets, [...path, "content", "items", index, field], `${sectionName} item ${index + 1} ${field}`, item[field]);
+    });
+  });
+}
+
+function collectAiCopyAuditTargets(siteJson: Record<string, unknown>) {
+  const targets: AiCopyAuditTarget[] = [];
+  const meta = objectValue(siteJson.meta);
+  const businessProfile = objectValue(siteJson.businessProfile);
+  const seo = objectValue(siteJson.seo);
+
+  pushCopyAuditTarget(targets, ["meta", "seoTitle"], "meta SEO title", meta.seoTitle, true);
+  pushCopyAuditTarget(targets, ["meta", "seoDescription"], "meta SEO description", meta.seoDescription, true);
+  pushCopyAuditTarget(targets, ["businessProfile", "shortPitch"], "business short pitch", businessProfile.shortPitch, true);
+  pushCopyAuditTarget(targets, ["seo", "cityLandingPhrase"], "SEO city phrase", seo.cityLandingPhrase, true);
+
+  const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
+  pages.slice(0, 12).forEach((page, pageIndex) => {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    sections.slice(0, 16).forEach((section, sectionIndex) => {
+      const type = asString(section.type);
+      if (!["hero", "features", "offers", "offeringDetail", "reviews", "hoursLocation", "faq", "gridCards", "textImageBlock"].includes(type)) return;
+      collectSectionCopyAuditTargets(targets, section, ["pages", pageIndex, "sections", sectionIndex]);
+    });
+  });
+
+  const offers = Array.isArray(siteJson.offers) ? siteJson.offers as Array<Record<string, unknown>> : [];
+  offers.slice(0, 12).forEach((offer, index) => {
+    pushCopyAuditTarget(targets, ["offers", index, "title"], `offer ${index + 1} title`, offer.title);
+    pushCopyAuditTarget(targets, ["offers", index, "description"], `offer ${index + 1} description`, offer.description);
+    pushCopyAuditTarget(targets, ["offers", index, "priceHint"], `offer ${index + 1} price hint`, offer.priceHint);
+  });
+
+  const offerings = [
+    ...(Array.isArray(siteJson.products) ? siteJson.products as Array<Record<string, unknown>> : []),
+    ...(Array.isArray(siteJson.services) ? siteJson.services as Array<Record<string, unknown>> : []),
+  ];
+  const offeringRoots = [
+    ...(Array.isArray(siteJson.products) ? (siteJson.products as Array<Record<string, unknown>>).map((_, index) => ["products", index] as Array<string | number>) : []),
+    ...(Array.isArray(siteJson.services) ? (siteJson.services as Array<Record<string, unknown>>).map((_, index) => ["services", index] as Array<string | number>) : []),
+  ];
+  offerings.slice(0, 16).forEach((offering, index) => {
+    const rootPath = offeringRoots[index];
+    const name = asString(offering.title, `offering ${index + 1}`);
+    if (!rootPath) return;
+    (["title", "summary", "description", "priceHint"] as const).forEach((field) => {
+      pushCopyAuditTarget(targets, [...rootPath, field], `${name} ${field}`, offering[field]);
+    });
+    (["bestFor", "included", "relatedReviewKeywords"] as const).forEach((field) => {
+      const values = Array.isArray(offering[field]) ? offering[field] as unknown[] : [];
+      values.slice(0, 8).forEach((value, itemIndex) => {
+        pushCopyAuditTarget(targets, [...rootPath, field, itemIndex], `${name} ${field} ${itemIndex + 1}`, value);
+      });
+    });
+    const highlights = Array.isArray(offering.highlights) ? offering.highlights as Array<Record<string, unknown>> : [];
+    highlights.slice(0, 6).forEach((highlight, itemIndex) => {
+      pushCopyAuditTarget(targets, [...rootPath, "highlights", itemIndex, "title"], `${name} highlight ${itemIndex + 1} title`, highlight.title);
+      pushCopyAuditTarget(targets, [...rootPath, "highlights", itemIndex, "description"], `${name} highlight ${itemIndex + 1} description`, highlight.description);
+    });
+  });
+
+  return targets.slice(0, 180);
+}
+
+function buildAiCopyAudit(targets: AiCopyAuditTarget[], siteJson: Record<string, unknown>, patchApplied: boolean) {
+  const items = targets.map((target) => {
+    const after = copyAuditText(readCopyAuditPath(siteJson, target.path));
+    let status: AiCopyAuditItem["status"] = "source_kept";
+    if (!patchApplied) {
+      status = "fallback_source";
+    } else if (target.before && after && target.before !== after) {
+      status = "ai_rewritten";
+    } else if (!target.before && after) {
+      status = "ai_filled_blank";
+    } else if (target.before && !after) {
+      status = "missing_after";
+    }
+    return {
+      path: target.pathLabel,
+      label: target.label,
+      before: target.before,
+      after,
+      status,
+    };
+  }).filter((item) => item.before || item.after) as AiCopyAuditItem[];
+
+  const summary = items.reduce((acc, item) => {
+    acc[item.status] = (acc[item.status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  return {
+    summary: {
+      targetFieldsSentToAi: targets.length,
+      sourceSentencesSentToAi: targets.filter((target) => target.before).length,
+      aiRewritten: summary.ai_rewritten || 0,
+      aiFilledBlank: summary.ai_filled_blank || 0,
+      sourceKept: summary.source_kept || 0,
+      fallbackSource: summary.fallback_source || 0,
+      missingAfter: summary.missing_after || 0,
+      storedItems: Math.min(items.length, 120),
+    },
+    items: items.slice(0, 120),
+  };
 }
 
 function applyButtonTextPatch(buttons: unknown, patchButtons: unknown) {
@@ -2706,16 +2884,30 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       : structuredClone(templateSchema) as Record<string, unknown>;
     let aiGenerated = false;
     const copyBrief = buildAiCopyTargetBrief(finalJson, originData, businessName);
+    const copyAuditTargets = collectAiCopyAuditTargets(finalJson);
     jobMetadata.copyBriefHash = await sha256Json(copyBrief);
+    jobMetadata.copyAuditSummary = {
+      targetFieldsSentToAi: copyAuditTargets.length,
+      sourceSentencesSentToAi: copyAuditTargets.filter((target) => target.before).length,
+      aiRewritten: 0,
+      aiFilledBlank: 0,
+      sourceKept: 0,
+      fallbackSource: 0,
+      missingAfter: 0,
+      storedItems: 0,
+    };
     await updateGenerationJob(db, jobId, { metadata_json: JSON.stringify(jobMetadata) });
 
     try {
       const copyPatchResult = await generateAiCopyPatch(db, env, body);
       if (copyPatchResult) {
         applyAiCopyPatch(finalJson, copyPatchResult.patch);
+        const copyAudit = buildAiCopyAudit(copyAuditTargets, finalJson, true);
         jobMetadata.copyBriefHash = copyPatchResult.copyBriefHash || jobMetadata.copyBriefHash;
         jobMetadata.copyPatchHash = copyPatchResult.copyPatchHash;
         jobMetadata.copyPatchApplied = true;
+        jobMetadata.copyAuditSummary = copyAudit.summary;
+        jobMetadata.copyAuditItems = copyAudit.items;
         aiGenerated = true;
       } else if (body.requireAi === true) {
         throw new Error("AI copy patch did not return JSON. Check provider/model/API key settings.");
@@ -2726,6 +2918,11 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       }
       jobMetadata.copyPatchError = error instanceof Error ? error.message : String(error);
       console.error("AI copy patch failed, using submitted JSON:", error);
+    }
+    if (!aiGenerated) {
+      const fallbackAudit = buildAiCopyAudit(copyAuditTargets, finalJson, false);
+      jobMetadata.copyAuditSummary = fallbackAudit.summary;
+      jobMetadata.copyAuditItems = fallbackAudit.items;
     }
 
     const metaConfig = finalJson.meta && typeof finalJson.meta === "object" ? finalJson.meta as Record<string, unknown> : {};

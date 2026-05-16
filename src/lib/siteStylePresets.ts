@@ -209,6 +209,252 @@ export function inferVisualStyleFromText(value: string) {
 }
 
 export const siteStylePresetCss = `
+  @property --wv-border-angle {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+  }
+
+  [data-wv-site-canvas] {
+    --wv-page-x: clamp(1.25rem, 4vw, 4.5rem);
+    --wv-section-y: clamp(4.5rem, 8vw, 7.5rem);
+    --wv-section-y-compact: clamp(2rem, 4vw, 4rem);
+    --wv-content-max: 72rem;
+    --wv-measure: 66ch;
+    --wv-card-radius: 14px;
+    --wv-image-radius: 18px;
+    --wv-card-shadow: 0 18px 46px rgba(15, 23, 42, 0.10);
+    --wv-lift-shadow: 0 26px 64px rgba(15, 23, 42, 0.16);
+    --wv-focus-ring: rgba(79, 70, 229, 0.22);
+    --wv-subtle-surface: var(--color-secondary);
+    --wv-subtle-border: rgba(15, 23, 42, 0.12);
+    --wv-gradient-primary: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+    --wv-gradient-accent: linear-gradient(135deg, var(--color-accent), var(--color-secondary));
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  @supports (color: color-mix(in oklab, white, black)) {
+    [data-wv-site-canvas] {
+      --wv-focus-ring: color-mix(in oklab, var(--color-accent) 34%, transparent);
+      --wv-subtle-surface: color-mix(in oklab, var(--color-secondary) 72%, white);
+      --wv-subtle-border: color-mix(in oklab, var(--color-primary) 15%, transparent);
+      --wv-gradient-primary: linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 62%, var(--color-accent)));
+      --wv-gradient-accent: linear-gradient(135deg, var(--color-accent), color-mix(in oklab, var(--color-accent) 58%, white));
+    }
+  }
+
+  [data-wv-site-canvas] .tracking-tight {
+    letter-spacing: 0;
+  }
+
+  [data-wv-site-canvas] main section {
+    position: relative;
+    overflow: clip;
+    padding-block: var(--wv-section-y);
+    padding-inline: var(--wv-page-x);
+  }
+
+  [data-wv-site-canvas] main section:is(.py-6) {
+    padding-block: var(--wv-section-y-compact);
+  }
+
+  [data-wv-site-canvas] :where(.max-w-4xl, .max-w-5xl, .max-w-6xl) {
+    width: min(var(--wv-content-max), 100%);
+  }
+
+  [data-wv-site-canvas] :where(h1, h2, h3) {
+    letter-spacing: 0;
+    text-wrap: balance;
+  }
+
+  [data-wv-site-canvas] :where(p, li) {
+    text-wrap: pretty;
+  }
+
+  [data-wv-site-canvas] :where(h1) {
+    font-size: clamp(2.65rem, 7vw, 5.9rem);
+    line-height: 0.95;
+  }
+
+  [data-wv-site-canvas] :where(h2) {
+    font-size: clamp(2rem, 4vw, 3.5rem);
+    line-height: 1.02;
+  }
+
+  [data-wv-site-canvas] :where(h3) {
+    font-size: clamp(1.125rem, 1.5vw, 1.45rem);
+    line-height: 1.15;
+  }
+
+  [data-wv-site-canvas] :where(a, button) {
+    transition:
+      transform 180ms ease,
+      box-shadow 180ms ease,
+      border-color 180ms ease,
+      background-color 180ms ease,
+      color 180ms ease,
+      opacity 180ms ease;
+  }
+
+  [data-wv-site-canvas] :where(a, button):focus-visible,
+  [data-wv-site-canvas] :where(input, textarea, summary):focus-visible {
+    outline: 3px solid var(--wv-focus-ring);
+    outline-offset: 3px;
+  }
+
+  [data-wv-site-canvas] [data-wv-page] > section:first-child {
+    min-block-size: min(820px, calc(100svh - 72px));
+    display: grid;
+    align-items: center;
+  }
+
+  @supports (height: 100dvh) {
+    [data-wv-site-canvas] [data-wv-page] > section:first-child {
+      min-block-size: min(820px, calc(100dvh - 72px));
+    }
+  }
+
+  [data-wv-site-canvas] [data-wv-page] > section:first-child::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 14% 18%, color-mix(in oklab, var(--color-accent) 18%, transparent), transparent 28%),
+      radial-gradient(circle at 84% 16%, color-mix(in oklab, var(--color-primary) 12%, transparent), transparent 26%);
+    opacity: 0.78;
+  }
+
+  [data-wv-site-canvas] [data-wv-page] > section:first-child > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  [data-wv-site-canvas] :where(.shadow-sm, .shadow-md, .shadow-lg, .shadow-xl) {
+    box-shadow: var(--wv-card-shadow);
+  }
+
+  [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).border,
+  [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).shadow-sm,
+  [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).shadow-md,
+  [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).shadow-xl {
+    position: relative;
+    isolation: isolate;
+    border-color: var(--wv-subtle-border);
+    transition:
+      transform 220ms ease,
+      box-shadow 220ms ease,
+      border-color 220ms ease,
+      background-color 220ms ease;
+  }
+
+  [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).border:hover,
+  [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).shadow-sm:hover,
+  [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).shadow-md:hover,
+  [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).shadow-xl:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--wv-lift-shadow);
+  }
+
+  @supports (color: color-mix(in oklab, white, black)) and (background: conic-gradient(from 0deg, red, blue)) and (mask: linear-gradient(#000 0 0)) {
+    [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).border::before {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      z-index: -1;
+      padding: 1px;
+      border-radius: inherit;
+      background: conic-gradient(from var(--wv-border-angle, 0deg), transparent, color-mix(in oklab, var(--color-accent) 52%, white), transparent 35%);
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 220ms ease;
+    }
+
+    [data-wv-site-canvas] :where(.rounded-xl, .rounded-2xl, .rounded-3xl).border:hover::before {
+      opacity: 1;
+      animation: wv-border-orbit 3.8s linear infinite;
+    }
+  }
+
+  [data-wv-site-canvas] img {
+    transform-origin: center;
+    transition: transform 700ms ease, filter 700ms ease;
+  }
+
+  [data-wv-site-canvas] [data-wv-image-role]:hover {
+    transform: scale(1.035);
+    filter: saturate(1.06) contrast(1.03);
+  }
+
+  [data-wv-site-canvas] a[class*="rounded"],
+  [data-wv-site-canvas] button[class*="rounded"] {
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }
+
+  [data-wv-site-canvas] a[class*="rounded"]:hover,
+  [data-wv-site-canvas] button[class*="rounded"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14);
+  }
+
+  [data-wv-site-canvas] :where(input, textarea) {
+    transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+  }
+
+  [data-wv-site-canvas] :where(input, textarea):focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 4px var(--wv-focus-ring);
+  }
+
+  @supports (content-visibility: auto) {
+    [data-wv-site-canvas] main section:not(:first-child) {
+      content-visibility: auto;
+      contain-intrinsic-size: auto 720px;
+    }
+  }
+
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      [data-wv-site-canvas] main section:not(:first-child) > * {
+        animation: wv-section-rise both;
+        animation-timeline: view();
+        animation-range: entry 0% cover 24%;
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-wv-site-canvas],
+    [data-wv-site-canvas] *,
+    [data-wv-site-canvas] *::before,
+    [data-wv-site-canvas] *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+
+  @keyframes wv-section-rise {
+    from {
+      opacity: 0.001;
+      transform: translateY(26px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes wv-border-orbit {
+    to {
+      --wv-border-angle: 360deg;
+    }
+  }
+
   .wv-preset-local-clean {
     --wv-card-radius: 12px;
     --wv-card-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
@@ -434,7 +680,7 @@ export const siteStylePresetCss = `
     border-radius: var(--wv-image-radius);
   }
 
-  [data-wv-image-role="logo"] {
+  [data-wv-site-canvas] [data-wv-image-role="logo"] {
     border-radius: 9999px !important;
     clip-path: none !important;
   }

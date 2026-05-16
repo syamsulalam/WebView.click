@@ -418,22 +418,25 @@ export default function SiteRenderer({
     "--color-accent": colors.accent,
     "--color-text": colors.textMain,
     "--color-bg": colors.background,
+  } as React.CSSProperties;
+  const siteCanvasStyles = {
     fontFamily: activeFontPairing.bodyCss || typography.bodyFont,
     backgroundColor: "var(--color-bg)",
     color: "var(--color-text)",
   } as React.CSSProperties;
 
   return (
-    <div style={customStyles} className={`min-h-screen flex flex-col ${presetClass} ${visualClass}`} id="rendered-site">
+    <div style={customStyles} id="rendered-site">
       <style>{`
         ${fontImportUrl ? `@import url('${fontImportUrl}');` : ""}
-        #rendered-site h1,
-        #rendered-site h2,
-        #rendered-site h3,
-        #rendered-site .wv-heading {
+        #rendered-site [data-wv-site-canvas] h1,
+        #rendered-site [data-wv-site-canvas] h2,
+        #rendered-site [data-wv-site-canvas] h3,
+        #rendered-site [data-wv-site-canvas] .wv-heading {
           font-family: ${activeFontPairing.headingCss || typography.headingFont};
         }
       `}</style>
+      <div data-wv-site-canvas="true" style={siteCanvasStyles} className={`min-h-screen flex flex-col ${presetClass} ${visualClass}`}>
       <header style={{ backgroundColor: colors.primary, color: "#fff" }} className="py-4 px-6 md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <button
           type="button"
@@ -1069,6 +1072,7 @@ export default function SiteRenderer({
           )}
         </div>
       )}
+      </div>
 
       <div data-export-remove="true" className="hide-in-export fixed bottom-20 left-5 z-[210] flex max-w-[calc(100vw-2.5rem)] flex-col items-start gap-2 md:bottom-5">
         {editMode && (

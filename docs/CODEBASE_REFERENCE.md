@@ -47,6 +47,9 @@ Logic penting:
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
 - Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
 - Renderer membaca `design.fontPairing` dan `design.fontPairingConfig`; registry Google Font pairing ada di `src/lib/fontPairings.ts` dan ringkasannya di `docs/FONT_PAIRING_GUIDE.md`.
+- Root `#rendered-site` hanya menyimpan CSS variables palette aktif; website client dirender di child `[data-wv-site-canvas]` dengan class `wv-preset-*` dan `wv-visual-*`.
+- Tool UI seperti edit text, `WebsiteActionPanel`, demo inspector, download/domain/setup controls berada di luar `[data-wv-site-canvas]` agar tidak terkena CSS website.
+- Font pairing aktif hanya diterapkan ke `[data-wv-site-canvas]`; panel/tools tetap memakai style app.
 - Gambar dirender sebagai `<img>` jika URL usable (`http`, `/`, atau `data:`); filename placeholder tetap ditampilkan sebagai fallback supaya preview tidak blank.
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
@@ -62,6 +65,7 @@ Logic penting:
 Risiko debug:
 - Jika UI demo/public berbeda dari ekspektasi, cek mapping section di file ini dulu sebelum mengubah `PublicViewer`.
 - Jika menambah `section.type` baru di JSON, tambahkan renderer di file ini dan update dokumen ini.
+- Jika tool UI berubah mengikuti website, pastikan elemen tool tidak masuk ke `[data-wv-site-canvas]`.
 
 ### `src/components/EditableText.tsx`
 
@@ -98,11 +102,11 @@ Fungsi:
 
 Logic penting:
 - Komponen sendiri yang mengambil `GET /api/generation-jobs?limit=...`, menghitung counter filter, menyimpan filter/sort ke localStorage berdasarkan `storageKeyPrefix`, dan menjalankan retry job.
-- Dalam `serverBackedFilters` mode, perubahan filter `Failed`, `Fallback`, atau `Patch` memanggil endpoint dengan `status=failed`, `patch=fallback`, atau `patch=applied`, bukan hanya menyaring rows yang sudah loaded.
+- Dalam `serverBackedFilters` mode, perubahan filter `Failed`, `Fallback`, `Patch`, atau `No rewrite` memanggil endpoint dengan `status=failed`, `patch=fallback`, `patch=applied`, atau `aiRewrite=zero`, bukan hanya menyaring rows yang sudah loaded.
 - Dalam `serverBackedSearch` mode, search box mengirim `q` ke server untuk mencari `business_id`, `place_id`, job `id`, nama prospect, dan metadata JSON.
 - Full page mode menampilkan `Load more` jika rows loaded masih lebih sedikit dari count server; tombol ini memanggil endpoint dengan `offset={loadedRows}` lalu append ke tabel.
 - Kolom Job menyediakan tombol copy kecil untuk Job ID dan Business ID; saat sukses icon berubah menjadi check sementara.
-- Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, dan raw `metadata` JSON dengan tombol copy.
+- Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, retry dari drawer, audit copy AI, dan raw `metadata` JSON dengan tombol copy.
 - Retry mengambil current copy brief dari `GET /api/sites/:businessId/copy-brief`, menghitung hash browser-side, lalu memperingatkan jika hash berbeda dari job lama sebelum membuat job baru.
 - `variant="compact"` dipakai di `/admin/leads`; `variant="full"` dipakai di `/admin/jobs`.
 - `onJobsLoaded` dipakai parent `/admin/leads` untuk memperbarui angka pada tombol `Jobs`.
@@ -461,6 +465,9 @@ Logic penting:
 - `inferStylePresetFromText()` dipakai CRM generate untuk memilih preset dari nama bisnis, alamat, dan Places types.
 - `normalizeStylePreset()` memastikan nilai JSON yang tidak dikenal fallback ke `local-clean`.
 - `inferVisualStyleFromText()` memilih visual treatment dari niche; `industrial-diagonal` memberi boxy/diagonal image edge untuk contractor/auto/security.
+- `siteStylePresetCss` berisi generated-site experience layer yang discoped ke `[data-wv-site-canvas]`: responsive `clamp()` spacing/type tokens, `svh`/`dvh` hero sizing, palette-derived `color-mix()` surfaces, focus rings, hover lift, image polish, animated border enhancement, scroll-view reveal, reduced-motion fallback, dan `content-visibility` untuk section offscreen.
+- Advanced border animation membutuhkan support `conic-gradient`, `mask`, dan `@property`; tanpa support, kartu tetap memakai border/shadow biasa.
+- Scroll reveal hanya aktif jika browser mendukung `animation-timeline: view()` dan user tidak memilih reduced motion.
 
 ### `src/lib/domainExtensions.ts`
 
@@ -517,6 +524,7 @@ Logic AI:
 - Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
 - Full scaffold JSON tidak dikirim ke AI. AI tidak melihat image URL, maps URL, navigation href, sourceData mentah, palette, font, visual style, favicon, CSS, storage, atau field protected lain.
 - Copy patch AI di-merge deterministik oleh Function lewat `applyAiCopyPatch()`. AI tidak boleh mengubah `pageId`, `detailPageId`, navigation href, sourceData, photo URL, contact/maps fields, palette, font, visual style, storage, atau favicon.
+- Function membuat audit granular dari target copy sebelum patch dan copy final setelah patch. Audit ini disimpan di `generation_jobs.metadata_json.copyAuditSummary` dan `copyAuditItems`, dengan status `ai_rewritten`, `ai_filled_blank`, `source_kept`, `fallback_source`, atau `missing_after`.
 - Jika copy patch AI sukses, `meta.generatedWithAi=true` dan `meta.generationMode=ai_copy_patch`; jika gagal dan `requireAi` false, scaffold/fallback JSON tetap disimpan dengan `submitted_json_ai_fallback`.
 - Setelah AI/fallback selesai, Function menjalankan `ensureGalleryPage()` agar generated sites otomatis mendapat gallery page dari foto Places/brand/offers bila minimal dua gambar tersedia, meskipun model AI lupa membuatnya.
 
@@ -567,19 +575,20 @@ Logic Prospect Drafts:
 
 Logic Generation Jobs:
 - `generation_jobs` mencatat setiap request `/api/sites/generate` dengan status `running`, `success`, atau `failed`.
-- `generation_jobs.metadata_json` menyimpan audit kecil tanpa payload besar: `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, provider/model, dan failure metadata bila generate gagal.
+- `generation_jobs.metadata_json` menyimpan audit generate: `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, ringkasan/item audit copy AI (`copyAuditSummary`, `copyAuditItems`), provider/model, dan failure metadata bila generate gagal.
 - Jika generate sukses, prospect draft diupdate ke `site_generated` dan `generated_business_id` diisi.
 - Jika generate gagal, `generation_jobs.error` dan `places_prospects.last_error` diisi agar admin bisa melihat error di UI.
-- `GET /api/generation-jobs` mendukung query `limit` (1-500, default 100), `offset` (default 0), `q`, `status=running|success|failed`, `patch=applied|fallback`, dan `counts=1`.
+- `GET /api/generation-jobs` mendukung query `limit` (1-500, default 100), `offset` (default 0), `q`, `status=running|success|failed`, `patch=applied|fallback`, `aiRewrite=zero`, dan `counts=1`.
 - Quick panel Jobs di `/admin/leads` memakai `limit=100`; halaman penuh `/admin/jobs` memakai `limit=200`.
 - Jika `counts=1`, endpoint mengembalikan `{ jobs, counts }` supaya badge filter tetap global walaupun rows sedang difilter server-side.
 - Jika `q` dikirim bersama `counts=1`, counts dihitung dalam scope search query tersebut.
 - `/admin/jobs` memakai `offset` untuk tombol `Load more`; quick drawer `/admin/leads` tetap tanpa pagination agar ringan.
 - Panel Jobs menampilkan fingerprint pendek `brief:{8 chars}` dan `patch:{8 chars}` dari `copyBriefHash`/`copyPatchHash`, plus badge `patch applied` atau `fallback only`.
-- Panel Jobs punya action `Retry current brief`: UI menghitung hash `GET /api/sites/:businessId/copy-brief` saat ini, membandingkannya dengan `generation_jobs.metadata.copyBriefHash`, lalu memberi warning inline jika brief berubah. Klik kedua (`Retry anyway`) membuat job baru memakai brief/current site JSON terbaru.
-- Panel Jobs punya filter lokal `All`, `Failed`, `Fallback`, dan `Patch` dengan counter per filter untuk menyaring 100 job terbaru tanpa endpoint tambahan.
+- Panel Jobs punya action `Retry current brief` dari row dan drawer detail: UI menghitung hash `GET /api/sites/:businessId/copy-brief` saat ini, membandingkannya dengan `generation_jobs.metadata.copyBriefHash`, lalu memberi warning inline jika brief berubah. Klik kedua (`Retry anyway`) membuat job baru memakai brief/current site JSON terbaru.
+- Drawer detail menampilkan `AI copy audit` untuk job baru: jumlah source sentence yang dikirim, jumlah yang diubah/diisi AI, jumlah fallback/kept, dan daftar per field dengan source copy versus final copy.
+- Panel Jobs punya filter `All`, `Failed`, `Fallback`, `Patch`, dan `No rewrite`; di halaman penuh filter memakai server/D1, sedangkan quick drawer menyaring row yang sudah loaded.
 - Panel Jobs dirender sebagai compact table dengan kolom Job, Status, Model, Brief hash, Patch hash, dan Action agar status/retry lebih mudah discan saat job history panjang.
-- `/admin/jobs` menambahkan sort lokal `Newest`, `Failed first`, `Fallback first`, dan `Patch applied first`; quick drawer `/admin/leads` memakai sort yang sama.
+- `/admin/jobs` menambahkan sort lokal `Newest`, `Failed first`, `Fallback first`, `Patch applied first`, dan `No AI rewrite first`; quick drawer `/admin/leads` memakai sort yang sama.
 
 Logic Owner HTML Export:
 - `src/lib/exportSiteHtml.ts` membuat zip owner berisi hanya `index.html`.

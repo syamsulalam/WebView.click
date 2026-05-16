@@ -16,6 +16,14 @@ type GenerationJobsTableProps = {
   onJobsLoaded?: (jobs: any[]) => void;
 };
 
+type GenerationJobCounts = {
+  all: number;
+  failed: number;
+  fallback: number;
+  patch: number;
+  noRewrite: number;
+};
+
 function shortHash(value: unknown) {
   const text = String(value || "").trim();
   return text ? text.slice(0, 8) : "";
@@ -30,10 +38,45 @@ function patchApplied(job: any) {
   return job?.metadata?.copyPatchApplied === true;
 }
 
+function aiRewriteCount(job: any) {
+  return Number(job?.metadata?.copyAuditSummary?.aiRewritten || 0);
+}
+
+function noAiRewrite(job: any) {
+  return patchApplied(job) && aiRewriteCount(job) === 0;
+}
+
+function copyAuditItems(job: any) {
+  const items = job?.metadata?.copyAuditItems;
+  return Array.isArray(items) ? items : [];
+}
+
+function copyAuditSummary(job: any) {
+  const summary = job?.metadata?.copyAuditSummary;
+  return summary && typeof summary === "object" ? summary : {};
+}
+
+function auditStatusLabel(status: string) {
+  if (status === "ai_rewritten") return "AI rewritten";
+  if (status === "ai_filled_blank") return "AI filled";
+  if (status === "source_kept") return "Source kept";
+  if (status === "fallback_source") return "Fallback source";
+  if (status === "missing_after") return "Missing after";
+  return status || "Unknown";
+}
+
+function auditStatusClass(status: string) {
+  if (status === "ai_rewritten" || status === "ai_filled_blank") return "bg-emerald-100 text-emerald-800";
+  if (status === "fallback_source") return "bg-amber-100 text-amber-900";
+  if (status === "missing_after") return "bg-red-100 text-red-800";
+  return "bg-slate-100 text-slate-700";
+}
+
 function filterJobs(jobs: any[], filter: string) {
   if (filter === "failed") return jobs.filter((job) => job.status === "failed");
   if (filter === "fallback") return jobs.filter((job) => !patchApplied(job));
   if (filter === "patch") return jobs.filter((job) => patchApplied(job));
+  if (filter === "noRewrite") return jobs.filter((job) => noAiRewrite(job));
   return jobs;
 }
 
@@ -42,6 +85,7 @@ function sortJobs(jobs: any[], sort: string) {
     if (sort === "failed") return Number(b.status === "failed") - Number(a.status === "failed");
     if (sort === "fallback") return Number(!patchApplied(b)) - Number(!patchApplied(a));
     if (sort === "patch") return Number(patchApplied(b)) - Number(patchApplied(a));
+    if (sort === "noRewrite") return Number(noAiRewrite(b)) - Number(noAiRewrite(a));
     return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
   });
 }
@@ -59,7 +103,7 @@ export default function GenerationJobsTable({
   onJobsLoaded,
 }: GenerationJobsTableProps) {
   const [jobs, setJobs] = useState<any[]>([]);
-  const [remoteCounts, setRemoteCounts] = useState<{ all: number; failed: number; fallback: number; patch: number } | null>(null);
+  const [remoteCounts, setRemoteCounts] = useState<GenerationJobCounts | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [message, setMessage] = useState("");
@@ -79,6 +123,7 @@ export default function GenerationJobsTable({
     failed: jobs.filter((job) => job.status === "failed").length,
     fallback: jobs.filter((job) => !patchApplied(job)).length,
     patch: jobs.filter((job) => patchApplied(job)).length,
+    noRewrite: jobs.filter((job) => noAiRewrite(job)).length,
   }), [jobs]);
   const counts = remoteCounts || localCounts;
   const visibleJobs = useMemo(
@@ -88,9 +133,11 @@ export default function GenerationJobsTable({
   const serverFilterKey = serverBackedFilters ? filter : "";
   const serverSearchKey = serverBackedSearch ? searchQuery.trim() : "";
   const activeTotal = remoteCounts
-    ? Number(remoteCounts[filter as keyof typeof remoteCounts] ?? remoteCounts.all)
+    ? Number(remoteCounts[filter as keyof GenerationJobCounts] ?? remoteCounts.all)
     : jobs.length;
   const canLoadMore = serverBackedFilters && !compact && Boolean(remoteCounts) && jobs.length < activeTotal;
+  const selectedAuditItems = copyAuditItems(selectedJob);
+  const selectedAuditSummary = copyAuditSummary(selectedJob);
 
   const fetchJobs = async (append = false) => {
     if (append) {
@@ -108,6 +155,7 @@ export default function GenerationJobsTable({
         if (filter === "failed") params.set("status", "failed");
         if (filter === "fallback") params.set("patch", "fallback");
         if (filter === "patch") params.set("patch", "applied");
+        if (filter === "noRewrite") params.set("aiRewrite", "zero");
       }
       if (serverBackedSearch && searchQuery.trim()) {
         params.set("q", searchQuery.trim());
@@ -124,6 +172,7 @@ export default function GenerationJobsTable({
           failed: Number(data.counts.failed || 0),
           fallback: Number(data.counts.fallback || 0),
           patch: Number(data.counts.patch || 0),
+          noRewrite: Number(data.counts.noRewrite || 0),
         });
       } else if (!serverBackedFilters) {
         setRemoteCounts(null);
@@ -233,6 +282,7 @@ export default function GenerationJobsTable({
     { value: "failed", label: "Failed", count: counts.failed },
     { value: "fallback", label: "Fallback", count: counts.fallback },
     { value: "patch", label: "Patch", count: counts.patch },
+    { value: "noRewrite", label: "No rewrite", count: counts.noRewrite },
   ];
 
   return (
@@ -284,6 +334,7 @@ export default function GenerationJobsTable({
             <option value="failed">Failed first</option>
             <option value="fallback">Fallback first</option>
             <option value="patch">Patch applied first</option>
+            <option value="noRewrite">No AI rewrite first</option>
           </select>
           {showFullPageLink && <Link to="/admin/jobs" className="text-xs font-semibold text-indigo-700 hover:underline">Full jobs page</Link>}
           <button type="button" onClick={() => fetchJobs()} className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline">
@@ -451,14 +502,28 @@ export default function GenerationJobsTable({
                 </h2>
                 <p className="mt-1 truncate text-xs text-slate-500">{selectedJob.id}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedJob(null)}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                aria-label="Close job details"
-              >
-                <X size={18} />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {selectedJob.businessId && (
+                  <button
+                    type="button"
+                    onClick={() => retryGenerationJob(selectedJob)}
+                    disabled={Boolean(retryingJobId)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                    title="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms."
+                  >
+                    {retryingJobId === selectedJob.id ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
+                    {retryOverrideJobId === selectedJob.id ? "Retry anyway" : "Retry"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedJob(null)}
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Close job details"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
             <div className="flex-1 space-y-4 overflow-auto p-5 text-sm">
               <div className="grid gap-3 sm:grid-cols-2">
@@ -495,6 +560,68 @@ export default function GenerationJobsTable({
                 <pre className="max-h-40 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-xs text-slate-100">
                   {selectedJob.error || "No error recorded."}
                 </pre>
+              </section>
+
+              <section>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-semibold text-slate-950">AI copy audit</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">Source copy sent to AI and final copy saved after patch/fallback.</p>
+                  </div>
+                  {selectedAuditItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => copyValue(`${selectedJob.id}:copy-audit`, JSON.stringify({ summary: selectedAuditSummary, items: selectedAuditItems }, null, 2))}
+                      className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+                    >
+                      {copiedKey === `${selectedJob.id}:copy-audit` ? <Check size={12} /> : <Copy size={12} />}
+                      Copy
+                    </button>
+                  )}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[
+                    ["Sent", selectedAuditSummary.sourceSentencesSentToAi ?? selectedAuditSummary.targetFieldsSentToAi ?? 0],
+                    ["AI changed", Number(selectedAuditSummary.aiRewritten || 0) + Number(selectedAuditSummary.aiFilledBlank || 0)],
+                    ["Fallback/kept", Number(selectedAuditSummary.fallbackSource || 0) + Number(selectedAuditSummary.sourceKept || 0)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                      <p className="mt-1 text-lg font-bold text-slate-950">{String(value)}</p>
+                    </div>
+                  ))}
+                </div>
+                {selectedAuditItems.length > 0 ? (
+                  <div className="mt-3 max-h-[42vh] space-y-2 overflow-auto rounded-xl border border-slate-200 bg-white p-2">
+                    {selectedAuditItems.map((item: any, index: number) => (
+                      <article key={`${item.path || index}:${index}`} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-semibold text-slate-950">{item.label || item.path || "copy field"}</p>
+                            <p className="mt-0.5 truncate font-mono text-[10px] text-slate-500">{item.path}</p>
+                          </div>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${auditStatusClass(String(item.status || ""))}`}>
+                            {auditStatusLabel(String(item.status || ""))}
+                          </span>
+                        </div>
+                        <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                          <div>
+                            <p className="mb-1 font-semibold uppercase tracking-wide text-slate-400">Sent/source</p>
+                            <p className="break-words rounded-md bg-white p-2 text-slate-700">{item.before || "Blank target"}</p>
+                          </div>
+                          <div>
+                            <p className="mb-1 font-semibold uppercase tracking-wide text-slate-400">Saved/final</p>
+                            <p className="break-words rounded-md bg-white p-2 text-slate-900">{item.after || "Blank after save"}</p>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+                    No sentence-level copy audit was recorded for this older job. Retry the job to create granular AI/fallback metadata.
+                  </div>
+                )}
               </section>
 
               <section>
