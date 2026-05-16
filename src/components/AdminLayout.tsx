@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { Globe2, LayoutDashboard, Users, UserCircle, Webhook, Settings } from "lucide-react";
+import { Globe2, LayoutDashboard, ListChecks, Users, UserCircle, Webhook, Settings } from "lucide-react";
 import { SignIn, useUser, useClerk } from "@clerk/clerk-react";
 
 export default function AdminLayout() {
@@ -18,10 +18,12 @@ export default function AdminLayout() {
 // Komponen Navbar yang sama
 function NavContent({ onSignOut }: { onSignOut: () => void }) {
   const location = useLocation();
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [lastRepairAt, setLastRepairAt] = useState("");
   const links = [
     { to: "/admin", icon: <LayoutDashboard size={24} />, label: "Dashboard" },
     { to: "/admin/leads", icon: <Users size={24} />, label: "CRM Leads" },
+    { to: "/admin/jobs", icon: <ListChecks size={24} />, label: "Generation Jobs" },
     { to: "/admin/sites", icon: <Globe2 size={24} />, label: "Generated Sites" },
     { to: "/admin/schema", icon: <Webhook size={24} />, label: "JSON Schema Info" },
     { to: "/admin/settings", icon: <Settings size={24} />, label: "Settings" } // Ditambahkan setting
@@ -39,6 +41,11 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
       window.clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [location.pathname]);
 
   const repairLabel = (() => {
     if (!lastRepairAt) return "";
@@ -94,7 +101,7 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
           </span>
         </button>
       </div>
-      <div className="flex-1 overflow-auto bg-gray-50 h-screen">
+      <div ref={contentRef} className="flex-1 overflow-auto bg-gray-50 h-screen">
         <Outlet />
       </div>
     </div>

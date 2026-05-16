@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, ChevronDown, Database, Globe2, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
+import { Brain, ChevronDown, Database, FileText, Globe2, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { getStylePreset, inferStylePresetFromText, inferVisualStyleFromText, siteVisualStyles } from "../../lib/siteStylePresets";
@@ -20,9 +20,35 @@ type SiteRow = {
   googleMapsUrl?: string;
   r2JsonUrl?: string;
   storageMode?: "r2" | "legacy_d1";
+  generatedWithAi?: boolean;
+  generationMode?: string;
+  aiProvider?: string;
+  aiModel?: string;
 };
 
 type RegenerateMode = "resave" | "ai";
+
+function generationBadge(site: SiteRow) {
+  if (site.generationMode === "ai_copy_patch" || site.generatedWithAi) {
+    return {
+      label: "AI Copy Patch",
+      title: `Copy was enriched by AI${site.aiProvider ? ` via ${site.aiProvider}` : ""}${site.aiModel ? ` / ${site.aiModel}` : ""}. Structure and protected fields stayed deterministic.`,
+      className: "bg-indigo-100 text-indigo-800",
+    };
+  }
+  if (site.generationMode === "google_places_fallback" || site.generationMode === "submitted_json_ai_fallback") {
+    return {
+      label: "Fallback Only",
+      title: "Site was built from gathered Google data/scaffold without a successful AI copy patch.",
+      className: "bg-slate-100 text-slate-700",
+    };
+  }
+  return {
+    label: site.generationMode || "Unknown Mode",
+    title: "Generation mode metadata is missing or from an older site row.",
+    className: "bg-amber-100 text-amber-800",
+  };
+}
 
 const providerApiKeyMap: Record<string, string> = {
   OpenRouter: "OPENROUTER_API_KEY",
@@ -658,6 +684,26 @@ export default function AdminSites() {
     }
   };
 
+  const handleSeeCopyBrief = async (site: SiteRow) => {
+    setActionMessage("");
+    try {
+      const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/copy-brief`);
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`Response bukan JSON: ${text.slice(0, 120)}`);
+      }
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `Copy brief returned ${response.status}`);
+      }
+      setActiveData({ title: "AI copy brief", subtitle: `${site.businessName} · ${site.businessId}`, data });
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Gagal memuat AI copy brief.");
+    }
+  };
+
   const handleSeeProspectData = (prospect: ProspectRow) => {
     setActiveData({
       title: "Gathered prospect data",
@@ -742,7 +788,7 @@ export default function AdminSites() {
       const requiredKey = providerApiKeyMap[activeRegenerateProvider];
       const hasProviderKey = requiredKey && String(settings?.[requiredKey] || "").trim();
       setActionMessage(hasProviderKey
-        ? `Generated ${prospect.name}. If ${activeRegenerateProvider} returned usable JSON, it was used; otherwise the gathered-data fallback was saved.`
+        ? `Generated ${prospect.name}. If ${activeRegenerateProvider} returned a usable copy patch, it was merged into the deterministic site JSON; otherwise the gathered-data fallback was saved.`
         : `Generated ${prospect.name} from gathered-data fallback. Add ${activeRegenerateProvider} API key in /admin/settings for AI copy improvement.`
       );
       fetchSites();
@@ -822,7 +868,7 @@ export default function AdminSites() {
       }
       setActionMessage(
         mode === "ai"
-          ? `AI regenerated ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`
+          ? `AI copy patch regenerated ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`
           : `Re-gathered Google data and resaved ${site.businessName} without an AI call.`
       );
       fetchSites();
@@ -1006,6 +1052,17 @@ export default function AdminSites() {
                   >
                     {site.storageMode === "r2" ? "R2 JSON" : "Legacy D1 JSON"}
                   </span>
+                  {(() => {
+                    const badge = generationBadge(site);
+                    return (
+                      <span
+                        title={badge.title}
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}
+                      >
+                        {badge.label}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
               <code className="truncate rounded-lg bg-gray-50 px-2 py-1 text-xs text-gray-600">{site.businessId}</code>
@@ -1040,6 +1097,14 @@ export default function AdminSites() {
                   <Database size={14} />
                   Data
                 </button>
+                <button
+                  type="button"
+                  onClick={() => handleSeeCopyBrief(site)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  <FileText size={14} />
+                  Brief
+                </button>
                 <div className="relative">
                   <button
                     type="button"
@@ -1055,7 +1120,7 @@ export default function AdminSites() {
                     <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl">
                       <div className="mb-3">
                         <p className="text-xs font-semibold text-gray-900">Regenerate option</p>
-                        <p className="mt-1 text-[11px] leading-4 text-gray-500">Re-gather fixes stale Google data like fallback Maps URLs. AI regenerate rebuilds the JSON with a smarter model.</p>
+                        <p className="mt-1 text-[11px] leading-4 text-gray-500">Re-gather fixes stale Google data like fallback Maps URLs. AI regenerate only requests a copy patch; protected structure stays deterministic.</p>
                       </div>
 
                       <div className="mb-3 grid grid-cols-1 gap-2">

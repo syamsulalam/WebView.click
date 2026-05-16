@@ -7,6 +7,7 @@ import { getStylePreset, inferStylePresetFromText, inferVisualStyleFromText, sit
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOptions } from "../../lib/prospectScoring";
 import HelpTooltip from "../../components/HelpTooltip";
+import GenerationJobsTable from "../../components/GenerationJobsTable";
 
 export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -25,7 +26,7 @@ export default function AdminLeads() {
   const [scorePopoverKey, setScorePopoverKey] = useState("");
   const [batchQueueRunning, setBatchQueueRunning] = useState(false);
   const [batchMessage, setBatchMessage] = useState("");
-  const [generationJobs, setGenerationJobs] = useState<any[]>([]);
+  const [generationJobCount, setGenerationJobCount] = useState(0);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [searchMessage, setSearchMessage] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -225,9 +226,9 @@ export default function AdminLeads() {
   };
 
   const fetchGenerationJobs = () => {
-    fetch("/api/generation-jobs")
+    fetch("/api/generation-jobs?limit=100")
       .then(r => r.ok ? r.json() : [])
-      .then((data) => setGenerationJobs(Array.isArray(data) ? data : []))
+      .then((data) => setGenerationJobCount(Array.isArray(data) ? data.length : 0))
       .catch(e => console.error(e));
   };
 
@@ -1801,33 +1802,19 @@ export default function AdminLeads() {
                   }}
                   className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                 >
-                  Jobs ({generationJobs.length})
+                  Jobs ({generationJobCount})
                 </button>
               </div>
             </div>
             {jobsOpen && (
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="font-semibold text-slate-900">Generation jobs</p>
-                  <button type="button" onClick={fetchGenerationJobs} className="text-xs font-semibold text-indigo-700 hover:underline">Refresh jobs</button>
-                </div>
-                <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
-                  {generationJobs.map((job) => (
-                    <div key={job.id} className="py-3 text-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="font-medium text-slate-900">{job.prospectName || job.metadata?.businessName || job.businessId || job.placeId}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          job.status === "success" ? "bg-emerald-100 text-emerald-800" : job.status === "failed" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
-                        }`}>{job.status}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">{job.provider} / {job.model} · {job.createdAt}</p>
-                      {job.error && <p className="mt-1 text-xs text-red-700">{job.error}</p>}
-                      {job.businessId && <a href={`/${job.businessId}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-xs font-semibold text-indigo-700 hover:underline">Open preview</a>}
-                    </div>
-                  ))}
-                  {generationJobs.length === 0 && <p className="py-6 text-center text-sm text-slate-500">No generation jobs yet.</p>}
-                </div>
-              </div>
+              <GenerationJobsTable
+                storageKeyPrefix="webview.adminLeads.jobs"
+                fallbackProvider={activeProviderKey}
+                fallbackModel={activeModel}
+                variant="compact"
+                showFullPageLink
+                onJobsLoaded={(jobs) => setGenerationJobCount(jobs.length)}
+              />
             )}
             {visibleProspects.map((place, idx) => {
               const placeKey = getPlaceKey(place) || String(idx);

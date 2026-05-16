@@ -13,6 +13,7 @@ Routes utama:
 - `/demo` -> `DemoSite`
 - `/admin` -> `AdminLayout` + `AdminDashboard`
 - `/admin/leads` -> `AdminLeads`
+- `/admin/jobs` -> `AdminJobs`
 - `/admin/sites` -> `AdminSites`
 - `/admin/schema` -> `AdminSchema`
 - `/admin/settings` -> `AdminSettings`
@@ -89,6 +90,23 @@ Logic penting:
 - Default width `w-72`, bisa dioverride via `widthClass`.
 - Menerima `text` string atau `children` untuk konten custom.
 
+### `src/components/GenerationJobsTable.tsx`
+
+Fungsi:
+- Shared table untuk generation jobs, dipakai oleh quick drawer `/admin/leads` dan halaman penuh `/admin/jobs`.
+- Menghindari duplikasi logic filter/sort/retry agar kedua UI tidak drift.
+
+Logic penting:
+- Komponen sendiri yang mengambil `GET /api/generation-jobs?limit=...`, menghitung counter filter, menyimpan filter/sort ke localStorage berdasarkan `storageKeyPrefix`, dan menjalankan retry job.
+- Dalam `serverBackedFilters` mode, perubahan filter `Failed`, `Fallback`, atau `Patch` memanggil endpoint dengan `status=failed`, `patch=fallback`, atau `patch=applied`, bukan hanya menyaring rows yang sudah loaded.
+- Dalam `serverBackedSearch` mode, search box mengirim `q` ke server untuk mencari `business_id`, `place_id`, job `id`, nama prospect, dan metadata JSON.
+- Full page mode menampilkan `Load more` jika rows loaded masih lebih sedikit dari count server; tombol ini memanggil endpoint dengan `offset={loadedRows}` lalu append ke tabel.
+- Kolom Job menyediakan tombol copy kecil untuk Job ID dan Business ID; saat sukses icon berubah menjadi check sementara.
+- Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, dan raw `metadata` JSON dengan tombol copy.
+- Retry mengambil current copy brief dari `GET /api/sites/:businessId/copy-brief`, menghitung hash browser-side, lalu memperingatkan jika hash berbeda dari job lama sebelum membuat job baru.
+- `variant="compact"` dipakai di `/admin/leads`; `variant="full"` dipakai di `/admin/jobs`.
+- `onJobsLoaded` dipakai parent `/admin/leads` untuk memperbarui angka pada tombol `Jobs`.
+
 ### `src/components/AdminLayout.tsx`
 
 Fungsi:
@@ -97,8 +115,8 @@ Fungsi:
 - Menyediakan dev bypass jika publishable key tidak tersedia atau live key dipakai di host dev.
 
 Logic penting:
-- `NavContent` menampilkan link Dashboard, CRM Leads, JSON Schema Info, dan Settings.
-- `NavContent` juga menampilkan Generated Sites untuk melihat daftar JSON website yang sudah berhasil dibuat.
+- `NavContent` menampilkan link Dashboard, CRM Leads, Generation Jobs, Generated Sites, JSON Schema Info, dan Settings.
+- Saat pindah route admin, container konten dan window otomatis scroll ke atas agar tab baru tidak mulai dari posisi scroll tab sebelumnya.
 - Sidebar menampilkan badge kecil `DB` setelah `/admin/schema` berhasil menjalankan `Repair DB now`; timestamp disimpan di localStorage key `webview.admin.lastDbRepairAt`.
 - `ClerkSecureLayout` hanya mengizinkan user dengan `publicMetadata.role === "admin"`.
 - Jika role belum admin, halaman menampilkan instruksi update metadata Clerk.
@@ -230,7 +248,8 @@ Logic penting:
 - Tombol `Skip` mengubah status prospect ke `skipped`; status lain bisa diubah dari drawer.
 - Checkbox prospect + `Generate selected` menjalankan batch generate queue secara sequential dari browser agar tidak menembak semua AI request paralel.
 - Tombol `Select score 70+` memilih hanya prospek visible dengan conversion score minimal 70 untuk batch generate.
-- Tombol `Jobs` membaca `GET /api/generation-jobs` dan menampilkan 100 job terakhir.
+- Tombol `Jobs` membaca `GET /api/generation-jobs` dan menampilkan quick drawer 100 job terakhir.
+- Quick drawer Jobs punya filter lokal `All`, `Failed`, `Fallback`, dan `Patch`, counter per filter, sort lokal `Newest`, `Failed first`, `Fallback first`, dan `Patch applied first`, serta link ke halaman penuh `/admin/jobs`.
 - Foto/palette yang dipilih admin disimpan via `PUT /api/prospects/:placeId/selection`, lalu dihydrate kembali saat prospect draft dibuka.
 - `PUT /api/prospects/:placeId/selection` juga dapat menyimpan `paletteOptions` tanpa menimpa selected photo/palette.
 
@@ -242,6 +261,22 @@ Risiko debug:
 - Canvas palette butuh image same-origin/CORS; karena itu foto harus lewat proxy `/api/places/photo`, bukan langsung URL Google.
 - Audit dan roadmap admin disimpan di `docs/ADMIN_WORKFLOW_AUDIT.md`.
 
+### `src/pages/admin/AdminJobs.tsx`
+
+Fungsi:
+- Halaman khusus untuk audit `generation_jobs` agar `/admin/leads` tetap fokus pada prospecting/search.
+- Membungkus shared `GenerationJobsTable` dalam mode full page.
+
+Logic penting:
+- Provider/model fallback untuk retry dibaca dari localStorage pilihan terakhir `/admin/leads`.
+- Semua logic table, filter, sort, hash, refresh, dan retry hidup di `src/components/GenerationJobsTable.tsx`.
+- Full page memakai `serverBackedFilters` agar filter jobs mencari dari server/D1, bukan hanya dari 200 row yang sedang loaded.
+- Full page juga memakai `serverBackedSearch` untuk mencari job lama berdasarkan nama bisnis, `businessId`, `placeId`, job ID, atau metadata JSON.
+
+Risiko debug:
+- Retry butuh row `json_sites` untuk `businessId` tersebut; job lama tanpa site JSON tidak bisa diulang dari halaman ini.
+- Jika hash berubah, itu berarti gathered/site data sudah berubah sejak attempt lama, bukan error UI.
+
 ### `src/pages/admin/AdminSites.tsx`
 
 Fungsi:
@@ -250,11 +285,12 @@ Fungsi:
 - Memberi link preview/open ke `/:businessId` supaya hasil generate tidak hilang dari workflow admin.
 - Memberi link Google Maps/Google Business listing dari `sourceData.googleMapsUri` atau `businessProfile.contact.directionsUrl` untuk membandingkan hasil generate dengan listing asli.
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
+- Tombol `Brief` membuka `GET /api/sites/:businessId/copy-brief`, yaitu `copyTargetBrief` stored-site yang dipakai untuk debugging bahan copy-only yang dikirim ke AI. Saat regenerate, fresh Google Places details masih bisa menambah fakta baru sebelum AI call.
 - Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini refresh Place Details, membangun fallback JSON lengkap dari gathered data, lalu memanggil `/api/sites/generate` dengan provider/model pilihan. Jika AI provider gagal, fallback JSON tetap disimpan agar generate tidak berhenti di 502.
 - Fallback JSON dari `/admin/sites` mengisi `meta.generatedWithAi=false`, `meta.generationMode=google_places_fallback`, `meta.sourcePhotoCount`, title-cased service names, generalized niche copy profiles, service-area copy inferred from address, detail pages, dan gallery section jika Places mengembalikan lebih dari satu foto.
 - Fallback JSON dari `/admin/sites` juga memilih `design.fontPairing` dan `fontPairingConfig` dari registry industri sehingga site tetap punya typography yang sesuai walaupun AI gagal.
 - Tombol `Regen` memakai dropdown:
-  - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan untuk membuat ulang JSON via AI yang lebih pintar.
+  - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan untuk membuat copy patch AI yang di-merge ke JSON deterministik.
   - `Re-gather Google data + resave` wajib punya `sourceData.placeId`, mengambil Place Details lagi, lalu mengirim `provider`/`model` kosong agar data Google Places, termasuk Maps URL exact, disimpan ulang tanpa memaksa AI call.
 
 API yang dipakai:
@@ -262,11 +298,13 @@ API yang dipakai:
 - `GET /api/prospects?status=details_loaded`
 - `GET /api/places/details?placeId=...`
 - `POST /api/sites/generate`
+- `GET /api/sites/:businessId/copy-brief`
 
 Logic penting:
 - Search lokal bisa mencari nama bisnis, slug, niche, bahasa, dan region.
 - Metadata tampilan diambil dari `meta`, `businessProfile`, dan `trust` di JSON site.
 - List Generated Sites menampilkan badge storage mode: `R2 JSON` jika D1 hanya manifest dan full JSON ada di R2, atau `Legacy D1 JSON` jika row lama masih menyimpan full JSON di D1.
+- List Generated Sites menampilkan badge generation mode: `AI Copy Patch` jika `meta.generationMode=ai_copy_patch`/`generatedWithAi=true`, atau `Fallback Only` jika site dibuat dari gathered-data/scaffold tanpa copy patch AI.
 - Pilihan provider/model regenerate disimpan ke localStorage agar refresh halaman tetap memakai model terakhir yang dipilih admin.
 - Pilihan provider/model yang sama dipakai untuk `Generate` prospect gathered di section `Ready to Generate`.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
@@ -476,7 +514,10 @@ Logic AI:
   - `kie/gemini-3.1-pro` via `https://api.kie.ai/gemini-3.1-pro/v1/chat/completions`
   - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
 - Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI key hilang, provider/model tidak valid, provider mengembalikan HTTP error, response kosong, atau JSON invalid. Flow `/admin/sites` untuk prospect gathered sekarang mengirim fallback `jsonContent`, sehingga tidak memakai `requireAi: true` dan tetap bisa menyimpan situs saat AI provider gagal.
-- Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, prompt AI menginstruksikan model untuk mempertahankan `pageId`, `detailPageId`, navigation href, sourceData, photo URL, dan contact/maps fields, lalu fokus memperkaya copy, FAQ, feature descriptions, naming, dan conversion text.
+- Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
+- Full scaffold JSON tidak dikirim ke AI. AI tidak melihat image URL, maps URL, navigation href, sourceData mentah, palette, font, visual style, favicon, CSS, storage, atau field protected lain.
+- Copy patch AI di-merge deterministik oleh Function lewat `applyAiCopyPatch()`. AI tidak boleh mengubah `pageId`, `detailPageId`, navigation href, sourceData, photo URL, contact/maps fields, palette, font, visual style, storage, atau favicon.
+- Jika copy patch AI sukses, `meta.generatedWithAi=true` dan `meta.generationMode=ai_copy_patch`; jika gagal dan `requireAi` false, scaffold/fallback JSON tetap disimpan dengan `submitted_json_ai_fallback`.
 - Setelah AI/fallback selesai, Function menjalankan `ensureGalleryPage()` agar generated sites otomatis mendapat gallery page dari foto Places/brand/offers bila minimal dua gambar tersedia, meskipun model AI lupa membuatnya.
 
 Logic Google Places/logo:
@@ -526,9 +567,19 @@ Logic Prospect Drafts:
 
 Logic Generation Jobs:
 - `generation_jobs` mencatat setiap request `/api/sites/generate` dengan status `running`, `success`, atau `failed`.
+- `generation_jobs.metadata_json` menyimpan audit kecil tanpa payload besar: `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, provider/model, dan failure metadata bila generate gagal.
 - Jika generate sukses, prospect draft diupdate ke `site_generated` dan `generated_business_id` diisi.
 - Jika generate gagal, `generation_jobs.error` dan `places_prospects.last_error` diisi agar admin bisa melihat error di UI.
-- `GET /api/generation-jobs` mengembalikan 100 job terbaru untuk panel Jobs di `/admin/leads`.
+- `GET /api/generation-jobs` mendukung query `limit` (1-500, default 100), `offset` (default 0), `q`, `status=running|success|failed`, `patch=applied|fallback`, dan `counts=1`.
+- Quick panel Jobs di `/admin/leads` memakai `limit=100`; halaman penuh `/admin/jobs` memakai `limit=200`.
+- Jika `counts=1`, endpoint mengembalikan `{ jobs, counts }` supaya badge filter tetap global walaupun rows sedang difilter server-side.
+- Jika `q` dikirim bersama `counts=1`, counts dihitung dalam scope search query tersebut.
+- `/admin/jobs` memakai `offset` untuk tombol `Load more`; quick drawer `/admin/leads` tetap tanpa pagination agar ringan.
+- Panel Jobs menampilkan fingerprint pendek `brief:{8 chars}` dan `patch:{8 chars}` dari `copyBriefHash`/`copyPatchHash`, plus badge `patch applied` atau `fallback only`.
+- Panel Jobs punya action `Retry current brief`: UI menghitung hash `GET /api/sites/:businessId/copy-brief` saat ini, membandingkannya dengan `generation_jobs.metadata.copyBriefHash`, lalu memberi warning inline jika brief berubah. Klik kedua (`Retry anyway`) membuat job baru memakai brief/current site JSON terbaru.
+- Panel Jobs punya filter lokal `All`, `Failed`, `Fallback`, dan `Patch` dengan counter per filter untuk menyaring 100 job terbaru tanpa endpoint tambahan.
+- Panel Jobs dirender sebagai compact table dengan kolom Job, Status, Model, Brief hash, Patch hash, dan Action agar status/retry lebih mudah discan saat job history panjang.
+- `/admin/jobs` menambahkan sort lokal `Newest`, `Failed first`, `Fallback first`, dan `Patch applied first`; quick drawer `/admin/leads` memakai sort yang sama.
 
 Logic Owner HTML Export:
 - `src/lib/exportSiteHtml.ts` membuat zip owner berisi hanya `index.html`.

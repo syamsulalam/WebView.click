@@ -625,6 +625,15 @@ function parseJsonObject(value: string | null | undefined) {
   }
 }
 
+async function sha256Hex(value: string) {
+  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Json(value: unknown) {
+  return sha256Hex(JSON.stringify(value));
+}
+
 function parseJsonArray(value: string | null | undefined) {
   if (!value) return [];
   try {
@@ -1453,14 +1462,50 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
     return errorJson("Not Found", 404);
   }
 
+  const url = new URL(request.url);
+  const requestedLimit = Number(url.searchParams.get("limit") || "100");
+  const limit = Math.min(500, Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 100));
+  const requestedOffset = Number(url.searchParams.get("offset") || "0");
+  const offset = Math.min(100000, Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0));
+  const status = String(url.searchParams.get("status") || "").trim().toLowerCase();
+  const patch = String(url.searchParams.get("patch") || "").trim().toLowerCase();
+  const query = String(url.searchParams.get("q") || "").trim().slice(0, 120);
+  const includeCounts = url.searchParams.get("counts") === "1";
+  const allowedStatuses = new Set(["running", "success", "failed"]);
+  const searchWhere: string[] = [];
+  const searchBindings: unknown[] = [];
+
+  if (query) {
+    const like = `%${query}%`;
+    searchWhere.push("(j.business_id LIKE ? OR j.place_id LIKE ? OR j.id LIKE ? OR p.business_name LIKE ? OR j.metadata_json LIKE ?)");
+    searchBindings.push(like, like, like, like, like);
+  }
+
+  const where = [...searchWhere];
+  const bindings: unknown[] = [...searchBindings];
+
+  if (allowedStatuses.has(status)) {
+    where.push("j.status = ?");
+    bindings.push(status);
+  }
+  if (patch === "applied") {
+    where.push(`j.metadata_json LIKE '%"copyPatchApplied":true%'`);
+  } else if (patch === "fallback") {
+    where.push(`(j.metadata_json IS NULL OR j.metadata_json NOT LIKE '%"copyPatchApplied":true%')`);
+  }
+
+  bindings.push(limit, offset);
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const rows = await db
     .prepare(
       `SELECT j.*, p.business_name AS prospect_name
        FROM generation_jobs j
        LEFT JOIN places_prospects p ON p.place_id = j.place_id
+       ${whereSql}
        ORDER BY datetime(j.created_at) DESC
-       LIMIT 100`,
+       LIMIT ? OFFSET ?`,
     )
+    .bind(...bindings)
     .all<{
       id: string;
       business_id?: string;
@@ -1475,7 +1520,7 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
       prospect_name?: string;
     }>();
 
-  return json((rows.results || []).map((row) => ({
+  const jobs = (rows.results || []).map((row) => ({
     id: row.id,
     businessId: row.business_id || "",
     placeId: row.place_id || "",
@@ -1487,7 +1532,35 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
     metadata: parseJsonObject(row.metadata_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  })));
+  }));
+
+  if (includeCounts) {
+    const searchWhereSql = searchWhere.length ? `WHERE ${searchWhere.join(" AND ")}` : "";
+    const countsStatement = db.prepare(
+      `SELECT
+        COUNT(*) AS all_count,
+        SUM(CASE WHEN j.status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+        SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS patch_count,
+        SUM(CASE WHEN j.metadata_json IS NULL OR j.metadata_json NOT LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS fallback_count
+       FROM generation_jobs j
+       LEFT JOIN places_prospects p ON p.place_id = j.place_id
+       ${searchWhereSql}`,
+    );
+    const counts = searchBindings.length
+      ? await countsStatement.bind(...searchBindings).first<{ all_count?: number; failed_count?: number; patch_count?: number; fallback_count?: number }>()
+      : await countsStatement.first<{ all_count?: number; failed_count?: number; patch_count?: number; fallback_count?: number }>();
+    return json({
+      jobs,
+      counts: {
+        all: Number(counts?.all_count || 0),
+        failed: Number(counts?.failed_count || 0),
+        fallback: Number(counts?.fallback_count || 0),
+        patch: Number(counts?.patch_count || 0),
+      },
+    });
+  }
+
+  return json(jobs);
 }
 
 async function handlePlacesPhoto(url: URL, db: D1Database, env: Env): Promise<Response> {
@@ -1522,24 +1595,355 @@ async function handlePlacesPhoto(url: URL, db: D1Database, env: Env): Promise<Re
   });
 }
 
-async function generateAiJson(
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function safeCopyText(value: unknown, maxLength = 420) {
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  return String(value)
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function safeCopyArray(value: unknown, maxItems = 6, maxLength = 160) {
+  return Array.isArray(value)
+    ? value.map((item) => safeCopyText(item, maxLength)).filter(Boolean).slice(0, maxItems)
+    : [];
+}
+
+function safeCopyPairs(value: unknown, maxItems = 6) {
+  return Array.isArray(value)
+    ? value
+        .map((item) => {
+          const source = objectValue(item);
+          const title = safeCopyText(source.title, 90);
+          const description = safeCopyText(source.description, 260);
+          return title || description ? { title, description } : null;
+        })
+        .filter(Boolean)
+        .slice(0, maxItems)
+    : [];
+}
+
+function firstSectionByType(siteJson: Record<string, unknown>, type: string) {
+  const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
+  for (const page of pages) {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    const found = sections.find((section) => asString(section.type) === type);
+    if (found) return found;
+  }
+  return null;
+}
+
+function sectionById(siteJson: Record<string, unknown>, id: string) {
+  const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
+  for (const page of pages) {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    const found = sections.find((section) => asString(section.id) === id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findOffering(siteJson: Record<string, unknown>, patch: Record<string, unknown>) {
+  const id = asString(patch.id);
+  const detailPageId = asString(patch.detailPageId);
+  const title = safeCopyText(patch.title, 120).toLowerCase();
+  const products = Array.isArray(siteJson.products) ? siteJson.products as Array<Record<string, unknown>> : [];
+  const services = Array.isArray(siteJson.services) ? siteJson.services as Array<Record<string, unknown>> : [];
+  const all = [...products, ...services];
+  return all.find((item) =>
+    (id && asString(item.id) === id) ||
+    (detailPageId && asString(item.detailPageId) === detailPageId) ||
+    (title && asString(item.title).toLowerCase() === title)
+  ) || null;
+}
+
+function applyTextIfPresent(target: Record<string, unknown>, key: string, source: Record<string, unknown>, sourceKey = key, maxLength = 420) {
+  if (!(sourceKey in source)) return;
+  const value = safeCopyText(source[sourceKey], maxLength);
+  if (value) target[key] = value;
+}
+
+function applyButtonTextPatch(buttons: unknown, patchButtons: unknown) {
+  if (!Array.isArray(buttons) || !Array.isArray(patchButtons)) return;
+  patchButtons.slice(0, buttons.length).forEach((patchButton, index) => {
+    const target = objectValue(buttons[index]);
+    const text = safeCopyText(objectValue(patchButton).text, 80);
+    if (text) target.text = text;
+  });
+}
+
+function applySectionCopyPatch(section: Record<string, unknown>, patch: Record<string, unknown>) {
+  const content = objectValue(section.content);
+  applyTextIfPresent(content, "title", patch, "title", 140);
+  applyTextIfPresent(content, "headline", patch, "headline", 160);
+  applyTextIfPresent(content, "subheadline", patch, "subheadline", 360);
+  applyTextIfPresent(content, "description", patch, "description", 420);
+  applyTextIfPresent(content, "summary", patch, "summary", 420);
+  applyTextIfPresent(content, "kind", patch, "kind", 60);
+  applyTextIfPresent(content, "priceHint", patch, "priceHint", 80);
+  applyButtonTextPatch(content.buttons, patch.buttons);
+
+  const itemsPatch = Array.isArray(patch.items) ? patch.items as Array<Record<string, unknown>> : [];
+  const contentItems = Array.isArray(content.items) ? content.items as Array<Record<string, unknown>> : [];
+  itemsPatch.slice(0, contentItems.length).forEach((itemPatch, index) => {
+    const target = objectValue(contentItems[index]);
+    applyTextIfPresent(target, "title", itemPatch, "title", 90);
+    applyTextIfPresent(target, "label", itemPatch, "label", 80);
+    applyTextIfPresent(target, "value", itemPatch, "value", 80);
+    applyTextIfPresent(target, "description", itemPatch, "description", 260);
+    applyTextIfPresent(target, "question", itemPatch, "question", 140);
+    applyTextIfPresent(target, "answer", itemPatch, "answer", 360);
+  });
+
+  if (Array.isArray(patch.highlights)) content.highlights = safeCopyPairs(patch.highlights, 4);
+  if (Array.isArray(patch.included)) content.included = safeCopyArray(patch.included, 8, 100);
+  if (Array.isArray(patch.bestFor)) content.bestFor = safeCopyArray(patch.bestFor, 6, 80);
+  if (Array.isArray(patch.faq)) {
+    content.items = (patch.faq as unknown[]).map((item) => {
+      const source = objectValue(item);
+      const question = safeCopyText(source.question, 140);
+      const answer = safeCopyText(source.answer, 420);
+      return question && answer ? { question, answer } : null;
+    }).filter(Boolean).slice(0, 6);
+  }
+  section.content = content;
+}
+
+function applyOfferingCopyPatch(siteJson: Record<string, unknown>, patch: Record<string, unknown>) {
+  const offering = findOffering(siteJson, patch);
+  if (!offering) return;
+  applyTextIfPresent(offering, "title", patch, "title", 120);
+  applyTextIfPresent(offering, "summary", patch, "summary", 360);
+  applyTextIfPresent(offering, "description", patch, "description", 700);
+  applyTextIfPresent(offering, "priceHint", patch, "priceHint", 80);
+  if (Array.isArray(patch.bestFor)) offering.bestFor = safeCopyArray(patch.bestFor, 6, 80);
+  if (Array.isArray(patch.included)) offering.included = safeCopyArray(patch.included, 8, 100);
+  if (Array.isArray(patch.highlights)) offering.highlights = safeCopyPairs(patch.highlights, 4);
+  if (Array.isArray(patch.relatedReviewKeywords)) offering.relatedReviewKeywords = safeCopyArray(patch.relatedReviewKeywords, 8, 40);
+
+  const detailPageId = asString(offering.detailPageId);
+  const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
+  const page = pages.find((item) => asString(item.pageId) === detailPageId);
+  if (!page) return;
+  if (offering.title) page.pageTitle = offering.title;
+  const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+  sections.forEach((section) => {
+    const sectionType = asString(section.type);
+    if (sectionType === "hero") {
+      applySectionCopyPatch(section, objectValue(patch.hero));
+    }
+    if (sectionType === "offeringDetail") {
+      applySectionCopyPatch(section, {
+        title: offering.title,
+        summary: offering.summary || offering.description,
+        priceHint: offering.priceHint,
+        bestFor: offering.bestFor,
+        included: offering.included,
+        highlights: offering.highlights,
+      });
+    }
+    if (sectionType === "features") {
+      applySectionCopyPatch(section, objectValue(patch.features));
+    }
+    if (sectionType === "faq") {
+      applySectionCopyPatch(section, { title: safeCopyText(patch.faqTitle, 140), faq: patch.faq });
+    }
+  });
+}
+
+function applyAiCopyPatch(siteJson: Record<string, unknown>, patch: Record<string, unknown>) {
+  const metaCopy = objectValue(patch.metaCopy);
+  const meta = objectValue(siteJson.meta);
+  applyTextIfPresent(meta, "seoTitle", metaCopy, "seoTitle", 160);
+  applyTextIfPresent(meta, "seoDescription", metaCopy, "seoDescription", 260);
+  siteJson.meta = meta;
+
+  const businessProfile = objectValue(siteJson.businessProfile);
+  applyTextIfPresent(businessProfile, "shortPitch", metaCopy, "shortPitch", 420);
+  siteJson.businessProfile = businessProfile;
+
+  const seo = objectValue(siteJson.seo);
+  applyTextIfPresent(seo, "title", metaCopy, "seoTitle", 160);
+  applyTextIfPresent(seo, "description", metaCopy, "seoDescription", 260);
+  applyTextIfPresent(seo, "cityLandingPhrase", metaCopy, "cityLandingPhrase", 120);
+  siteJson.seo = seo;
+
+  const heroPatch = objectValue(patch.hero);
+  const heroSection = heroPatch.id ? sectionById(siteJson, asString(heroPatch.id)) : firstSectionByType(siteJson, "hero");
+  if (heroSection) applySectionCopyPatch(heroSection, heroPatch);
+
+  const sectionsPatch = objectValue(patch.sections);
+  Object.entries(sectionsPatch).forEach(([sectionId, sectionPatch]) => {
+    const section = sectionById(siteJson, sectionId);
+    if (section) applySectionCopyPatch(section, objectValue(sectionPatch));
+  });
+
+  const offersPatch = Array.isArray(patch.offers) ? patch.offers as Array<Record<string, unknown>> : [];
+  const offers = Array.isArray(siteJson.offers) ? siteJson.offers as Array<Record<string, unknown>> : [];
+  offersPatch.slice(0, offers.length).forEach((offerPatch, index) => {
+    const target = objectValue(offers[index]);
+    applyTextIfPresent(target, "title", offerPatch, "title", 120);
+    applyTextIfPresent(target, "description", offerPatch, "description", 420);
+    applyTextIfPresent(target, "priceHint", offerPatch, "priceHint", 80);
+  });
+
+  const offeringsPatch = Array.isArray(patch.offerings) ? patch.offerings as Array<Record<string, unknown>> : [];
+  offeringsPatch.forEach((offeringPatch) => applyOfferingCopyPatch(siteJson, objectValue(offeringPatch)));
+
+  const faqPatch = Array.isArray(patch.faq) ? patch.faq : [];
+  if (faqPatch.length) {
+    const faqSection = firstSectionByType(siteJson, "faq");
+    if (faqSection) applySectionCopyPatch(faqSection, { faq: faqPatch, title: safeCopyText(patch.faqTitle, 140) });
+  }
+
+  const conversionPatch = objectValue(patch.conversion);
+  const conversion = objectValue(siteJson.conversion);
+  const primaryCta = objectValue(conversion.primaryCta);
+  const secondaryCta = objectValue(conversion.secondaryCta);
+  applyTextIfPresent(primaryCta, "text", conversionPatch, "primaryCtaText", 80);
+  applyTextIfPresent(secondaryCta, "text", conversionPatch, "secondaryCtaText", 80);
+  conversion.primaryCta = primaryCta;
+  conversion.secondaryCta = secondaryCta;
+  siteJson.conversion = conversion;
+
+  const globalConfig = objectValue(siteJson.global);
+  const header = objectValue(globalConfig.header);
+  const headerCta = objectValue(header.ctaButton);
+  applyTextIfPresent(headerCta, "text", conversionPatch, "headerCtaText", 80);
+  header.ctaButton = headerCta;
+  globalConfig.header = header;
+  const footerPatch = objectValue(patch.footer);
+  const footer = objectValue(globalConfig.footer);
+  applyTextIfPresent(footer, "text", footerPatch, "text", 180);
+  globalConfig.footer = footer;
+  siteJson.global = globalConfig;
+
+  return siteJson;
+}
+
+function textItemsFromArray(value: unknown, maxItems = 6) {
+  return Array.isArray(value)
+    ? value.slice(0, maxItems).map((item) => {
+      if (typeof item === "string" || typeof item === "number") return safeCopyText(item, 160);
+      const source = objectValue(item);
+      return {
+        title: safeCopyText(source.title || source.label || source.question, 120),
+        description: safeCopyText(source.description || source.answer || source.value, 260),
+      };
+    }).filter(Boolean)
+    : [];
+}
+
+function sectionCopyTarget(section: Record<string, unknown>) {
+  const content = objectValue(section.content);
+  return {
+    sectionId: asString(section.id),
+    type: asString(section.type),
+    title: safeCopyText(content.title, 140),
+    headline: safeCopyText(content.headline, 160),
+    subheadline: safeCopyText(content.subheadline, 300),
+    description: safeCopyText(content.description || content.summary, 360),
+    items: textItemsFromArray(content.items || content.highlights || content.buttons, 6),
+  };
+}
+
+function businessFactsForAiCopy(originData: unknown, siteJson: Record<string, unknown>, businessName: string) {
+  const origin = objectValue(originData);
+  const meta = objectValue(siteJson.meta);
+  const profile = objectValue(siteJson.businessProfile);
+  const trust = objectValue(siteJson.trust);
+  const contact = objectValue(profile.contact);
+  const address = objectValue(profile.address);
+  const hours = objectValue(siteJson.hours);
+  const reviews = Array.isArray(trust.reviews)
+    ? (trust.reviews as Array<Record<string, unknown>>).slice(0, 5).map((review) => ({
+      rating: typeof review.rating === "number" ? review.rating : undefined,
+      text: safeCopyText(review.text, 420),
+      authorName: safeCopyText(review.authorName || review.author, 80),
+    }))
+    : [];
+
+  return {
+    businessName,
+    language: asString(meta.language),
+    niche: asString(meta.niche),
+    primaryType: asString(profile.primaryType, Array.isArray(origin.types) ? asString(origin.types[0]) : ""),
+    typeLabel: asString(profile.typeLabel),
+    categories: Array.isArray(profile.categories) ? profile.categories.map((item) => safeCopyText(item, 60)).filter(Boolean).slice(0, 8) : [],
+    address: safeCopyText(address.formatted || origin.formatted_address || origin.formattedAddress, 220),
+    city: safeCopyText(address.city, 80),
+    state: safeCopyText(address.state, 80),
+    country: safeCopyText(address.country, 80),
+    phone: safeCopyText(contact.phoneNational || contact.phoneInternational || origin.formatted_phone_number || origin.nationalPhoneNumber || origin.international_phone_number, 80),
+    businessStatus: safeCopyText(origin.business_status || origin.businessStatus || objectValue(siteJson.sourceData).businessStatus, 80),
+    rating: typeof trust.rating === "number" ? trust.rating : typeof origin.rating === "number" ? origin.rating : null,
+    reviewCount: typeof trust.reviewCount === "number" ? trust.reviewCount : typeof origin.user_ratings_total === "number" ? origin.user_ratings_total : typeof origin.userRatingCount === "number" ? origin.userRatingCount : null,
+    hours: Array.isArray(hours.regular) ? hours.regular.map((item) => safeCopyText(item, 120)).filter(Boolean).slice(0, 8) : [],
+    reviews,
+  };
+}
+
+function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, originData: unknown, businessName: string) {
+  const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
+  const offers = Array.isArray(siteJson.offers) ? siteJson.offers as Array<Record<string, unknown>> : [];
+  const products = Array.isArray(siteJson.products) ? siteJson.products as Array<Record<string, unknown>> : [];
+  const services = Array.isArray(siteJson.services) ? siteJson.services as Array<Record<string, unknown>> : [];
+  return {
+    facts: businessFactsForAiCopy(originData, siteJson, businessName),
+    metaCopyTargets: {
+      seoTitle: safeCopyText(objectValue(siteJson.meta).seoTitle, 160),
+      seoDescription: safeCopyText(objectValue(siteJson.meta).seoDescription, 260),
+      shortPitch: safeCopyText(objectValue(siteJson.businessProfile).shortPitch, 420),
+      cityLandingPhrase: safeCopyText(objectValue(siteJson.seo).cityLandingPhrase, 140),
+    },
+    sectionTargets: pages.flatMap((page) => {
+      const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+      return sections
+        .filter((section) => ["hero", "features", "offers", "offeringDetail", "reviews", "hoursLocation", "faq", "gridCards", "textImageBlock"].includes(asString(section.type)))
+        .map(sectionCopyTarget);
+    }).slice(0, 30),
+    offers: offers.map((offer, index) => ({
+      index,
+      title: safeCopyText(offer.title, 120),
+      description: safeCopyText(offer.description, 360),
+      priceHint: safeCopyText(offer.priceHint, 80),
+    })).slice(0, 12),
+    offerings: [...products, ...services].map((item) => ({
+      id: asString(item.id),
+      type: asString(item.type),
+      title: safeCopyText(item.title, 120),
+      summary: safeCopyText(item.summary, 360),
+      description: safeCopyText(item.description, 520),
+      priceHint: safeCopyText(item.priceHint, 80),
+      bestFor: safeCopyArray(item.bestFor, 6, 80),
+      included: safeCopyArray(item.included, 8, 100),
+      highlights: safeCopyPairs(item.highlights, 4),
+      relatedReviewKeywords: safeCopyArray(item.relatedReviewKeywords, 8, 40),
+    })).slice(0, 16),
+  };
+}
+
+async function generateAiCopyPatch(
   db: D1Database,
   env: Env,
   body: Record<string, unknown>,
-): Promise<Record<string, unknown> | null> {
+): Promise<{ patch: Record<string, unknown>; copyBriefHash: string; copyPatchHash: string } | null> {
   const provider = asString(body.provider);
   const model = asString(body.model);
   const requireAi = body.requireAi === true;
   const businessName = asString(body.businessName);
   const originData = body.originData || {};
-  const brandPalette = Array.isArray(body.brandPalette) ? body.brandPalette : [];
-  const selectedLogoImageUrl = asString(body.selectedLogoImageUrl);
-  const selectedLogoReference = asString(body.selectedLogoReference);
-  const selectedLogoSource = asString(body.selectedLogoSource, selectedLogoImageUrl.startsWith("/api/places/photo") ? "google_places" : "");
-  const selectedLogoAttributions = Array.isArray(body.selectedLogoAttributions) ? body.selectedLogoAttributions : [];
-  const selectedLogoPriority = asString(body.selectedLogoPriority);
-  const paletteOptions = Array.isArray(body.paletteOptions) ? body.paletteOptions : [];
-  const submittedJson = body.jsonContent && typeof body.jsonContent === "object" ? body.jsonContent : null;
+  const submittedJson = body.jsonContent && typeof body.jsonContent === "object" && !Array.isArray(body.jsonContent)
+    ? body.jsonContent as Record<string, unknown>
+    : null;
+  const copyTargetBrief = buildAiCopyTargetBrief(submittedJson || {}, originData, businessName);
 
   if (!provider || !model) {
     if (requireAi) {
@@ -1570,11 +1974,65 @@ async function generateAiJson(
     return null;
   };
 
+  const copyPatchSchema = {
+    metaCopy: {
+      seoTitle: "Specific local SEO title, max 70 chars.",
+      seoDescription: "Specific description using verified data, max 155 chars.",
+      shortPitch: "One beefy but truthful pitch paragraph.",
+      cityLandingPhrase: "Local service phrase.",
+    },
+    hero: {
+      headline: "Strong client-facing headline.",
+      subheadline: "Specific paragraph using business name, category, location, rating/reviews, phone, and verified strengths.",
+      buttons: [{ text: "CTA text only. Do not provide href." }],
+    },
+    sections: {
+      "section-id-from-scaffold": {
+        title: "Improved title.",
+        description: "Improved supporting copy.",
+        items: [{ title: "Item title", description: "Item description" }],
+      },
+    },
+    offers: [{ title: "Offer title", description: "Offer description", priceHint: "Contact for estimate" }],
+    offerings: [{
+      id: "existing product/service id from scaffold",
+      title: "Title Case offering name",
+      summary: "Specific non-thin summary.",
+      description: "Longer service/product copy.",
+      priceHint: "Contact for estimate",
+      bestFor: ["specific use case"],
+      included: ["specific deliverable"],
+      highlights: [{ title: "Benefit", description: "Why it matters" }],
+      relatedReviewKeywords: ["keyword"],
+      hero: { headline: "Detail page headline", subheadline: "Detail page subheadline", buttons: [{ text: "CTA text" }] },
+      features: { title: "Feature section title", items: [{ title: "Feature", description: "Feature detail" }] },
+      faqTitle: "FAQ title",
+      faq: [{ question: "Question", answer: "Answer" }],
+    }],
+    faqTitle: "Home FAQ title",
+    faq: [{ question: "Question", answer: "Answer" }],
+    conversion: {
+      headerCtaText: "Short CTA",
+      primaryCtaText: "Primary CTA",
+      secondaryCtaText: "Secondary CTA",
+    },
+    footer: { text: "Copyright/footer line only." },
+  };
   const systemMsg =
-    `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
-    `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. Also choose design.visualStyle from these exact values: soft-rounded, boxy-editorial, industrial-diagonal, clean-minimal, bold-sport. Use industrial-diagonal for contractors/concrete/roofing/auto/security when a harder boxy look with diagonal image edges fits; boxy-editorial for legal/finance/real estate; clean-minimal for clinics/cleaning/pool/service businesses; bold-sport for fitness/training; soft-rounded for friendly lifestyle businesses. Include design.visualStyleConfig with label, description, allowedValues, and selectionRule. Choose design.fontPairing from the schema examples/allowedValues or an industry-matched pairing id and include design.fontPairingConfig with label, headingFont, bodyFont, mood, allowedValues, and selectionRule; contractors should prefer strong condensed pairings, legal/finance should prefer authoritative serif pairings, clinics should prefer clean readable pairings, cafes/restaurants may use friendly display/script pairings, and fitness/auto may use energetic bold pairings. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If two or more usable business photos are available, include a dedicated gallery page with pageId gallery, a navigation item linking to #gallery, and an imageGallery section using those business photos. If a Submitted Scaffold JSON is provided, preserve its existing pageIds, detailPageIds, navigation hrefs, sourceData, photo URLs, and contact/map fields. In that case, focus on improving copy quality, specificity, service/product naming, FAQ depth, feature descriptions, and conversion text instead of restructuring the site, but still add a gallery page when enough photos exist and it is missing. Mark meta.generatedWithAi true and meta.generationMode ai_assisted when you successfully enrich or generate the JSON. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
-  const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nPalette options: ${JSON.stringify(paletteOptions)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}\nSubmitted Scaffold JSON: ${submittedJson ? JSON.stringify(submittedJson) : "none"}`;
+    "You are a practical local-business copywriter. You DO NOT generate full website JSON. " +
+    "You only return a small JSON copy patch matching this schema, with no markdown and no extra keys:\n" +
+    `${JSON.stringify(copyPatchSchema)}\n\n` +
+    "Critical rules: you are not given full website JSON, page IDs, navigation hrefs, image URLs, maps URLs, sourceData, palette, font, visual style, favicon, CSS, or storage fields. Do not mention or create them. " +
+    "Use only facts from the provided copy target brief. If a fact is missing, write honest copy like 'contact for availability' instead of inventing. " +
+    "Make the copy much less templated: mention the actual business name, exact city/area when available, category/type, rating/review count when available, phone if available, operating status, hours if useful, and review themes if reviews exist. " +
+    "For US businesses write English. For Indonesian businesses write Indonesian. If meta.language is explicit, follow it. Do not mix languages. " +
+    "Every offering needs beefy copy: a specific title, summary, description, 3-5 bestFor items, 3-6 included items, 2-4 highlights, a detailed hero, 3 feature items, and 3-5 FAQ items. " +
+    "Keep titles in Title Case except small connector words like for, and, of, to, in. Return plain text only; no HTML; no markdown; no SVG.";
+  const userMsg = `Business Name: ${businessName}
+Copy target brief. This is not full website JSON and contains only facts plus editable copy targets:
+${JSON.stringify(copyTargetBrief)}
+
+Return only the copy patch JSON.`;
 
   let responseContent = "";
 
@@ -1731,7 +2189,12 @@ async function generateAiJson(
 
   const cleaned = responseContent.replace(/```json/g, "").replace(/```/g, "").trim();
   try {
-    return JSON.parse(cleaned) as Record<string, unknown>;
+    const patch = JSON.parse(cleaned) as Record<string, unknown>;
+    return {
+      patch,
+      copyBriefHash: await sha256Json(copyTargetBrief),
+      copyPatchHash: await sha256Json(patch),
+    };
   } catch (error) {
     if (requireAi) {
       throw new Error(`${provider} returned invalid JSON for model ${model}: ${error instanceof Error ? error.message : String(error)}`);
@@ -1901,6 +2364,10 @@ function siteSummaryFromJson(parsed: Record<string, unknown>, businessId: string
     rating: typeof trust.rating === "number" ? trust.rating : null,
     reviewCount: typeof trust.reviewCount === "number" ? trust.reviewCount : null,
     googleMapsUrl: asString(sourceData.googleMapsUri, asString(contact.directionsUrl, "")),
+    generatedWithAi: meta.generatedWithAi === true,
+    generationMode: asString(meta.generationMode),
+    aiProvider: asString(meta.aiProvider),
+    aiModel: asString(meta.aiModel),
   };
 }
 
@@ -2148,6 +2615,10 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
         updatedAt: row.updated_at || row.created_at || "",
         previewUrl: `/${row.business_id}`,
         googleMapsUrl: asString(summary.googleMapsUrl, ""),
+        generatedWithAi: summary.generatedWithAi === true,
+        generationMode: asString(summary.generationMode, ""),
+        aiProvider: asString(summary.aiProvider, ""),
+        aiModel: asString(summary.aiModel, ""),
         r2JsonUrl: row.r2_json_url || "",
         storageMode: row.r2_json_key ? "r2" : "legacy_d1",
       };
@@ -2156,6 +2627,35 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
 
   if (request.method === "POST" && segments.length === 2 && segments[1] === "migrate-r2") {
     return migrateOldSiteJsonRowsToR2(request, db, env);
+  }
+
+  if (request.method === "GET" && segments.length === 3 && segments[2] === "copy-brief") {
+    const businessId = segments[1];
+    const columns = await tableColumns(db, "json_sites");
+    const selectedColumns = [
+      "business_id",
+      "json_content",
+      columns.has("r2_json_key") ? "r2_json_key" : "",
+    ].filter(Boolean);
+    const row = await db
+      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
+      .bind(businessId)
+      .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+    if (!row?.json_content) {
+      return errorJson("Site not found", 404);
+    }
+    const siteJson = await readSiteJsonFromStorage(row, env);
+    const meta = siteJson?.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
+    const profile = siteJson?.businessProfile && typeof siteJson.businessProfile === "object" ? siteJson.businessProfile as Record<string, unknown> : {};
+    const brief = buildAiCopyTargetBrief(siteJson, {}, asString(meta.businessName, asString(profile.name, businessId)));
+    return json({
+      businessId,
+      generationMode: asString(meta.generationMode),
+      aiProvider: asString(meta.aiProvider),
+      aiModel: asString(meta.aiModel),
+      note: "This is the stored-site copy brief shape sent to AI. During regenerate, fresh Google Places details may add newer facts before the copy patch call.",
+      copyTargetBrief: brief,
+    });
   }
 
   if (request.method === "POST" && segments.length === 2 && segments[1] === "generate") {
@@ -2177,6 +2677,15 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     const paletteOptions = Array.isArray(body.paletteOptions) ? body.paletteOptions : [];
     const originPlaceId = placeIdFromPlace(originData);
     const jobId = crypto.randomUUID();
+    const jobMetadata: Record<string, unknown> = {
+      businessName,
+      selectedLogoReference,
+      selectedLogoPriority,
+      generationMode: "deterministic_json_with_optional_ai_copy_patch",
+      copyBriefHash: "",
+      copyPatchHash: "",
+      copyPatchApplied: false,
+    };
 
     await ensureRequiredColumns(db, generateRequiredColumns);
 
@@ -2187,7 +2696,7 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       provider,
       model,
       status: "running",
-      metadata_json: JSON.stringify({ businessName, selectedLogoReference, selectedLogoPriority }),
+      metadata_json: JSON.stringify(jobMetadata),
     });
 
     try {
@@ -2196,26 +2705,33 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       ? body.jsonContent as Record<string, unknown>
       : structuredClone(templateSchema) as Record<string, unknown>;
     let aiGenerated = false;
+    const copyBrief = buildAiCopyTargetBrief(finalJson, originData, businessName);
+    jobMetadata.copyBriefHash = await sha256Json(copyBrief);
+    await updateGenerationJob(db, jobId, { metadata_json: JSON.stringify(jobMetadata) });
 
     try {
-      const generated = await generateAiJson(db, env, body);
-      if (generated) {
-        finalJson = generated;
+      const copyPatchResult = await generateAiCopyPatch(db, env, body);
+      if (copyPatchResult) {
+        applyAiCopyPatch(finalJson, copyPatchResult.patch);
+        jobMetadata.copyBriefHash = copyPatchResult.copyBriefHash || jobMetadata.copyBriefHash;
+        jobMetadata.copyPatchHash = copyPatchResult.copyPatchHash;
+        jobMetadata.copyPatchApplied = true;
         aiGenerated = true;
       } else if (body.requireAi === true) {
-        throw new Error("AI generation did not return JSON. Check provider/model/API key settings.");
+        throw new Error("AI copy patch did not return JSON. Check provider/model/API key settings.");
       }
     } catch (error) {
       if (body.requireAi === true) {
         throw error;
       }
-      console.error("AI generation failed, using submitted JSON:", error);
+      jobMetadata.copyPatchError = error instanceof Error ? error.message : String(error);
+      console.error("AI copy patch failed, using submitted JSON:", error);
     }
 
     const metaConfig = finalJson.meta && typeof finalJson.meta === "object" ? finalJson.meta as Record<string, unknown> : {};
     metaConfig.businessId = businessId;
     metaConfig.generatedWithAi = aiGenerated;
-    metaConfig.generationMode = aiGenerated ? "ai_assisted" : asString(metaConfig.generationMode, provider && model ? "submitted_json_ai_fallback" : "submitted_json");
+    metaConfig.generationMode = aiGenerated ? "ai_copy_patch" : asString(metaConfig.generationMode, provider && model ? "submitted_json_ai_fallback" : "submitted_json");
     metaConfig.aiProvider = provider || "";
     metaConfig.aiModel = model || "";
     metaConfig.generatedAt = new Date().toISOString();
@@ -2418,11 +2934,11 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
         lead_id: leadRow.id,
         staff_id: "system",
         activity_type: "note_added",
-        description: `AI Website generated successfully using ${provider} (${model}).`,
+        description: `Website generated successfully using deterministic JSON plus AI copy patch from ${provider} (${model}).`,
       });
     }
 
-    await updateGenerationJob(db, jobId, { status: "success", error: null });
+    await updateGenerationJob(db, jobId, { status: "success", error: null, metadata_json: JSON.stringify(jobMetadata) });
     await updateProspectRecord(db, originPlaceId, {
       status: "site_generated",
       generated_business_id: businessId,
@@ -2433,7 +2949,9 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     return json({ success: true, businessId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await updateGenerationJob(db, jobId, { status: "failed", error: message });
+      jobMetadata.failureStage = "site_generate";
+      jobMetadata.failureMessage = message;
+      await updateGenerationJob(db, jobId, { status: "failed", error: message, metadata_json: JSON.stringify(jobMetadata) });
       await updateProspectRecord(db, originPlaceId, { last_error: message });
       const statusCode = body.requireAi === true
         ? (/api key|provider and model|required|unsupported/i.test(message) ? 400 : 502)
