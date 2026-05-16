@@ -1040,11 +1040,11 @@ export default function SiteRenderer({
                 const hoursTitle = section.content?.hoursTitle || section.content?.openingHoursTitle || labels.hoursTitle;
                 return (
                   <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} className="py-20 px-6 bg-white">
-                    <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
+                    <div data-wv-hours-location-grid="true" className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
-                        <div className="mb-5 flex items-center gap-3 text-2xl">
+                        <div data-wv-hours-location-heading="true" className="mb-5 flex items-center gap-3 text-2xl">
                           <Clock data-wv-qa-icon="hoursLocation" className="h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }} />
-                          {editableText(`${section.id}.hoursTitle`, hoursTitle, "h2", "text-2xl font-bold text-slate-950")}
+                          {editableText(`${section.id}.hoursTitle`, hoursTitle, "h2", "text-2xl font-bold text-slate-950", { ["--wv-title-chars" as any]: String(hoursTitle).length } as CSSProperties)}
                         </div>
                         {todayHours && (
                           <div className="mb-5 rounded-xl border border-white bg-white p-4 shadow-sm">
@@ -1065,9 +1065,9 @@ export default function SiteRenderer({
                         </div>
                       </div>
                       <div className="rounded-xl border border-slate-200 p-8 bg-white">
-                        <div className="mb-5 flex items-center gap-3 text-2xl">
+                        <div data-wv-hours-location-heading="true" className="mb-5 flex items-center gap-3 text-2xl">
                           <MapPin data-wv-qa-icon="hoursLocation" className="h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }} />
-                          {editableText(`${section.id}.locationTitle`, labels.locationTitle, "h2", "text-2xl font-bold text-slate-950")}
+                          {editableText(`${section.id}.locationTitle`, labels.locationTitle, "h2", "text-2xl font-bold text-slate-950", { ["--wv-title-chars" as any]: labels.locationTitle.length } as CSSProperties)}
                         </div>
                         {editableText(`${section.id}.address`, section.content?.address || location.formattedAddress || businessProfile.address?.formatted || "Alamat belum tersedia.", "p", "text-slate-700", undefined, true)}
                         {(section.content?.phone || displayPhone) && !isPlaceholderPhone(section.content?.phone || displayPhone) && (
@@ -1549,6 +1549,28 @@ export default function SiteRenderer({
         }
         #rendered-site [data-wv-site-submenu] svg {
           flex: none;
+        }
+        #rendered-site [data-wv-hours-location-grid] {
+          --wv-hours-heading-size: clamp(1.05rem, 2.1vw, 1.5rem);
+        }
+        #rendered-site [data-wv-hours-location-heading] {
+          min-width: 0;
+          font-size: var(--wv-hours-heading-size);
+          line-height: 1.1;
+        }
+        #rendered-site [data-wv-hours-location-heading] h2 {
+          min-width: 0;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: min(var(--wv-hours-heading-size), calc((21rem - 2.75rem) / max(var(--wv-title-chars, 18), 1) * 1.85)) !important;
+          line-height: 1.1 !important;
+        }
+        @media (max-width: 767px) {
+          #rendered-site [data-wv-hours-location-grid] {
+            --wv-hours-heading-size: clamp(1rem, 5vw, 1.35rem);
+          }
         }
         #rendered-site [data-wv-site-footer] {
           --wv-footer-muted: rgba(255, 255, 255, 0.78);
