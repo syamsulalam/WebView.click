@@ -69,7 +69,7 @@ function normalizeSiteData(siteData: any) {
         image: item.image,
         href: item.href,
         detailPageId: item.detailPageId,
-        cta: item.cta || { text: isIndonesian ? "Lihat detail" : "View details", href: item.detailPageId ? `#${item.detailPageId}` : item.href || "" },
+        cta: item.cta,
       }))
     : offers.map((item: any) => ({
         title: item.title || item.label,
@@ -136,9 +136,7 @@ function normalizeSiteData(siteData: any) {
         },
       ]
     : baseHeaderMenu;
-  const headerMenu = headerMenuWithServices.some((item: any) => String(item?.href || "") === "#feedback")
-    ? headerMenuWithServices
-    : [...headerMenuWithServices, { label: "Feedback", href: "#feedback" }];
+  const headerMenu = headerMenuWithServices.filter((item: any) => String(item?.href || "") !== "#feedback");
 
   return {
     meta: {
@@ -329,17 +327,51 @@ function priceHintLooksAction(value: unknown) {
 }
 
 function titleCaseLabel(value = "") {
-  const stopWords = new Set(["and", "or", "for", "of", "the", "a", "an", "to", "in", "on", "at", "by", "with"]);
+  const stopWords = new Set(["and", "or", "for", "of", "the", "a", "an", "to", "in", "on", "at", "by", "with", "dan", "atau", "untuk", "di", "ke", "dari", "yang"]);
   return String(value)
     .replace(/[_-]+/g, " ")
     .split(/\s+/)
     .filter(Boolean)
     .map((word, index) => {
       const lower = word.toLowerCase();
+      if (/^[A-Z0-9]{2,}$/.test(word)) return word;
       if (index > 0 && stopWords.has(lower)) return lower;
       return lower.charAt(0).toUpperCase() + lower.slice(1);
     })
     .join(" ");
+}
+
+function formatOfferHeading(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return titleCaseLabel(text);
+}
+
+function parseHourLine(item: any) {
+  const text = typeof item === "string" ? item : item?.text || item?.label || "";
+  const normalized = String(text || "").trim();
+  if (!normalized) return { day: "", time: "" };
+  const parts = normalized.split(/:\s+/);
+  if (parts.length > 1) return { day: parts.shift() || "", time: parts.join(": ") };
+  const dashParts = normalized.split(/\s+[–-]\s+/);
+  if (dashParts.length > 1) return { day: dashParts.shift() || "", time: dashParts.join(" - ") };
+  return { day: normalized, time: "" };
+}
+
+function compactHoursGroups(items: any[]) {
+  const parsed = items.map(parseHourLine).filter((item) => item.day || item.time);
+  const groups: Array<{ days: string[]; time: string }> = [];
+  parsed.forEach((item) => {
+    const time = item.time || item.day;
+    const day = item.time ? item.day : "";
+    const last = groups[groups.length - 1];
+    if (last && last.time === time) {
+      if (day) last.days.push(day);
+    } else {
+      groups.push({ days: day ? [day] : [], time });
+    }
+  });
+  return groups;
 }
 
 function ImageFrame({
@@ -853,7 +885,9 @@ export default function SiteRenderer({
                           const priceHref = priceHintLooksAction(offer.priceHint) ? contactActionHref : "";
                           const ctaHref = String(offer.cta?.href || (!priceHref ? cardHref : "") || "");
                           const ctaText = String(offer.cta?.text || (ctaHref ? labels.learnMore : ""));
-                          const cardLabel = `${offer.title || labels.learnMore}`;
+                          const displayTitle = formatOfferHeading(offer.title || labels.learnMore);
+                          const cardLabel = displayTitle || labels.learnMore;
+                          const ctaDuplicatesCard = ctaHref && cardHref && ctaHref === cardHref;
                           return (
                             <article
                               key={i}
@@ -874,7 +908,7 @@ export default function SiteRenderer({
                                   <ImageFrame src={offer.image} label={offer.title} attribution={brandPhotoAttribution(offer.image)} exportName={`offer-${offer.title || i + 1}`} />
                                 </div>
                                 <div className="p-6 text-center">
-                                  {editableText(`${section.id}.offer.${i}.title`, offer.title, "h3", "text-lg font-bold text-slate-950")}
+                                  {editableText(`${section.id}.offer.${i}.title`, displayTitle, "h3", "text-lg font-bold text-slate-950")}
                                   {editableText(`${section.id}.offer.${i}.description`, offer.description, "p", "mt-2 text-sm text-slate-600", undefined, true)}
                                   {offer.priceHint && (
                                     priceHref && !editMode ? (
@@ -891,7 +925,7 @@ export default function SiteRenderer({
                                       editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "p", "mt-4 text-sm font-semibold", { color: colors.accent })
                                     )
                                   )}
-                                  {ctaHref && ctaText && !editMode && (
+                                  {ctaHref && ctaText && !editMode && !ctaDuplicatesCard && (
                                     <a
                                       href={ctaHref}
                                       {...tabPropsForHref(ctaHref)}
@@ -1000,6 +1034,9 @@ export default function SiteRenderer({
               if (section.type === "hoursLocation") {
                 const hoursSource = section.content?.hours || hours.regular || section.content?.openingHours || [];
                 const regularHours = Array.isArray(hoursSource) ? hoursSource : [];
+                const hoursGroups = compactHoursGroups(regularHours);
+                const todayLabel = new Date().toLocaleDateString(isIndonesian ? "id-ID" : "en-US", { weekday: "long" });
+                const todayHours = hoursGroups.find((group) => group.days.some((day) => day.toLowerCase().startsWith(todayLabel.toLowerCase().slice(0, 3)))) || hoursGroups[0];
                 const hoursTitle = section.content?.hoursTitle || section.content?.openingHoursTitle || labels.hoursTitle;
                 return (
                   <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} className="py-20 px-6 bg-white">
@@ -1009,8 +1046,22 @@ export default function SiteRenderer({
                           <Clock data-wv-qa-icon="hoursLocation" className="h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }} />
                           {editableText(`${section.id}.hoursTitle`, hoursTitle, "h2", "text-2xl font-bold text-slate-950")}
                         </div>
+                        {todayHours && (
+                          <div className="mb-5 rounded-xl border border-white bg-white p-4 shadow-sm">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{isIndonesian ? "Hari ini" : "Today"}</p>
+                            <p className="mt-1 text-lg font-bold text-slate-950">{todayHours.time}</p>
+                            {todayHours.days.length > 0 && <p className="mt-1 text-sm text-slate-500">{todayHours.days.join(", ")}</p>}
+                          </div>
+                        )}
                         <div className="space-y-2 text-slate-700">
-                          {regularHours.map((item: any, i: number) => editableText(`${section.id}.hours.${i}`, typeof item === "string" ? item : item.text || JSON.stringify(item), "p"))}
+                          {hoursGroups.length > 0 ? hoursGroups.map((group, i) => (
+                            <div key={`${group.days.join("-")}-${group.time}-${i}`} className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-2 last:border-0 last:pb-0">
+                              <p className="font-medium text-slate-950">{group.days.length > 1 ? `${group.days[0]} - ${group.days[group.days.length - 1]}` : group.days[0] || labels.hoursTitle}</p>
+                              <p className="text-right text-slate-600">{group.time}</p>
+                            </div>
+                          )) : (
+                            <p className="text-slate-600">{isIndonesian ? "Jam operasional belum tersedia." : "Business hours are not available yet."}</p>
+                          )}
                         </div>
                       </div>
                       <div className="rounded-xl border border-slate-200 p-8 bg-white">
@@ -1322,7 +1373,7 @@ export default function SiteRenderer({
           <div>
             <p className="wv-heading mb-4 text-[1.05rem] font-semibold leading-tight">{labels.pages}</p>
             <div className="space-y-2 opacity-85">
-              {navigation.headerMenu.map((menu: any) => (
+              {navigation.headerMenu.filter((menu: any) => String(menu.href || "") !== "#feedback").map((menu: any) => (
                 <button key={menu.href} type="button" data-wv-tab={menu.href.replace("#", "")} onClick={() => changeTab(menu.href.replace("#", ""))} className="flex items-center gap-2 hover:opacity-100">
                   {menuIcon(menu.label, menu.href)}
                   {menu.label}
