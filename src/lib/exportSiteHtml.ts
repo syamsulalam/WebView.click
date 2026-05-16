@@ -233,6 +233,14 @@ function ownerInlineScript() {
     submenu.addEventListener("mouseenter", show);
     submenu.addEventListener("mouseleave", hideSoon);
   });
+  var siteHeader = document.querySelector("[data-wv-site-header]");
+  function updateHeaderCompact() {
+    if (!siteHeader) return;
+    if (window.scrollY > 36) siteHeader.setAttribute("data-wv-header-compact", "true");
+    else siteHeader.removeAttribute("data-wv-header-compact");
+  }
+  updateHeaderCompact();
+  window.addEventListener("scroll", updateHeaderCompact, { passive: true });
   var shaderCanvas = document.querySelector("[data-wv-site-canvas]");
   var shaderFrame = 0;
   if (shaderCanvas) {

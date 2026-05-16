@@ -11,6 +11,7 @@ function emptyVisualQa() {
   return {
     navbar: {
       exists: false,
+      compact: false,
       height: 0,
       heightOk: false,
       shadowBlur: 0,
@@ -158,6 +159,7 @@ export default function DemoSite() {
       const submenus = Array.from(document.querySelectorAll<HTMLElement>("[data-wv-submenu]"));
       const navbarRect = navbar?.getBoundingClientRect();
       const navbarShadowBlur = navbar ? maxShadowBlur(window.getComputedStyle(navbar).boxShadow) : 0;
+      const navbarCompact = navbar?.getAttribute("data-wv-header-compact") === "true";
       const features = iconStats("features", 28);
       const trustBar = iconStats("trustBar", 28);
       const hoursLocation = iconStats("hoursLocation", 24);
@@ -179,10 +181,11 @@ export default function DemoSite() {
       setVisualQa({
         navbar: {
           exists: Boolean(navbar),
+          compact: navbarCompact,
           height: Math.round(navbarRect?.height || 0),
-          heightOk: Boolean(navbarRect && navbarRect.height <= 72),
+          heightOk: Boolean(navbarRect && navbarRect.height <= (navbarCompact ? 60 : 76)),
           shadowBlur: Math.round(navbarShadowBlur),
-          shadowOk: !navbar || navbarShadowBlur <= 12,
+          shadowOk: !navbar || navbarShadowBlur <= (navbarCompact ? 12 : 32),
         },
         icons: {
           features,
@@ -364,8 +367,8 @@ export default function DemoSite() {
                 <p className="font-semibold text-emerald-900">Navbar</p>
                 <div className="mt-1.5 space-y-1.5">
                   {[
-                    [`Height is compact (${visualQa.navbar.height}px)`, visualQa.navbar.exists && visualQa.navbar.heightOk],
-                    [`Shadow is light (${visualQa.navbar.shadowBlur}px blur)`, visualQa.navbar.exists && visualQa.navbar.shadowOk],
+                    [`Height fits ${visualQa.navbar.compact ? "scrolled" : "top"} state (${visualQa.navbar.height}px)`, visualQa.navbar.exists && visualQa.navbar.heightOk],
+                    [`Shadow fits ${visualQa.navbar.compact ? "scrolled" : "top"} state (${visualQa.navbar.shadowBlur}px blur)`, visualQa.navbar.exists && visualQa.navbar.shadowOk],
                   ].map(([label, passed]) => (
                     <p key={String(label)} className="flex items-center gap-2">
                       {passed ? <CheckCircle2 size={14} className="text-emerald-700" /> : <XCircle size={14} className="text-red-600" />}

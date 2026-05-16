@@ -302,6 +302,7 @@ export default function SiteRenderer({
   const [activeTab, setActiveTab] = useState(initialPage);
   const [openMenuKey, setOpenMenuKey] = useState("");
   const [navSubmenuPosition, setNavSubmenuPosition] = useState({ left: 0, top: 0 });
+  const [headerCompact, setHeaderCompact] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const navCloseTimer = useRef<number | undefined>(undefined);
 
@@ -460,6 +461,13 @@ export default function SiteRenderer({
     };
   }, [shaderPreset]);
 
+  useEffect(() => {
+    const updateHeaderState = () => setHeaderCompact(window.scrollY > 36);
+    updateHeaderState();
+    window.addEventListener("scroll", updateHeaderState, { passive: true });
+    return () => window.removeEventListener("scroll", updateHeaderState);
+  }, []);
+
   const navSubmenus = navigation.headerMenu
     .map((menu: any, idx: number) => {
       const pageId = String(menu.href || "").replace("#", "");
@@ -482,8 +490,9 @@ export default function SiteRenderer({
       <div data-wv-site-shader="true" aria-hidden="true" />
       <header
         data-wv-site-header="true"
+        data-wv-header-compact={headerCompact ? "true" : undefined}
         style={{ backgroundColor: colors.primary, color: "#fff" }}
-        className="px-5 py-2.5 md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm"
+        className={`${headerCompact ? "px-5 py-2.5" : "px-5 py-4"} md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm`}
       >
         <button
           type="button"
@@ -512,7 +521,7 @@ export default function SiteRenderer({
                 <button
                   onClick={() => changeTab(pageId)}
                   data-wv-tab={pageId}
-                  className={`h-8 text-sm font-medium leading-none hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
+                  className={`${headerCompact ? "h-8" : "h-10"} text-sm font-medium leading-none hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
                 >
                   {menuIcon(menu.label, menu.href)}
                   {menu.label}
@@ -533,7 +542,7 @@ export default function SiteRenderer({
             }
           }}
           style={{ backgroundColor: colors.accent }}
-          className="h-9 shrink-0 px-4 py-0 rounded-lg text-white font-medium hover:opacity-90 transition text-sm leading-none inline-flex items-center gap-2"
+          className={`${headerCompact ? "h-9" : "h-11"} shrink-0 px-4 py-0 rounded-lg text-white font-medium hover:opacity-90 transition text-sm leading-none inline-flex items-center gap-2`}
         >
           {buttonIcon(globalConfig.header.ctaButton.text, globalConfig.header.ctaButton.href)}
           {globalConfig.header.ctaButton.text}
@@ -545,10 +554,11 @@ export default function SiteRenderer({
           <div
             key={submenu.menuKey}
             data-wv-submenu
+            data-wv-site-submenu="true"
             data-wv-menu-key={submenu.menuKey}
             onMouseEnter={() => openNavMenu(submenu.menuKey)}
             onMouseLeave={scheduleNavMenuClose}
-            className={`${submenuOpen ? "visible translate-y-0 opacity-100 pointer-events-auto" : "invisible translate-y-2 opacity-0 pointer-events-none"} fixed z-[90] w-72 rounded-xl border border-slate-200 bg-white p-2 text-slate-900 shadow-2xl transition duration-200`}
+            className={`${submenuOpen ? "visible translate-y-0 opacity-100 pointer-events-auto" : "invisible translate-y-2 opacity-0 pointer-events-none"} fixed z-[90] w-80 border border-slate-200 bg-white p-2 text-slate-900 transition duration-200`}
             style={submenuOpen ? { left: navSubmenuPosition.left, top: navSubmenuPosition.top } : { left: -9999, top: -9999 }}
           >
             {submenu.children.map((child: any) => {
@@ -559,7 +569,7 @@ export default function SiteRenderer({
                   type="button"
                   data-wv-tab={childPageId}
                   onClick={() => changeTab(childPageId)}
-                  className="flex w-full gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                  className="flex w-full gap-2 px-3 py-2 text-left"
                 >
                   <span className="mt-0.5 shrink-0 text-slate-500">{menuIcon(child.label, child.href)}</span>
                   <span>
@@ -1175,9 +1185,19 @@ export default function SiteRenderer({
           height: 0;
         }
         #rendered-site [data-wv-site-header] {
-          min-height: 3.5rem;
-          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+          min-height: 4.5rem;
+          margin: 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+          box-shadow: 0 10px 28px rgba(15, 23, 42, 0.10) !important;
           line-height: 1.15;
+          transition: min-height 180ms ease, padding-block 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+        }
+        #rendered-site [data-wv-site-header][data-wv-header-compact="true"] {
+          min-height: 3.5rem;
+          border-bottom-color: rgba(255, 255, 255, 0.18);
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+          padding-top: 0.625rem !important;
+          padding-bottom: 0.625rem !important;
         }
         #rendered-site [data-wv-site-header] :where(a, button) {
           line-height: 1;
@@ -1185,6 +1205,42 @@ export default function SiteRenderer({
         #rendered-site [data-wv-site-header] [data-wv-image-role="logo"] {
           width: 2rem;
           height: 2rem;
+          flex: none;
+        }
+        #rendered-site [data-wv-site-submenu] {
+          border-radius: 14px !important;
+          border-color: rgba(15, 23, 42, 0.12) !important;
+          box-shadow: 0 22px 50px rgba(15, 23, 42, 0.18) !important;
+          font-family: ${activeFontPairing.bodyCss || typography.bodyFont};
+          line-height: 1.35;
+          overflow: hidden;
+          isolation: isolate;
+        }
+        #rendered-site [data-wv-site-submenu]::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: -12px;
+          height: 12px;
+          pointer-events: auto;
+        }
+        #rendered-site [data-wv-site-submenu],
+        #rendered-site [data-wv-site-submenu] * {
+          text-wrap: initial;
+        }
+        #rendered-site [data-wv-site-submenu] :where(button, a) {
+          border-radius: 10px !important;
+          box-shadow: none !important;
+          transform: none !important;
+          transition: background-color 150ms ease, color 150ms ease, opacity 150ms ease;
+        }
+        #rendered-site [data-wv-site-submenu] :where(button, a):hover {
+          background: rgba(15, 23, 42, 0.055);
+          box-shadow: none !important;
+          transform: none !important;
+        }
+        #rendered-site [data-wv-site-submenu] svg {
           flex: none;
         }
         #rendered-site [data-wv-site-footer] {
