@@ -207,11 +207,15 @@ function ownerInlineScript() {
     }
   });
   Array.prototype.slice.call(document.querySelectorAll("[data-wv-menu]")).forEach(function (menu) {
-    var submenu = menu.querySelector("[data-wv-submenu]");
+    var menuKey = menu.getAttribute("data-wv-menu") || "";
+    var submenu = menu.querySelector("[data-wv-submenu]") || document.querySelector('[data-wv-submenu][data-wv-menu-key="' + menuKey + '"]');
     var timer = null;
     if (!submenu) return;
     function show() {
+      var rect = menu.getBoundingClientRect();
       if (timer) window.clearTimeout(timer);
+      submenu.style.left = Math.max(12, Math.min(rect.left, window.innerWidth - 300)) + "px";
+      submenu.style.top = rect.bottom + 10 + "px";
       submenu.classList.remove("invisible", "translate-y-2", "opacity-0", "pointer-events-none");
       submenu.classList.add("visible", "translate-y-0", "opacity-100", "pointer-events-auto");
     }
@@ -220,6 +224,8 @@ function ownerInlineScript() {
       timer = window.setTimeout(function () {
         submenu.classList.add("invisible", "translate-y-2", "opacity-0", "pointer-events-none");
         submenu.classList.remove("visible", "translate-y-0", "opacity-100", "pointer-events-auto");
+        submenu.style.left = "-9999px";
+        submenu.style.top = "-9999px";
       }, 1800);
     }
     menu.addEventListener("mouseenter", show);

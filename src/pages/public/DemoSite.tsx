@@ -68,6 +68,10 @@ export default function DemoSite() {
     leakingToolCount: 0,
     actionPanelOutsideCanvas: false,
     inspectorOutsideCanvas: false,
+    headerBoundaryFound: false,
+    footerBoundaryFound: false,
+    submenuOverlayCount: 0,
+    submenuOverlaysOutsideHeader: false,
   });
   const [visualQa, setVisualQa] = useState(emptyVisualQa);
   const dragState = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
@@ -150,6 +154,8 @@ export default function DemoSite() {
       const actionPanel = document.querySelector("[data-wv-tool-ui='website-action-panel']");
       const inspector = document.querySelector("[data-wv-tool-ui='demo-inspector']");
       const navbar = document.querySelector<HTMLElement>("[data-wv-site-header]");
+      const footer = document.querySelector<HTMLElement>("[data-wv-site-footer]");
+      const submenus = Array.from(document.querySelectorAll<HTMLElement>("[data-wv-submenu]"));
       const navbarRect = navbar?.getBoundingClientRect();
       const navbarShadowBlur = navbar ? maxShadowBlur(window.getComputedStyle(navbar).boxShadow) : 0;
       const features = iconStats("features", 28);
@@ -165,6 +171,10 @@ export default function DemoSite() {
         leakingToolCount: leakingTools.length,
         actionPanelOutsideCanvas: Boolean(canvas && actionPanel && !canvas.contains(actionPanel)),
         inspectorOutsideCanvas: Boolean(canvas && inspector && !canvas.contains(inspector)),
+        headerBoundaryFound: Boolean(canvas && navbar && canvas.contains(navbar)),
+        footerBoundaryFound: Boolean(canvas && footer && canvas.contains(footer)),
+        submenuOverlayCount: submenus.length,
+        submenuOverlaysOutsideHeader: submenus.length > 0 && submenus.every((submenu) => !navbar?.contains(submenu)),
       });
       setVisualQa({
         navbar: {
@@ -236,6 +246,11 @@ export default function DemoSite() {
 
           [data-wv-site-header] {
             outline: 3px solid rgba(245, 158, 11, 0.9) !important;
+            outline-offset: -3px !important;
+          }
+
+          [data-wv-site-footer] {
+            outline: 3px solid rgba(168, 85, 247, 0.9) !important;
             outline-offset: -3px !important;
           }
 
@@ -332,6 +347,9 @@ export default function DemoSite() {
               <div className="mt-2 space-y-1.5">
                 {[
                   ["Generated site canvas exists", boundaryQa.canvasFound],
+                  ["Header boundary exists in canvas", boundaryQa.headerBoundaryFound],
+                  ["Footer boundary exists in canvas", boundaryQa.footerBoundaryFound],
+                  [`Submenu overlays outside header (${boundaryQa.submenuOverlayCount})`, boundaryQa.submenuOverlaysOutsideHeader],
                   [`Tool UI found outside canvas (${boundaryQa.toolCount})`, boundaryQa.toolCount > 0 && boundaryQa.leakingToolCount === 0],
                   ["Download/setup panel outside website CSS", boundaryQa.actionPanelOutsideCanvas],
                   ["Demo inspector outside website CSS", boundaryQa.inspectorOutsideCanvas],

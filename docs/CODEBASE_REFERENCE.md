@@ -41,11 +41,13 @@ Logic penting:
 - Header logo/title bisa diklik untuk kembali ke tab home.
 - Navbar dan CTA memakai icon lucide.
 - Navbar product/service submenu memakai hover persistence agar dropdown tidak langsung hilang saat cursor bergerak ke child menu.
+- Desktop submenu dirender sebagai fixed overlay sibling setelah header, bukan child layout di dalam header, agar navbar tidak membesar saat submenu terbuka.
 - Pergantian tab menjalankan scroll-to-top.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Feature grid cards dirender center-aligned: icon, title, dan body berada di tengah card agar tampilan lebih rapi seperti demo.
 - Trust bar dan feature icons dirender sebagai SVG langsung tanpa wrapper background agar icon tidak terlihat mengecil; icon subheading `hoursLocation` memakai ukuran relatif heading.
 - Grid marketing 3 kolom seperti offers, reviews, dan generic grid cards memakai content text-center agar komposisi tiap card lebih seimbang.
+- Review cards memakai quotation marks dekoratif sebagai `wv-heading` spans kiri/kanan, sehingga mengikuti font heading aktif tanpa memakai heading tag.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
 - Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
 - Renderer membaca `design.shaderPreset` dan `design.shaderConfig`; registry shader procedural ada di `src/lib/siteStylePresets.ts` dan guide teknis di `docs/SHADERS_GUIDE.md`.
@@ -60,6 +62,7 @@ Logic penting:
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
 - Footer dirender lebih lengkap: brand/about, sosial, halaman, highlights/offers, kontak, alamat, dan jam operasional jika tersedia.
+- Footer diberi boundary `data-wv-site-footer` agar tetap memakai palette/font site tetapi terlindung dari efek card/body/image hover yang tidak cocok untuk konteks footer.
 - Footer highlights memprioritaskan `products + services` daripada `offers`, supaya link footer menuju halaman detail `detailPageId` masing-masing. Jika tidak ada produk/layanan, footer fallback ke offers/capabilities.
 - Product/service labels in navbar submenu and footer highlights are title-cased for presentation, while preserving the underlying `detailPageId` target.
 - Nomor telepon dirender sebagai `tel:` link dan email sebagai `mailto:` link.
@@ -392,8 +395,8 @@ Logic penting:
 - Inspector bisa diminimize dan di-drag agar tidak menutup navbar/preview.
 - Inspector punya toggle `QA` untuk visual boundary check: `[data-wv-site-canvas]` diberi outline hijau, WebView tool UI `[data-wv-tool-ui]` diberi outline biru, dan tool yang bocor ke canvas akan terlihat merah.
 - QA checklist memastikan generated site canvas ada, tool UI terdeteksi, download/setup panel berada di luar CSS website, dan demo inspector berada di luar CSS website.
-- QA checklist juga mengukur navbar generated site (`data-wv-site-header`) untuk tinggi/shadow kompak dan icon marker `data-wv-qa-icon` untuk `features`, `trustBar`, dan `hoursLocation`.
-- Saat QA aktif, navbar diberi outline amber dan icon yang diukur diberi outline biru agar style/shader preset bisa dicek visual sebelum produksi.
+- QA checklist juga memverifikasi boundary `data-wv-site-header`, boundary `data-wv-site-footer`, submenu overlay berada di luar header, tinggi/shadow navbar kompak, dan icon marker `data-wv-qa-icon` untuk `features`, `trustBar`, dan `hoursLocation`.
+- Saat QA aktif, navbar diberi outline amber, footer diberi outline purple, dan icon yang diukur diberi outline biru agar style/shader preset bisa dicek visual sebelum produksi.
 - Menggunakan `SiteRenderer` dengan `showProspectPanel={false}` agar demo fokus ke hasil render website.
 
 Risiko debug:
@@ -610,7 +613,7 @@ Logic Owner HTML Export:
 - `src/lib/exportSiteHtml.ts` membuat zip owner berisi hanya `index.html`.
 - Export menghapus `<script>` internal, `.hide-in-export`, dan `[data-export-remove="true"]`.
 - Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
-- Export menyertakan inline script owner untuk tab navigation, submenu hover, contact `mailto:`, dan shader pointer CSS variables (`--wv-pointer-x`, `--wv-pointer-y`) agar shader procedural tetap responsif di file HTML statis.
+- Export menyertakan inline script owner untuk tab navigation, fixed overlay submenu hover/positioning, contact `mailto:`, dan shader pointer CSS variables (`--wv-pointer-x`, `--wv-pointer-y`) agar shader procedural tetap responsif di file HTML statis.
 - Export mengambil gambar yang sedang tampil di DOM, menyimpannya ke folder `/img` di dalam zip, lalu mengubah `<img src>` menjadi path relatif seperti `img/{businessId}-hero.jpg`. Ini termasuk foto Google Business Profile yang sedang diproxy via WebView.click saat tombol download diklik, sehingga HTML owner tidak perlu hotlink ke Google atau Function WebView.click untuk gambar.
 - Export menambahkan `README-FIRST.txt` sebagai ringkasan done-for-you `$197/year`, lalu `SETUP-GUIDE.txt` sebagai panduan teknis self-hosting domain/hosting/DNS/upload/SSL/maintenance.
 - Kedua file `.txt` tersebut menyertakan URL preview/download asli (`window.location.href`) supaya owner bisa kembali ke halaman tempat zip dibuat.

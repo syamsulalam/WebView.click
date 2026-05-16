@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from "react";
 import {
   Briefcase,
   CheckCircle2,
@@ -301,6 +301,7 @@ export default function SiteRenderer({
   const initialPage = siteData?.pages?.[0]?.pageId || "home";
   const [activeTab, setActiveTab] = useState(initialPage);
   const [openMenuKey, setOpenMenuKey] = useState("");
+  const [navSubmenuPosition, setNavSubmenuPosition] = useState({ left: 0, top: 0 });
   const [editMode, setEditMode] = useState(false);
   const navCloseTimer = useRef<number | undefined>(undefined);
 
@@ -395,8 +396,15 @@ export default function SiteRenderer({
     setActiveTab(nextPageId);
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
   };
-  const openNavMenu = (key: string) => {
+  const openNavMenu = (key: string, event?: ReactMouseEvent<HTMLElement>) => {
     if (navCloseTimer.current) window.clearTimeout(navCloseTimer.current);
+    if (event?.currentTarget) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      setNavSubmenuPosition({
+        left: Math.max(12, Math.min(rect.left, window.innerWidth - 300)),
+        top: rect.bottom + 10,
+      });
+    }
     setOpenMenuKey(key);
   };
   const scheduleNavMenuClose = () => {
@@ -452,6 +460,13 @@ export default function SiteRenderer({
     };
   }, [shaderPreset]);
 
+  const navSubmenus = navigation.headerMenu
+    .map((menu: any, idx: number) => {
+      const pageId = String(menu.href || "").replace("#", "");
+      return { menu, menuKey: `${pageId}-${idx}`, children: Array.isArray(menu.children) ? menu.children : [] };
+    })
+    .filter((item: any) => item.children.length > 0);
+
   return (
     <div style={customStyles} id="rendered-site">
       <style>{`
@@ -486,13 +501,12 @@ export default function SiteRenderer({
             const pageId = menu.href.replace("#", "");
             const children = Array.isArray(menu.children) ? menu.children : [];
             const menuKey = `${pageId}-${idx}`;
-            const submenuOpen = openMenuKey === menuKey;
             return (
               <div
                 key={idx}
                 className="relative"
                 data-wv-menu={menuKey}
-                onMouseEnter={() => openNavMenu(menuKey)}
+                onMouseEnter={(event) => openNavMenu(menuKey, event)}
                 onMouseLeave={scheduleNavMenuClose}
               >
                 <button
@@ -504,33 +518,6 @@ export default function SiteRenderer({
                   {menu.label}
                   {children.length > 0 && <span className="text-xs opacity-80">▾</span>}
                 </button>
-                {children.length > 0 && (
-                  <div
-                    data-wv-submenu
-                    onMouseEnter={() => openNavMenu(menuKey)}
-                    onMouseLeave={scheduleNavMenuClose}
-                    className={`${submenuOpen ? "visible translate-y-0 opacity-100 pointer-events-auto" : "invisible translate-y-2 opacity-0 pointer-events-none"} absolute left-0 top-full z-[80] mt-3 w-72 rounded-xl border border-slate-200 bg-white p-2 text-slate-900 shadow-2xl transition duration-200`}
-                  >
-                    {children.map((child: any) => {
-                      const childPageId = String(child.href || "").replace("#", "");
-                      return (
-                        <button
-                          key={child.href || child.label}
-                          type="button"
-                          data-wv-tab={childPageId}
-                          onClick={() => changeTab(childPageId)}
-                          className="flex w-full gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
-                        >
-                          <span className="mt-0.5 shrink-0 text-slate-500">{menuIcon(child.label, child.href)}</span>
-                          <span>
-                            <span className="block text-sm font-semibold">{titleCaseLabel(child.label)}</span>
-                            {child.description && <span className="mt-0.5 block text-xs text-slate-500">{child.description}</span>}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             );
           })}
@@ -552,6 +539,39 @@ export default function SiteRenderer({
           {globalConfig.header.ctaButton.text}
         </a>
       </header>
+      {navSubmenus.map((submenu: any) => {
+        const submenuOpen = openMenuKey === submenu.menuKey;
+        return (
+          <div
+            key={submenu.menuKey}
+            data-wv-submenu
+            data-wv-menu-key={submenu.menuKey}
+            onMouseEnter={() => openNavMenu(submenu.menuKey)}
+            onMouseLeave={scheduleNavMenuClose}
+            className={`${submenuOpen ? "visible translate-y-0 opacity-100 pointer-events-auto" : "invisible translate-y-2 opacity-0 pointer-events-none"} fixed z-[90] w-72 rounded-xl border border-slate-200 bg-white p-2 text-slate-900 shadow-2xl transition duration-200`}
+            style={submenuOpen ? { left: navSubmenuPosition.left, top: navSubmenuPosition.top } : { left: -9999, top: -9999 }}
+          >
+            {submenu.children.map((child: any) => {
+              const childPageId = String(child.href || "").replace("#", "");
+              return (
+                <button
+                  key={child.href || child.label}
+                  type="button"
+                  data-wv-tab={childPageId}
+                  onClick={() => changeTab(childPageId)}
+                  className="flex w-full gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                >
+                  <span className="mt-0.5 shrink-0 text-slate-500">{menuIcon(child.label, child.href)}</span>
+                  <span>
+                    <span className="block text-sm font-semibold">{titleCaseLabel(child.label)}</span>
+                    {child.description && <span className="mt-0.5 block text-xs text-slate-500">{child.description}</span>}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
 
       <main className="flex-1">
         {pages.map((page: any) => (
@@ -775,7 +795,11 @@ export default function SiteRenderer({
                             <div className="mb-4 flex justify-center gap-1" style={{ color: colors.accent }}>
                               {Array.from({ length: Math.round(review.rating || 5) }).map((_, idx) => <Star key={idx} size={16} fill="currentColor" />)}
                             </div>
-                            <p className="text-slate-700">"{editableText(`${section.id}.review.${i}.text`, review.text, "span", "", undefined, true)}"</p>
+                            <div className="text-slate-700">
+                              <span aria-hidden="true" className="wv-heading block text-left text-5xl font-bold leading-none" style={{ color: colors.accent }}>"</span>
+                              {editableText(`${section.id}.review.${i}.text`, review.text, "p", "mt-1", undefined, true)}
+                              <span aria-hidden="true" className="wv-heading mt-2 block text-right text-5xl font-bold leading-none" style={{ color: colors.accent }}>"</span>
+                            </div>
                             {editableText(`${section.id}.review.${i}.author`, review.authorName || review.author || "Google reviewer", "p", "mt-4 font-semibold text-slate-950")}
                           </div>
                         ))}
@@ -1012,7 +1036,7 @@ export default function SiteRenderer({
         ))}
       </main>
 
-      <footer style={{ backgroundColor: colors.primary, color: "#fff" }} className="px-6 py-14 text-sm">
+      <footer data-wv-site-footer="true" style={{ backgroundColor: colors.primary, color: "#fff" }} className="px-6 py-14 text-sm">
         <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1.3fr_0.8fr_0.8fr_1fr]">
           <div>
             <button type="button" data-wv-tab={homePageId} onClick={() => changeTab(homePageId)} className="mb-4 flex items-center gap-3 text-left text-lg font-bold hover:opacity-85">
@@ -1162,6 +1186,63 @@ export default function SiteRenderer({
           width: 2rem;
           height: 2rem;
           flex: none;
+        }
+        #rendered-site [data-wv-site-footer] {
+          --wv-footer-muted: rgba(255, 255, 255, 0.78);
+          --wv-footer-border: rgba(255, 255, 255, 0.16);
+          position: relative;
+          z-index: 1;
+          overflow: hidden;
+          line-height: 1.55;
+        }
+        #rendered-site [data-wv-site-footer],
+        #rendered-site [data-wv-site-footer] * {
+          text-wrap: initial;
+        }
+        #rendered-site [data-wv-site-footer] img {
+          filter: none !important;
+          transform: none !important;
+          transition: none !important;
+        }
+        #rendered-site [data-wv-site-footer] [data-wv-image-role="logo"] {
+          width: 2rem;
+          height: 2rem;
+          flex: none;
+          border-radius: 9999px !important;
+          clip-path: none !important;
+        }
+        #rendered-site [data-wv-site-footer] :where(a, button) {
+          box-shadow: none !important;
+          transform: none !important;
+          transition: opacity 160ms ease, color 160ms ease, background-color 160ms ease;
+        }
+        #rendered-site [data-wv-site-footer] :where(a, button):hover {
+          box-shadow: none !important;
+          transform: none !important;
+        }
+        #rendered-site [data-wv-site-footer] :where(p, a, button, span) {
+          letter-spacing: 0;
+        }
+        #rendered-site [data-wv-site-footer] > div:first-child {
+          align-items: start;
+        }
+        #rendered-site [data-wv-site-footer] > div:last-child {
+          border-color: var(--wv-footer-border) !important;
+        }
+        #rendered-site [data-wv-site-footer] svg {
+          flex: none;
+        }
+        #rendered-site [data-wv-site-footer] .opacity-85 {
+          opacity: 1;
+          color: var(--wv-footer-muted);
+        }
+        #rendered-site [data-wv-site-footer] .opacity-80 {
+          opacity: 1;
+          color: var(--wv-footer-muted);
+        }
+        #rendered-site [data-wv-site-footer] .opacity-70 {
+          opacity: 1;
+          color: rgba(255, 255, 255, 0.68);
         }
         #rendered-site [data-wv-tool-ui],
         #rendered-site [data-wv-tool-ui] *,
