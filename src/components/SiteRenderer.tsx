@@ -492,20 +492,20 @@ export default function SiteRenderer({
         data-wv-site-header="true"
         data-wv-header-compact={headerCompact ? "true" : undefined}
         style={{ backgroundColor: colors.primary, color: "#fff" }}
-        className={`${headerCompact ? "px-5 py-2.5" : "px-5 py-4"} md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm`}
+        className={`${headerCompact ? "px-5 py-2.5" : "px-5 py-4"} md:px-12 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 sticky top-0 z-50 shadow-sm`}
       >
         <button
           type="button"
           onClick={() => changeTab(homePageId)}
           data-wv-tab={homePageId}
-          className="min-w-0 font-bold text-xl tracking-tight leading-tight flex items-center gap-3 text-left hover:opacity-85 transition"
+          className="min-w-0 max-w-full justify-self-start font-bold text-xl tracking-tight leading-tight flex items-center gap-3 text-left hover:opacity-85 transition"
           aria-label={`Go to ${meta.businessName} home`}
         >
-          {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
+          {brand.logoSvg ? <span className="h-8 w-8 shrink-0 [&>svg]:h-full [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
           {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
-          {editableText("header.businessName", meta.businessName, "span", "leading-tight")}
+          {editableText("header.businessName", meta.businessName, "span", "min-w-0 truncate leading-tight")}
         </button>
-        <nav className="hidden md:flex items-center gap-5">
+        <nav className="hidden min-w-0 justify-self-center md:flex items-center justify-center gap-5">
           {navigation.headerMenu.map((menu: any, idx: number) => {
             const pageId = menu.href.replace("#", "");
             const children = Array.isArray(menu.children) ? menu.children : [];
@@ -542,7 +542,7 @@ export default function SiteRenderer({
             }
           }}
           style={{ backgroundColor: colors.accent }}
-          className={`${headerCompact ? "h-9" : "h-11"} shrink-0 px-4 py-0 rounded-lg text-white font-medium hover:opacity-90 transition text-sm leading-none inline-flex items-center gap-2`}
+          className={`${headerCompact ? "h-9" : "h-11"} justify-self-end shrink-0 px-4 py-0 rounded-lg text-white font-medium hover:opacity-90 transition text-sm leading-none inline-flex items-center gap-2`}
         >
           {buttonIcon(globalConfig.header.ctaButton.text, globalConfig.header.ctaButton.href)}
           {globalConfig.header.ctaButton.text}
@@ -822,13 +822,14 @@ export default function SiteRenderer({
               if (section.type === "hoursLocation") {
                 const hoursSource = section.content?.hours || hours.regular || section.content?.openingHours || [];
                 const regularHours = Array.isArray(hoursSource) ? hoursSource : [];
+                const hoursTitle = section.content?.hoursTitle || section.content?.openingHoursTitle || labels.hoursTitle;
                 return (
                   <section key={section.id} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
                         <div className="mb-5 flex items-center gap-3 text-2xl">
                           <Clock data-wv-qa-icon="hoursLocation" className="h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }} />
-                          {editableText(`${section.id}.hoursTitle`, section.content?.title || labels.hoursTitle, "h2", "text-2xl font-bold text-slate-950")}
+                          {editableText(`${section.id}.hoursTitle`, hoursTitle, "h2", "text-2xl font-bold text-slate-950")}
                         </div>
                         <div className="space-y-2 text-slate-700">
                           {regularHours.map((item: any, i: number) => editableText(`${section.id}.hours.${i}`, typeof item === "string" ? item : item.text || JSON.stringify(item), "p"))}

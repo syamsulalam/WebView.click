@@ -1447,9 +1447,15 @@ export default function AdminLeads() {
       {/* SEARCH SECTION */}
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-8">
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
-          <h2 className="text-lg font-medium text-gray-900">Cari Prospek Baru (Google Maps)</h2>
+          <h2 className="inline-flex items-center gap-1.5 text-lg font-medium text-gray-900">
+            Cari Prospek Baru (Google Maps)
+            <HelpTooltip text="Search Google Places, save each listing as a prospect draft, then gather details before generating a demo website." />
+          </h2>
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-500 font-medium">AI Web Builder:</label>
+            <label className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500">
+              AI Web Builder:
+              <HelpTooltip text="Provider/model used for new site generation from this page. The choice is saved locally and also used as retry fallback for jobs." />
+            </label>
             <select 
               value={activeProviderKey}
               onChange={(e) => {
@@ -1611,7 +1617,10 @@ export default function AdminLeads() {
           {filtersOpen === "1" && (
             <div className="mt-3 grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-3 xl:grid-cols-5">
               <label className="text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Status</span>
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  Status
+                  <HelpTooltip text="Active pipeline hides skipped and already generated prospects. All saved shows every saved prospect draft regardless of workflow status." />
+                </span>
                 <select value={prospectFilter} onChange={(event) => setProspectFilter(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="active">Active pipeline</option>
                   <option value="new">New</option>
@@ -1635,7 +1644,10 @@ export default function AdminLeads() {
                 </select>
               </label>
               <label className="text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Rating</span>
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  Rating
+                  <HelpTooltip text="Minimum Google rating filter. Higher ratings usually improve conversion, but very new businesses may have useful low review counts." />
+                </span>
                 <select value={minRatingFilter} onChange={(event) => setMinRatingFilter(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="0">Any rating</option>
                   <option value="3.5">3.5+</option>
@@ -1644,7 +1656,10 @@ export default function AdminLeads() {
                 </select>
               </label>
               <label className="text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Reviews</span>
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  Reviews
+                  <HelpTooltip text="Minimum Google review count. The score formula favors enough reviews for trust while avoiding businesses that may already have mature marketing." />
+                </span>
                 <select value={minReviewsFilter} onChange={(event) => setMinReviewsFilter(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="0">Any reviews</option>
                   <option value="10">10+</option>
@@ -1665,15 +1680,24 @@ export default function AdminLeads() {
                 </select>
               </label>
               <label className="text-sm">
-                <span className="mb-1 block font-medium text-slate-700">City</span>
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  City
+                  <HelpTooltip text="Client-side filter against the saved address/city fields. Useful after broad searches like a whole metro area." />
+                </span>
                 <input value={cityFilter} onChange={(event) => setCityFilter(event.target.value)} placeholder="Dallas" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
               </label>
               <label className="text-sm">
-                <span className="mb-1 block font-medium text-slate-700">State</span>
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  State
+                  <HelpTooltip text="Client-side state/region filter. For US prospects, use two-letter state codes when possible." />
+                </span>
                 <input value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} placeholder="TX" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
               </label>
               <label className="text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Niche</span>
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  Niche
+                  <HelpTooltip text="Filters by business type/category/search niche. This helps narrow broad cached search results before batch generation." />
+                </span>
                 <input value={nicheFilter} onChange={(event) => setNicheFilter(event.target.value)} placeholder="concrete" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
               </label>
               <label className="text-sm">
@@ -1745,7 +1769,10 @@ export default function AdminLeads() {
           <div className="mt-6 space-y-4">
             <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="font-semibold text-slate-900">{searchResults.length > 0 ? "Current search results" : "Saved prospect drafts"}</p>
+                <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
+                  {searchResults.length > 0 ? "Current search results" : "Saved prospect drafts"}
+                  <HelpTooltip text="Bulk buttons act only on the visible filtered list. Generate selected runs sequentially from the browser so AI requests are not fired all at once." />
+                </p>
                 <p className="inline-flex items-center gap-1.5">
                   {visibleProspects.length} visible. {selectedVisibleProspects.length} selected.
                   <HelpTooltip text="Visible prospects are filtered by the current filters and sorted by conversion score from highest to lowest." />
@@ -2156,7 +2183,10 @@ export default function AdminLeads() {
                       <p className="mt-1 text-slate-900">{Number(mergedPlace.rating || 0).toFixed(1)} / {Number(mergedPlace.user_ratings_total || mergedPlace.userRatingCount || 0)} reviews</p>
                     </div>
                     <div className="rounded-xl border border-slate-200 p-3">
-                      <p className="text-xs font-semibold text-slate-500">Status</p>
+                      <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                        Status
+                        <HelpTooltip text="Prospect workflow status controls whether it appears in the active pipeline and helps avoid reworking skipped/generated businesses." />
+                      </p>
                       <select
                         value={mergedPlace.prospectStatus || "new"}
                         onChange={(event) => updateProspectStatus(mergedPlace, event.target.value)}
@@ -2195,7 +2225,10 @@ export default function AdminLeads() {
                   )}
 
                   <div className="mt-6">
-                    <p className="text-sm font-semibold text-slate-900">Photo and palette source</p>
+                    <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                      Photo and palette source
+                      <HelpTooltip text="The selected Places photo and extracted palette become brand provenance in the generated JSON and affect preview colors." />
+                    </p>
                     <p className="mt-1 text-xs text-slate-500">Choose the closest brand/logo-like image. Selection is saved into the generated JSON as Google Places provenance.</p>
                     {photos.length > 0 ? (
                       <div className="mt-3 grid grid-cols-3 gap-3">

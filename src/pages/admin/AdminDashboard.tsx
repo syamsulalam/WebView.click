@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import HelpTooltip from "../../components/HelpTooltip";
 
 type Stats = {
   totalLeads: number;
@@ -77,22 +78,34 @@ export default function AdminDashboard() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition hover:shadow-md">
-              <p className="text-sm font-medium text-gray-500 mb-2 uppercase tracking-wide">Total Leads Scraped</p>
+              <p className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-gray-500">
+                Total Leads Scraped
+                <HelpTooltip text="Total lead/prospect count reported by /api/stats. If the stats endpoint is in fallback mode, this can show zero while the CRM pages still have data." />
+              </p>
               <p className="text-4xl font-semibold text-gray-900">{stats.totalLeads}</p>
             </div>
             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition hover:shadow-md">
-              <p className="text-sm font-medium text-gray-500 mb-2 uppercase tracking-wide">Conversion Rate</p>
+              <p className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-gray-500">
+                Conversion Rate
+                <HelpTooltip text="High-level CRM conversion metric from /api/stats. Use it as a dashboard signal, not as the source of truth for individual prospect status." />
+              </p>
               <p className="text-4xl font-semibold text-gray-900">{stats.conversionRate.toFixed(1)}%</p>
             </div>
             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition hover:shadow-md">
-              <p className="text-sm font-medium text-gray-500 mb-2 uppercase tracking-wide">Total Revenue</p>
+              <p className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-gray-500">
+                Total Revenue
+                <HelpTooltip text="Revenue total returned by /api/stats. Checkout/mock checkout details still live in the lead status and payment records." />
+              </p>
               <p className="text-4xl font-semibold text-green-600">${stats.totalRevenue.toFixed(2)}</p>
             </div>
           </div>
           
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">Aktivitas CRM Terkini</h2>
+              <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                Aktivitas CRM Terkini
+                <HelpTooltip text="Recent CRM activity from /api/activities, useful for spotting prospect views, checkout attempts, or workflow events." />
+              </h2>
             </div>
             {activities.length > 0 ? (
               <div className="divide-y divide-gray-100">

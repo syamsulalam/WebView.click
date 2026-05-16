@@ -1,5 +1,6 @@
 import { useLocalStorageState } from "../../lib/localStorageState";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
+import HelpTooltip from "../../components/HelpTooltip";
 
 export default function AdminJobs() {
   const [aiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
@@ -8,7 +9,10 @@ export default function AdminJobs() {
   return (
     <div className="min-h-screen p-6 lg:p-8">
       <div className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Generation queue</p>
+        <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
+          Generation queue
+          <HelpTooltip text="Audit trail for website generation attempts, including failed jobs, fallback-only saves, copy patch jobs, and retries." />
+        </p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Generation Jobs</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-600">
           Audit, sort, and retry site generation jobs without crowding the prospecting screen.

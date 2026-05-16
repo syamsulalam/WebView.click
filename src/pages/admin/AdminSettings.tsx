@@ -258,17 +258,23 @@ export default function AdminSettings() {
     <div className="p-8 max-w-5xl mx-auto font-sans">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-semibold text-gray-900 mb-1">Pengaturan Sistem (D1)</h1>
+          <h1 className="mb-1 inline-flex items-center gap-2 text-3xl font-semibold text-gray-900">
+            Pengaturan Sistem (D1)
+            <HelpTooltip text="Settings are stored in Cloudflare D1 and used by Pages Functions for search, AI generation, checkout, and prospect scoring." />
+          </h1>
           <p className="text-gray-500 text-sm">Kelola API keys dan payment links yang tersimpan di Cloudflare D1.</p>
         </div>
-        <button
-          onClick={handleManualSave}
-          disabled={saving}
-          className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2 shadow-sm"
-        >
-          {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-          {saving ? "Menyimpan..." : "Simpan Sekarang"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleManualSave}
+            disabled={saving}
+            className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2 shadow-sm"
+          >
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+            {saving ? "Menyimpan..." : "Simpan Sekarang"}
+          </button>
+          <HelpTooltip text="Most changes auto-save after a short delay. Use this button when you want to force-save immediately before testing another admin page." />
+        </div>
       </div>
 
       {message && (
@@ -294,7 +300,10 @@ export default function AdminSettings() {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="grid md:grid-cols-[240px_1fr]">
           <aside className="border-b md:border-b-0 md:border-r border-gray-100 p-4 bg-gray-50">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-2 mb-3">AI Provider</p>
+            <p className="mb-3 inline-flex items-center gap-1.5 px-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              AI Provider
+              <HelpTooltip text="Choose which provider credential to edit. This does not force the generator model; /admin/leads and /admin/sites still choose provider/model per generation." />
+            </p>
             <div className="space-y-1">
               {providerOptions.map((provider) => (
                 <button
@@ -315,7 +324,10 @@ export default function AdminSettings() {
 
           <section className="p-6 md:p-8">
             <div className="mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">{selectedProviderConfig.label}</h2>
+              <h2 className="inline-flex items-center gap-1.5 text-xl font-semibold text-gray-900">
+                {selectedProviderConfig.label}
+                <HelpTooltip text="Only the selected provider fields are shown here, but all provider keys remain stored in settings if previously saved." />
+              </h2>
               <p className="text-sm text-gray-500 mt-1">{selectedProviderConfig.description}</p>
             </div>
 
@@ -340,7 +352,10 @@ export default function AdminSettings() {
 
       <div className="grid md:grid-cols-2 gap-6 mt-6">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Google Places</h2>
+          <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+            Google Places
+            <HelpTooltip text="Server-side key used for Places search, details, reviews, and photo proxy calls. It should be API-restricted, not HTTP-referrer restricted." />
+          </h2>
           <p className="text-xs text-gray-500 mb-4">
             Dipakai dari Cloudflare Pages Function. Jangan gunakan HTTP referrer restriction untuk key ini; pakai API restriction ke Places API saja.
           </p>
@@ -354,7 +369,10 @@ export default function AdminSettings() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Payment Links</h2>
+          <h2 className="mb-4 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+            Payment Links
+            <HelpTooltip text="Used by checkout/setup flows. Lemon Squeezy settings enable real checkout; WhatsApp remains useful for mock checkout or manual setup follow-up." />
+          </h2>
           <div className="space-y-4">
             <input
               type="text"
@@ -491,14 +509,20 @@ export default function AdminSettings() {
 
       <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col gap-1 mb-5">
-          <h2 className="text-lg font-semibold text-gray-900">Estimator Biaya AI</h2>
+          <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+            Estimator Biaya AI
+            <HelpTooltip text="Local estimate for one generated site JSON using the selected pricing table. Actual provider billing can differ by tokenization and provider-side rounding." />
+          </h2>
           <p className="text-sm text-gray-500">
             Perkiraan biaya per generate JSON. KIE.ai ditampilkan sebagai estimasi diskon karena pricing detail live ada di dashboard KIE.
           </p>
         </div>
         <div className="grid md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+            <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700">
+              Provider
+              <HelpTooltip text="Pricing provider used only for this calculator. It does not change the generation provider selected in Leads/Sites." />
+            </label>
             <select
               value={pricingProvider}
               onChange={(e) => {
@@ -527,7 +551,10 @@ export default function AdminSettings() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Input tokens</label>
+            <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700">
+              Input tokens
+              <HelpTooltip text="Approximate prompt/input token count for one generate. Larger gathered data and copy briefs raise this number." />
+            </label>
             <input
               type="number"
               min={0}
@@ -537,7 +564,10 @@ export default function AdminSettings() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Output tokens</label>
+            <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700">
+              Output tokens
+              <HelpTooltip text="Approximate generated JSON/output size. Richer sites with products, services, galleries, and detail pages usually need more output tokens." />
+            </label>
             <input
               type="number"
               min={0}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import HelpTooltip from "../../components/HelpTooltip";
 
 export default function AdminSchema() {
   const [schemaData, setSchemaData] = useState<string>("");
@@ -88,12 +89,15 @@ export default function AdminSchema() {
     <div className="p-8 max-w-7xl mx-auto font-sans">
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold mb-2 text-gray-900">JSON Schema Mapping</h1>
+          <h1 className="mb-2 inline-flex items-center gap-2 text-3xl font-semibold text-gray-900">
+            JSON Schema Mapping
+            <HelpTooltip text="Baseline JSON shape used by the AI generator and fallback builder. When renderer sections change, this schema should stay aligned." />
+          </h1>
           <p className="text-gray-500 max-w-3xl">
             This is the baseline schema used by the AI to generate content for prospects. The <code className="bg-gray-100 text-gray-800 px-1 rounded">pages</code> array supports dynamically adding sections like <code className="text-indigo-600 bg-indigo-50 px-1 rounded">hero</code>, <code className="text-indigo-600 bg-indigo-50 px-1 rounded">textImageBlock</code>, <code className="text-indigo-600 bg-indigo-50 px-1 rounded">teamGrid</code>, <code className="text-indigo-600 bg-indigo-50 px-1 rounded">gridCards</code>, <code className="text-indigo-600 bg-indigo-50 px-1 rounded">imageGallery</code>, and <code className="text-indigo-600 bg-indigo-50 px-1 rounded">contactForm</code>.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handleRepairDb}
@@ -102,6 +106,7 @@ export default function AdminSchema() {
           >
             {repairing ? "Repairing..." : "Repair DB now"}
           </button>
+          <HelpTooltip text="Runs the D1 self-heal endpoint to create or repair expected admin tables/columns after a production deploy." />
           <button
             type="button"
             onClick={handleMigrateSitesToR2}
@@ -111,6 +116,7 @@ export default function AdminSchema() {
           >
             {migratingR2 ? "Migrating..." : "Migrate old site JSON to R2"}
           </button>
+          <HelpTooltip text="Moves legacy full site JSON out of D1 into R2 so D1 keeps only compact manifests. This is a maintenance action for older rows." />
         </div>
       </div>
 

@@ -43,9 +43,11 @@ Logic penting:
 - Navbar product/service submenu memakai hover persistence agar dropdown tidak langsung hilang saat cursor bergerak ke child menu.
 - Desktop submenu dirender sebagai fixed overlay sibling setelah header, bukan child layout di dalam header, agar navbar tidak membesar saat submenu terbuka.
 - Header default lebih lega di posisi top, lalu berubah compact dengan `data-wv-header-compact` setelah scroll; export owner HTML mengaktifkan behavior yang sama via inline JS.
+- Header memakai grid 3 kolom `brand | centered nav | CTA` di desktop supaya menu tetap center terhadap seluruh navbar. Nama bisnis panjang ditruncate di rail kiri, bukan mendorong menu ke kanan.
 - Submenu diberi boundary `data-wv-site-submenu` agar mengikuti konteks navbar, bukan mewarisi styling body/card generated site.
 - Pergantian tab menjalankan scroll-to-top.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
+- `hoursLocation` memakai `content.hoursTitle` / `content.openingHoursTitle` atau fallback label `Business Hours` / `Jam Operasional` untuk card jam, bukan `content.title`, agar tidak dobel dengan card `Location & Contact`.
 - Feature grid cards dirender center-aligned: icon, title, dan body berada di tengah card agar tampilan lebih rapi seperti demo.
 - Trust bar dan feature icons dirender sebagai SVG langsung tanpa wrapper background agar icon tidak terlihat mengecil; icon subheading `hoursLocation` memakai ukuran relatif heading.
 - Grid marketing 3 kolom seperti offers, reviews, dan generic grid cards memakai content text-center agar komposisi tiap card lebih seimbang.
@@ -106,6 +108,7 @@ Fungsi:
 Logic penting:
 - Default width `w-72`, bisa dioverride via `widthClass`.
 - Menerima `text` string atau `children` untuk konten custom.
+- Admin pages memakai `HelpTooltip` untuk menjelaskan kontrol yang efeknya tidak langsung terlihat, seperti API keys, scoring, generation jobs, schema repair, R2 migration, search filters, batch generate, dan regenerate.
 
 ### `src/components/GenerationJobsTable.tsx`
 
@@ -123,6 +126,7 @@ Logic penting:
 - Retry mengambil current copy brief dari `GET /api/sites/:businessId/copy-brief`, menghitung hash browser-side, lalu memperingatkan jika hash berbeda dari job lama sebelum membuat job baru.
 - `variant="compact"` dipakai di `/admin/leads`; `variant="full"` dipakai di `/admin/jobs`.
 - `onJobsLoaded` dipakai parent `/admin/leads` untuk memperbarui angka pada tombol `Jobs`.
+- Header, filter group, dan drawer audit copy punya tooltip ringkas yang menjelaskan arti `Fallback`, `Patch`, dan `No rewrite` supaya admin tidak perlu menebak status job.
 
 ### `src/components/AdminLayout.tsx`
 
@@ -133,6 +137,7 @@ Fungsi:
 
 Logic penting:
 - `NavContent` menampilkan link Dashboard, CRM Leads, Generation Jobs, Generated Sites, JSON Schema Info, dan Settings.
+- Sidebar nav hover tooltip menampilkan label dan deskripsi singkat setiap admin area agar fitur baru lebih mudah dipahami tanpa membuka semua halaman.
 - Saat pindah route admin, container konten dan window otomatis scroll ke atas agar tab baru tidak mulai dari posisi scroll tab sebelumnya.
 - Sidebar menampilkan badge kecil `DB` setelah `/admin/schema` berhasil menjalankan `Repair DB now`; timestamp disimpan di localStorage key `webview.admin.lastDbRepairAt`.
 - `ClerkSecureLayout` hanya mengizinkan user dengan `publicMetadata.role === "admin"`.
@@ -190,6 +195,7 @@ Logic penting:
 - Response API divalidasi. Jika endpoint 500 atau return shape salah, halaman tidak crash.
 - `toNumber()` memastikan `toFixed()` hanya dipanggil pada angka valid.
 - Jika API bermasalah, dashboard menampilkan banner fallback dan angka kosong.
+- Metric cards dan aktivitas terbaru punya tooltip untuk membedakan angka dashboard dari source-of-truth workflow per prospek.
 
 ### `src/pages/admin/AdminLeads.tsx`
 
@@ -257,6 +263,7 @@ Logic penting:
 - Filter prospect juga punya minimum conversion score (`Any`, `50+`, `70+`, `85+`) untuk menyembunyikan prospek kualitas rendah dari list.
 - Default minimum conversion score dan bobot scoring dibaca dari `/admin/settings` (`SCORING_MIN_SCORE_DEFAULT`, `SCORING_WEIGHTS_JSON`) dengan fallback ke `src/lib/prospectScoring.ts`; `SCORING_PRESET` disimpan untuk UI Settings.
 - Penjelasan panjang di toolbar/filter CRM dipindahkan ke tooltip hover agar UI admin tetap ringkas.
+- Tooltip juga dipasang pada heading search, AI Web Builder, status/rating/reviews/city/state/niche filters, bulk action area, drawer status, dan photo/palette source agar workflow gather/generate lebih jelas.
 - Hasil pencarian tidak dikosongkan setelah generate, termasuk saat `/api/sites/generate` gagal.
 - Generate status ditampilkan per bisnis, dengan link preview jika sukses.
 - Tombol `Load more photos/details` memanggil Place Details agar admin bisa memilih lebih banyak foto sebelum generate dan menyimpan `details_json`.
@@ -289,6 +296,7 @@ Logic penting:
 - Semua logic table, filter, sort, hash, refresh, dan retry hidup di `src/components/GenerationJobsTable.tsx`.
 - Full page memakai `serverBackedFilters` agar filter jobs mencari dari server/D1, bukan hanya dari 200 row yang sedang loaded.
 - Full page juga memakai `serverBackedSearch` untuk mencari job lama berdasarkan nama bisnis, `businessId`, `placeId`, job ID, atau metadata JSON.
+- Page heading memakai tooltip untuk menjelaskan bahwa halaman ini adalah audit trail job generation, termasuk retry/fallback/copy patch status.
 
 Risiko debug:
 - Retry butuh row `json_sites` untuk `businessId` tersebut; job lama tanpa site JSON tidak bisa diulang dari halaman ini.
@@ -325,6 +333,7 @@ Logic penting:
 - Pilihan provider/model regenerate disimpan ke localStorage agar refresh halaman tetap memakai model terakhir yang dipilih admin.
 - Pilihan provider/model yang sama dipakai untuk `Generate` prospect gathered di section `Ready to Generate`.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
+- Tooltip dipasang pada heading Generated Sites, Ready to Generate, table actions, dan Regen dropdown untuk menjelaskan perbedaan Preview/Data/Brief/Regen, first generate, AI regenerate, dan re-gather.
 
 Risiko debug:
 - Jika situs tidak muncul, cek apakah `/api/sites/generate` berhasil menyimpan manifest row ke `json_sites` dan full JSON ke R2.
@@ -347,6 +356,7 @@ Logic penting:
 - Gunakan tombol ini setelah deploy ketika halaman admin berat mulai error karena kolom D1 production belum termigrasi.
 - Setelah repair sukses, halaman menyimpan timestamp ke localStorage agar badge `DB repaired ... ago` muncul di admin sidebar.
 - Tombol `Migrate old site JSON to R2` memanggil `POST /api/sites/migrate-r2` batch 25 row, memindahkan row lama `json_sites.json_content` yang masih full JSON ke R2, lalu mengganti D1 dengan manifest kecil.
+- Schema heading dan maintenance buttons punya tooltip karena kedua actions memengaruhi production D1/R2 compatibility.
 
 ### `src/pages/admin/AdminSettings.tsx`
 
@@ -368,6 +378,7 @@ Logic penting:
 - Payment settings sekarang mencakup Lemon Squeezy API key, store ID, variant ID, dan nomor WhatsApp admin untuk mock/checkout notifications.
 - Section `Prospect Scoring` menyimpan preset, default threshold, dan bobot scoring ke D1 settings agar prioritas prospek bisa ditune dari UI tanpa edit kode.
 - Bobot scoring memakai angka positif/negatif. Reset weights mengembalikan default dari `src/lib/prospectScoring.ts`.
+- Tooltip dipasang pada Settings heading, manual save, provider tabs, Google Places, Payment Links, AI cost estimator, and scoring controls to clarify which settings affect generation, search, checkout, and estimates.
 
 Risiko debug:
 - Jika save gagal, form tetap menyimpan state lokal dan banner merah meminta retry.

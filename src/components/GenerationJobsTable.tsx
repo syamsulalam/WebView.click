@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, ExternalLink, FileText, Loader2, RefreshCw, RotateCw, Search, X } from "lucide-react";
 import { useLocalStorageState } from "../lib/localStorageState";
+import HelpTooltip from "./HelpTooltip";
 
 type GenerationJobsTableProps = {
   storageKeyPrefix: string;
@@ -289,7 +290,13 @@ export default function GenerationJobsTable({
     <div className={`${compact ? "rounded-xl border border-slate-200 bg-white p-4" : "rounded-2xl border border-slate-200 bg-white shadow-sm"} ${className}`}>
       <div className={`flex flex-col gap-3 ${compact ? "mb-3" : "border-b border-slate-100 p-4"} lg:flex-row lg:items-center lg:justify-between`}>
         <div>
-          <p className={compact ? "font-semibold text-slate-900" : "text-sm font-semibold text-slate-950"}>Generation jobs</p>
+          <p className={`${compact ? "font-semibold text-slate-900" : "text-sm font-semibold text-slate-950"} inline-flex items-center gap-1.5`}>
+            Generation jobs
+            <HelpTooltip
+              widthClass="w-80"
+              text="Fallback means no AI copy patch was applied. Patch means AI copy was merged into the deterministic site JSON. No rewrite means the patch ran but did not change source copy."
+            />
+          </p>
           {!compact && <p className="mt-1 text-xs text-slate-500">Filter, sort, and retry generation attempts.</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -312,17 +319,20 @@ export default function GenerationJobsTable({
               </button>
             </form>
           )}
-          <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold">
-            {filterOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setFilter(option.value)}
-                className={`${compact ? "px-2.5 py-1.5" : "px-3 py-2"} ${filter === option.value ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-white"}`}
-              >
-                {option.label} {option.count}
-              </button>
-            ))}
+          <div className="inline-flex items-center gap-1.5">
+            <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold">
+              {filterOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setFilter(option.value)}
+                  className={`${compact ? "px-2.5 py-1.5" : "px-3 py-2"} ${filter === option.value ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-white"}`}
+                >
+                  {option.label} {option.count}
+                </button>
+              ))}
+            </div>
+            {!compact && <HelpTooltip text="These filters can be server-backed on the full jobs page, so older jobs outside the first loaded page can still be found." />}
           </div>
           <select
             value={sort}
@@ -565,7 +575,10 @@ export default function GenerationJobsTable({
               <section>
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div>
-                    <h3 className="font-semibold text-slate-950">AI copy audit</h3>
+                    <h3 className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
+                      AI copy audit
+                      <HelpTooltip text="Compares source copy sent to AI with final saved copy. This helps identify whether a job used AI wording or fell back to gathered Google data." />
+                    </h3>
                     <p className="mt-0.5 text-xs text-slate-500">Source copy sent to AI and final copy saved after patch/fallback.</p>
                   </div>
                   {selectedAuditItems.length > 0 && (

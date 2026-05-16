@@ -21,12 +21,12 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [lastRepairAt, setLastRepairAt] = useState("");
   const links = [
-    { to: "/admin", icon: <LayoutDashboard size={24} />, label: "Dashboard" },
-    { to: "/admin/leads", icon: <Users size={24} />, label: "CRM Leads" },
-    { to: "/admin/jobs", icon: <ListChecks size={24} />, label: "Generation Jobs" },
-    { to: "/admin/sites", icon: <Globe2 size={24} />, label: "Generated Sites" },
-    { to: "/admin/schema", icon: <Webhook size={24} />, label: "JSON Schema Info" },
-    { to: "/admin/settings", icon: <Settings size={24} />, label: "Settings" } // Ditambahkan setting
+    { to: "/admin", icon: <LayoutDashboard size={24} />, label: "Dashboard", description: "CRM overview, revenue, and recent activity." },
+    { to: "/admin/leads", icon: <Users size={24} />, label: "CRM Leads", description: "Search Google Maps prospects, gather data, score, and generate demos." },
+    { to: "/admin/jobs", icon: <ListChecks size={24} />, label: "Generation Jobs", description: "Audit failed, fallback, copy patch, and retry generation jobs." },
+    { to: "/admin/sites", icon: <Globe2 size={24} />, label: "Generated Sites", description: "Preview, inspect, regenerate, and compare saved demo sites." },
+    { to: "/admin/schema", icon: <Webhook size={24} />, label: "JSON Schema Info", description: "View generator schema and run D1/R2 maintenance actions." },
+    { to: "/admin/settings", icon: <Settings size={24} />, label: "Settings", description: "Manage API keys, checkout settings, pricing estimates, and scoring." }
   ];
 
   useEffect(() => {
@@ -72,8 +72,9 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
             }`}
           >
             {link.icon}
-            <span className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-[9999] pointer-events-none">
-              {link.label}
+            <span className="absolute left-full ml-3 top-1/2 w-64 -translate-y-1/2 rounded-lg bg-gray-900 px-3 py-2 text-left text-xs text-white opacity-0 shadow-xl transition group-hover:opacity-100 z-[9999] pointer-events-none">
+              <span className="block font-semibold">{link.label}</span>
+              <span className="mt-1 block leading-relaxed text-gray-300">{link.description}</span>
             </span>
           </Link>
         ))}

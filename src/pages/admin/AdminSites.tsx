@@ -4,6 +4,7 @@ import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
+import HelpTooltip from "../../components/HelpTooltip";
 
 type SiteRow = {
   id: string;
@@ -895,7 +896,10 @@ export default function AdminSites() {
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-indigo-600">Generated Sites</p>
+          <p className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-indigo-600">
+            Generated Sites
+            <HelpTooltip text="Saved site JSON manifests and gathered prospects ready to generate. Use this page to preview, inspect data, and regenerate without returning to search." />
+          </p>
           <h1 className="mt-2 text-3xl font-bold text-gray-900">Situs yang berhasil dibuat</h1>
           <p className="mt-2 text-gray-500">Daftar ini membaca semua JSON website yang tersimpan di D1.</p>
         </div>
@@ -933,7 +937,10 @@ export default function AdminSites() {
       <div className="mb-6 overflow-visible rounded-2xl border border-emerald-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-emerald-100 bg-emerald-50 px-5 py-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-900">Ready to Generate</p>
+            <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-900">
+              Ready to Generate
+              <HelpTooltip text="Prospects already have gathered Place Details but no saved generated site yet. The provider/model selectors apply to the Generate buttons in this section." />
+            </p>
             <p className="text-xs text-emerald-700">Prospect yang sudah gather data tapi belum dibuatkan site.</p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -968,7 +975,10 @@ export default function AdminSites() {
           <span>Place ID</span>
           <span>Rating</span>
           <span>Gathered</span>
-          <span className="text-right">Actions</span>
+          <span className="inline-flex items-center justify-end gap-1.5 text-right">
+            Actions
+            <HelpTooltip text="Maps opens the original listing, Data inspects gathered Google data, and Generate creates the first site from the selected provider/model." />
+          </span>
         </div>
 
         {isLoading ? (
@@ -1033,7 +1043,10 @@ export default function AdminSites() {
           <span>Slug</span>
           <span>Locale</span>
           <span>Updated</span>
-          <span className="text-right">Actions</span>
+          <span className="inline-flex items-center justify-end gap-1.5 text-right">
+            Actions
+            <HelpTooltip text="Preview opens the public site, Data shows saved JSON source data, Brief shows copy-only input, and Regen lets you refresh Google data or run an AI copy patch." />
+          </span>
         </div>
 
         {isLoading ? (
@@ -1131,7 +1144,10 @@ export default function AdminSites() {
                   {openRegenerateMenu === site.businessId && (
                     <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl">
                       <div className="mb-3">
-                        <p className="text-xs font-semibold text-gray-900">Regenerate option</p>
+                        <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-900">
+                          Regenerate option
+                          <HelpTooltip text="AI regenerate keeps protected site structure and asks AI for copy improvements. Re-gather refreshes Google data and resaves without an AI call." />
+                        </p>
                         <p className="mt-1 text-[11px] leading-4 text-gray-500">Re-gather fixes stale Google data like fallback Maps URLs. AI regenerate only requests a copy patch; protected structure stays deterministic.</p>
                       </div>
 
