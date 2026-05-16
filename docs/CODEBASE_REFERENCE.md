@@ -46,10 +46,12 @@ Logic penting:
 - Feature grid cards dirender center-aligned: icon, title, dan body berada di tengah card agar tampilan lebih rapi seperti demo.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
 - Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
+- Renderer membaca `design.shaderPreset` dan `design.shaderConfig`; registry shader procedural ada di `src/lib/siteStylePresets.ts` dan guide teknis di `docs/SHADERS_GUIDE.md`.
 - Renderer membaca `design.fontPairing` dan `design.fontPairingConfig`; registry Google Font pairing ada di `src/lib/fontPairings.ts` dan ringkasannya di `docs/FONT_PAIRING_GUIDE.md`.
 - Root `#rendered-site` hanya menyimpan CSS variables palette aktif; website client dirender di child `[data-wv-site-canvas]` dengan class `wv-preset-*` dan `wv-visual-*`.
 - Tool UI seperti edit text, `WebsiteActionPanel`, demo inspector, download/domain/setup controls berada di luar `[data-wv-site-canvas]` agar tidak terkena CSS website.
 - Font pairing aktif hanya diterapkan ke `[data-wv-site-canvas]`; panel/tools tetap memakai style app.
+- Shader layer dirender sebagai inert `<div data-wv-site-shader>` di dalam `[data-wv-site-canvas]`; pointer JS hanya mengubah CSS variables `--wv-pointer-x`/`--wv-pointer-y`.
 - Gambar dirender sebagai `<img>` jika URL usable (`http`, `/`, atau `data:`); filename placeholder tetap ditampilkan sebagai fallback supaya preview tidak blank.
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
@@ -383,6 +385,8 @@ Logic penting:
 - Menampilkan floating inspector kecil berisi nama bisnis dan daftar `pageId:sectionType` yang sedang tersedia.
 - Inspector menampilkan field JSON yang hilang jika renderer sedang memakai fallback.
 - Inspector bisa diminimize dan di-drag agar tidak menutup navbar/preview.
+- Inspector punya toggle `QA` untuk visual boundary check: `[data-wv-site-canvas]` diberi outline hijau, WebView tool UI `[data-wv-tool-ui]` diberi outline biru, dan tool yang bocor ke canvas akan terlihat merah.
+- QA checklist memastikan generated site canvas ada, tool UI terdeteksi, download/setup panel berada di luar CSS website, dan demo inspector berada di luar CSS website.
 - Menggunakan `SiteRenderer` dengan `showProspectPanel={false}` agar demo fokus ke hasil render website.
 
 Risiko debug:
@@ -392,9 +396,10 @@ Risiko debug:
   - Download Free membuat zip owner berisi `index.html` saja via `downloadOwnerSiteZip`.
   - Paket `$197 Domain + Hosting` memanggil `POST /api/payments/checkout`.
   - Jika Lemon Squeezy belum dikonfigurasi, endpoint mencatat mock checkout dan membuka link WhatsApp admin.
-- Demo memiliki selector style preset dari `src/lib/siteStylePresets.ts` agar preset bisa diuji tanpa edit JSON.
+- Demo memiliki selector style preset dan shader preset dari `src/lib/siteStylePresets.ts` agar visual layer bisa diuji tanpa edit JSON.
 - Checkout demo memakai flow domain shared dari `WebsiteActionPanel`: domain baru atau domain milik sendiri, inline check, dan email hanya setelah domain lolos pre-check.
 - Download/setup action panel memakai `WebsiteActionPanel` dengan `variant="demo"`, shared dengan public preview.
+- `WebsiteActionPanel` dan inline edit panel diberi `data-wv-tool-ui` agar QA boundary bisa mendeteksi apakah tool UI tidak sengaja masuk ke canvas website.
 
 ### `src/pages/public/PublicViewer.tsx`
 
@@ -465,9 +470,12 @@ Logic penting:
 - `inferStylePresetFromText()` dipakai CRM generate untuk memilih preset dari nama bisnis, alamat, dan Places types.
 - `normalizeStylePreset()` memastikan nilai JSON yang tidak dikenal fallback ke `local-clean`.
 - `inferVisualStyleFromText()` memilih visual treatment dari niche; `industrial-diagonal` memberi boxy/diagonal image edge untuk contractor/auto/security.
+- `siteShaderPresets`, `normalizeShaderPreset()`, `getShaderPreset()`, dan `inferShaderPresetFromText()` mengatur shader procedural seperti `local-aurora`, `industrial-grid`, `aqua-caustics`, `organic-dapple`, `cafe-heat`, `salon-silk`, `fitness-pulse`, `legal-vellum`, dan `property-depth`.
 - `siteStylePresetCss` berisi generated-site experience layer yang discoped ke `[data-wv-site-canvas]`: responsive `clamp()` spacing/type tokens, `svh`/`dvh` hero sizing, palette-derived `color-mix()` surfaces, focus rings, hover lift, image polish, animated border enhancement, scroll-view reveal, reduced-motion fallback, dan `content-visibility` untuk section offscreen.
+- Shader CSS juga hidup di `siteStylePresetCss`, sepenuhnya CSS procedural dengan fallback non-`color-mix()`; export HTML memakai inline JS kecil untuk pointer variables.
 - Advanced border animation membutuhkan support `conic-gradient`, `mask`, dan `@property`; tanpa support, kartu tetap memakai border/shadow biasa.
 - Scroll reveal hanya aktif jika browser mendukung `animation-timeline: view()` dan user tidak memilih reduced motion.
+- Shader motion tetap menghormati reduced motion karena selector global generated-site memendekkan animasi saat `prefers-reduced-motion: reduce`.
 
 ### `src/lib/domainExtensions.ts`
 
@@ -524,6 +532,7 @@ Logic AI:
 - Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
 - Full scaffold JSON tidak dikirim ke AI. AI tidak melihat image URL, maps URL, navigation href, sourceData mentah, palette, font, visual style, favicon, CSS, storage, atau field protected lain.
 - Copy patch AI di-merge deterministik oleh Function lewat `applyAiCopyPatch()`. AI tidak boleh mengubah `pageId`, `detailPageId`, navigation href, sourceData, photo URL, contact/maps fields, palette, font, visual style, storage, atau favicon.
+- Jika submitted JSON lama belum punya `design.shaderPreset`, Function mengisi shader procedural dari niche/context via `shaderPresetForBusiness()` sebelum menyimpan site.
 - Function membuat audit granular dari target copy sebelum patch dan copy final setelah patch. Audit ini disimpan di `generation_jobs.metadata_json.copyAuditSummary` dan `copyAuditItems`, dengan status `ai_rewritten`, `ai_filled_blank`, `source_kept`, `fallback_source`, atau `missing_after`.
 - Jika copy patch AI sukses, `meta.generatedWithAi=true` dan `meta.generationMode=ai_copy_patch`; jika gagal dan `requireAi` false, scaffold/fallback JSON tetap disimpan dengan `submitted_json_ai_fallback`.
 - Setelah AI/fallback selesai, Function menjalankan `ensureGalleryPage()` agar generated sites otomatis mendapat gallery page dari foto Places/brand/offers bila minimal dua gambar tersedia, meskipun model AI lupa membuatnya.
@@ -594,6 +603,7 @@ Logic Owner HTML Export:
 - `src/lib/exportSiteHtml.ts` membuat zip owner berisi hanya `index.html`.
 - Export menghapus `<script>` internal, `.hide-in-export`, dan `[data-export-remove="true"]`.
 - Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
+- Export menyertakan inline script owner untuk tab navigation, submenu hover, contact `mailto:`, dan shader pointer CSS variables (`--wv-pointer-x`, `--wv-pointer-y`) agar shader procedural tetap responsif di file HTML statis.
 - Export mengambil gambar yang sedang tampil di DOM, menyimpannya ke folder `/img` di dalam zip, lalu mengubah `<img src>` menjadi path relatif seperti `img/{businessId}-hero.jpg`. Ini termasuk foto Google Business Profile yang sedang diproxy via WebView.click saat tombol download diklik, sehingga HTML owner tidak perlu hotlink ke Google atau Function WebView.click untuk gambar.
 - Export menambahkan `README-FIRST.txt` sebagai ringkasan done-for-you `$197/year`, lalu `SETUP-GUIDE.txt` sebagai panduan teknis self-hosting domain/hosting/DNS/upload/SSL/maintenance.
 - Kedua file `.txt` tersebut menyertakan URL preview/download asli (`window.location.href`) supaya owner bisa kembali ke halaman tempat zip dibuat.

@@ -150,7 +150,7 @@ export default function WebsiteActionPanel({
 
   return (
     <>
-      <div className={panelPosition}>
+      <div className={panelPosition} data-wv-tool-ui="website-action-panel">
         {panelOpen && (
           <div className="mb-3 w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -255,7 +255,7 @@ export default function WebsiteActionPanel({
       </div>
 
       {checkoutOpen && (
-        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4">
+        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-wv-tool-ui="website-checkout-modal">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>

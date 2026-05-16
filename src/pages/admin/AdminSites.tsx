@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Brain, ChevronDown, Database, FileText, Globe2, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
-import { getStylePreset, inferStylePresetFromText, inferVisualStyleFromText, siteVisualStyles } from "../../lib/siteStylePresets";
+import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 
 type SiteRow = {
@@ -324,6 +324,8 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
   const stylePresetMeta = getStylePreset(stylePreset);
   const visualStyle = inferVisualStyleFromText(nicheText);
   const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
+  const shaderPreset = inferShaderPresetFromText(nicheText);
+  const shaderPresetMeta = getShaderPreset(shaderPreset);
   const fontPairing = inferFontPairingFromText(nicheText);
   const fontPairingMeta = getFontPairing(fontPairing);
   const fontPairingOptions = fontPairingsForText(nicheText, 5);
@@ -462,6 +464,16 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
         description: visualStyleMeta.description,
         allowedValues: siteVisualStyles.map((item) => item.id),
         selectionRule: "Choose the visual structure that best matches the industry and desired feel.",
+      },
+      shaderPreset,
+      shaderConfig: {
+        preset: shaderPreset,
+        label: shaderPresetMeta.label,
+        description: shaderPresetMeta.description,
+        defaultOpacity: shaderPresetMeta.defaultOpacity,
+        defaultMotion: shaderPresetMeta.defaultMotion,
+        allowedValues: siteShaderPresets.map((item) => item.id),
+        selectionRule: "Choose a lightweight CSS procedural shader that matches the industry mood. Use none for maximum restraint.",
       },
       fontPairing,
       fontPairingConfig: {

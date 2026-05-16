@@ -227,6 +227,17 @@ function ownerInlineScript() {
     submenu.addEventListener("mouseenter", show);
     submenu.addEventListener("mouseleave", hideSoon);
   });
+  var shaderCanvas = document.querySelector("[data-wv-site-canvas]");
+  var shaderFrame = 0;
+  if (shaderCanvas) {
+    window.addEventListener("pointermove", function (event) {
+      if (shaderFrame) window.cancelAnimationFrame(shaderFrame);
+      shaderFrame = window.requestAnimationFrame(function () {
+        shaderCanvas.style.setProperty("--wv-pointer-x", ((event.clientX / Math.max(window.innerWidth, 1)) * 100).toFixed(2));
+        shaderCanvas.style.setProperty("--wv-pointer-y", ((event.clientY / Math.max(window.innerHeight, 1)) * 100).toFixed(2));
+      });
+    }, { passive: true });
+  }
   document.addEventListener("submit", function (event) {
     var form = event.target && event.target.closest ? event.target.closest("[data-wv-mailto]") : null;
     if (!form) return;

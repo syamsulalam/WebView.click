@@ -3,7 +3,7 @@ import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, 
 import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
-import { getStylePreset, inferStylePresetFromText, inferVisualStyleFromText, siteVisualStyles } from "../../lib/siteStylePresets";
+import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOptions } from "../../lib/prospectScoring";
 import HelpTooltip from "../../components/HelpTooltip";
@@ -809,7 +809,7 @@ export default function AdminLeads() {
     setIsGenerating(true);
     setGeneratingPlaceKey(placeKey);
     setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: "Generating site JSON..." } }));
-    
+
     // Simulate AI generation process with a mock JSON
     // A Real implementation would send 'place' to an OpenAI endpoint on our server
     const businessId = fullPlace.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + "-" + Math.floor(Math.random() * 1000);
@@ -846,6 +846,8 @@ export default function AdminLeads() {
       fullPlace.searchQuery,
     ].filter(Boolean).join(" ");
     const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
+    const shaderPreset = inferShaderPresetFromText(fontContext);
+    const shaderPresetMeta = getShaderPreset(shaderPreset);
     const fontPairing = inferFontPairingFromText(fontContext);
     const fontPairingMeta = getFontPairing(fontPairing);
     const fontPairingOptions = fontPairingsForText(fontContext, 5);
@@ -997,6 +999,16 @@ export default function AdminLeads() {
           description: visualStyleMeta.description,
           allowedValues: siteVisualStyles.map((item) => item.id),
           selectionRule: "Choose the visual structure that best matches the industry and desired feel.",
+        },
+        shaderPreset,
+        shaderConfig: {
+          preset: shaderPreset,
+          label: shaderPresetMeta.label,
+          description: shaderPresetMeta.description,
+          defaultOpacity: shaderPresetMeta.defaultOpacity,
+          defaultMotion: shaderPresetMeta.defaultMotion,
+          allowedValues: siteShaderPresets.map((item) => item.id),
+          selectionRule: "Choose a lightweight CSS procedural shader that matches the industry mood. Use none for maximum restraint.",
         },
         fontPairing,
         fontPairingConfig: {

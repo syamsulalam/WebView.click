@@ -20,7 +20,7 @@ import {
   Star,
   X,
 } from "lucide-react";
-import { normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
+import { getShaderPreset, normalizeShaderPreset, normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, googleFontImportUrl } from "../lib/fontPairings";
 import EditableText, { type EditableTextTag } from "./EditableText";
 import WebsiteActionPanel from "./WebsiteActionPanel";
@@ -56,6 +56,8 @@ function normalizeSiteData(siteData: any) {
   const conversion = siteData?.conversion || {};
   const stylePreset = design.stylePreset || themeVariables.stylePreset || brand.visualStyle || "local-clean";
   const visualStyle = design.visualStyle || design.shapeStyle || brand.imageTreatment || "soft-rounded";
+  const shaderConfig = design.shaderConfig && typeof design.shaderConfig === "object" ? design.shaderConfig : {};
+  const shaderPreset = design.shaderPreset || shaderConfig.preset || themeVariables.shaderPreset || "local-aurora";
   const fontPairing = design.fontPairing || typography.fontPairing || "montserrat-raleway";
 
   return {
@@ -78,6 +80,8 @@ function normalizeSiteData(siteData: any) {
     },
     stylePreset,
     visualStyle,
+    shaderPreset,
+    shaderConfig,
     fontPairing,
     fontPairingConfig: design.fontPairingConfig || {},
     brand: {
@@ -299,7 +303,7 @@ export default function SiteRenderer({
   const [editMode, setEditMode] = useState(false);
   const navCloseTimer = useRef<number | undefined>(undefined);
 
-  const { meta, colors: baseColors, typography, stylePreset, visualStyle, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const fontContext = [
     meta.businessName,
     meta.niche,
@@ -334,6 +338,8 @@ export default function SiteRenderer({
   const brandPhotoAttribution = (src?: string) => attributionText(src, brand.photoAttributions, brand.photoSource, brand.photoCaption);
   const presetClass = `wv-preset-${normalizeStylePreset(stylePreset)}`;
   const visualClass = `wv-visual-${normalizeVisualStyle(visualStyle)}`;
+  const shaderMeta = getShaderPreset(shaderPreset);
+  const shaderClass = `wv-shader-${normalizeShaderPreset(shaderPreset)}`;
   const homePageId = pages[0]?.pageId || "home";
   const isIndonesian = meta.language === "id";
   const labels = {
@@ -420,10 +426,30 @@ export default function SiteRenderer({
     "--color-bg": colors.background,
   } as React.CSSProperties;
   const siteCanvasStyles = {
+    "--wv-shader-opacity": Number.isFinite(Number(shaderConfig.opacity)) ? String(Math.max(0, Math.min(0.5, Number(shaderConfig.opacity)))) : String(shaderMeta.defaultOpacity),
+    "--wv-shader-motion": Number.isFinite(Number(shaderConfig.motion)) ? String(Math.max(0, Math.min(1, Number(shaderConfig.motion)))) : String(shaderMeta.defaultMotion),
     fontFamily: activeFontPairing.bodyCss || typography.bodyFont,
     backgroundColor: "var(--color-bg)",
     color: "var(--color-text)",
   } as React.CSSProperties;
+
+  useEffect(() => {
+    const canvas = document.querySelector<HTMLElement>("#rendered-site [data-wv-site-canvas]");
+    if (!canvas) return;
+    let frame = 0;
+    const updatePointer = (event: PointerEvent) => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        canvas.style.setProperty("--wv-pointer-x", ((event.clientX / Math.max(window.innerWidth, 1)) * 100).toFixed(2));
+        canvas.style.setProperty("--wv-pointer-y", ((event.clientY / Math.max(window.innerHeight, 1)) * 100).toFixed(2));
+      });
+    };
+    window.addEventListener("pointermove", updatePointer, { passive: true });
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", updatePointer);
+    };
+  }, [shaderPreset]);
 
   return (
     <div style={customStyles} id="rendered-site">
@@ -436,7 +462,8 @@ export default function SiteRenderer({
           font-family: ${activeFontPairing.headingCss || typography.headingFont};
         }
       `}</style>
-      <div data-wv-site-canvas="true" style={siteCanvasStyles} className={`min-h-screen flex flex-col ${presetClass} ${visualClass}`}>
+      <div data-wv-site-canvas="true" style={siteCanvasStyles} className={`min-h-screen flex flex-col ${presetClass} ${visualClass} ${shaderClass}`}>
+      <div data-wv-site-shader="true" aria-hidden="true" />
       <header style={{ backgroundColor: colors.primary, color: "#fff" }} className="py-4 px-6 md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <button
           type="button"
@@ -1074,7 +1101,7 @@ export default function SiteRenderer({
       )}
       </div>
 
-      <div data-export-remove="true" className="hide-in-export fixed bottom-20 left-5 z-[210] flex max-w-[calc(100vw-2.5rem)] flex-col items-start gap-2 md:bottom-5">
+      <div data-export-remove="true" data-wv-tool-ui="inline-edit-panel" className="hide-in-export fixed bottom-20 left-5 z-[210] flex max-w-[calc(100vw-2.5rem)] flex-col items-start gap-2 md:bottom-5">
         {editMode && (
           <div className="max-w-xs rounded-lg border border-indigo-100 bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow-xl backdrop-blur">
             Click site text to edit it. Changes are saved in this browser and included in the downloaded site.

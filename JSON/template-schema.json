@@ -29,6 +29,27 @@
       ],
       "selectionRule": "Choose soft-rounded for friendly/lifestyle brands, boxy-editorial for professional/legal/real estate, industrial-diagonal for contractors/auto/security, clean-minimal for clinics/cleaning/pool/service businesses, and bold-sport for fitness/training."
     },
+    "shaderPreset": "cafe-heat",
+    "shaderConfig": {
+      "preset": "cafe-heat",
+      "label": "Cafe Heat",
+      "description": "Warm roast-like glow and gentle grain for cafes, bakeries, restaurants, and food brands.",
+      "defaultOpacity": 0.26,
+      "defaultMotion": 0.45,
+      "allowedValues": [
+        "none",
+        "local-aurora",
+        "industrial-grid",
+        "aqua-caustics",
+        "organic-dapple",
+        "cafe-heat",
+        "salon-silk",
+        "fitness-pulse",
+        "legal-vellum",
+        "property-depth"
+      ],
+      "selectionRule": "Choose a lightweight CSS procedural shader that matches the industry mood. Use none for maximum restraint."
+    },
     "fontPairing": "lobster-open-sans",
     "fontPairingConfig": {
       "label": "Lobster + Open Sans",

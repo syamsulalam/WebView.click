@@ -505,6 +505,19 @@ function visualStyleForBusiness(text: string): string {
   return "soft-rounded";
 }
 
+function shaderPresetForBusiness(text: string) {
+  const key = text.toLowerCase();
+  if (/(contractor|concrete|roof|construction|builder|paving|masonry|auto|mechanic|security|locksmith|hvac|plumb|electric)/i.test(key)) return { id: "industrial-grid", label: "Industrial Grid", description: "Subtle diagonal/grid energy for hands-on trades and mechanical businesses.", defaultOpacity: 0.22, defaultMotion: 0.35 };
+  if (/(pool|spa|water|aquatic|cleaning|pressure washing|dental|clinic|medical|fresh)/i.test(key)) return { id: "aqua-caustics", label: "Aqua Caustics", description: "Light refraction bands for pool, cleaning, dental, and water-forward services.", defaultOpacity: 0.26, defaultMotion: 0.5 };
+  if (/(landscap|garden|lawn|tree|nursery|florist|yard|irrigation|mulch|arborist|organic)/i.test(key)) return { id: "organic-dapple", label: "Organic Dapple", description: "Leafy dappled light for outdoor, garden, lawn, and nature-oriented businesses.", defaultOpacity: 0.24, defaultMotion: 0.4 };
+  if (/(cafe|coffee|bakery|restaurant|bar|food|bistro|brunch|tea|pizza|taco|diner)/i.test(key)) return { id: "cafe-heat", label: "Cafe Heat", description: "Warm roast-like glow and gentle grain for cafes, bakeries, restaurants, and food brands.", defaultOpacity: 0.26, defaultMotion: 0.45 };
+  if (/(salon|spa|massage|beauty|nail|lashes|brow|esthetician|hair|luxe)/i.test(key)) return { id: "salon-silk", label: "Salon Silk", description: "Soft flowing satin bands for beauty, salon, spa, and premium lifestyle services.", defaultOpacity: 0.25, defaultMotion: 0.5 };
+  if (/(gym|fitness|trainer|martial|boxing|yoga|pilates|crossfit|workout|sport|energy)/i.test(key)) return { id: "fitness-pulse", label: "Fitness Pulse", description: "High-contrast energetic pulse for gyms, training, martial arts, and sports.", defaultOpacity: 0.24, defaultMotion: 0.65 };
+  if (/(law|attorney|legal|notary|immigration|tax|accountant|accounting|bookkeeping|financial|finance|insurance|advisor|mortgage|professional)/i.test(key)) return { id: "legal-vellum", label: "Legal Vellum", description: "Quiet paper-grain and authority lines for law, finance, accounting, and professional services.", defaultOpacity: 0.18, defaultMotion: 0.2 };
+  if (/(real estate|realtor|property|broker|home staging|apartment|rental|mortgage|premium)/i.test(key)) return { id: "property-depth", label: "Property Depth", description: "Measured depth gradients for real estate, property, staging, and premium home services.", defaultOpacity: 0.22, defaultMotion: 0.3 };
+  return { id: "local-aurora", label: "Local Aurora", description: "Soft palette clouds that make general local sites feel richer without becoming decorative.", defaultOpacity: 0.28, defaultMotion: 0.55 };
+}
+
 function fontPairingForBusiness(text: string) {
   const key = text.toLowerCase();
   if (/(contractor|concrete|roof|construction|builder|paving|masonry|mechanic|auto|security|locksmith)/i.test(key)) {
@@ -2942,13 +2955,14 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
 
     const designConfig = finalJson.design && typeof finalJson.design === "object" ? finalJson.design as Record<string, unknown> : {};
     const allowedVisualStyles = ["soft-rounded", "boxy-editorial", "industrial-diagonal", "clean-minimal", "bold-sport"];
+    const designContext = [
+      businessName,
+      asString(originData.formatted_address, asString(originData.formattedAddress)),
+      Array.isArray(originData.types) ? originData.types.join(" ") : "",
+      asString(originData.searchQuery),
+    ].filter(Boolean).join(" ");
     if (!allowedVisualStyles.includes(asString(designConfig.visualStyle))) {
-      designConfig.visualStyle = visualStyleForBusiness([
-        businessName,
-        asString(originData.formatted_address, asString(originData.formattedAddress)),
-        Array.isArray(originData.types) ? originData.types.join(" ") : "",
-        asString(originData.searchQuery),
-      ].filter(Boolean).join(" "));
+      designConfig.visualStyle = visualStyleForBusiness(designContext);
     }
     if (!designConfig.visualStyleConfig || typeof designConfig.visualStyleConfig !== "object") {
       designConfig.visualStyleConfig = {
@@ -2958,12 +2972,23 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
         selectionRule: "Use the visual structure that best matches the business niche and desired feel.",
       };
     }
-    const fontPairingMeta = fontPairingForBusiness([
-      businessName,
-      asString(originData.formatted_address, asString(originData.formattedAddress)),
-      Array.isArray(originData.types) ? originData.types.join(" ") : "",
-      asString(originData.searchQuery),
-    ].filter(Boolean).join(" "));
+    const shaderMeta = shaderPresetForBusiness(designContext);
+    const allowedShaderPresets = ["none", "local-aurora", "industrial-grid", "aqua-caustics", "organic-dapple", "cafe-heat", "salon-silk", "fitness-pulse", "legal-vellum", "property-depth"];
+    if (!allowedShaderPresets.includes(asString(designConfig.shaderPreset))) {
+      designConfig.shaderPreset = shaderMeta.id;
+    }
+    if (!designConfig.shaderConfig || typeof designConfig.shaderConfig !== "object") {
+      designConfig.shaderConfig = {
+        preset: designConfig.shaderPreset,
+        label: shaderMeta.label,
+        description: shaderMeta.description,
+        defaultOpacity: shaderMeta.defaultOpacity,
+        defaultMotion: shaderMeta.defaultMotion,
+        allowedValues: allowedShaderPresets,
+        selectionRule: "Choose a lightweight CSS procedural shader that matches the industry mood. Use none for maximum restraint.",
+      };
+    }
+    const fontPairingMeta = fontPairingForBusiness(designContext);
     if (!asString(designConfig.fontPairing)) {
       designConfig.fontPairing = fontPairingMeta.id;
     }

@@ -15,6 +15,16 @@ export type SiteVisualStyle = {
   keywords: RegExp;
 };
 
+export type SiteShaderPreset = {
+  id: string;
+  label: string;
+  description: string;
+  bestFor: string[];
+  defaultOpacity: number;
+  defaultMotion: number;
+  keywords: RegExp;
+};
+
 export const siteStylePresets: SiteStylePreset[] = [
   {
     id: "local-clean",
@@ -208,6 +218,113 @@ export function inferVisualStyleFromText(value: string) {
   return siteVisualStyles.find((style) => style.id !== "soft-rounded" && style.keywords.test(text))?.id || "soft-rounded";
 }
 
+export const siteShaderPresets: SiteShaderPreset[] = [
+  {
+    id: "none",
+    label: "None",
+    description: "No procedural shader layer.",
+    bestFor: ["plain utility pages", "older devices", "maximum restraint"],
+    defaultOpacity: 0,
+    defaultMotion: 0,
+    keywords: /^$/,
+  },
+  {
+    id: "local-aurora",
+    label: "Local Aurora",
+    description: "Soft palette clouds that make general local sites feel richer without becoming decorative.",
+    bestFor: ["general local business", "education", "pet care"],
+    defaultOpacity: 0.28,
+    defaultMotion: 0.55,
+    keywords: /(local|school|tutor|education|preschool|academy|pet|vet|friendly|general)/i,
+  },
+  {
+    id: "industrial-grid",
+    label: "Industrial Grid",
+    description: "Subtle diagonal/grid energy for hands-on trades and mechanical businesses.",
+    bestFor: ["contractors", "roofing", "concrete", "auto", "security"],
+    defaultOpacity: 0.22,
+    defaultMotion: 0.35,
+    keywords: /(contractor|concrete|roof|construction|builder|paving|masonry|auto|mechanic|security|locksmith|industrial|hvac|plumb|electric)/i,
+  },
+  {
+    id: "aqua-caustics",
+    label: "Aqua Caustics",
+    description: "Light refraction bands for pool, cleaning, dental, and water-forward services.",
+    bestFor: ["pool service", "cleaning", "dental", "spa"],
+    defaultOpacity: 0.26,
+    defaultMotion: 0.5,
+    keywords: /(pool|spa|water|aquatic|cleaning|pressure washing|dental|clinic|medical|fresh)/i,
+  },
+  {
+    id: "organic-dapple",
+    label: "Organic Dapple",
+    description: "Leafy dappled light for outdoor, garden, lawn, and nature-oriented businesses.",
+    bestFor: ["landscaping", "garden", "tree service", "florist"],
+    defaultOpacity: 0.24,
+    defaultMotion: 0.4,
+    keywords: /(landscap|garden|lawn|tree|nursery|florist|yard|irrigation|mulch|arborist|organic)/i,
+  },
+  {
+    id: "cafe-heat",
+    label: "Cafe Heat",
+    description: "Warm roast-like glow and gentle grain for cafes, bakeries, restaurants, and food brands.",
+    bestFor: ["cafes", "restaurants", "bakeries"],
+    defaultOpacity: 0.26,
+    defaultMotion: 0.45,
+    keywords: /(cafe|coffee|bakery|restaurant|bar|food|bistro|brunch|tea|pizza|taco|diner)/i,
+  },
+  {
+    id: "salon-silk",
+    label: "Salon Silk",
+    description: "Soft flowing satin bands for beauty, salon, spa, and premium lifestyle services.",
+    bestFor: ["salon", "spa", "beauty", "nail studio"],
+    defaultOpacity: 0.25,
+    defaultMotion: 0.5,
+    keywords: /(salon|spa|massage|beauty|nail|lashes|brow|esthetician|hair|luxe)/i,
+  },
+  {
+    id: "fitness-pulse",
+    label: "Fitness Pulse",
+    description: "High-contrast energetic pulse for gyms, training, martial arts, and sports.",
+    bestFor: ["fitness", "gyms", "personal trainers", "martial arts"],
+    defaultOpacity: 0.24,
+    defaultMotion: 0.65,
+    keywords: /(gym|fitness|trainer|martial|boxing|yoga|pilates|crossfit|workout|sport|energy)/i,
+  },
+  {
+    id: "legal-vellum",
+    label: "Legal Vellum",
+    description: "Quiet paper-grain and authority lines for law, finance, accounting, and professional services.",
+    bestFor: ["law", "finance", "accounting", "insurance"],
+    defaultOpacity: 0.18,
+    defaultMotion: 0.2,
+    keywords: /(law|attorney|legal|notary|immigration|tax|accountant|accounting|bookkeeping|financial|finance|insurance|advisor|mortgage|professional)/i,
+  },
+  {
+    id: "property-depth",
+    label: "Property Depth",
+    description: "Measured depth gradients for real estate, property, staging, and premium home services.",
+    bestFor: ["real estate", "property managers", "home staging"],
+    defaultOpacity: 0.22,
+    defaultMotion: 0.3,
+    keywords: /(real estate|realtor|property|broker|home staging|apartment|rental|mortgage|premium)/i,
+  },
+];
+
+export function normalizeShaderPreset(value = "local-aurora") {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return siteShaderPresets.some((preset) => preset.id === normalized) ? normalized : "local-aurora";
+}
+
+export function getShaderPreset(value = "local-aurora") {
+  return siteShaderPresets.find((preset) => preset.id === normalizeShaderPreset(value)) || siteShaderPresets[1];
+}
+
+export function inferShaderPresetFromText(value: string) {
+  const text = value.toLowerCase();
+  return siteShaderPresets.find((preset) => preset.id !== "none" && preset.keywords.test(text))?.id || "local-aurora";
+}
+
 export const siteStylePresetCss = `
   @property --wv-border-angle {
     syntax: "<angle>";
@@ -230,8 +347,184 @@ export const siteStylePresetCss = `
     --wv-subtle-border: rgba(15, 23, 42, 0.12);
     --wv-gradient-primary: linear-gradient(135deg, var(--color-primary), var(--color-accent));
     --wv-gradient-accent: linear-gradient(135deg, var(--color-accent), var(--color-secondary));
+    position: relative;
+    isolation: isolate;
+    overflow-x: clip;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+  }
+
+  [data-wv-site-shader] {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    opacity: var(--wv-shader-opacity, 0.24);
+    mix-blend-mode: var(--wv-shader-blend, normal);
+    contain: strict;
+  }
+
+  [data-wv-site-shader]::before,
+  [data-wv-site-shader]::after {
+    content: "";
+    position: absolute;
+    inset: -18%;
+    opacity: 0.85;
+    background-repeat: no-repeat;
+    transform: translate3d(
+      calc((var(--wv-pointer-x, 50) - 50) * 0.11vw * var(--wv-shader-motion, 0.5)),
+      calc((var(--wv-pointer-y, 50) - 50) * 0.08vh * var(--wv-shader-motion, 0.5)),
+      0
+    );
+    will-change: transform, opacity;
+  }
+
+  [data-wv-site-shader]::after {
+    opacity: 0.55;
+    transform: translate3d(
+      calc((50 - var(--wv-pointer-x, 50)) * 0.07vw * var(--wv-shader-motion, 0.5)),
+      calc((50 - var(--wv-pointer-y, 50)) * 0.05vh * var(--wv-shader-motion, 0.5)),
+      0
+    );
+  }
+
+  .wv-shader-none [data-wv-site-shader] {
+    display: none;
+  }
+
+  .wv-shader-local-aurora [data-wv-site-shader]::before {
+    background:
+      radial-gradient(circle at 18% 22%, color-mix(in oklab, var(--color-accent) 36%, transparent), transparent 28%),
+      radial-gradient(circle at 84% 10%, color-mix(in oklab, var(--color-primary) 22%, transparent), transparent 32%),
+      radial-gradient(circle at 62% 78%, color-mix(in oklab, var(--color-secondary) 74%, transparent), transparent 30%);
+    filter: blur(10px) saturate(1.15);
+  }
+
+  .wv-shader-local-aurora [data-wv-site-shader]::after {
+    background:
+      conic-gradient(from 180deg at 50% 50%, transparent, color-mix(in oklab, var(--color-accent) 26%, transparent), transparent, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent);
+    filter: blur(34px);
+  }
+
+  .wv-shader-industrial-grid [data-wv-site-shader]::before {
+    background:
+      repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-primary) 16%, transparent) 0 1px, transparent 1px 18px),
+      linear-gradient(110deg, transparent 0 36%, color-mix(in oklab, var(--color-accent) 20%, transparent) 36% 38%, transparent 38% 100%),
+      radial-gradient(circle at 80% 20%, color-mix(in oklab, var(--color-accent) 24%, transparent), transparent 24%);
+    filter: contrast(1.08);
+  }
+
+  .wv-shader-industrial-grid [data-wv-site-shader]::after {
+    background: repeating-linear-gradient(90deg, transparent 0 34px, color-mix(in oklab, var(--color-primary) 10%, transparent) 34px 35px);
+    opacity: 0.34;
+  }
+
+  .wv-shader-aqua-caustics [data-wv-site-shader]::before {
+    background:
+      repeating-radial-gradient(ellipse at 30% 24%, color-mix(in oklab, var(--color-accent) 22%, transparent) 0 2px, transparent 2px 18px),
+      radial-gradient(circle at 82% 12%, color-mix(in oklab, #38bdf8 34%, transparent), transparent 30%),
+      linear-gradient(180deg, color-mix(in oklab, var(--color-secondary) 55%, transparent), transparent 62%);
+    filter: blur(0.4px) saturate(1.25);
+  }
+
+  .wv-shader-aqua-caustics [data-wv-site-shader]::after {
+    background: conic-gradient(from 35deg at 65% 45%, transparent, color-mix(in oklab, #67e8f9 24%, transparent), transparent 34%);
+    filter: blur(22px);
+  }
+
+  .wv-shader-organic-dapple [data-wv-site-shader]::before {
+    background:
+      radial-gradient(ellipse at 18% 18%, color-mix(in oklab, #84cc16 26%, transparent), transparent 24%),
+      radial-gradient(ellipse at 74% 16%, color-mix(in oklab, var(--color-accent) 22%, transparent), transparent 24%),
+      repeating-conic-gradient(from 18deg at 50% 50%, color-mix(in oklab, var(--color-primary) 10%, transparent) 0 8deg, transparent 8deg 22deg);
+    filter: blur(10px) saturate(1.08);
+  }
+
+  .wv-shader-organic-dapple [data-wv-site-shader]::after {
+    background:
+      radial-gradient(circle at 24% 78%, color-mix(in oklab, var(--color-secondary) 72%, transparent), transparent 28%),
+      radial-gradient(circle at 86% 64%, color-mix(in oklab, #22c55e 20%, transparent), transparent 26%);
+  }
+
+  .wv-shader-cafe-heat [data-wv-site-shader]::before {
+    background:
+      radial-gradient(circle at 22% 18%, color-mix(in oklab, #f97316 34%, transparent), transparent 28%),
+      radial-gradient(circle at 88% 20%, color-mix(in oklab, var(--color-accent) 28%, transparent), transparent 24%),
+      linear-gradient(135deg, color-mix(in oklab, var(--color-primary) 16%, transparent), transparent 48%);
+    filter: blur(14px) saturate(1.16);
+  }
+
+  .wv-shader-cafe-heat [data-wv-site-shader]::after {
+    background:
+      repeating-radial-gradient(circle at 50% 50%, rgba(120, 53, 15, 0.08) 0 1px, transparent 1px 7px),
+      conic-gradient(from 90deg at 70% 40%, transparent, color-mix(in oklab, #f59e0b 18%, transparent), transparent 42%);
+    filter: blur(0.2px);
+  }
+
+  .wv-shader-salon-silk [data-wv-site-shader]::before {
+    background:
+      conic-gradient(from 120deg at 50% 45%, transparent, color-mix(in oklab, var(--color-accent) 28%, transparent), transparent, color-mix(in oklab, #f0abfc 20%, transparent), transparent),
+      radial-gradient(circle at 18% 18%, color-mix(in oklab, #f5d0fe 42%, transparent), transparent 28%);
+    filter: blur(20px) saturate(1.16);
+  }
+
+  .wv-shader-salon-silk [data-wv-site-shader]::after {
+    background: linear-gradient(115deg, transparent 0 28%, color-mix(in oklab, white 20%, transparent) 36%, transparent 46% 100%);
+    filter: blur(18px);
+  }
+
+  .wv-shader-fitness-pulse [data-wv-site-shader]::before {
+    background:
+      radial-gradient(circle at 82% 18%, color-mix(in oklab, var(--color-accent) 32%, transparent), transparent 24%),
+      linear-gradient(125deg, transparent 0 42%, color-mix(in oklab, var(--color-accent) 22%, transparent) 42% 45%, transparent 45% 100%),
+      repeating-linear-gradient(100deg, transparent 0 22px, color-mix(in oklab, var(--color-primary) 10%, transparent) 22px 24px);
+    filter: contrast(1.12) saturate(1.1);
+  }
+
+  .wv-shader-fitness-pulse [data-wv-site-shader]::after {
+    background: radial-gradient(circle at 20% 78%, color-mix(in oklab, var(--color-accent) 28%, transparent), transparent 24%);
+    filter: blur(20px);
+  }
+
+  .wv-shader-legal-vellum [data-wv-site-shader]::before {
+    background:
+      repeating-linear-gradient(0deg, color-mix(in oklab, var(--color-primary) 8%, transparent) 0 1px, transparent 1px 22px),
+      radial-gradient(circle at 80% 20%, color-mix(in oklab, var(--color-accent) 18%, transparent), transparent 26%),
+      linear-gradient(180deg, color-mix(in oklab, var(--color-secondary) 38%, transparent), transparent 54%);
+    filter: sepia(0.12);
+  }
+
+  .wv-shader-legal-vellum [data-wv-site-shader]::after {
+    background: repeating-radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.035) 0 1px, transparent 1px 6px);
+    opacity: 0.32;
+  }
+
+  .wv-shader-property-depth [data-wv-site-shader]::before {
+    background:
+      linear-gradient(135deg, color-mix(in oklab, var(--color-primary) 16%, transparent), transparent 52%),
+      radial-gradient(circle at 76% 18%, color-mix(in oklab, var(--color-accent) 22%, transparent), transparent 28%),
+      repeating-linear-gradient(90deg, transparent 0 42px, color-mix(in oklab, var(--color-primary) 7%, transparent) 42px 43px);
+    filter: blur(4px);
+  }
+
+  .wv-shader-property-depth [data-wv-site-shader]::after {
+    background:
+      linear-gradient(45deg, transparent 0 48%, color-mix(in oklab, white 16%, transparent) 48% 50%, transparent 50% 100%);
+    opacity: 0.4;
+  }
+
+  @supports not (color: color-mix(in oklab, white, black)) {
+    [data-wv-site-shader]::before {
+      background:
+        radial-gradient(circle at 20% 20%, rgba(79, 70, 229, 0.18), transparent 30%),
+        radial-gradient(circle at 80% 12%, rgba(15, 23, 42, 0.12), transparent 28%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 58%);
+    }
+
+    [data-wv-site-shader]::after {
+      background: repeating-linear-gradient(135deg, rgba(15, 23, 42, 0.035) 0 1px, transparent 1px 12px);
+    }
   }
 
   @supports (color: color-mix(in oklab, white, black)) {
@@ -438,6 +731,16 @@ export const siteStylePresetCss = `
     }
   }
 
+  @media (prefers-reduced-motion: no-preference) {
+    [data-wv-site-shader]::before {
+      animation: wv-shader-drift 26s ease-in-out infinite alternate;
+    }
+
+    [data-wv-site-shader]::after {
+      animation: wv-shader-counter 34s ease-in-out infinite alternate;
+    }
+  }
+
   @keyframes wv-section-rise {
     from {
       opacity: 0.001;
@@ -452,6 +755,32 @@ export const siteStylePresetCss = `
   @keyframes wv-border-orbit {
     to {
       --wv-border-angle: 360deg;
+    }
+  }
+
+  @keyframes wv-shader-drift {
+    from {
+      opacity: 0.62;
+      scale: 1;
+      rotate: 0deg;
+    }
+    to {
+      opacity: 0.9;
+      scale: 1.04;
+      rotate: 2deg;
+    }
+  }
+
+  @keyframes wv-shader-counter {
+    from {
+      opacity: 0.38;
+      scale: 1.02;
+      rotate: 0deg;
+    }
+    to {
+      opacity: 0.66;
+      scale: 1;
+      rotate: -2deg;
     }
   }
 
