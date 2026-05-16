@@ -1064,7 +1064,7 @@ export default function SiteRenderer({
             </div>
           </div>
           <div>
-            <p className="wv-heading mb-4 text-sm font-semibold">{labels.pages}</p>
+            <p className="wv-heading mb-4 text-[1.05rem] font-semibold leading-tight">{labels.pages}</p>
             <div className="space-y-2 opacity-85">
               {navigation.headerMenu.map((menu: any) => (
                 <button key={menu.href} type="button" data-wv-tab={menu.href.replace("#", "")} onClick={() => changeTab(menu.href.replace("#", ""))} className="flex items-center gap-2 hover:opacity-100">
@@ -1075,7 +1075,7 @@ export default function SiteRenderer({
             </div>
           </div>
           <div>
-            <p className="wv-heading mb-4 text-sm font-semibold">{labels.highlights}</p>
+            <p className="wv-heading mb-4 text-[1.05rem] font-semibold leading-tight">{labels.highlights}</p>
             <div className="space-y-2 opacity-85">
               {footerHighlights.slice(0, 6).map((item: any) => {
                 const href = offeringHref(item);
@@ -1096,7 +1096,7 @@ export default function SiteRenderer({
             </div>
           </div>
           <div>
-            <p className="wv-heading mb-4 text-sm font-semibold">{labels.contact}</p>
+            <p className="wv-heading mb-4 text-[1.05rem] font-semibold leading-tight">{labels.contact}</p>
             <div className="space-y-3 opacity-85">
               {(displayPhone || globalConfig.header.ctaButton?.href) && (
                 <p className="flex gap-2">

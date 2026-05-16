@@ -65,7 +65,7 @@ Logic penting:
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
 - Footer dirender lebih lengkap: brand/about, sosial, halaman, highlights/offers, kontak, alamat, dan jam operasional jika tersedia.
 - Footer diberi boundary `data-wv-site-footer` agar tetap memakai palette/font site tetapi terlindung dari efek card/body/image hover yang tidak cocok untuk konteks footer.
-- Footer column labels seperti Pages/Highlights/Contact memakai class `wv-heading` agar mengikuti heading font pairing tanpa mengubah struktur semantik.
+- Footer column labels seperti Pages/Highlights/Contact memakai class `wv-heading` dengan ukuran sedikit lebih besar dari body text agar display/heading font terbaca intentional tanpa mengubah struktur semantik.
 - Footer highlights memprioritaskan `products + services` daripada `offers`, supaya link footer menuju halaman detail `detailPageId` masing-masing. Jika tidak ada produk/layanan, footer fallback ke offers/capabilities.
 - Product/service labels in navbar submenu and footer highlights are title-cased for presentation, while preserving the underlying `detailPageId` target.
 - Nomor telepon dirender sebagai `tel:` link dan email sebagai `mailto:` link.
