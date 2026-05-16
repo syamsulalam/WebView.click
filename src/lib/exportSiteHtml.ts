@@ -179,7 +179,22 @@ function ownerInlineScript() {
     var target = allPages.find(function (page) { return page.getAttribute("data-wv-page") === pageId || page.id === pageId; });
     if (!target) {
       var anchorTarget = document.getElementById(pageId);
-      if (anchorTarget && shouldScroll !== false) anchorTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (anchorTarget) {
+        var ownerPage = anchorTarget.closest ? anchorTarget.closest("[data-wv-page]") : null;
+        var ownerPageId = ownerPage && ownerPage.getAttribute("data-wv-page");
+        if (ownerPageId && allPages.some(function (page) { return page.getAttribute("data-wv-page") === ownerPageId || page.id === ownerPageId; })) {
+          activate(ownerPageId, false);
+          if (shouldScroll !== false) {
+            window.setTimeout(function () {
+              var currentAnchorTarget = document.getElementById(pageId);
+              if (currentAnchorTarget) currentAnchorTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 0);
+          }
+        } else if (shouldScroll !== false) {
+          anchorTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        if (history.replaceState) history.replaceState(null, "", "#" + pageId);
+      }
       return;
     }
     allPages.forEach(function (page) {
@@ -201,10 +216,32 @@ function ownerInlineScript() {
     if (!trigger) return;
     var pageId = trigger.getAttribute("data-wv-tab") || (trigger.getAttribute("href") || "").replace(/^#/, "");
     if (!pageId) return;
-    if (pages().some(function (page) { return page.getAttribute("data-wv-page") === pageId || page.id === pageId; })) {
+    if (pages().some(function (page) { return page.getAttribute("data-wv-page") === pageId || page.id === pageId; }) || document.getElementById(pageId)) {
       event.preventDefault();
       activate(pageId, true);
     }
+  });
+  document.addEventListener("click", function (event) {
+    var ratingButton = event.target && event.target.closest ? event.target.closest("[data-wv-feedback-rating]") : null;
+    if (!ratingButton) return;
+    var root = ratingButton.closest("[data-wv-feedback]");
+    if (!root) return;
+    var rating = Number(ratingButton.getAttribute("data-wv-feedback-rating") || "0");
+    var reviewUrl = root.getAttribute("data-wv-review-url") || "";
+    Array.prototype.slice.call(root.querySelectorAll("[data-wv-feedback-rating]")).forEach(function (button) {
+      var value = Number(button.getAttribute("data-wv-feedback-rating") || "0");
+      button.setAttribute("aria-checked", value === rating ? "true" : "false");
+    });
+    var ratingInput = root.querySelector("[data-wv-feedback-rating-input]");
+    if (ratingInput) ratingInput.value = String(rating);
+    var lowPanel = root.querySelector("[data-wv-feedback-low]");
+    var highMessage = root.querySelector("[data-wv-feedback-high]");
+    if (rating >= 4 && reviewUrl) {
+      window.location.href = reviewUrl;
+      return;
+    }
+    if (lowPanel) lowPanel.classList.toggle("hidden", !(rating > 0 && rating <= 3));
+    if (highMessage) highMessage.classList.toggle("hidden", !(rating >= 4));
   });
   Array.prototype.slice.call(document.querySelectorAll("[data-wv-menu]")).forEach(function (menu) {
     var menuKey = menu.getAttribute("data-wv-menu") || "";
@@ -259,9 +296,9 @@ function ownerInlineScript() {
     var data = new FormData(form);
     var business = form.getAttribute("data-wv-business") || document.title || "this business";
     var email = form.getAttribute("data-wv-mailto") || "";
+    var subject = form.getAttribute("data-wv-subject") || ("Website inquiry for " + business);
     var lines = [];
     data.forEach(function (value, key) { lines.push(key + ": " + value); });
-    var subject = "Website inquiry for " + business;
     var body = lines.length ? lines.join("\\n") : "New inquiry for " + business;
     window.location.href = "mailto:" + email + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
   });

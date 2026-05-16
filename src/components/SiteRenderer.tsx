@@ -44,6 +44,7 @@ function normalizeSiteData(siteData: any) {
   const footer = globalConfig.footer || {};
   const navigation = siteData?.navigation || {};
   const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
+  const sourceData = siteData?.sourceData || {};
   const trust = siteData?.trust || globalConfig.socialProof || {};
   const businessProfile = siteData?.businessProfile || {};
   const brand = siteData?.brand || {};
@@ -59,6 +60,33 @@ function normalizeSiteData(siteData: any) {
   const shaderConfig = design.shaderConfig && typeof design.shaderConfig === "object" ? design.shaderConfig : {};
   const shaderPreset = design.shaderPreset || shaderConfig.preset || themeVariables.shaderPreset || "local-aurora";
   const fontPairing = design.fontPairing || typography.fontPairing || "montserrat-raleway";
+  const isIndonesian = meta.language === "id";
+  const hasFeedbackPage = pages.some((page: any) => String(page?.pageId || "") === "feedback");
+  const normalizedPages = hasFeedbackPage ? pages : [
+    ...pages,
+    {
+      pageId: "feedback",
+      pageTitle: isIndonesian ? "Feedback" : "Feedback",
+      sections: [
+        {
+          type: "feedback",
+          id: "feedback",
+          content: {
+            title: isIndonesian ? "Bagaimana pengalaman Anda?" : "How was your experience?",
+            description: isIndonesian
+              ? "Jika Anda sudah memakai layanan ini, beri rating agar bisnis bisa menjaga kualitasnya."
+              : "If you have used this service, share a quick rating so the business can keep improving.",
+          },
+        },
+      ],
+    },
+  ];
+  const baseHeaderMenu = Array.isArray(navigation.headerMenu)
+    ? navigation.headerMenu
+    : pages.map((page: any) => ({ label: page.pageTitle || page.pageId, href: `#${page.pageId}` }));
+  const headerMenu = baseHeaderMenu.some((item: any) => String(item?.href || "") === "#feedback")
+    ? baseHeaderMenu
+    : [...baseHeaderMenu, { label: "Feedback", href: "#feedback" }];
 
   return {
     meta: {
@@ -118,6 +146,7 @@ function normalizeSiteData(siteData: any) {
     products,
     services,
     capabilities,
+    sourceData,
     location,
     hours,
     conversion: {
@@ -142,11 +171,9 @@ function normalizeSiteData(siteData: any) {
       },
     },
     navigation: {
-      headerMenu: Array.isArray(navigation.headerMenu)
-        ? navigation.headerMenu
-        : pages.map((page: any) => ({ label: page.pageTitle || page.pageId, href: `#${page.pageId}` })),
+      headerMenu,
     },
-    pages,
+    pages: normalizedPages,
   };
 }
 
@@ -239,9 +266,14 @@ function normalizedFieldName(field: any, index: number) {
 
 function offeringHref(item: any) {
   if (typeof item?.href === "string" && item.href) return item.href;
-  if (typeof item?.cta?.href === "string" && item.cta.href) return item.cta.href;
   if (typeof item?.detailPageId === "string" && item.detailPageId) return `#${item.detailPageId}`;
+  if (typeof item?.cta?.href === "string" && item.cta.href) return item.cta.href;
   return "";
+}
+
+function priceHintLooksAction(value: unknown) {
+  const text = String(value || "").toLowerCase();
+  return /\b(contact|estimate|quote|call|consult|ask|hubungi|estimasi|penawaran|telepon|konsultasi|tanya)\b/.test(text);
 }
 
 function titleCaseLabel(value = "") {
@@ -304,9 +336,10 @@ export default function SiteRenderer({
   const [navSubmenuPosition, setNavSubmenuPosition] = useState({ left: 0, top: 0 });
   const [headerCompact, setHeaderCompact] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState(0);
   const navCloseTimer = useRef<number | undefined>(undefined);
 
-  const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, sourceData, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const fontContext = [
     meta.businessName,
     meta.niche,
@@ -359,6 +392,13 @@ export default function SiteRenderer({
     hoursTitle: isIndonesian ? "Jam Operasional" : "Business Hours",
     locationTitle: isIndonesian ? "Lokasi & Kontak" : "Location & Contact",
     openMaps: isIndonesian ? "Buka Google Maps" : "Open Google Maps",
+    feedbackTitle: isIndonesian ? "Bagaimana pengalaman Anda?" : "How was your experience?",
+    feedbackDescription: isIndonesian ? "Pilih rating setelah memakai layanan ini." : "Choose a rating after using this service.",
+    feedbackSatisfied: isIndonesian ? "Terima kasih. Kami akan membuka Google Review." : "Thanks. We will open Google Reviews.",
+    feedbackImprove: isIndonesian ? "Apa yang bisa diperbaiki?" : "What could be improved?",
+    feedbackPlaceholder: isIndonesian ? "Tulis keluhan, masukan, atau hal yang perlu ditindaklanjuti..." : "Write the complaint, feedback, or anything that needs follow-up...",
+    feedbackSend: isIndonesian ? "Kirim masukan ke pemilik" : "Send feedback to the owner",
+    feedbackNoEmail: isIndonesian ? "Email bisnis belum tersedia, jadi feedback belum bisa dikirim otomatis." : "Business email is not available, so feedback cannot be sent automatically yet.",
     heroFallback: isIndonesian ? `Website resmi ${meta.businessName}` : `${meta.businessName} official website`,
     featuresFallback: isIndonesian ? "Mengapa Memilih Kami?" : "Why Choose Us?",
     capabilityFallback: isIndonesian ? "Tersedia di lokasi ini." : "Available from this business.",
@@ -391,12 +431,24 @@ export default function SiteRenderer({
     const nextPageId = pageId || homePageId;
     if (!pages.some((page: any) => page.pageId === nextPageId)) {
       const target = document.getElementById(nextPageId);
-      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (target) {
+        const ownerPage = target.closest("[data-wv-page]") as HTMLElement | null;
+        const ownerPageId = ownerPage?.getAttribute("data-wv-page") || "";
+        if (ownerPageId && ownerPageId !== activeTab && pages.some((page: any) => page.pageId === ownerPageId)) {
+          setActiveTab(ownerPageId);
+          window.requestAnimationFrame(() => {
+            document.getElementById(nextPageId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+          return;
+        }
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
       return;
     }
     setActiveTab(nextPageId);
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
   };
+  const sectionId = (section: any, fallback = "") => String(section?.id || fallback || "").trim() || undefined;
   const openNavMenu = (key: string, event?: ReactMouseEvent<HTMLElement>) => {
     if (navCloseTimer.current) window.clearTimeout(navCloseTimer.current);
     if (event?.currentTarget) {
@@ -427,6 +479,10 @@ export default function SiteRenderer({
   const primaryPhone = isPlaceholderPhone(rawPrimaryPhone) ? "" : rawPrimaryPhone;
   const displayPhone = isPlaceholderPhone(rawDisplayPhone) ? "" : rawDisplayPhone;
   const displayEmail = businessProfile.contact?.email || businessProfile.email || globalConfig.footer.email || "";
+  const sourcePlaceId = String(sourceData.placeId || sourceData.place_id || businessProfile.placeId || businessProfile.place_id || "").trim();
+  const googleReviewHref = sourcePlaceId
+    ? `https://search.google.com/local/writereview?placeid=${encodeURIComponent(sourcePlaceId)}`
+    : String(sourceData.googleMapsUri || businessProfile.contact?.directionsUrl || location.directionsUrl || "").trim();
 
   const customStyles = {
     "--color-primary": colors.primary,
@@ -474,6 +530,28 @@ export default function SiteRenderer({
       return { menu, menuKey: `${pageId}-${idx}`, children: Array.isArray(menu.children) ? menu.children : [] };
     })
     .filter((item: any) => item.children.length > 0);
+  const tabPageIdForHref = (href: string) => {
+    const pageId = String(href || "").startsWith("#") ? String(href).replace("#", "") : "";
+    return pageId && pages.some((page: any) => page.pageId === pageId) ? pageId : "";
+  };
+  const tabPropsForHref = (href: string) => {
+    const pageId = tabPageIdForHref(href);
+    return pageId ? { "data-wv-tab": pageId } : {};
+  };
+  const handleSiteHrefClick = (href: string, event: ReactMouseEvent<HTMLElement>) => {
+    const targetId = String(href || "").startsWith("#") ? String(href).replace("#", "") : "";
+    if (targetId && (pages.some((page: any) => page.pageId === targetId) || document.getElementById(targetId))) {
+      event.preventDefault();
+      changeTab(targetId);
+    }
+  };
+  const contactActionHref = conversion.primaryCta?.href || globalConfig.header.ctaButton.href || (primaryPhone ? phoneHref(primaryPhone) : "") || "#contact";
+  const chooseFeedbackRating = (rating: number) => {
+    setFeedbackRating(rating);
+    if (rating >= 4 && googleReviewHref) {
+      window.location.href = googleReviewHref;
+    }
+  };
 
   return (
     <div style={customStyles} id="rendered-site">
@@ -718,18 +796,66 @@ export default function SiteRenderer({
                         {section.content?.description && editableText(`${section.id}.description`, section.content.description, "p", "mt-3 text-slate-600", undefined, true)}
                       </div>
                       <div className="grid md:grid-cols-3 gap-5">
-                        {items.map((offer: any, i: number) => (
-                          <div key={i} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-                            <div className="h-44">
-                              <ImageFrame src={offer.image} label={offer.title} attribution={brandPhotoAttribution(offer.image)} exportName={`offer-${offer.title || i + 1}`} />
-                            </div>
-                            <div className="p-6 text-center">
-                              {editableText(`${section.id}.offer.${i}.title`, offer.title, "h3", "text-lg font-bold text-slate-950")}
-                              {editableText(`${section.id}.offer.${i}.description`, offer.description, "p", "mt-2 text-sm text-slate-600", undefined, true)}
-                              {offer.priceHint && editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "p", "mt-4 text-sm font-semibold", { color: colors.accent })}
-                            </div>
-                          </div>
-                        ))}
+                        {items.map((offer: any, i: number) => {
+                          const cardHref = offeringHref(offer);
+                          const priceHref = priceHintLooksAction(offer.priceHint) ? contactActionHref : "";
+                          const ctaHref = String(offer.cta?.href || (!priceHref ? cardHref : "") || "");
+                          const ctaText = String(offer.cta?.text || (ctaHref ? labels.learnMore : ""));
+                          const cardLabel = `${offer.title || labels.learnMore}`;
+                          return (
+                            <article
+                              key={i}
+                              className={`group relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition ${cardHref && !editMode ? "hover:-translate-y-0.5 hover:shadow-md" : ""}`}
+                            >
+                              {cardHref && !editMode && (
+                                <a
+                                  href={cardHref}
+                                  {...tabPropsForHref(cardHref)}
+                                  onClick={(event) => handleSiteHrefClick(cardHref, event)}
+                                  className="absolute inset-0 z-0 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                                  style={{ outlineColor: colors.accent }}
+                                  aria-label={`${labels.learnMore}: ${cardLabel}`}
+                                />
+                              )}
+                              <div className="relative z-10 pointer-events-none">
+                                <div className="h-44">
+                                  <ImageFrame src={offer.image} label={offer.title} attribution={brandPhotoAttribution(offer.image)} exportName={`offer-${offer.title || i + 1}`} />
+                                </div>
+                                <div className="p-6 text-center">
+                                  {editableText(`${section.id}.offer.${i}.title`, offer.title, "h3", "text-lg font-bold text-slate-950")}
+                                  {editableText(`${section.id}.offer.${i}.description`, offer.description, "p", "mt-2 text-sm text-slate-600", undefined, true)}
+                                  {offer.priceHint && (
+                                    priceHref && !editMode ? (
+                                      <a
+                                        href={priceHref}
+                                        {...tabPropsForHref(priceHref)}
+                                        onClick={(event) => handleSiteHrefClick(priceHref, event)}
+                                        className="pointer-events-auto mt-4 inline-flex items-center justify-center gap-2 text-sm font-semibold hover:underline"
+                                        style={{ color: colors.accent }}
+                                      >
+                                        {editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "span")}
+                                      </a>
+                                    ) : (
+                                      editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "p", "mt-4 text-sm font-semibold", { color: colors.accent })
+                                    )
+                                  )}
+                                  {ctaHref && ctaText && !editMode && (
+                                    <a
+                                      href={ctaHref}
+                                      {...tabPropsForHref(ctaHref)}
+                                      onClick={(event) => handleSiteHrefClick(ctaHref, event)}
+                                      className="pointer-events-auto mt-5 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+                                      style={{ backgroundColor: colors.primary }}
+                                    >
+                                      {buttonIcon(ctaText, ctaHref, 15)}
+                                      {ctaText}
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
                       </div>
                     </div>
                   </section>
@@ -824,7 +950,7 @@ export default function SiteRenderer({
                 const regularHours = Array.isArray(hoursSource) ? hoursSource : [];
                 const hoursTitle = section.content?.hoursTitle || section.content?.openingHoursTitle || labels.hoursTitle;
                 return (
-                  <section key={section.id} className="py-20 px-6 bg-white">
+                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
                         <div className="mb-5 flex items-center gap-3 text-2xl">
@@ -960,13 +1086,90 @@ export default function SiteRenderer({
                 );
               }
 
+              if (section.type === "feedback") {
+                const feedbackEmail = section.content?.email || displayEmail;
+                const feedbackSubject = `${meta.businessName} customer feedback`;
+                const lowRatingSelected = feedbackRating > 0 && feedbackRating <= 3;
+                const highRatingSelected = feedbackRating >= 4;
+                return (
+                  <section
+                    key={section.id}
+                    id={sectionId(section, "feedback")}
+                    data-wv-section={sectionId(section, "feedback")}
+                    data-wv-feedback="true"
+                    data-wv-review-url={googleReviewHref}
+                    className="py-20 px-6 bg-slate-50"
+                  >
+                    <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                      {editableText(`${section.id}.title`, section.content?.title || labels.feedbackTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
+                      {editableText(`${section.id}.description`, section.content?.description || labels.feedbackDescription, "p", "mx-auto mt-3 max-w-2xl text-slate-600", undefined, true)}
+                      <div className="mt-8 flex justify-center gap-2" role="radiogroup" aria-label="Satisfaction rating">
+                        {[1, 2, 3, 4, 5].map((rating) => (
+                          <button
+                            key={rating}
+                            type="button"
+                            data-wv-feedback-rating={rating}
+                            onClick={() => chooseFeedbackRating(rating)}
+                            className={`inline-flex h-12 w-12 items-center justify-center rounded-full border text-slate-500 transition hover:-translate-y-0.5 hover:bg-slate-50 ${feedbackRating >= rating ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}
+                            aria-label={`${rating} star${rating === 1 ? "" : "s"}`}
+                            aria-checked={feedbackRating === rating}
+                            role="radio"
+                          >
+                            <Star size={24} fill={feedbackRating >= rating ? colors.accent : "none"} color={feedbackRating >= rating ? colors.accent : "currentColor"} />
+                          </button>
+                        ))}
+                      </div>
+                      {highRatingSelected && googleReviewHref && (
+                        <p data-wv-feedback-high className="mt-5 text-sm font-medium text-emerald-700">{labels.feedbackSatisfied}</p>
+                      )}
+                      {highRatingSelected && !googleReviewHref && (
+                        <p data-wv-feedback-high className="mt-5 text-sm font-medium text-amber-700">
+                          {isIndonesian ? "Link Google Review belum tersedia untuk bisnis ini." : "Google Review link is not available for this business yet."}
+                        </p>
+                      )}
+                      <div data-wv-feedback-low className={`${lowRatingSelected ? "" : "hidden"} mt-8 text-left`}>
+                        <h3 className="text-lg font-semibold text-slate-950">{labels.feedbackImprove}</h3>
+                        <form
+                          className="mt-4 space-y-4"
+                          data-wv-mailto={feedbackEmail}
+                          data-wv-business={meta.businessName}
+                          data-wv-subject={feedbackSubject}
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            const formData = new FormData(event.currentTarget);
+                            const message = String(formData.get("feedback") || "").trim();
+                            const rating = String(formData.get("rating") || feedbackRating || "");
+                            const body = [`Rating: ${rating}/5`, message ? `Feedback:\n${message}` : ""].filter(Boolean).join("\n\n");
+                            window.location.href = mailHref(feedbackEmail, feedbackSubject, body) || `mailto:?subject=${encodeURIComponent(feedbackSubject)}&body=${encodeURIComponent(body)}`;
+                          }}
+                        >
+                          <input type="hidden" name="rating" value={feedbackRating || ""} data-wv-feedback-rating-input="true" />
+                          <textarea
+                            name="feedback"
+                            required
+                            rows={5}
+                            placeholder={labels.feedbackPlaceholder}
+                            className="w-full rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          {!feedbackEmail && <p className="text-xs font-medium text-amber-700">{labels.feedbackNoEmail}</p>}
+                          <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: colors.primary }}>
+                            <Mail size={16} />
+                            {labels.feedbackSend}
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </section>
+                );
+              }
+
               if (section.type === "contactForm") {
                 const contactEmail = section.content?.email || displayEmail;
                 const rawContactPhone = section.content?.phone || displayPhone;
                 const contactPhone = isPlaceholderPhone(rawContactPhone) ? "" : rawContactPhone;
                 const formFields = Array.isArray(section.content?.formConfig?.fields) ? section.content.formConfig.fields : [];
                 return (
-                  <section key={section.id} className="py-20 px-6">
+                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} className="py-20 px-6">
                     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row border border-gray-100">
                       <div style={{ backgroundColor: colors.primary, color: "#fff" }} className="p-10 md:w-2/5">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-2xl font-bold mb-6")}

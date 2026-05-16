@@ -46,11 +46,14 @@ Logic penting:
 - Header memakai grid 3 kolom `brand | centered nav | CTA` di desktop supaya menu tetap center terhadap seluruh navbar. Nama bisnis panjang ditruncate di rail kiri, bukan mendorong menu ke kanan.
 - Submenu diberi boundary `data-wv-site-submenu` agar mengikuti konteks navbar, bukan mewarisi styling body/card generated site.
 - Pergantian tab menjalankan scroll-to-top.
+- Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section, sehingga old generated JSON yang tidak punya page `contact` tetap bisa memakai nav/footer Contact.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - `hoursLocation` memakai `content.hoursTitle` / `content.openingHoursTitle` atau fallback label `Business Hours` / `Jam Operasional` untuk card jam, bukan `content.title`, agar tidak dobel dengan card `Location & Contact`.
+- Renderer otomatis menambahkan page `feedback` jika JSON belum punya. Page ini meminta rating 1-5; rating 4-5 membuka Google Review exact place jika `sourceData.placeId` tersedia, sedangkan rating 1-3 membuka form feedback yang dikirim via `mailto:` ke email bisnis.
 - Feature grid cards dirender center-aligned: icon, title, dan body berada di tengah card agar tampilan lebih rapi seperti demo.
 - Trust bar dan feature icons dirender sebagai SVG langsung tanpa wrapper background agar icon tidak terlihat mengecil; icon subheading `hoursLocation` memakai ukuran relatif heading.
 - Grid marketing 3 kolom seperti offers, reviews, dan generic grid cards memakai content text-center agar komposisi tiap card lebih seimbang.
+- Offer/service cards di homepage memakai `offer.href` atau `offer.detailPageId` sebagai full-card link menuju halaman detail; `offer.cta.href` hanya menjadi fallback jika tidak ada detail link. CTA button dirender eksplisit dari `offer.cta`, dan price/action text seperti `Contact for estimate` diarahkan ke contact action.
 - Review cards memakai quotation marks dekoratif sebagai `wv-heading` spans kiri/kanan, sehingga mengikuti font heading aktif tanpa memakai heading tag.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
 - Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
@@ -627,7 +630,7 @@ Logic Owner HTML Export:
 - `src/lib/exportSiteHtml.ts` membuat zip owner berisi hanya `index.html`.
 - Export menghapus `<script>` internal, `.hide-in-export`, dan `[data-export-remove="true"]`.
 - Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
-- Export menyertakan inline script owner untuk tab navigation, fixed overlay submenu hover/positioning, compact-on-scroll header, contact `mailto:`, dan shader pointer CSS variables (`--wv-pointer-x`, `--wv-pointer-y`) agar shader procedural tetap responsif di file HTML statis.
+- Export menyertakan inline script owner untuk tab navigation, section-anchor fallback seperti `#contact`, fixed overlay submenu hover/positioning, compact-on-scroll header, contact/feedback `mailto:`, feedback rating redirect/form behavior, dan shader pointer CSS variables (`--wv-pointer-x`, `--wv-pointer-y`) agar shader procedural tetap responsif di file HTML statis.
 - Export mengambil gambar yang sedang tampil di DOM, menyimpannya ke folder `/img` di dalam zip, lalu mengubah `<img src>` menjadi path relatif seperti `img/{businessId}-hero.jpg`. Ini termasuk foto Google Business Profile yang sedang diproxy via WebView.click saat tombol download diklik, sehingga HTML owner tidak perlu hotlink ke Google atau Function WebView.click untuk gambar.
 - Export menambahkan `README-FIRST.txt` sebagai ringkasan done-for-you `$197/year`, lalu `SETUP-GUIDE.txt` sebagai panduan teknis self-hosting domain/hosting/DNS/upload/SSL/maintenance.
 - Kedua file `.txt` tersebut menyertakan URL preview/download asli (`window.location.href`) supaya owner bisa kembali ke halaman tempat zip dibuat.
