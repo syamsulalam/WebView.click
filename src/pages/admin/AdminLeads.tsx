@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, Images, PanelRightOpen, X, Play, ListChecks, History } from "lucide-react";
+import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, Images, PanelRightOpen, X, Play, ListChecks, History, SlidersHorizontal } from "lucide-react";
 import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
@@ -41,6 +41,7 @@ export default function AdminLeads() {
   const [searchHistory, setSearchHistory] = useState<any[]>([]);
   const [loadingSearchHistory, setLoadingSearchHistory] = useState(false);
   const [selectedSearchHistoryKey, setSelectedSearchHistoryKey] = useState("");
+  const [filtersOpen, setFiltersOpen] = useLocalStorageState("webview.adminLeads.filtersOpen", "0");
   const [autoWebsitePrecheck, setAutoWebsitePrecheck] = useLocalStorageState("webview.adminLeads.autoWebsitePrecheck", "1");
   const [websitePrecheckLimit, setWebsitePrecheckLimit] = useLocalStorageState("webview.adminLeads.websitePrecheckLimit", "10");
   const [aiProvider, setAiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
@@ -119,14 +120,25 @@ export default function AdminLeads() {
 
   const placeMapsUrl = (place: any) => place.url || place.googleMapsUri || place.maps_url || "";
 
+  const isWeakGoogleMapsSearchUrl = (value: string) => {
+    if (!value) return true;
+    try {
+      const url = new URL(value);
+      return url.hostname.includes("google.") && url.pathname.includes("/maps/search");
+    } catch {
+      return value.includes("/maps/search");
+    }
+  };
+
+  const googleMapsPlaceIdUrl = (placeId: string) =>
+    `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(placeId)}`;
+
   const googleBusinessListingUrl = (place: any) => {
     const direct = placeMapsUrl(place);
-    if (direct) return direct;
     const placeId = place?.place_id || place?.id || "";
-    const query = [place?.name, place?.formatted_address || place?.formattedAddress || place?.vicinity].filter(Boolean).join(" ");
-    const params = new URLSearchParams({ api: "1", query: query || placeId || "Google Business Profile" });
-    if (placeId) params.set("query_place_id", placeId);
-    return `https://www.google.com/maps/search/?${params.toString()}`;
+    if (direct && !isWeakGoogleMapsSearchUrl(direct)) return direct;
+    if (placeId) return googleMapsPlaceIdUrl(placeId);
+    return direct || "https://www.google.com/maps";
   };
 
   const hasGatheredDetails = (place: any) => {
@@ -1338,6 +1350,45 @@ export default function AdminLeads() {
     .filter((place) => prospectScore(place).score >= minScore)
     .sort((a, b) => prospectScore(b).score - prospectScore(a).score);
   const selectedVisibleProspects = visibleProspects.filter((place) => selectedProspects[getPlaceKey(place)]);
+  const statusLabels: Record<string, string> = {
+    active: "Active pipeline",
+    new: "New",
+    details_loaded: "Details loaded",
+    site_generated: "Site generated",
+    contacted: "Contacted",
+    skipped: "Skipped",
+    all: "All saved",
+  };
+  const websiteLabels: Record<string, string> = {
+    none: "No website",
+    unknown: "Unknown website",
+    has: "Has website",
+    all: "All websites",
+  };
+  const activeFilterChips = [
+    prospectFilter !== "active" ? `Status: ${statusLabels[prospectFilter] || prospectFilter}` : "",
+    websiteFilter !== "all" ? `Website: ${websiteLabels[websiteFilter] || websiteFilter}` : "",
+    minRatingFilter !== "0" ? `Rating ${minRatingFilter}+` : "",
+    minReviewsFilter !== "0" ? `Reviews ${minReviewsFilter}+` : "",
+    minScoreFilter !== "0" ? `Score ${minScoreFilter}+` : "",
+    cityFilter.trim() ? `City: ${cityFilter.trim()}` : "",
+    stateFilter.trim() ? `State: ${stateFilter.trim()}` : "",
+    nicheFilter.trim() ? `Niche: ${nicheFilter.trim()}` : "",
+    autoWebsitePrecheck !== "1" ? "No pre-check" : "",
+    websitePrecheckLimit !== "10" ? `Check top ${websitePrecheckLimit}` : "",
+  ].filter(Boolean);
+  const resetLeadFilters = () => {
+    setProspectFilter("active");
+    setWebsiteFilter("none");
+    setMinRatingFilter("0");
+    setMinReviewsFilter("0");
+    setMinScoreFilter("0");
+    setCityFilter("");
+    setStateFilter("");
+    setNicheFilter("");
+    setAutoWebsitePrecheck("1");
+    setWebsitePrecheckLimit("10");
+  };
 
   const toggleProspectSelection = (place: any, checked: boolean) => {
     const placeKey = getPlaceKey(place);
@@ -1498,148 +1549,143 @@ export default function AdminLeads() {
             </div>
           )}
         </div>
-        <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Prospect status</span>
-            <select
-              value={prospectFilter}
-              onChange={(event) => setProspectFilter(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="active">Active pipeline</option>
-              <option value="new">New</option>
-              <option value="details_loaded">Details loaded</option>
-              <option value="site_generated">Site generated</option>
-              <option value="contacted">Contacted</option>
-              <option value="skipped">Skipped</option>
-              <option value="all">All saved</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
-              Website
-              <HelpTooltip text="No website verified means Place Details was checked and did not return a website. Unknown means the listing has not been checked yet." />
-            </span>
-            <select
-              value={websiteFilter}
-              onChange={(event) => setWebsiteFilter(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="none">No website verified first</option>
-              <option value="unknown">Website unknown</option>
-              <option value="has">Has website</option>
-              <option value="all">All</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Min rating</span>
-            <select
-              value={minRatingFilter}
-              onChange={(event) => setMinRatingFilter(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="0">Any rating</option>
-              <option value="3.5">3.5+</option>
-              <option value="4">4.0+</option>
-              <option value="4.5">4.5+</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchActive(false);
-              fetchProspectDrafts();
-            }}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-          >
-            <RefreshCw size={15} />
-            Reload drafts
-          </button>
-          <label className="text-sm">
-            <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
-              Website check
-              <HelpTooltip text="Auto pre-check calls lightweight Place Details for top search results so existing-website businesses can be deprioritized before gather/generate." />
-            </span>
-            <select
-              value={autoWebsitePrecheck}
-              onChange={(event) => setAutoWebsitePrecheck(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="1">Auto pre-check websites</option>
-              <option value="0">Search only</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
-              Check limit
-              <HelpTooltip text="Controls how many top Google Places results get website pre-check calls during search. Higher is more accurate but uses more Places Details requests." />
-            </span>
-            <select
-              value={websitePrecheckLimit}
-              onChange={(event) => setWebsitePrecheckLimit(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="5">Top 5</option>
-              <option value="10">Top 10</option>
-              <option value="20">Top 20</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Min reviews</span>
-            <select
-              value={minReviewsFilter}
-              onChange={(event) => setMinReviewsFilter(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="0">Any reviews</option>
-              <option value="10">10+</option>
-              <option value="25">25+</option>
-              <option value="50">50+</option>
-              <option value="100">100+</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
-              Min score
-              <HelpTooltip text="Conversion score prioritizes verified no-website businesses with strong rating, useful review count, phone, US market, and no generated site yet." />
-            </span>
-            <select
-              value={minScoreFilter}
-              onChange={(event) => setMinScoreFilter(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              {scoreThresholdOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(filtersOpen === "1" ? "0" : "1")}
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                  filtersOpen === "1" ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <SlidersHorizontal size={16} />
+                Filters
+                <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] text-white">{activeFilterChips.length}</span>
+              </button>
+              {activeFilterChips.slice(0, 6).map((chip) => (
+                <span key={chip} className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
+                  {chip}
+                </span>
               ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">City</span>
-            <input
-              value={cityFilter}
-              onChange={(event) => setCityFilter(event.target.value)}
-              placeholder="Dallas"
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">State</span>
-            <input
-              value={stateFilter}
-              onChange={(event) => setStateFilter(event.target.value)}
-              placeholder="TX"
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Niche</span>
-            <input
-              value={nicheFilter}
-              onChange={(event) => setNicheFilter(event.target.value)}
-              placeholder="concrete"
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </label>
+              {activeFilterChips.length > 6 && (
+                <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">+{activeFilterChips.length - 6}</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={resetLeadFilters}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <X size={14} />
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchActive(false);
+                  fetchProspectDrafts();
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <RefreshCw size={14} />
+                Reload drafts
+              </button>
+            </div>
+          </div>
+
+          {filtersOpen === "1" && (
+            <div className="mt-3 grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-3 xl:grid-cols-5">
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Status</span>
+                <select value={prospectFilter} onChange={(event) => setProspectFilter(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="active">Active pipeline</option>
+                  <option value="new">New</option>
+                  <option value="details_loaded">Details loaded</option>
+                  <option value="site_generated">Site generated</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="skipped">Skipped</option>
+                  <option value="all">All saved</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  Website
+                  <HelpTooltip text="No website verified means Place Details was checked and did not return a website. Unknown means the listing has not been checked yet." />
+                </span>
+                <select value={websiteFilter} onChange={(event) => setWebsiteFilter(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="none">No website verified first</option>
+                  <option value="unknown">Website unknown</option>
+                  <option value="has">Has website</option>
+                  <option value="all">All</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Rating</span>
+                <select value={minRatingFilter} onChange={(event) => setMinRatingFilter(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="0">Any rating</option>
+                  <option value="3.5">3.5+</option>
+                  <option value="4">4.0+</option>
+                  <option value="4.5">4.5+</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Reviews</span>
+                <select value={minReviewsFilter} onChange={(event) => setMinReviewsFilter(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="0">Any reviews</option>
+                  <option value="10">10+</option>
+                  <option value="25">25+</option>
+                  <option value="50">50+</option>
+                  <option value="100">100+</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  Score
+                  <HelpTooltip text="Conversion score prioritizes verified no-website businesses with strong rating, useful review count, phone, US market, and no generated site yet." />
+                </span>
+                <select value={minScoreFilter} onChange={(event) => setMinScoreFilter(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                  {scoreThresholdOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">City</span>
+                <input value={cityFilter} onChange={(event) => setCityFilter(event.target.value)} placeholder="Dallas" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">State</span>
+                <input value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} placeholder="TX" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Niche</span>
+                <input value={nicheFilter} onChange={(event) => setNicheFilter(event.target.value)} placeholder="concrete" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  Website check
+                  <HelpTooltip text="Auto pre-check calls lightweight Place Details for top search results so existing-website businesses can be deprioritized before gather/generate." />
+                </span>
+                <select value={autoWebsitePrecheck} onChange={(event) => setAutoWebsitePrecheck(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="1">Auto pre-check</option>
+                  <option value="0">Search only</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                  Check limit
+                  <HelpTooltip text="Controls how many top Google Places results get website pre-check calls during search. Higher is more accurate but uses more Places Details requests." />
+                </span>
+                <select value={websitePrecheckLimit} onChange={(event) => setWebsitePrecheckLimit(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="5">Top 5</option>
+                  <option value="10">Top 10</option>
+                  <option value="20">Top 20</option>
+                </select>
+              </label>
+            </div>
+          )}
         </div>
         <div className="flex gap-4">
           <div className="flex-1 relative">

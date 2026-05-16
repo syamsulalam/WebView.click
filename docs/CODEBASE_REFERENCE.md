@@ -196,7 +196,7 @@ Logic penting:
 - Badge `Score` bisa diklik untuk membuka popover breakdown poin per faktor, berguna untuk tuning formula scoring.
 - Bobot scoring default berasal dari `src/lib/prospectScoring.ts`, lalu bisa dioverride dari `/admin/settings`.
 - Header list prospek menampilkan badge preset scoring aktif agar admin tahu ranking visible list sedang memakai preset apa.
-- Nama bisnis di list link ke Google Business/Maps listing. Jika exact `url` belum tersedia, fallback URL memakai `query_place_id` agar cross-check tetap menuju listing spesifik sebaik mungkin.
+- Nama bisnis di list link ke Google Business/Maps listing. Jika exact `url` dari Place Details belum tersedia, fallback memakai `/maps/place/?q=place_id:{placeId}` agar tidak membuka search query generik.
 - Search result diberi `searchQuery` agar generator tidak memakai tipe Places generik seperti `establishment` sebagai niche ketika Google tidak memberi kategori spesifik.
 - Untuk situs gratis, foto Google Places tetap hotlink/proxy runtime dan tidak di-upload ke R2.
 - JSON mock fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
@@ -215,7 +215,7 @@ Logic penting:
 - Setiap result Google Places di-upsert ke `places_prospects` sebagai prospect draft agar pencarian lama tidak hilang.
 - Panel `Search history` membaca search term lama dari `places_search_cache`, lalu menghydrate setiap business card dari `places_prospects` berdasarkan Google `place_id`. Progress bisnis tetap current walaupun listing yang sama muncul di beberapa search term.
 - Klik search term history memuat prospect list dari cache tanpa panggil Google Places baru, tetap memakai action/status workflow yang sama seperti search aktif.
-- Filter prospect tersimpan memakai status, website/no website, minimum rating, minimum review count, city, state, dan niche. Default workflow memprioritaskan bisnis tanpa website.
+- Filter prospect tersimpan memakai status, website/no website, minimum rating, minimum review count, city, state, dan niche. UI filter dibuat compact: toolbar `Filters`, chips aktif, tombol reset, dan panel advanced collapsible agar tidak memakan banyak ruang.
 - Filter prospect juga punya minimum conversion score (`Any`, `50+`, `70+`, `85+`) untuk menyembunyikan prospek kualitas rendah dari list.
 - Default minimum conversion score dan bobot scoring dibaca dari `/admin/settings` (`SCORING_MIN_SCORE_DEFAULT`, `SCORING_WEIGHTS_JSON`) dengan fallback ke `src/lib/prospectScoring.ts`; `SCORING_PRESET` disimpan untuk UI Settings.
 - Penjelasan panjang di toolbar/filter CRM dipindahkan ke tooltip hover agar UI admin tetap ringkas.
