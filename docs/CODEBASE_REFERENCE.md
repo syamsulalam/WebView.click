@@ -49,6 +49,7 @@ Logic penting:
 - Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section, sehingga old generated JSON yang tidak punya page `contact` tetap bisa memakai nav/footer Contact.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - `hoursLocation` memakai `content.hoursTitle` / `content.openingHoursTitle` atau fallback label `Business Hours` / `Jam Operasional` untuk card jam, bukan `content.title`, agar tidak dobel dengan card `Location & Contact`.
+- Renderer otomatis menambahkan aggregate page `services` jika JSON punya `products`, `services`, atau `offers` tetapi belum punya `pageId: "services"`. Page ini menampilkan daftar semua produk/layanan dan tiap card tetap link ke detail page masing-masing.
 - Renderer otomatis menambahkan page `feedback` jika JSON belum punya. Page ini meminta rating 1-5; rating 4-5 membuka Google Review exact place jika `sourceData.placeId` tersedia, sedangkan rating 1-3 membuka form feedback yang dikirim via `mailto:` ke email bisnis.
 - Feature grid cards dirender center-aligned: icon, title, dan body berada di tengah card agar tampilan lebih rapi seperti demo.
 - Trust bar dan feature icons dirender sebagai SVG langsung tanpa wrapper background agar icon tidak terlihat mengecil; icon subheading `hoursLocation` memakai ukuran relatif heading.

@@ -61,9 +61,49 @@ function normalizeSiteData(siteData: any) {
   const shaderPreset = design.shaderPreset || shaderConfig.preset || themeVariables.shaderPreset || "local-aurora";
   const fontPairing = design.fontPairing || typography.fontPairing || "montserrat-raleway";
   const isIndonesian = meta.language === "id";
-  const hasFeedbackPage = pages.some((page: any) => String(page?.pageId || "") === "feedback");
-  const normalizedPages = hasFeedbackPage ? pages : [
+  const offeringIndexItems = [...products, ...services].length > 0
+    ? [...products, ...services].map((item: any) => ({
+        title: item.title || item.label,
+        description: item.summary || item.description,
+        priceHint: item.priceHint,
+        image: item.image,
+        href: item.href,
+        detailPageId: item.detailPageId,
+        cta: item.cta || { text: isIndonesian ? "Lihat detail" : "View details", href: item.detailPageId ? `#${item.detailPageId}` : item.href || "" },
+      }))
+    : offers.map((item: any) => ({
+        title: item.title || item.label,
+        description: item.description || item.summary,
+        priceHint: item.priceHint,
+        image: item.image,
+        href: item.href,
+        detailPageId: item.detailPageId,
+        cta: item.cta,
+      }));
+  const hasServicesPage = pages.some((page: any) => String(page?.pageId || "") === "services");
+  const pagesWithServices = hasServicesPage || offeringIndexItems.length === 0 ? pages : [
     ...pages,
+    {
+      pageId: "services",
+      pageTitle: isIndonesian ? "Layanan" : "Services",
+      sections: [
+        {
+          type: "offers",
+          id: "services",
+          content: {
+            title: isIndonesian ? "Semua produk dan layanan" : "All Products and Services",
+            description: isIndonesian
+              ? "Pilih penawaran untuk melihat halaman detail, manfaat, dan langkah berikutnya."
+              : "Choose an offering to view details, benefits, and the next step.",
+            items: offeringIndexItems,
+          },
+        },
+      ],
+    },
+  ];
+  const hasFeedbackPage = pagesWithServices.some((page: any) => String(page?.pageId || "") === "feedback");
+  const normalizedPages = hasFeedbackPage ? pagesWithServices : [
+    ...pagesWithServices,
     {
       pageId: "feedback",
       pageTitle: isIndonesian ? "Feedback" : "Feedback",
@@ -83,10 +123,22 @@ function normalizeSiteData(siteData: any) {
   ];
   const baseHeaderMenu = Array.isArray(navigation.headerMenu)
     ? navigation.headerMenu
-    : pages.map((page: any) => ({ label: page.pageTitle || page.pageId, href: `#${page.pageId}` }));
-  const headerMenu = baseHeaderMenu.some((item: any) => String(item?.href || "") === "#feedback")
-    ? baseHeaderMenu
-    : [...baseHeaderMenu, { label: "Feedback", href: "#feedback" }];
+    : pagesWithServices.map((page: any) => ({ label: page.pageTitle || page.pageId, href: `#${page.pageId}` }));
+  const headerMenuWithServices = offeringIndexItems.length > 0 && !baseHeaderMenu.some((item: any) => String(item?.href || "") === "#services")
+    ? [
+        ...baseHeaderMenu,
+        {
+          label: isIndonesian ? "Layanan" : "Services",
+          href: "#services",
+          children: offeringIndexItems
+            .map((item: any) => ({ label: item.title, href: item.detailPageId ? `#${item.detailPageId}` : item.href || item.cta?.href || "" }))
+            .filter((item: any) => item.label && item.href),
+        },
+      ]
+    : baseHeaderMenu;
+  const headerMenu = headerMenuWithServices.some((item: any) => String(item?.href || "") === "#feedback")
+    ? headerMenuWithServices
+    : [...headerMenuWithServices, { label: "Feedback", href: "#feedback" }];
 
   return {
     meta: {
