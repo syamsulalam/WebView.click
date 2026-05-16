@@ -1573,7 +1573,7 @@ async function generateAiJson(
   const systemMsg =
     `You are an expert web designer and copywriter. Generate a strictly typed JSON output formatted to this exact schema:\n` +
     `${JSON.stringify(templateSchema)}\n\n` +
-    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. Also choose design.visualStyle from these exact values: soft-rounded, boxy-editorial, industrial-diagonal, clean-minimal, bold-sport. Use industrial-diagonal for contractors/concrete/roofing/auto/security when a harder boxy look with diagonal image edges fits; boxy-editorial for legal/finance/real estate; clean-minimal for clinics/cleaning/pool/service businesses; bold-sport for fitness/training; soft-rounded for friendly lifestyle businesses. Include design.visualStyleConfig with label, description, allowedValues, and selectionRule. Choose design.fontPairing from the schema examples/allowedValues or an industry-matched pairing id and include design.fontPairingConfig with label, headingFont, bodyFont, mood, allowedValues, and selectionRule; contractors should prefer strong condensed pairings, legal/finance should prefer authoritative serif pairings, clinics should prefer clean readable pairings, cafes/restaurants may use friendly display/script pairings, and fitness/auto may use energetic bold pairings. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If a Submitted Scaffold JSON is provided, preserve its existing pageIds, detailPageIds, navigation hrefs, sourceData, photo URLs, and contact/map fields. In that case, focus on improving copy quality, specificity, service/product naming, FAQ depth, feature descriptions, and conversion text instead of restructuring the site. Mark meta.generatedWithAi true and meta.generationMode ai_assisted when you successfully enrich or generate the JSON. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
+    "Use the business info provided to fill in the text, adjust colors based on their niche, and provide engaging copywriting. Match the website language to the business region: United States or other English-speaking markets should use English, Indonesia should use Indonesian, and any explicit meta.language/source locale should win. Choose exactly one design.stylePreset from design.styleSystem.allowedPresets and keep design.stylePresetConfig consistent with that choice. Also choose design.visualStyle from these exact values: soft-rounded, boxy-editorial, industrial-diagonal, clean-minimal, bold-sport. Use industrial-diagonal for contractors/concrete/roofing/auto/security when a harder boxy look with diagonal image edges fits; boxy-editorial for legal/finance/real estate; clean-minimal for clinics/cleaning/pool/service businesses; bold-sport for fitness/training; soft-rounded for friendly lifestyle businesses. Include design.visualStyleConfig with label, description, allowedValues, and selectionRule. Choose design.fontPairing from the schema examples/allowedValues or an industry-matched pairing id and include design.fontPairingConfig with label, headingFont, bodyFont, mood, allowedValues, and selectionRule; contractors should prefer strong condensed pairings, legal/finance should prefer authoritative serif pairings, clinics should prefer clean readable pairings, cafes/restaurants may use friendly display/script pairings, and fitness/auto may use energetic bold pairings. If brandPalette is provided, use those colors as primary/accent/secondary inspiration. Always include meta.faviconSvg as a small inline SVG favicon, preferably an initial/monogram using the brand primary color; do not use a remote favicon URL. Choose button text and CTA intent carefully; where JSON supports iconSvg, pick an icon concept that matches the text/intent and provide a simple inline SVG icon. Every features section item should include its own relevant iconSvg, especially on product/service detail pages. Identify whether the business sells products, services, or both. Fill productServiceStrategy.mode as products/services/both, then create products[] and/or services[] with id, title, type, summary, description, priceHint, image, detailPageId, bestFor, included, highlights, and relatedReviewKeywords. Add a Products/Services/Both navbar item with children linking to each detailPageId. Create one non-thin page per product/service detailPageId. Each detail page must include at least: hero, offeringDetail, a features section with iconSvg items tailored to that specific offering, relevant reviews/social proof when available, FAQ, and contact/location CTA; reuse Google reviews that match relatedReviewKeywords when possible. If two or more usable business photos are available, include a dedicated gallery page with pageId gallery, a navigation item linking to #gallery, and an imageGallery section using those business photos. If a Submitted Scaffold JSON is provided, preserve its existing pageIds, detailPageIds, navigation hrefs, sourceData, photo URLs, and contact/map fields. In that case, focus on improving copy quality, specificity, service/product naming, FAQ depth, feature descriptions, and conversion text instead of restructuring the site, but still add a gallery page when enough photos exist and it is missing. Mark meta.generatedWithAi true and meta.generationMode ai_assisted when you successfully enrich or generate the JSON. If selectedLogoImageUrl is provided, preserve it as the header logo image and include photo source/reference/attribution metadata under brand. For google_places images, keep the proxy URL/reference and do not convert it to a local asset filename. ONLY output JSON, no markdown formatting.";
   const userMsg = `Business Name: ${businessName}\nData: ${JSON.stringify(originData)}\nBrand palette: ${JSON.stringify(brandPalette)}\nPalette options: ${JSON.stringify(paletteOptions)}\nSelected logo image: ${selectedLogoImageUrl}\nSelected logo source: ${selectedLogoSource}\nSelected logo reference: ${selectedLogoReference}\nSelected logo attribution priority: ${selectedLogoPriority}\nSelected logo attributions: ${JSON.stringify(selectedLogoAttributions)}\nSubmitted Scaffold JSON: ${submittedJson ? JSON.stringify(submittedJson) : "none"}`;
 
   let responseContent = "";
@@ -1913,6 +1913,89 @@ function compactSiteManifest(finalJson: Record<string, unknown>, env: Env, busin
     summary: siteSummaryFromJson(finalJson, businessId),
     updatedAt: new Date().toISOString(),
   };
+}
+
+function photoReferenceFromPlacePhoto(photo: unknown) {
+  if (!photo || typeof photo !== "object" || Array.isArray(photo)) return "";
+  const record = photo as Record<string, unknown>;
+  return asString(record.photo_reference, asString(record.reference, asString(record.name)));
+}
+
+function googlePlacesPhotoProxyUrl(reference: string, maxWidth = 960) {
+  return `/api/places/photo?reference=${encodeURIComponent(reference)}&maxwidth=${maxWidth}`;
+}
+
+function addUniqueImageUrl(target: string[], value: unknown) {
+  const url = asString(value).trim();
+  if (!url || target.includes(url)) return;
+  target.push(url);
+}
+
+function collectGalleryImages(finalJson: Record<string, unknown>, originData: Record<string, unknown>) {
+  const images: string[] = [];
+  const brand = finalJson.brand && typeof finalJson.brand === "object" ? finalJson.brand as Record<string, unknown> : {};
+  addUniqueImageUrl(images, brand.preferredHeroImage);
+  addUniqueImageUrl(images, brand.logoImageUrl);
+
+  for (const key of ["products", "services", "offers"]) {
+    const items = Array.isArray(finalJson[key]) ? finalJson[key] as Array<Record<string, unknown>> : [];
+    for (const item of items) {
+      addUniqueImageUrl(images, item.image);
+    }
+  }
+
+  const photos = Array.isArray(originData.photos) ? originData.photos : [];
+  for (const photo of photos) {
+    const reference = photoReferenceFromPlacePhoto(photo);
+    if (reference) addUniqueImageUrl(images, googlePlacesPhotoProxyUrl(reference, 960));
+  }
+
+  return images.filter((image) => !image.startsWith("data:")).slice(0, 8);
+}
+
+function ensureGalleryPage(finalJson: Record<string, unknown>, originData: Record<string, unknown>) {
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  const hasGallery = pages.some((page) =>
+    asString(page.pageId) === "gallery" ||
+    (Array.isArray(page.sections) && (page.sections as Array<Record<string, unknown>>).some((section) => asString(section.type) === "imageGallery")),
+  );
+  if (hasGallery) return;
+
+  const galleryImages = collectGalleryImages(finalJson, originData);
+  if (galleryImages.length < 2) return;
+
+  const meta = finalJson.meta && typeof finalJson.meta === "object" ? finalJson.meta as Record<string, unknown> : {};
+  const isIndonesian = asString(meta.language).toLowerCase().startsWith("id");
+  pages.push({
+    pageId: "gallery",
+    pageTitle: isIndonesian ? "Galeri" : "Gallery",
+    sections: [
+      {
+        type: "imageGallery",
+        id: "gallery-main",
+        content: {
+          title: isIndonesian ? "Galeri Foto" : "Photo Gallery",
+          description: isIndonesian ? "Foto profil bisnis dan visual yang tersedia dari data Google Business Profile." : "Business profile photos and available visuals from Google Business Profile data.",
+          images: galleryImages,
+        },
+      },
+    ],
+  });
+  finalJson.pages = pages;
+
+  const navigation = finalJson.navigation && typeof finalJson.navigation === "object" ? finalJson.navigation as Record<string, unknown> : {};
+  const headerMenu = Array.isArray(navigation.headerMenu) ? navigation.headerMenu as Array<Record<string, unknown>> : [];
+  if (!headerMenu.some((item) => asString(item.href) === "#gallery")) {
+    const galleryItem = { label: isIndonesian ? "Galeri" : "Gallery", href: "#gallery" };
+    const contactIndex = headerMenu.findIndex((item) => /contact|kontak/i.test(asString(item.label)) || asString(item.href) === "#contact");
+    if (contactIndex >= 0) {
+      headerMenu.splice(contactIndex, 0, galleryItem);
+    } else {
+      headerMenu.push(galleryItem);
+    }
+    navigation.headerMenu = headerMenu;
+    finalJson.navigation = navigation;
+  }
 }
 
 async function readSiteJsonFromStorage(row: { business_id: string; json_content?: string; r2_json_key?: string }, env: Env) {
@@ -2266,6 +2349,7 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       finalJson.design = design;
     }
 
+    ensureGalleryPage(finalJson, originData);
     normalizeSiteColorContrast(finalJson);
 
     try {

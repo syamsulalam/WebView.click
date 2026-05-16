@@ -14,9 +14,11 @@ import {
   Mail,
   MapPin,
   MessageCircle,
+  Pencil,
   Phone,
   PhoneCall,
   Star,
+  X,
 } from "lucide-react";
 import { normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, googleFontImportUrl } from "../lib/fontPairings";
@@ -294,6 +296,7 @@ export default function SiteRenderer({
   const initialPage = siteData?.pages?.[0]?.pageId || "home";
   const [activeTab, setActiveTab] = useState(initialPage);
   const [openMenuKey, setOpenMenuKey] = useState("");
+  const [editMode, setEditMode] = useState(false);
   const navCloseTimer = useRef<number | undefined>(undefined);
 
   const { meta, colors: baseColors, typography, stylePreset, visualStyle, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
@@ -370,6 +373,7 @@ export default function SiteRenderer({
       className={className}
       style={style}
       multiline={multiline}
+      enabled={editMode}
     >
       {value ?? ""}
     </EditableText>
@@ -615,8 +619,8 @@ export default function SiteRenderer({
                       {editableText(`${section.id}.title`, section.content?.title || labels.featuresFallback, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid md:grid-cols-3 gap-8">
                         {items.map((item: any, i: number) => (
-                          <div key={i} className="bg-white p-7 rounded-xl shadow-sm hover:shadow-md transition border border-slate-100">
-                            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl" style={{ backgroundColor: colors.secondary, color: colors.accent }}>
+                          <div key={i} className="bg-white p-7 rounded-xl shadow-sm hover:shadow-md transition border border-slate-100 text-center">
+                            <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl" style={{ backgroundColor: colors.secondary, color: colors.accent }}>
                               {item.iconSvg ? (
                                 <span className="h-6 w-6 [&>svg]:h-6 [&>svg]:w-6" dangerouslySetInnerHTML={{ __html: item.iconSvg }} />
                               ) : (
@@ -1065,6 +1069,23 @@ export default function SiteRenderer({
           )}
         </div>
       )}
+
+      <div data-export-remove="true" className="hide-in-export fixed bottom-20 left-5 z-[210] flex max-w-[calc(100vw-2.5rem)] flex-col items-start gap-2 md:bottom-5">
+        {editMode && (
+          <div className="max-w-xs rounded-lg border border-indigo-100 bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow-xl backdrop-blur">
+            Click site text to edit it. Changes are saved in this browser and included in the downloaded site.
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setEditMode((value) => !value)}
+          className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold shadow-xl transition ${editMode ? "border-indigo-200 bg-indigo-600 text-white hover:bg-indigo-700" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"}`}
+          aria-pressed={editMode}
+        >
+          {editMode ? <X size={16} /> : <Pencil size={16} />}
+          {editMode ? "Done editing" : "Edit text"}
+        </button>
+      </div>
 
       {showProspectPanel && (
         <WebsiteActionPanel

@@ -7,6 +7,7 @@ type EditableTextProps = {
   className?: string;
   style?: CSSProperties;
   multiline?: boolean;
+  enabled?: boolean;
 };
 
 export type EditableTextTag = "span" | "p" | "h1" | "h2" | "h3" | "h4" | "div" | "li";
@@ -29,6 +30,7 @@ export default function EditableText({
   className = "",
   style,
   multiline = false,
+  enabled = false,
 }: EditableTextProps) {
   const Tag = as as any;
   const isBlockTag = ["div", "p", "h1", "h2", "h3", "h4", "li"].includes(String(as));
@@ -68,29 +70,29 @@ export default function EditableText({
     <Wrapper className={`relative max-w-full align-baseline ${isBlockTag ? "block" : "inline-block"}`}>
       <Tag
         ref={ref}
-        contentEditable
-        suppressContentEditableWarning
-        spellCheck
-        data-wv-editable="true"
-        data-wv-edit-key={storageKey}
-        className={`${className} cursor-text rounded outline-none transition hover:ring-2 hover:ring-indigo-200 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2`}
+        contentEditable={enabled}
+        suppressContentEditableWarning={enabled}
+        spellCheck={enabled}
+        data-wv-editable={enabled ? "true" : undefined}
+        data-wv-edit-key={enabled ? storageKey : undefined}
+        className={`${className} ${enabled ? "cursor-text rounded outline-none transition hover:ring-2 hover:ring-indigo-200 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" : "select-text"}`}
         style={style}
-        onFocus={() => setActive(true)}
-        onBlur={() => {
+        onFocus={enabled ? () => setActive(true) : undefined}
+        onBlur={enabled ? () => {
           saveCurrent();
           window.setTimeout(() => setActive(false), 120);
-        }}
-        onInput={saveCurrent}
-        onKeyDown={handleKeyDown}
-        onPaste={(event: ClipboardEvent<HTMLElement>) => {
+        } : undefined}
+        onInput={enabled ? saveCurrent : undefined}
+        onKeyDown={enabled ? handleKeyDown : undefined}
+        onPaste={enabled ? (event: ClipboardEvent<HTMLElement>) => {
           event.preventDefault();
           const text = event.clipboardData.getData("text/plain");
           document.execCommand("insertText", false, text);
           saveCurrent();
-        }}
+        } : undefined}
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {active && (
+      {enabled && active && (
         <span
           data-export-remove="true"
           className="hide-in-export absolute -top-10 left-0 z-[220] inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-xl"

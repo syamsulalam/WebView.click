@@ -42,6 +42,7 @@ Logic penting:
 - Navbar product/service submenu memakai hover persistence agar dropdown tidak langsung hilang saat cursor bergerak ke child menu.
 - Pergantian tab menjalankan scroll-to-top.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
+- Feature grid cards dirender center-aligned: icon, title, dan body berada di tengah card agar tampilan lebih rapi seperti demo.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
 - Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
 - Renderer membaca `design.fontPairing` dan `design.fontPairingConfig`; registry Google Font pairing ada di `src/lib/fontPairings.ts` dan ringkasannya di `docs/FONT_PAIRING_GUIDE.md`.
@@ -55,7 +56,7 @@ Logic penting:
 - Contact form membuat `mailto:` URL berisi nama, email, pesan, dan semua field form yang diisi.
 - Visitor action panel untuk download/setup dirender lewat shared component `WebsiteActionPanel`, bukan logic lokal di renderer.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
-- Text utama di renderer dibungkus dengan shared `EditableText`, sehingga owner bisa klik copy di `/demo` atau `/:businessId`, edit langsung, dan perubahan tersimpan di localStorage per business/page/text key.
+- Text utama di renderer dibungkus dengan shared `EditableText`, tetapi edit mode default off supaya teks normal bisa di-select/copy. Tombol floating `Edit text` di `/demo` dan `/:businessId` mengaktifkan contentEditable; perubahan tersimpan di localStorage per business/page/text key dan ikut masuk ke download HTML.
 
 Risiko debug:
 - Jika UI demo/public berbeda dari ekspektasi, cek mapping section di file ini dulu sebelum mengubah `PublicViewer`.
@@ -69,6 +70,7 @@ Fungsi:
 
 Logic penting:
 - Setiap teks punya key `webview.inlineText.{businessId}.{page}.{field}` di localStorage.
+- `enabled=false` merender teks biasa yang selectable/copyable; `enabled=true` baru mengaktifkan `contentEditable`, ring edit, dan toolbar.
 - Toolbar kecil mendukung bold, italic, dan underline via browser command.
 - Paste dipaksa plain text agar HTML asing tidak ikut masuk.
 - Export HTML membersihkan atribut `contenteditable` dan toolbar lewat `src/lib/exportSiteHtml.ts`, tetapi isi teks hasil edit tetap ikut karena sudah ada di DOM.
@@ -206,6 +208,7 @@ Logic penting:
 - JSON mock fallback menentukan `design.stylePreset`, `design.stylePresetConfig`, `design.visualStyle`, dan `design.visualStyleConfig` via `src/lib/siteStylePresets.ts`.
 - JSON mock fallback menentukan `design.fontPairing`, `design.fontPairingConfig`, dan `themeVariables.typography` via `src/lib/fontPairings.ts`.
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
+- Prompt AI generator dan Function post-process menjaga parity dengan `/demo`: jika ada minimal dua foto bisnis yang usable, JSON final harus punya page `gallery`, nav item `#gallery`, dan section `imageGallery`.
 - Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
 - Prompt AI generator diminta memilih icon/inline `iconSvg` sesuai teks/intent CTA dan feature item; product/service detail page harus punya features section berikon.
 - Mock fallback di `AdminLeads` juga membuat product/service detail pages memakai section `hero`, `offeringDetail`, `features`, `reviews`, `faq`, dan `hoursLocation`.
@@ -474,6 +477,7 @@ Logic AI:
   - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
 - Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI key hilang, provider/model tidak valid, provider mengembalikan HTTP error, response kosong, atau JSON invalid. Flow `/admin/sites` untuk prospect gathered sekarang mengirim fallback `jsonContent`, sehingga tidak memakai `requireAi: true` dan tetap bisa menyimpan situs saat AI provider gagal.
 - Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, prompt AI menginstruksikan model untuk mempertahankan `pageId`, `detailPageId`, navigation href, sourceData, photo URL, dan contact/maps fields, lalu fokus memperkaya copy, FAQ, feature descriptions, naming, dan conversion text.
+- Setelah AI/fallback selesai, Function menjalankan `ensureGalleryPage()` agar generated sites otomatis mendapat gallery page dari foto Places/brand/offers bila minimal dua gambar tersedia, meskipun model AI lupa membuatnya.
 
 Logic Google Places/logo:
 - `/api/places/search` memakai Google Places Text Search.
