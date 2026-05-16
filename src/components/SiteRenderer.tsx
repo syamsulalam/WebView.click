@@ -806,9 +806,9 @@ export default function SiteRenderer({
                               {Array.from({ length: Math.round(review.rating || 5) }).map((_, idx) => <Star key={idx} size={16} fill="currentColor" />)}
                             </div>
                             <div className="text-slate-700">
-                              <span aria-hidden="true" className="wv-heading block text-left text-5xl font-bold leading-none" style={{ color: colors.accent }}>"</span>
-                              {editableText(`${section.id}.review.${i}.text`, review.text, "p", "mt-1", undefined, true)}
-                              <span aria-hidden="true" className="wv-heading mt-2 block text-right text-5xl font-bold leading-none" style={{ color: colors.accent }}>"</span>
+                              <span aria-hidden="true" className="wv-heading block text-left text-5xl font-bold leading-[0.72]" style={{ color: colors.accent }}>"</span>
+                              {editableText(`${section.id}.review.${i}.text`, review.text, "p", "-mt-1", undefined, true)}
+                              <span aria-hidden="true" className="wv-heading -mt-1 block text-right text-5xl font-bold leading-[0.72]" style={{ color: colors.accent }}>"</span>
                             </div>
                             {editableText(`${section.id}.review.${i}.author`, review.authorName || review.author || "Google reviewer", "p", "mt-4 font-semibold text-slate-950")}
                           </div>
@@ -1064,7 +1064,7 @@ export default function SiteRenderer({
             </div>
           </div>
           <div>
-            <p className="mb-4 font-semibold">{labels.pages}</p>
+            <p className="wv-heading mb-4 text-sm font-semibold">{labels.pages}</p>
             <div className="space-y-2 opacity-85">
               {navigation.headerMenu.map((menu: any) => (
                 <button key={menu.href} type="button" data-wv-tab={menu.href.replace("#", "")} onClick={() => changeTab(menu.href.replace("#", ""))} className="flex items-center gap-2 hover:opacity-100">
@@ -1075,7 +1075,7 @@ export default function SiteRenderer({
             </div>
           </div>
           <div>
-            <p className="mb-4 font-semibold">{labels.highlights}</p>
+            <p className="wv-heading mb-4 text-sm font-semibold">{labels.highlights}</p>
             <div className="space-y-2 opacity-85">
               {footerHighlights.slice(0, 6).map((item: any) => {
                 const href = offeringHref(item);
@@ -1096,7 +1096,7 @@ export default function SiteRenderer({
             </div>
           </div>
           <div>
-            <p className="mb-4 font-semibold">{labels.contact}</p>
+            <p className="wv-heading mb-4 text-sm font-semibold">{labels.contact}</p>
             <div className="space-y-3 opacity-85">
               {(displayPhone || globalConfig.header.ctaButton?.href) && (
                 <p className="flex gap-2">
