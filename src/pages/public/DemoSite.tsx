@@ -7,6 +7,45 @@ import { downloadOwnerSiteZip } from "../../lib/exportSiteHtml";
 import { fontPairingsForText, getFontPairing } from "../../lib/fontPairings";
 import { getShaderPreset, siteShaderPresets, siteStylePresets } from "../../lib/siteStylePresets";
 
+function emptyVisualQa() {
+  return {
+    navbar: {
+      exists: false,
+      height: 0,
+      heightOk: false,
+      shadowBlur: 0,
+      shadowOk: false,
+    },
+    icons: {
+      features: { count: 0, minSize: 0, sizeOk: false },
+      trustBar: { count: 0, minSize: 0, sizeOk: false },
+      hoursLocation: { count: 0, minSize: 0, sizeOk: false, relativeOk: false },
+    },
+  };
+}
+
+function maxShadowBlur(boxShadow: string) {
+  const pxValues = Array.from(boxShadow.matchAll(/(-?\d+(?:\.\d+)?)px/g)).map((match) => Math.abs(Number(match[1])));
+  const blurValues = pxValues.filter((_, index) => index % 4 === 2);
+  return blurValues.length ? Math.max(...blurValues) : 0;
+}
+
+function iconStats(group: "features" | "trustBar" | "hoursLocation", minExpectedSize: number) {
+  const elements = Array.from(document.querySelectorAll<HTMLElement>(`[data-wv-qa-icon="${group}"]`));
+  const sizes = elements
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      return Math.min(rect.width, rect.height);
+    })
+    .filter((size) => Number.isFinite(size) && size > 0);
+  const minSize = sizes.length ? Math.round(Math.min(...sizes)) : 0;
+  return {
+    count: elements.length,
+    minSize,
+    sizeOk: elements.length > 0 && minSize >= minExpectedSize,
+  };
+}
+
 export default function DemoSite() {
   const baseSiteData = templateSchema as any;
   const [selectedPreset, setSelectedPreset] = useState(baseSiteData.design?.stylePreset || "cafe-warm");
@@ -30,6 +69,7 @@ export default function DemoSite() {
     actionPanelOutsideCanvas: false,
     inspectorOutsideCanvas: false,
   });
+  const [visualQa, setVisualQa] = useState(emptyVisualQa);
   const dragState = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const fontPairingMeta = getFontPairing(selectedFontPairing);
   const shaderPresetMeta = getShaderPreset(selectedShaderPreset);
@@ -109,6 +149,15 @@ export default function DemoSite() {
       const leakingTools = canvas ? tools.filter((tool) => canvas.contains(tool)) : [];
       const actionPanel = document.querySelector("[data-wv-tool-ui='website-action-panel']");
       const inspector = document.querySelector("[data-wv-tool-ui='demo-inspector']");
+      const navbar = document.querySelector<HTMLElement>("[data-wv-site-header]");
+      const navbarRect = navbar?.getBoundingClientRect();
+      const navbarShadowBlur = navbar ? maxShadowBlur(window.getComputedStyle(navbar).boxShadow) : 0;
+      const features = iconStats("features", 28);
+      const trustBar = iconStats("trustBar", 28);
+      const hoursLocation = iconStats("hoursLocation", 24);
+      const firstHoursIcon = document.querySelector<HTMLElement>('[data-wv-qa-icon="hoursLocation"]');
+      const firstHoursHeading = firstHoursIcon?.parentElement?.querySelector("h2");
+      const hoursHeadingFontSize = firstHoursHeading ? Number.parseFloat(window.getComputedStyle(firstHoursHeading).fontSize) : 0;
 
       setBoundaryQa({
         canvasFound: Boolean(canvas),
@@ -117,12 +166,29 @@ export default function DemoSite() {
         actionPanelOutsideCanvas: Boolean(canvas && actionPanel && !canvas.contains(actionPanel)),
         inspectorOutsideCanvas: Boolean(canvas && inspector && !canvas.contains(inspector)),
       });
+      setVisualQa({
+        navbar: {
+          exists: Boolean(navbar),
+          height: Math.round(navbarRect?.height || 0),
+          heightOk: Boolean(navbarRect && navbarRect.height <= 72),
+          shadowBlur: Math.round(navbarShadowBlur),
+          shadowOk: !navbar || navbarShadowBlur <= 12,
+        },
+        icons: {
+          features,
+          trustBar,
+          hoursLocation: {
+            ...hoursLocation,
+            relativeOk: Boolean(hoursLocation.minSize && hoursHeadingFontSize && hoursLocation.minSize >= Math.round(hoursHeadingFontSize * 0.9)),
+          },
+        },
+      });
     };
 
     inspectBoundary();
     const timeout = window.setTimeout(inspectBoundary, 80);
     return () => window.clearTimeout(timeout);
-  }, [boundaryQaOpen, inspectorMinimized]);
+  }, [boundaryQaOpen, inspectorMinimized, selectedFontPairing, selectedPaletteOption, selectedPreset, selectedShaderPreset]);
 
   const beginInspectorDrag = (event: PointerEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -166,6 +232,16 @@ export default function DemoSite() {
 
           [data-wv-site-canvas] [data-wv-tool-ui] {
             outline: 4px solid rgba(220, 38, 38, 0.95) !important;
+          }
+
+          [data-wv-site-header] {
+            outline: 3px solid rgba(245, 158, 11, 0.9) !important;
+            outline-offset: -3px !important;
+          }
+
+          [data-wv-qa-icon] {
+            outline: 2px solid rgba(14, 165, 233, 0.9) !important;
+            outline-offset: 3px !important;
           }
         `}</style>
       )}
@@ -251,7 +327,7 @@ export default function DemoSite() {
             <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-slate-700">
               <p className="flex items-center gap-1.5 font-semibold text-emerald-900">
                 <ShieldCheck size={14} />
-                Visual boundary QA
+                Visual QA checklist
               </p>
               <div className="mt-2 space-y-1.5">
                 {[
@@ -265,6 +341,36 @@ export default function DemoSite() {
                     <span>{label}</span>
                   </p>
                 ))}
+              </div>
+              <div className="mt-3 border-t border-emerald-200 pt-2">
+                <p className="font-semibold text-emerald-900">Navbar</p>
+                <div className="mt-1.5 space-y-1.5">
+                  {[
+                    [`Height is compact (${visualQa.navbar.height}px)`, visualQa.navbar.exists && visualQa.navbar.heightOk],
+                    [`Shadow is light (${visualQa.navbar.shadowBlur}px blur)`, visualQa.navbar.exists && visualQa.navbar.shadowOk],
+                  ].map(([label, passed]) => (
+                    <p key={String(label)} className="flex items-center gap-2">
+                      {passed ? <CheckCircle2 size={14} className="text-emerald-700" /> : <XCircle size={14} className="text-red-600" />}
+                      <span>{label}</span>
+                    </p>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-3 border-t border-emerald-200 pt-2">
+                <p className="font-semibold text-emerald-900">Icons</p>
+                <div className="mt-1.5 space-y-1.5">
+                  {[
+                    [`Feature icons large enough (${visualQa.icons.features.count}, min ${visualQa.icons.features.minSize}px)`, visualQa.icons.features.sizeOk],
+                    [`Trust bar icons large enough (${visualQa.icons.trustBar.count}, min ${visualQa.icons.trustBar.minSize}px)`, visualQa.icons.trustBar.sizeOk],
+                    [`Hours/location icons large enough (${visualQa.icons.hoursLocation.count}, min ${visualQa.icons.hoursLocation.minSize}px)`, visualQa.icons.hoursLocation.sizeOk],
+                    ["Hours/location icons track subheading size", visualQa.icons.hoursLocation.relativeOk],
+                  ].map(([label, passed]) => (
+                    <p key={String(label)} className="flex items-center gap-2">
+                      {passed ? <CheckCircle2 size={14} className="text-emerald-700" /> : <XCircle size={14} className="text-red-600" />}
+                      <span>{label}</span>
+                    </p>
+                  ))}
+                </div>
               </div>
               <p className="mt-2 text-[11px] text-slate-500">Green outline is generated website. Blue dashed outline is WebView.click tool UI. Red means leakage.</p>
             </div>

@@ -195,13 +195,14 @@ function socialIcon(platform = "") {
   return <Globe size={18} />;
 }
 
-function buttonIcon(label = "", href = "") {
+function buttonIcon(label = "", href = "", size = 16, className = "") {
   const key = `${label} ${href}`.toLowerCase();
-  if (key.includes("tel:") || key.includes("phone") || key.includes("telepon") || key.includes("call") || key.includes("hubungi")) return <PhoneCall size={16} />;
-  if (key.includes("mailto:") || key.includes("email") || key.includes("contact") || key.includes("kontak")) return <Mail size={16} />;
-  if (key.includes("map") || key.includes("direction") || key.includes("lokasi")) return <MapPin size={16} />;
-  if (key.includes("service") || key.includes("product") || key.includes("layanan") || key.includes("produk")) return <Briefcase size={16} />;
-  return <CheckCircle2 size={16} />;
+  const iconProps = { size, className: className || undefined };
+  if (key.includes("tel:") || key.includes("phone") || key.includes("telepon") || key.includes("call") || key.includes("hubungi")) return <PhoneCall {...iconProps} />;
+  if (key.includes("mailto:") || key.includes("email") || key.includes("contact") || key.includes("kontak")) return <Mail {...iconProps} />;
+  if (key.includes("map") || key.includes("direction") || key.includes("lokasi")) return <MapPin {...iconProps} />;
+  if (key.includes("service") || key.includes("product") || key.includes("layanan") || key.includes("produk")) return <Briefcase {...iconProps} />;
+  return <CheckCircle2 {...iconProps} />;
 }
 
 function phoneHref(value = "") {
@@ -464,19 +465,23 @@ export default function SiteRenderer({
       `}</style>
       <div data-wv-site-canvas="true" style={siteCanvasStyles} className={`min-h-screen flex flex-col ${presetClass} ${visualClass} ${shaderClass}`}>
       <div data-wv-site-shader="true" aria-hidden="true" />
-      <header style={{ backgroundColor: colors.primary, color: "#fff" }} className="py-4 px-6 md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm">
+      <header
+        data-wv-site-header="true"
+        style={{ backgroundColor: colors.primary, color: "#fff" }}
+        className="px-5 py-2.5 md:px-12 flex justify-between items-center sticky top-0 z-50 shadow-sm"
+      >
         <button
           type="button"
           onClick={() => changeTab(homePageId)}
           data-wv-tab={homePageId}
-          className="font-bold text-xl tracking-tight flex items-center gap-3 text-left hover:opacity-85 transition"
+          className="min-w-0 font-bold text-xl tracking-tight leading-tight flex items-center gap-3 text-left hover:opacity-85 transition"
           aria-label={`Go to ${meta.businessName} home`}
         >
           {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
           {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
-          {editableText("header.businessName", meta.businessName, "span")}
+          {editableText("header.businessName", meta.businessName, "span", "leading-tight")}
         </button>
-        <nav className="hidden md:flex gap-6">
+        <nav className="hidden md:flex items-center gap-5">
           {navigation.headerMenu.map((menu: any, idx: number) => {
             const pageId = menu.href.replace("#", "");
             const children = Array.isArray(menu.children) ? menu.children : [];
@@ -493,7 +498,7 @@ export default function SiteRenderer({
                 <button
                   onClick={() => changeTab(pageId)}
                   data-wv-tab={pageId}
-                  className={`text-sm font-medium hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
+                  className={`h-8 text-sm font-medium leading-none hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
                 >
                   {menuIcon(menu.label, menu.href)}
                   {menu.label}
@@ -541,7 +546,7 @@ export default function SiteRenderer({
             }
           }}
           style={{ backgroundColor: colors.accent }}
-          className="px-5 py-2 rounded-lg text-white font-medium hover:opacity-90 transition text-sm inline-flex items-center gap-2"
+          className="h-9 shrink-0 px-4 py-0 rounded-lg text-white font-medium hover:opacity-90 transition text-sm leading-none inline-flex items-center gap-2"
         >
           {buttonIcon(globalConfig.header.ctaButton.text, globalConfig.header.ctaButton.href)}
           {globalConfig.header.ctaButton.text}
@@ -626,10 +631,14 @@ export default function SiteRenderer({
                   <section key={section.id} className="px-6 py-6 bg-slate-50 border-y border-slate-200">
                     <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {items.map((item: any, i: number) => (
-                        <div key={i} className="flex items-center gap-3 rounded-lg bg-white border border-slate-200 px-4 py-4">
-                          <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colors.secondary, color: colors.primary }}>
-                            {item.icon === "star" ? <Star size={18} /> : item.icon === "phone" ? <Phone size={18} /> : <CheckCircle2 size={18} />}
-                          </div>
+                        <div key={i} className="flex flex-col items-center justify-center gap-2 rounded-lg bg-white border border-slate-200 px-4 py-4 text-center">
+                          {item.icon === "star" ? (
+                            <Star data-wv-qa-icon="trustBar" size={30} className="shrink-0" style={{ color: colors.primary }} />
+                          ) : item.icon === "phone" ? (
+                            <Phone data-wv-qa-icon="trustBar" size={30} className="shrink-0" style={{ color: colors.primary }} />
+                          ) : (
+                            <CheckCircle2 data-wv-qa-icon="trustBar" size={30} className="shrink-0" style={{ color: colors.primary }} />
+                          )}
                           <div>
                             {editableText(`${section.id}.trust.${i}.value`, item.value, "p", "text-xl font-bold text-slate-950")}
                             {editableText(`${section.id}.trust.${i}.label`, item.label, "p", "text-xs uppercase tracking-wide text-slate-500")}
@@ -650,13 +659,13 @@ export default function SiteRenderer({
                       <div className="grid md:grid-cols-3 gap-8">
                         {items.map((item: any, i: number) => (
                           <div key={i} className="bg-white p-7 rounded-xl shadow-sm hover:shadow-md transition border border-slate-100 text-center">
-                            <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl" style={{ backgroundColor: colors.secondary, color: colors.accent }}>
-                              {item.iconSvg ? (
-                                <span className="h-6 w-6 [&>svg]:h-6 [&>svg]:w-6" dangerouslySetInnerHTML={{ __html: item.iconSvg }} />
-                              ) : (
-                                buttonIcon(item.title || item.label || "", "")
-                              )}
-                            </div>
+                            {item.iconSvg ? (
+                              <span data-wv-qa-icon="features" className="mx-auto mb-4 inline-flex h-9 w-9 text-[2.25rem] [&>svg]:h-full [&>svg]:w-full" style={{ color: colors.accent }} dangerouslySetInnerHTML={{ __html: item.iconSvg }} />
+                            ) : (
+                              <span data-wv-qa-icon="features" className="mx-auto mb-4 inline-flex text-[2.25rem]" style={{ color: colors.accent }}>
+                                {buttonIcon(item.title || item.label || "", "", 36, "shrink-0")}
+                              </span>
+                            )}
                             {editableText(`${section.id}.item.${i}.title`, item.title, "h3", "text-xl font-semibold mb-2")}
                             {editableText(`${section.id}.item.${i}.description`, item.description, "p", "opacity-70", undefined, true)}
                           </div>
@@ -684,7 +693,7 @@ export default function SiteRenderer({
                             <div className="h-44">
                               <ImageFrame src={offer.image} label={offer.title} attribution={brandPhotoAttribution(offer.image)} exportName={`offer-${offer.title || i + 1}`} />
                             </div>
-                            <div className="p-6">
+                            <div className="p-6 text-center">
                               {editableText(`${section.id}.offer.${i}.title`, offer.title, "h3", "text-lg font-bold text-slate-950")}
                               {editableText(`${section.id}.offer.${i}.description`, offer.description, "p", "mt-2 text-sm text-slate-600", undefined, true)}
                               {offer.priceHint && editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "p", "mt-4 text-sm font-semibold", { color: colors.accent })}
@@ -762,8 +771,8 @@ export default function SiteRenderer({
                       </div>
                       <div className="grid md:grid-cols-3 gap-5">
                         {reviews.map((review: any, i: number) => (
-                          <div key={i} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                            <div className="flex gap-1 mb-4" style={{ color: colors.accent }}>
+                          <div key={i} className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+                            <div className="mb-4 flex justify-center gap-1" style={{ color: colors.accent }}>
                               {Array.from({ length: Math.round(review.rating || 5) }).map((_, idx) => <Star key={idx} size={16} fill="currentColor" />)}
                             </div>
                             <p className="text-slate-700">"{editableText(`${section.id}.review.${i}.text`, review.text, "span", "", undefined, true)}"</p>
@@ -783,8 +792,8 @@ export default function SiteRenderer({
                   <section key={section.id} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
-                        <div className="flex items-center gap-3 mb-5">
-                          <Clock size={22} style={{ color: colors.accent }} />
+                        <div className="mb-5 flex items-center gap-3 text-2xl">
+                          <Clock data-wv-qa-icon="hoursLocation" className="h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }} />
                           {editableText(`${section.id}.hoursTitle`, section.content?.title || labels.hoursTitle, "h2", "text-2xl font-bold text-slate-950")}
                         </div>
                         <div className="space-y-2 text-slate-700">
@@ -792,8 +801,8 @@ export default function SiteRenderer({
                         </div>
                       </div>
                       <div className="rounded-xl border border-slate-200 p-8 bg-white">
-                        <div className="flex items-center gap-3 mb-5">
-                          <MapPin size={22} style={{ color: colors.accent }} />
+                        <div className="mb-5 flex items-center gap-3 text-2xl">
+                          <MapPin data-wv-qa-icon="hoursLocation" className="h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }} />
                           {editableText(`${section.id}.locationTitle`, labels.locationTitle, "h2", "text-2xl font-bold text-slate-950")}
                         </div>
                         {editableText(`${section.id}.address`, section.content?.address || location.formattedAddress || businessProfile.address?.formatted || "Alamat belum tersedia.", "p", "text-slate-700", undefined, true)}
@@ -886,7 +895,7 @@ export default function SiteRenderer({
                             <div className="h-48 bg-gray-200">
                               <ImageFrame src={card.image} label={card.title} attribution={brandPhotoAttribution(card.image)} exportName={`card-${card.title || i + 1}`} />
                             </div>
-                            <div className="p-6">
+                            <div className="p-6 text-center">
                               {editableText(`${section.id}.card.${i}.title`, card.title, "h3", "text-xl font-bold mb-2")}
                               {editableText(`${section.id}.card.${i}.description`, card.description, "p", "opacity-70 mb-4", undefined, true)}
                               {card.price && editableText(`${section.id}.card.${i}.price`, card.price, "p", "font-semibold text-lg", { color: colors.accent })}
@@ -1136,6 +1145,63 @@ export default function SiteRenderer({
       <style>{`
         @media print { .hide-in-export { display: none !important; } }
         ${siteStylePresetCss}
+        #rendered-site [data-wv-site-canvas] > [data-wv-site-shader] {
+          flex: 0 0 0;
+          width: 0;
+          height: 0;
+        }
+        #rendered-site [data-wv-site-header] {
+          min-height: 3.5rem;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+          line-height: 1.15;
+        }
+        #rendered-site [data-wv-site-header] :where(a, button) {
+          line-height: 1;
+        }
+        #rendered-site [data-wv-site-header] [data-wv-image-role="logo"] {
+          width: 2rem;
+          height: 2rem;
+          flex: none;
+        }
+        #rendered-site [data-wv-tool-ui],
+        #rendered-site [data-wv-tool-ui] *,
+        #rendered-site [data-wv-format-toolbar],
+        #rendered-site [data-wv-format-toolbar] * {
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+          letter-spacing: 0 !important;
+          text-transform: none !important;
+        }
+        #rendered-site [data-wv-format-toolbar] {
+          align-items: center;
+          border-color: #e2e8f0 !important;
+          border-radius: 0.5rem !important;
+          background: #ffffff !important;
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12) !important;
+          color: #334155 !important;
+          font-style: normal !important;
+          font-weight: 700 !important;
+          line-height: 1 !important;
+        }
+        #rendered-site [data-wv-format-toolbar] button {
+          display: inline-flex;
+          width: 2rem;
+          height: 1.75rem;
+          align-items: center;
+          justify-content: center;
+          padding: 0 !important;
+          border-radius: 0;
+          box-shadow: none !important;
+          color: #334155;
+          font: 700 0.75rem/1 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+          transform: none !important;
+          text-decoration: none !important;
+        }
+        #rendered-site [data-wv-format-toolbar] [data-wv-format-command="italic"] {
+          font-style: italic !important;
+        }
+        #rendered-site [data-wv-format-toolbar] [data-wv-format-command="underline"] {
+          text-decoration: underline !important;
+        }
       `}</style>
     </div>
   );

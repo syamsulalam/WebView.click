@@ -1,6 +1,6 @@
 # WebView.click Codebase Reference
 
-Terakhir diperbarui: 16 Mei 2026.
+Terakhir diperbarui: 17 Mei 2026.
 
 Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
 
@@ -44,6 +44,8 @@ Logic penting:
 - Pergantian tab menjalankan scroll-to-top.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Feature grid cards dirender center-aligned: icon, title, dan body berada di tengah card agar tampilan lebih rapi seperti demo.
+- Trust bar dan feature icons dirender sebagai SVG langsung tanpa wrapper background agar icon tidak terlihat mengecil; icon subheading `hoursLocation` memakai ukuran relatif heading.
+- Grid marketing 3 kolom seperti offers, reviews, dan generic grid cards memakai content text-center agar komposisi tiap card lebih seimbang.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
 - Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
 - Renderer membaca `design.shaderPreset` dan `design.shaderConfig`; registry shader procedural ada di `src/lib/siteStylePresets.ts` dan guide teknis di `docs/SHADERS_GUIDE.md`.
@@ -52,6 +54,8 @@ Logic penting:
 - Tool UI seperti edit text, `WebsiteActionPanel`, demo inspector, download/domain/setup controls berada di luar `[data-wv-site-canvas]` agar tidak terkena CSS website.
 - Font pairing aktif hanya diterapkan ke `[data-wv-site-canvas]`; panel/tools tetap memakai style app.
 - Shader layer dirender sebagai inert `<div data-wv-site-shader>` di dalam `[data-wv-site-canvas]`; pointer JS hanya mengubah CSS variables `--wv-pointer-x`/`--wv-pointer-y`.
+- Header website diberi `data-wv-site-header` dan CSS kompaktornya sendiri agar style/shader experience layer tidak membuat navbar ikut melebar/meninggi.
+- `data-wv-tool-ui` punya reset typography di renderer; inline toolbar B/I/U memakai marker khusus `data-wv-format-toolbar` karena posisinya menempel di editable text dalam canvas website.
 - Gambar dirender sebagai `<img>` jika URL usable (`http`, `/`, atau `data:`); filename placeholder tetap ditampilkan sebagai fallback supaya preview tidak blank.
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
 - `conversion.stickyMobileCta` menampilkan CTA sticky di mobile.
@@ -79,6 +83,7 @@ Logic penting:
 - Setiap teks punya key `webview.inlineText.{businessId}.{page}.{field}` di localStorage.
 - `enabled=false` merender teks biasa yang selectable/copyable; `enabled=true` baru mengaktifkan `contentEditable`, ring edit, dan toolbar.
 - Toolbar kecil mendukung bold, italic, dan underline via browser command.
+- Toolbar diberi `data-wv-format-toolbar` dan `data-wv-format-command` per tombol supaya typography/action button tidak mewarisi font/style website client.
 - Paste dipaksa plain text agar HTML asing tidak ikut masuk.
 - Export HTML membersihkan atribut `contenteditable` dan toolbar lewat `src/lib/exportSiteHtml.ts`, tetapi isi teks hasil edit tetap ikut karena sudah ada di DOM.
 
@@ -387,6 +392,8 @@ Logic penting:
 - Inspector bisa diminimize dan di-drag agar tidak menutup navbar/preview.
 - Inspector punya toggle `QA` untuk visual boundary check: `[data-wv-site-canvas]` diberi outline hijau, WebView tool UI `[data-wv-tool-ui]` diberi outline biru, dan tool yang bocor ke canvas akan terlihat merah.
 - QA checklist memastikan generated site canvas ada, tool UI terdeteksi, download/setup panel berada di luar CSS website, dan demo inspector berada di luar CSS website.
+- QA checklist juga mengukur navbar generated site (`data-wv-site-header`) untuk tinggi/shadow kompak dan icon marker `data-wv-qa-icon` untuk `features`, `trustBar`, dan `hoursLocation`.
+- Saat QA aktif, navbar diberi outline amber dan icon yang diukur diberi outline biru agar style/shader preset bisa dicek visual sebelum produksi.
 - Menggunakan `SiteRenderer` dengan `showProspectPanel={false}` agar demo fokus ke hasil render website.
 
 Risiko debug:

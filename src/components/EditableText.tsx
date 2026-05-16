@@ -95,12 +95,13 @@ export default function EditableText({
       {enabled && active && (
         <span
           data-export-remove="true"
+          data-wv-format-toolbar="true"
           className="hide-in-export absolute -top-10 left-0 z-[220] inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-xl"
           onMouseDown={(event) => event.preventDefault()}
         >
-          <button type="button" onMouseDown={(event) => applyCommand(event, "bold")} className="px-2.5 py-1.5 hover:bg-slate-50">B</button>
-          <button type="button" onMouseDown={(event) => applyCommand(event, "italic")} className="px-2.5 py-1.5 italic hover:bg-slate-50">I</button>
-          <button type="button" onMouseDown={(event) => applyCommand(event, "underline")} className="px-2.5 py-1.5 underline hover:bg-slate-50">U</button>
+          <button type="button" data-wv-format-command="bold" onMouseDown={(event) => applyCommand(event, "bold")} className="px-2.5 py-1.5 hover:bg-slate-50">B</button>
+          <button type="button" data-wv-format-command="italic" onMouseDown={(event) => applyCommand(event, "italic")} className="px-2.5 py-1.5 hover:bg-slate-50">I</button>
+          <button type="button" data-wv-format-command="underline" onMouseDown={(event) => applyCommand(event, "underline")} className="px-2.5 py-1.5 hover:bg-slate-50">U</button>
         </span>
       )}
     </Wrapper>
