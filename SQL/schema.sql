@@ -65,6 +65,16 @@ CREATE TABLE IF NOT EXISTS system_settings (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS ai_readiness_cache (
+    cache_key TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    key_hash TEXT,
+    validation_json TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS places_search_cache (
     query_key TEXT PRIMARY KEY,
     query TEXT NOT NULL,

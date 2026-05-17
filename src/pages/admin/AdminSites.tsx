@@ -4,7 +4,7 @@ import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
-import { checkAiReadiness } from "../../lib/aiReadiness";
+import { checkAiReadiness, logAiReadinessBlockedJob } from "../../lib/aiReadiness";
 import HelpTooltip from "../../components/HelpTooltip";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
@@ -757,9 +757,19 @@ export default function AdminSites() {
       if (isMapsQueryPlaceholder(prospect)) {
         throw new Error("This row is a Maps search/query placeholder, not a specific business listing. Import captured listing JSON or choose a real Google business result before generating.");
       }
-      const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true);
+      const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true, true);
       if (!readiness.ready) {
-        throw new Error(readiness.message || "AI provider/model is not ready. Check /admin/settings before generating.");
+        const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before generating.";
+        await logAiReadinessBlockedJob({
+          provider: activeRegenerateProvider,
+          model: activeRegenerateModel,
+          readiness,
+          action: "sites_first_generate",
+          businessName: prospect.name,
+          placeId,
+          message,
+        });
+        throw new Error(message);
       }
 
       let originData: any = { ...prospect };
@@ -844,9 +854,19 @@ export default function AdminSites() {
     setActionMessage("");
     try {
       if (mode === "ai") {
-        const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true);
+        const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true, true);
         if (!readiness.ready) {
-          throw new Error(readiness.message || "AI provider/model is not ready. Check /admin/settings before regenerating.");
+          const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before regenerating.";
+          await logAiReadinessBlockedJob({
+            provider: activeRegenerateProvider,
+            model: activeRegenerateModel,
+            readiness,
+            action: "sites_ai_regenerate",
+            businessId: site.businessId,
+            businessName: site.businessName,
+            message,
+          });
+          throw new Error(message);
         }
       }
 
@@ -1086,6 +1106,7 @@ export default function AdminSites() {
                     model={activeRegenerateModel}
                     hasApiKey={activeRegenerateKeyReady}
                     requiresAi
+                    remoteValidate
                   />
                 </div>
               </div>
@@ -1263,6 +1284,7 @@ export default function AdminSites() {
                             model={activeRegenerateModel}
                             hasApiKey={activeRegenerateKeyReady}
                             requiresAi
+                            remoteValidate
                           />
                         </div>
                         <div className="flex flex-wrap items-center gap-2">

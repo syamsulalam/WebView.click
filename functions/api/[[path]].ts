@@ -377,6 +377,7 @@ async function setupTables(db: D1Database) {
     "CREATE TABLE IF NOT EXISTS crm_activities (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, staff_id TEXT, activity_type TEXT NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
     "CREATE TABLE IF NOT EXISTS json_sites (id TEXT PRIMARY KEY, business_id TEXT UNIQUE NOT NULL, json_content TEXT NOT NULL, r2_json_key TEXT, r2_json_url TEXT, json_summary TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS ai_readiness_cache (cache_key TEXT PRIMARY KEY, provider TEXT NOT NULL, model TEXT NOT NULL, key_hash TEXT, validation_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME NOT NULL)",
     "CREATE TABLE IF NOT EXISTS places_search_cache (query_key TEXT PRIMARY KEY, query TEXT NOT NULL, results_json TEXT NOT NULL, provider_status TEXT, result_count INTEGER DEFAULT 0, hit_count INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME)",
     "CREATE TABLE IF NOT EXISTS places_prospects (place_id TEXT PRIMARY KEY, query_key TEXT, query TEXT, business_name TEXT NOT NULL, address TEXT, phone TEXT, website_url TEXT, maps_url TEXT, rating REAL, reviews INTEGER, niche TEXT, status TEXT DEFAULT 'new', result_json TEXT NOT NULL, details_json TEXT, selected_photo_json TEXT, selected_palette_json TEXT, palette_options_json TEXT, website_check_status TEXT, website_checked_at DATETIME, generated_business_id TEXT, last_error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, generated_at DATETIME, details_loaded_at DATETIME)",
     "CREATE TABLE IF NOT EXISTS generation_jobs (id TEXT PRIMARY KEY, business_id TEXT, place_id TEXT, provider TEXT, model TEXT, status TEXT NOT NULL, error TEXT, metadata_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -401,6 +402,12 @@ async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "json_sites", "r2_json_key", "TEXT");
   await addColumnIfMissing(db, "json_sites", "r2_json_url", "TEXT");
   await addColumnIfMissing(db, "json_sites", "json_summary", "TEXT");
+  await addColumnIfMissing(db, "ai_readiness_cache", "provider", "TEXT");
+  await addColumnIfMissing(db, "ai_readiness_cache", "model", "TEXT");
+  await addColumnIfMissing(db, "ai_readiness_cache", "key_hash", "TEXT");
+  await addColumnIfMissing(db, "ai_readiness_cache", "validation_json", "TEXT");
+  await addColumnIfMissing(db, "ai_readiness_cache", "created_at", "DATETIME");
+  await addColumnIfMissing(db, "ai_readiness_cache", "expires_at", "DATETIME");
   await addColumnIfMissing(db, "places_search_cache", "provider_status", "TEXT");
   await addColumnIfMissing(db, "places_search_cache", "result_count", "INTEGER DEFAULT 0");
   await addColumnIfMissing(db, "places_search_cache", "hit_count", "INTEGER DEFAULT 0");
@@ -440,7 +447,7 @@ async function setupTables(db: D1Database) {
 async function databaseRepairReport(db: D1Database) {
   const startedAt = new Date().toISOString();
   await setupTables(db);
-  const tables = ["leads", "subscriptions", "crm_activities", "json_sites", "system_settings", "places_search_cache", "places_prospects", "generation_jobs"];
+  const tables = ["leads", "subscriptions", "crm_activities", "json_sites", "system_settings", "ai_readiness_cache", "places_search_cache", "places_prospects", "generation_jobs"];
   const summary: Record<string, string[]> = {};
   for (const table of tables) {
     summary[table] = Array.from(await tableColumns(db, table)).sort();
@@ -485,11 +492,206 @@ const aiProviderModels: Record<string, string[]> = {
   Opencode: ["opencode-default", "qwen/qwen3.6-flash", "qwen/qwen3.6-max-preview", "custom-model"],
 };
 
+const remoteAiReadinessCacheTtlMs = 2 * 60 * 1000;
+
 function normalizeAiModel(provider: string, model: string) {
   return model;
 }
 
-async function getAiReadiness(db: D1Database, env: Env, provider: string, model: string, requiresAi = true) {
+async function aiReadinessCacheKey(provider: string, model: string, key: string) {
+  const keyHash = key ? (await sha256Hex(key)).slice(0, 16) : "no-key";
+  return {
+    keyHash,
+    cacheKey: `${provider.trim().toLowerCase()}::${model.trim().toLowerCase()}::${keyHash}`,
+  };
+}
+
+async function getCachedRemoteAiValidation(db: D1Database, cacheKey: string) {
+  const now = new Date().toISOString();
+  const row = await db
+    .prepare(
+      `SELECT validation_json, expires_at
+       FROM ai_readiness_cache
+       WHERE cache_key = ? AND expires_at > ?`,
+    )
+    .bind(cacheKey, now)
+    .first<{ validation_json?: string; expires_at?: string }>();
+  if (!row?.validation_json) return null;
+  return {
+    ...parseJsonObject(row.validation_json),
+    cacheHit: true,
+    cacheExpiresAt: row.expires_at,
+  };
+}
+
+async function putCachedRemoteAiValidation(
+  db: D1Database,
+  cacheKey: string,
+  provider: string,
+  model: string,
+  keyHash: string,
+  validation: Record<string, unknown>,
+) {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const expiresAt = new Date(now.getTime() + remoteAiReadinessCacheTtlMs).toISOString();
+  const validationJson = JSON.stringify({
+    ...validation,
+    cacheHit: false,
+    cacheStoredAt: nowIso,
+    cacheExpiresAt: expiresAt,
+  });
+
+  await db
+    .prepare(
+      `INSERT INTO ai_readiness_cache (cache_key, provider, model, key_hash, validation_json, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(cache_key) DO UPDATE SET
+         provider = excluded.provider,
+         model = excluded.model,
+         key_hash = excluded.key_hash,
+         validation_json = excluded.validation_json,
+         created_at = excluded.created_at,
+         expires_at = excluded.expires_at`,
+    )
+    .bind(cacheKey, provider, model, keyHash, validationJson, nowIso, expiresAt)
+    .run();
+
+  await db
+    .prepare("DELETE FROM ai_readiness_cache WHERE expires_at <= ?")
+    .bind(nowIso)
+    .run()
+    .catch((error) => console.error("AI readiness cache cleanup failed:", error));
+}
+
+async function validateAiModelRemotely(db: D1Database, env: Env, provider: string, model: string) {
+  const normalizedProvider = provider.trim();
+  const normalizedModel = normalizeAiModel(normalizedProvider, model.trim());
+  const checkedAt = new Date().toISOString();
+  const baseResult = {
+    requested: true,
+    checkedAt,
+    provider: normalizedProvider,
+    model,
+    normalizedModel,
+  };
+  const errorSnippet = async (response: Response) => {
+    const text = await response.text().catch(() => "");
+    if (!text) return `HTTP ${response.status}`;
+    try {
+      const payload = JSON.parse(text);
+      return asString(payload.error?.message, asString(payload.error, asString(payload.message, text.slice(0, 180))));
+    } catch {
+      return text.slice(0, 180);
+    }
+  };
+
+  if (normalizedProvider === "OpenRouter") {
+    const key = await getSetting(db, env, "OPENROUTER_API_KEY");
+    const response = await fetch("https://openrouter.ai/api/v1/models", {
+      headers: key ? { authorization: `Bearer ${key}` } : {},
+    });
+    if (!response.ok) {
+      return {
+        ...baseResult,
+        supported: true,
+        valid: false,
+        status: response.status,
+        message: `OpenRouter model list validation failed: ${await errorSnippet(response)}`,
+      };
+    }
+    const payload = await response.json().catch(() => ({})) as { data?: Array<Record<string, unknown>> };
+    const aliases = normalizedModel.startsWith("~")
+      ? [normalizedModel, normalizedModel.slice(1)]
+      : [normalizedModel];
+    const match = (payload.data || []).find((item) => aliases.includes(asString(item.id)) || aliases.includes(asString(item.canonical_slug)));
+    const matchedModel = match ? asString(match.id, asString(match.canonical_slug)).replace(/^~/, "") : "";
+    if (matchedModel) {
+      const endpointPath = matchedModel.split("/").map((part) => encodeURIComponent(part)).join("/");
+      const endpointResponse = await fetch(`https://openrouter.ai/api/v1/models/${endpointPath}/endpoints`, {
+        headers: key ? { authorization: `Bearer ${key}` } : {},
+      });
+      if (!endpointResponse.ok) {
+        return {
+          ...baseResult,
+          supported: true,
+          valid: false,
+          matchedModel,
+          status: endpointResponse.status,
+          message: `OpenRouter endpoint validation failed for ${model}: ${await errorSnippet(endpointResponse)}`,
+        };
+      }
+      const endpointPayload = await endpointResponse.json().catch(() => ({})) as { data?: unknown; endpoints?: unknown };
+      const endpointData = endpointPayload.data;
+      const endpoints = Array.isArray(endpointData)
+        ? endpointData
+        : endpointData && typeof endpointData === "object" && Array.isArray((endpointData as Record<string, unknown>).endpoints)
+          ? (endpointData as Record<string, unknown>).endpoints as unknown[]
+          : Array.isArray(endpointPayload.endpoints)
+            ? endpointPayload.endpoints
+            : [];
+      return {
+        ...baseResult,
+        supported: true,
+        valid: endpoints.length > 0,
+        matchedModel,
+        endpointCount: endpoints.length,
+        message: endpoints.length > 0
+          ? `OpenRouter model and endpoint metadata found for ${model}.`
+          : `OpenRouter model ${model} exists, but no routable endpoints were returned.`,
+      };
+    }
+    return {
+      ...baseResult,
+      supported: true,
+      valid: Boolean(match),
+      matchedModel,
+      message: match
+        ? `OpenRouter model routing metadata found for ${model}.`
+        : `OpenRouter model list does not include ${model}.`,
+    };
+  }
+
+  if (normalizedProvider === "OpenAI") {
+    const key = await getSetting(db, env, "OPENAI_API_KEY");
+    const response = await fetch(`https://api.openai.com/v1/models/${encodeURIComponent(normalizedModel)}`, {
+      headers: { authorization: `Bearer ${key}` },
+    });
+    return {
+      ...baseResult,
+      supported: true,
+      valid: response.ok,
+      status: response.status,
+      message: response.ok
+        ? `OpenAI model metadata found for ${model}.`
+        : `OpenAI model validation failed for ${model}: ${await errorSnippet(response)}`,
+    };
+  }
+
+  if (normalizedProvider === "Gemini") {
+    const key = await getSetting(db, env, "GEMINI_API_KEY");
+    const modelPath = normalizedModel.startsWith("models/") ? normalizedModel : `models/${normalizedModel}`;
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${modelPath}?key=${encodeURIComponent(key || "")}`);
+    return {
+      ...baseResult,
+      supported: true,
+      valid: response.ok,
+      status: response.status,
+      message: response.ok
+        ? `Gemini model metadata found for ${model}.`
+        : `Gemini model validation failed for ${model}: ${await errorSnippet(response)}`,
+    };
+  }
+
+  return {
+    ...baseResult,
+    supported: false,
+    valid: null,
+    message: `${normalizedProvider || "Selected provider"} does not expose a lightweight model metadata check in WebView.click yet.`,
+  };
+}
+
+async function getAiReadiness(db: D1Database, env: Env, provider: string, model: string, requiresAi = true, remoteValidate = false, refreshRemoteValidation = false) {
   const normalizedProvider = provider.trim();
   const normalizedModel = normalizeAiModel(normalizedProvider, model.trim());
   if (!requiresAi) {
@@ -502,6 +704,7 @@ async function getAiReadiness(db: D1Database, env: Env, provider: string, model:
       keyPresent: false,
       providerSupported: true,
       modelKnown: true,
+      remoteValidation: { requested: remoteValidate, supported: false, valid: null, cacheHit: false },
       message: "This action only resaves gathered data and does not require AI.",
       checkedAt: new Date().toISOString(),
     };
@@ -524,8 +727,58 @@ async function getAiReadiness(db: D1Database, env: Env, provider: string, model:
     message = `${normalizedProvider} API key is not configured. Set it in /admin/settings first.`;
   }
 
+  let remoteValidation: Record<string, unknown> = {
+    requested: remoteValidate,
+    supported: false,
+    valid: null,
+    cacheHit: false,
+  };
+  let remoteReady = true;
+  if (remoteValidate && providerSupported && modelKnown && keyPresent) {
+    try {
+      const { cacheKey, keyHash } = await aiReadinessCacheKey(normalizedProvider, normalizedModel, key || "");
+      let cachedValidation: Record<string, unknown> | null = null;
+      if (!refreshRemoteValidation) {
+        try {
+          cachedValidation = await getCachedRemoteAiValidation(db, cacheKey);
+        } catch (cacheError) {
+          console.error("AI readiness cache read failed, continuing without cache:", cacheError);
+        }
+      }
+      remoteValidation = cachedValidation || await validateAiModelRemotely(db, env, normalizedProvider, model.trim());
+      if (!cachedValidation && remoteValidation.supported === true) {
+        try {
+          await putCachedRemoteAiValidation(db, cacheKey, normalizedProvider, normalizedModel, keyHash, remoteValidation);
+        } catch (cacheError) {
+          console.error("AI readiness cache write failed, continuing with live validation:", cacheError);
+        }
+      }
+      if (remoteValidation.supported === true) {
+        remoteReady = remoteValidation.valid === true;
+        if (remoteReady) {
+          message = `${message} Remote model validation passed${remoteValidation.cacheHit ? " from server cache" : ""}.`;
+        } else {
+          message = asString(remoteValidation.message, `${normalizedProvider} remote model validation failed for ${model}.`);
+        }
+      } else {
+        message = `${message} Remote model validation is not supported for ${normalizedProvider}.`;
+      }
+    } catch (error) {
+      remoteReady = false;
+      remoteValidation = {
+        requested: true,
+        supported: true,
+        valid: false,
+        cacheHit: false,
+        message: error instanceof Error ? error.message : String(error),
+        checkedAt: new Date().toISOString(),
+      };
+      message = `${normalizedProvider} remote model validation failed: ${remoteValidation.message}`;
+    }
+  }
+
   return {
-    ready: providerSupported && modelKnown && keyPresent,
+    ready: providerSupported && modelKnown && keyPresent && remoteReady,
     requiresAi,
     provider: normalizedProvider,
     model,
@@ -534,6 +787,7 @@ async function getAiReadiness(db: D1Database, env: Env, provider: string, model:
     keyPresent,
     providerSupported,
     modelKnown,
+    remoteValidation,
     message,
     checkedAt: new Date().toISOString(),
   };
@@ -543,20 +797,30 @@ async function handleAiReadiness(request: Request, db: D1Database, env: Env): Pr
   let provider = "";
   let model = "";
   let requiresAi = true;
+  let remoteValidate = false;
+  let refreshRemoteValidation = false;
   if (request.method === "GET") {
     const url = new URL(request.url);
     provider = url.searchParams.get("provider") || "";
     model = url.searchParams.get("model") || "";
     requiresAi = !["0", "false", "no"].includes((url.searchParams.get("requiresAi") || "1").toLowerCase());
+    remoteValidate = ["1", "true", "yes"].includes((url.searchParams.get("remoteValidate") || url.searchParams.get("validateRemote") || "0").toLowerCase());
+    refreshRemoteValidation = ["1", "true", "yes"].includes((url.searchParams.get("refresh") || url.searchParams.get("bypassCache") || "0").toLowerCase());
   } else if (request.method === "POST") {
     const body = await readJsonBody(request);
     provider = asString(body.provider);
     model = asString(body.model);
     requiresAi = body.requiresAi !== false;
+    remoteValidate = body.remoteValidate === true
+      || body.validateRemote === true
+      || ["1", "true", "yes"].includes(asString(body.remoteValidate || body.validateRemote).toLowerCase());
+    refreshRemoteValidation = body.refresh === true
+      || body.bypassCache === true
+      || ["1", "true", "yes"].includes(asString(body.refresh || body.bypassCache).toLowerCase());
   } else {
     return errorJson("Method not allowed", 405);
   }
-  const result = await getAiReadiness(db, env, provider, model, requiresAi);
+  const result = await getAiReadiness(db, env, provider, model, requiresAi, remoteValidate, refreshRemoteValidation);
   return json(result);
 }
 
@@ -2024,7 +2288,48 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
   return errorJson("Not Found", 404);
 }
 
-async function handleGenerationJobs(request: Request, db: D1Database): Promise<Response> {
+async function handleGenerationJobs(request: Request, db: D1Database, segments: string[]): Promise<Response> {
+  if (request.method === "POST" && segments[1] === "preflight-failure") {
+    const body = await readJsonBody(request);
+    const provider = asString(body.provider);
+    const model = asString(body.model);
+    const businessId = asString(body.businessId);
+    const placeId = asString(body.placeId);
+    const businessName = asString(body.businessName, businessId || placeId || "Unknown business");
+    const action = asString(body.action, "generate");
+    const readiness = body.readiness && typeof body.readiness === "object" ? body.readiness as Record<string, unknown> : {};
+    const message = asString(body.message, asString(readiness.message, "AI readiness preflight blocked this action."));
+    const id = crypto.randomUUID();
+    const metadata = {
+      businessName,
+      generationMode: "ai_readiness_preflight_blocked",
+      preflightBlocked: true,
+      preflightAction: action,
+      failureStage: "ai_readiness_preflight",
+      failureMessage: message,
+      aiReadiness: readiness,
+      remoteValidation: readiness.remoteValidation || null,
+      copyPatchApplied: false,
+      checkedAt: new Date().toISOString(),
+    };
+
+    await ensureRequiredColumns(db, generateRequiredColumns);
+    await createGenerationJob(db, {
+      id,
+      business_id: businessId,
+      place_id: placeId,
+      provider,
+      model,
+      status: "failed",
+      error: message,
+      metadata_json: JSON.stringify(metadata),
+    });
+    if (placeId) {
+      await updateProspectRecord(db, placeId, { last_error: message });
+    }
+    return json({ success: true, id });
+  }
+
   if (request.method !== "GET") {
     return errorJson("Not Found", 404);
   }
@@ -2037,6 +2342,7 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
   const status = String(url.searchParams.get("status") || "").trim().toLowerCase();
   const patch = String(url.searchParams.get("patch") || "").trim().toLowerCase();
   const aiRewrite = String(url.searchParams.get("aiRewrite") || "").trim().toLowerCase();
+  const preflight = String(url.searchParams.get("preflight") || "").trim().toLowerCase();
   const query = String(url.searchParams.get("q") || "").trim().slice(0, 120);
   const includeCounts = url.searchParams.get("counts") === "1";
   const allowedStatuses = new Set(["running", "success", "failed"]);
@@ -2055,6 +2361,9 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
   if (allowedStatuses.has(status)) {
     where.push("j.status = ?");
     bindings.push(status);
+  }
+  if (preflight === "blocked") {
+    where.push(`j.metadata_json LIKE '%"preflightBlocked":true%'`);
   }
   if (patch === "applied") {
     where.push(`j.metadata_json LIKE '%"copyPatchApplied":true%'`);
@@ -2111,6 +2420,7 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
       `SELECT
         COUNT(*) AS all_count,
         SUM(CASE WHEN j.status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+        SUM(CASE WHEN j.metadata_json LIKE '%"preflightBlocked":true%' THEN 1 ELSE 0 END) AS preflight_count,
         SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS patch_count,
         SUM(CASE WHEN j.metadata_json IS NULL OR j.metadata_json NOT LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS fallback_count,
         SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' AND j.metadata_json LIKE '%"aiRewritten":0%' THEN 1 ELSE 0 END) AS no_rewrite_count
@@ -2119,13 +2429,14 @@ async function handleGenerationJobs(request: Request, db: D1Database): Promise<R
        ${searchWhereSql}`,
     );
     const counts = searchBindings.length
-      ? await countsStatement.bind(...searchBindings).first<{ all_count?: number; failed_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number }>()
-      : await countsStatement.first<{ all_count?: number; failed_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number }>();
+      ? await countsStatement.bind(...searchBindings).first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number }>()
+      : await countsStatement.first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number }>();
     return json({
       jobs,
       counts: {
         all: Number(counts?.all_count || 0),
         failed: Number(counts?.failed_count || 0),
+        preflight: Number(counts?.preflight_count || 0),
         fallback: Number(counts?.fallback_count || 0),
         patch: Number(counts?.patch_count || 0),
         noRewrite: Number(counts?.no_rewrite_count || 0),
@@ -4074,7 +4385,7 @@ async function route(context: PagesContext): Promise<Response> {
     }
 
     if (segments[0] === "generation-jobs") {
-      return handleGenerationJobs(request, db);
+      return handleGenerationJobs(request, db, segments);
     }
 
     if (segments[0] === "ai" && segments[1] === "readiness") {

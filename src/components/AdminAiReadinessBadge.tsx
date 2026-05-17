@@ -6,6 +6,7 @@ type AdminAiReadinessBadgeProps = {
   model?: string;
   hasApiKey?: boolean | null;
   requiresAi: boolean;
+  remoteValidate?: boolean;
   className?: string;
 };
 
@@ -18,6 +19,7 @@ export default function AdminAiReadinessBadge({
   model = "",
   hasApiKey = null,
   requiresAi,
+  remoteValidate = false,
   className = "",
 }: AdminAiReadinessBadgeProps) {
   const [preflight, setPreflight] = useState<AiReadinessResult | null>(null);
@@ -41,7 +43,7 @@ export default function AdminAiReadinessBadge({
       };
     }
     setChecking(true);
-    checkAiReadiness(provider, model, true)
+    checkAiReadiness(provider, model, true, remoteValidate)
       .then((result) => {
         if (!cancelled) setPreflight(result);
       })
@@ -51,7 +53,7 @@ export default function AdminAiReadinessBadge({
     return () => {
       cancelled = true;
     };
-  }, [provider, model, requiresAi, refreshVersion]);
+  }, [provider, model, requiresAi, remoteValidate, refreshVersion]);
 
   const modeClass = requiresAi
     ? "border-indigo-200 bg-indigo-50 text-indigo-800"
@@ -75,14 +77,16 @@ export default function AdminAiReadinessBadge({
         : "border-amber-200 bg-amber-50 text-amber-800";
   const preflightLabel = !requiresAi
     ? ""
-    : checking
-      ? "Checking model"
+      : checking
+      ? remoteValidate ? "Checking provider" : "Checking model"
       : preflight?.ready
-        ? "Preflight ok"
+        ? remoteValidate && preflight.remoteValidation?.supported !== false ? "Provider ok" : "Preflight ok"
         : preflight?.providerSupported === false
           ? "Provider invalid"
           : preflight?.modelKnown === false
             ? "Model invalid"
+            : preflight?.remoteValidation?.valid === false
+              ? "Provider failed"
             : preflight
               ? "Preflight failed"
               : "Preflight pending";

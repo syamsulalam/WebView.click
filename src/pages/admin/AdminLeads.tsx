@@ -6,7 +6,7 @@ import { useLocalStorageState } from "../../lib/localStorageState";
 import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOptions } from "../../lib/prospectScoring";
-import { checkAiReadiness } from "../../lib/aiReadiness";
+import { checkAiReadiness, logAiReadinessBlockedJob } from "../../lib/aiReadiness";
 import HelpTooltip from "../../components/HelpTooltip";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
 import AdminWorkspaceTabs from "../../components/AdminWorkspaceTabs";
@@ -999,11 +999,21 @@ export default function AdminLeads() {
       return;
     }
 
-    const readiness = await checkAiReadiness(activeProviderKey, activeModel, true);
+    const readiness = await checkAiReadiness(activeProviderKey, activeModel, true, true);
     if (!readiness.ready) {
+      const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before generating.";
+      await logAiReadinessBlockedJob({
+        provider: activeProviderKey,
+        model: activeModel,
+        readiness,
+        action: "lead_generate",
+        businessName: place?.name || placeKey,
+        placeId: String(place?.place_id || place?.id || ""),
+        message,
+      });
       setGenerationMessages(prev => ({
         ...prev,
-        [placeKey]: { type: "error", text: readiness.message || "AI provider/model is not ready. Check /admin/settings before generating." },
+        [placeKey]: { type: "error", text: message },
       }));
       return;
     }
@@ -2257,6 +2267,7 @@ export default function AdminLeads() {
                   model={activeModel}
                   hasApiKey={activeProviderKeyReady}
                   requiresAi
+                  remoteValidate
                 />
                 <button
                   type="button"
@@ -2408,6 +2419,7 @@ export default function AdminLeads() {
                         model={activeModel}
                         hasApiKey={activeProviderKeyReady}
                         requiresAi
+                        remoteValidate
                       />
                     </div>
                   )}

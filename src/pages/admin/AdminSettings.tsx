@@ -606,7 +606,7 @@ export default function AdminSettings() {
           <div>
             <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
               AI readiness
-              <HelpTooltip text="Checks the selected pricing provider/model against saved Settings keys and the supported model registry without running a paid generation." />
+              <HelpTooltip text="Checks the selected pricing provider/model against saved Settings keys, the local model registry, and supported provider metadata without running a paid generation." />
             </p>
             <p className="mt-0.5 text-xs text-slate-500">Use this to verify a newly saved key before returning to Leads or Sites.</p>
           </div>
@@ -615,6 +615,7 @@ export default function AdminSettings() {
             model={pricingModel}
             hasApiKey={pricingProviderKeyReady}
             requiresAi
+            remoteValidate
           />
         </div>
         <div className="mt-5 rounded-xl bg-slate-50 border border-slate-200 p-4">

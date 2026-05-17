@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, ExternalLink, FileText, Loader2, RefreshCw, RotateCw, Search, X } from "lucide-react";
 import { useLocalStorageState } from "../lib/localStorageState";
-import { checkAiReadiness } from "../lib/aiReadiness";
+import { checkAiReadiness, logAiReadinessBlockedJob } from "../lib/aiReadiness";
 import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
 
@@ -23,6 +23,7 @@ type GenerationJobsTableProps = {
 type GenerationJobCounts = {
   all: number;
   failed: number;
+  preflight: number;
   fallback: number;
   patch: number;
   noRewrite: number;
@@ -78,6 +79,7 @@ function auditStatusClass(status: string) {
 
 function filterJobs(jobs: any[], filter: string) {
   if (filter === "failed") return jobs.filter((job) => job.status === "failed");
+  if (filter === "preflight") return jobs.filter((job) => job?.metadata?.preflightBlocked === true);
   if (filter === "fallback") return jobs.filter((job) => !patchApplied(job));
   if (filter === "patch") return jobs.filter((job) => patchApplied(job));
   if (filter === "noRewrite") return jobs.filter((job) => noAiRewrite(job));
@@ -87,6 +89,7 @@ function filterJobs(jobs: any[], filter: string) {
 function sortJobs(jobs: any[], sort: string) {
   return [...jobs].sort((a, b) => {
     if (sort === "failed") return Number(b.status === "failed") - Number(a.status === "failed");
+    if (sort === "preflight") return Number(b?.metadata?.preflightBlocked === true) - Number(a?.metadata?.preflightBlocked === true);
     if (sort === "fallback") return Number(!patchApplied(b)) - Number(!patchApplied(a));
     if (sort === "patch") return Number(patchApplied(b)) - Number(patchApplied(a));
     if (sort === "noRewrite") return Number(noAiRewrite(b)) - Number(noAiRewrite(a));
@@ -126,6 +129,7 @@ export default function GenerationJobsTable({
   const localCounts = useMemo(() => ({
     all: jobs.length,
     failed: jobs.filter((job) => job.status === "failed").length,
+    preflight: jobs.filter((job) => job?.metadata?.preflightBlocked === true).length,
     fallback: jobs.filter((job) => !patchApplied(job)).length,
     patch: jobs.filter((job) => patchApplied(job)).length,
     noRewrite: jobs.filter((job) => noAiRewrite(job)).length,
@@ -143,6 +147,8 @@ export default function GenerationJobsTable({
   const canLoadMore = serverBackedFilters && !compact && Boolean(remoteCounts) && jobs.length < activeTotal;
   const selectedAuditItems = copyAuditItems(selectedJob);
   const selectedAuditSummary = copyAuditSummary(selectedJob);
+  const selectedAiReadiness = selectedJob?.metadata?.aiReadiness || null;
+  const selectedRemoteValidation = selectedJob?.metadata?.remoteValidation || selectedAiReadiness?.remoteValidation || null;
 
   const retryReadiness = (job: any) => {
     const provider = job?.provider || fallbackProvider;
@@ -168,6 +174,7 @@ export default function GenerationJobsTable({
       if (serverBackedFilters) {
         params.set("counts", "1");
         if (filter === "failed") params.set("status", "failed");
+        if (filter === "preflight") params.set("preflight", "blocked");
         if (filter === "fallback") params.set("patch", "fallback");
         if (filter === "patch") params.set("patch", "applied");
         if (filter === "noRewrite") params.set("aiRewrite", "zero");
@@ -185,6 +192,7 @@ export default function GenerationJobsTable({
         setRemoteCounts({
           all: Number(data.counts.all || 0),
           failed: Number(data.counts.failed || 0),
+          preflight: Number(data.counts.preflight || 0),
           fallback: Number(data.counts.fallback || 0),
           patch: Number(data.counts.patch || 0),
           noRewrite: Number(data.counts.noRewrite || 0),
@@ -238,9 +246,20 @@ export default function GenerationJobsTable({
     try {
       const retryProvider = job.provider || fallbackProvider;
       const retryModel = job.model || fallbackModel;
-      const readiness = await checkAiReadiness(retryProvider, retryModel, true);
+      const readiness = await checkAiReadiness(retryProvider, retryModel, true, true);
       if (!readiness.ready) {
-        throw new Error(readiness.message || "AI provider/model is not ready. Check /admin/settings before retrying.");
+        const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before retrying.";
+        await logAiReadinessBlockedJob({
+          provider: retryProvider,
+          model: retryModel,
+          readiness,
+          action: "job_retry",
+          businessId: job.businessId,
+          placeId: job.placeId,
+          businessName: job.prospectName || job.metadata?.businessName || job.businessId,
+          message,
+        });
+        throw new Error(message);
       }
 
       const briefResponse = await fetch(`/api/sites/${encodeURIComponent(job.businessId)}/copy-brief`);
@@ -303,6 +322,7 @@ export default function GenerationJobsTable({
   const filterOptions = [
     { value: "all", label: "All", count: counts.all },
     { value: "failed", label: "Failed", count: counts.failed },
+    { value: "preflight", label: "Preflight blocked", count: counts.preflight },
     { value: "fallback", label: "Fallback", count: counts.fallback },
     { value: "patch", label: "Patch", count: counts.patch },
     { value: "noRewrite", label: "No rewrite", count: counts.noRewrite },
@@ -316,7 +336,7 @@ export default function GenerationJobsTable({
             Generation jobs
             <HelpTooltip
               widthClass="w-80"
-              text="Fallback means no AI copy patch was applied. Patch means AI copy was merged into the deterministic site JSON. No rewrite means the patch ran but did not change source copy."
+              text="Preflight blocked means AI readiness stopped the click before full generation. Fallback means no AI copy patch was applied. Patch means AI copy was merged into the deterministic site JSON. No rewrite means the patch ran but did not change source copy."
             />
           </p>
           {!compact && <p className="mt-1 text-xs text-slate-500">Filter, sort, and retry generation attempts.</p>}
@@ -364,6 +384,7 @@ export default function GenerationJobsTable({
           >
             <option value="newest">Newest first</option>
             <option value="failed">Failed first</option>
+            <option value="preflight">Preflight blocked first</option>
             <option value="fallback">Fallback first</option>
             <option value="patch">Patch applied first</option>
             <option value="noRewrite">No AI rewrite first</option>
@@ -612,6 +633,30 @@ export default function GenerationJobsTable({
                   {selectedJob.error || "No error recorded."}
                 </pre>
               </section>
+
+              {selectedJob.metadata?.preflightBlocked && selectedAiReadiness && (
+                <section>
+                  <div className="mb-2">
+                    <h3 className="font-semibold text-slate-950">AI readiness block</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">Why this attempt stopped before `/api/sites/generate`.</p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {[
+                      ["Key", selectedAiReadiness.keyPresent === true ? "Present" : selectedAiReadiness.keyPresent === false ? "Missing" : "Unknown", selectedAiReadiness.keyPresent === true],
+                      ["Local model", selectedAiReadiness.modelKnown === true ? "Known" : selectedAiReadiness.modelKnown === false ? "Not in registry" : "Unknown", selectedAiReadiness.modelKnown === true],
+                      ["Remote route", selectedRemoteValidation?.valid === true ? "Valid" : selectedRemoteValidation?.valid === false ? "Failed" : selectedRemoteValidation?.supported === false ? "Not supported" : "Not checked", selectedRemoteValidation?.valid === true || selectedRemoteValidation?.supported === false],
+                    ].map(([label, value, ok]) => (
+                      <div key={String(label)} className={`rounded-xl border p-3 ${ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{String(label)}</p>
+                        <p className={`mt-1 font-semibold ${ok ? "text-emerald-800" : "text-red-800"}`}>{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                    {selectedRemoteValidation?.message || selectedAiReadiness.message || selectedJob.error}
+                  </p>
+                </section>
+              )}
 
               <section>
                 <div className="mb-2 flex items-center justify-between gap-2">

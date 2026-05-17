@@ -24,7 +24,7 @@ export default function AdminAiReadinessRefreshButton({
       Refresh AI readiness
       <HelpTooltip
         widthClass="w-64"
-        text="Clears the 30 second AI readiness cache and rechecks provider key/model badges now."
+        text="Clears the 30 second browser cache and asks the server to bypass its short provider/model readiness cache for the next recheck."
       />
     </button>
   );

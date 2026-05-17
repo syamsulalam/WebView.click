@@ -126,7 +126,7 @@ Fungsi:
 
 Logic penting:
 - Komponen sendiri yang mengambil `GET /api/generation-jobs?limit=...`, menghitung counter filter, menyimpan filter/sort ke localStorage berdasarkan `storageKeyPrefix`, dan menjalankan retry job.
-- Dalam `serverBackedFilters` mode, perubahan filter `Failed`, `Fallback`, `Patch`, atau `No rewrite` memanggil endpoint dengan `status=failed`, `patch=fallback`, `patch=applied`, atau `aiRewrite=zero`, bukan hanya menyaring rows yang sudah loaded.
+- Dalam `serverBackedFilters` mode, perubahan filter `Failed`, `Preflight blocked`, `Fallback`, `Patch`, atau `No rewrite` memanggil endpoint dengan `status=failed`, `preflight=blocked`, `patch=fallback`, `patch=applied`, atau `aiRewrite=zero`, bukan hanya menyaring rows yang sudah loaded.
 - Dalam `serverBackedSearch` mode, search box mengirim `q` ke server untuk mencari `business_id`, `place_id`, job `id`, nama prospect, dan metadata JSON.
 - Full page mode menampilkan `Load more` jika rows loaded masih lebih sedikit dari count server; tombol ini memanggil endpoint dengan `offset={loadedRows}` lalu append ke tabel.
 - Kolom Job menyediakan tombol copy kecil untuk Job ID dan Business ID; saat sukses icon berubah menjadi check sementara.
@@ -634,8 +634,11 @@ Logic AI:
   - `kie/gpt-5-2` via `https://api.kie.ai/gpt-5-2/v1/chat/completions`
   - `kie/gemini-3.1-pro` via `https://api.kie.ai/gemini-3.1-pro/v1/chat/completions`
   - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
-- `/api/ai/readiness` adalah preflight ringan untuk provider/model AI: membaca key dari `system_settings` atau env binding, mengecek provider didukung, dan mengecek model ada di registry internal tanpa memanggil provider eksternal.
+- `/api/ai/readiness` adalah preflight ringan untuk provider/model AI: membaca key dari `system_settings` atau env binding, mengecek provider didukung, dan mengecek model ada di registry internal. Jika query/body membawa `remoteValidate=1`, endpoint juga menjalankan metadata check provider sebelum generate: OpenRouter `GET /api/v1/models` plus `GET /api/v1/models/{author}/{slug}/endpoints`, OpenAI `GET /v1/models/{model}`, dan Gemini `GET /v1beta/models/{model}`. KIE/Opencode tetap memakai registry lokal karena belum ada metadata check ringan yang aman.
+- Remote readiness validation memakai cache D1 `ai_readiness_cache` dengan TTL pendek 2 menit per provider/model/key hash. Query/body `refresh=1` atau `bypassCache=1` melewati cache server dan menulis hasil baru; tombol `Refresh AI readiness` mengirim bypass ini untuk recheck setelah key/model diubah.
 - Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI key hilang, provider/model tidak valid, provider mengembalikan HTTP error, response kosong, atau JSON invalid. Generate/regenerate AI dari `/admin/leads`, `/admin/sites`, dan job retry memakai `requireAi: true` agar masalah AI terlihat; mode `Re-gather Google data + resave` tetap tanpa AI.
+- Admin generate/regenerate/retry calls memakai `checkAiReadiness(..., remoteValidate=true)` sebelum `/api/sites/generate`, sehingga model remote yang tidak dikenal bisa gagal di preflight tanpa menghabiskan klik generate penuh.
+- Jika preflight AI memblokir generate/regenerate/retry di browser, UI memanggil `POST /api/generation-jobs/preflight-failure` untuk menyimpan row `generation_jobs` berstatus `failed`; `metadata_json.aiReadiness` dan `metadata_json.remoteValidation` menyimpan alasan key/registry/provider routing yang memblokir.
 - Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
 - Full scaffold JSON tidak dikirim ke AI. AI tidak melihat image URL, maps URL, navigation href, sourceData mentah, palette, font, visual style, favicon, CSS, storage, atau field protected lain.
 - Untuk OpenRouter, model value UI yang diawali `~` dikirim apa adanya ke API karena OpenRouter memakai prefix itu untuk latest-model resolution seperti `~anthropic/claude-sonnet-latest`.
@@ -698,10 +701,11 @@ Logic Prospect Drafts:
 
 Logic Generation Jobs:
 - `generation_jobs` mencatat setiap request `/api/sites/generate` dengan status `running`, `success`, atau `failed`.
-- `generation_jobs.metadata_json` menyimpan audit generate: `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, ringkasan/item audit copy AI (`copyAuditSummary`, `copyAuditItems`), provider/model, dan failure metadata bila generate gagal.
+- `POST /api/generation-jobs/preflight-failure` mencatat generate/regenerate/retry yang diblokir oleh AI readiness sebelum `/api/sites/generate`, supaya kegagalan key/model/provider routing tetap terlihat di Jobs. Drawer detail `GenerationJobsTable` menampilkan ringkasan `AI readiness block` untuk key, local model registry, dan remote provider route.
+- `generation_jobs.metadata_json` menyimpan audit generate: `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, ringkasan/item audit copy AI (`copyAuditSummary`, `copyAuditItems`), provider/model, failure metadata bila generate gagal, dan `aiReadiness`/`remoteValidation` bila preflight memblokir sebelum generate.
 - Jika generate sukses, prospect draft diupdate ke `site_generated` dan `generated_business_id` diisi.
 - Jika generate gagal, `generation_jobs.error` dan `places_prospects.last_error` diisi agar admin bisa melihat error di UI.
-- `GET /api/generation-jobs` mendukung query `limit` (1-500, default 100), `offset` (default 0), `q`, `status=running|success|failed`, `patch=applied|fallback`, `aiRewrite=zero`, dan `counts=1`.
+- `GET /api/generation-jobs` mendukung query `limit` (1-500, default 100), `offset` (default 0), `q`, `status=running|success|failed`, `preflight=blocked`, `patch=applied|fallback`, `aiRewrite=zero`, dan `counts=1`.
 - Quick panel Jobs di `/admin/leads` memakai `limit=100`; halaman penuh `/admin/jobs` memakai `limit=200`.
 - Jika `counts=1`, endpoint mengembalikan `{ jobs, counts }` supaya badge filter tetap global walaupun rows sedang difilter server-side.
 - Jika `q` dikirim bersama `counts=1`, counts dihitung dalam scope search query tersebut.
@@ -709,7 +713,7 @@ Logic Generation Jobs:
 - Panel Jobs menampilkan fingerprint pendek `brief:{8 chars}` dan `patch:{8 chars}` dari `copyBriefHash`/`copyPatchHash`, plus badge `patch applied` atau `fallback only`.
 - Panel Jobs punya action `Retry current brief` dari row dan drawer detail: UI menghitung hash `GET /api/sites/:businessId/copy-brief` saat ini, membandingkannya dengan `generation_jobs.metadata.copyBriefHash`, lalu memberi warning inline jika brief berubah. Klik kedua (`Retry anyway`) membuat job baru memakai brief/current site JSON terbaru.
 - Drawer detail menampilkan `AI copy audit` untuk job baru: jumlah source sentence yang dikirim, jumlah yang diubah/diisi AI, jumlah fallback/kept, dan daftar per field dengan source copy versus final copy.
-- Panel Jobs punya filter `All`, `Failed`, `Fallback`, `Patch`, dan `No rewrite`; di halaman penuh filter memakai server/D1, sedangkan quick drawer menyaring row yang sudah loaded.
+- Panel Jobs punya filter `All`, `Failed`, `Preflight blocked`, `Fallback`, `Patch`, dan `No rewrite`; di halaman penuh filter memakai server/D1, sedangkan quick drawer menyaring row yang sudah loaded.
 - Panel Jobs dirender sebagai compact table dengan kolom Job, Status, Model, Brief hash, Patch hash, dan Action agar status/retry lebih mudah discan saat job history panjang.
 - `/admin/jobs` menambahkan sort lokal `Newest`, `Failed first`, `Fallback first`, `Patch applied first`, dan `No AI rewrite first`; quick drawer `/admin/leads` memakai sort yang sama.
 
@@ -756,7 +760,7 @@ Fungsi:
 
 Fungsi:
 - Skema Cloudflare D1 production.
-- Tabel inti: `leads`, `subscriptions`, `crm_activities`, `json_sites`, `system_settings`.
+- Tabel inti: `leads`, `subscriptions`, `crm_activities`, `json_sites`, `system_settings`, `ai_readiness_cache`.
 - Tabel admin prospecting: `places_search_cache`, `places_prospects`, dan `generation_jobs`.
 
 Tabel:
@@ -765,6 +769,7 @@ Tabel:
 - `crm_activities`
 - `json_sites`
 - `system_settings`
+- `ai_readiness_cache`
 
 ## Maintenance Rule
 
@@ -777,6 +782,7 @@ Jika menambah laman atau komponen baru:
 
 - `docs/GOOGLE_PLACES_DATA_INVENTORY.md`: inventaris data Google Places yang bisa dipakai untuk CRM lead scoring dan site generation.
 - `docs/GOOGLE_PLACES_PHOTO_STRATEGY.md`: strategi foto Google Places untuk free preview vs paid website.
+- `docs/FREE_TIER_LIMITS_AUDIT.md`: baseline batas Cloudflare Pages/Workers/D1/R2, Google Maps, Clerk, dan audit endpoint yang berisiko quota/cost.
 - `docs/NICHE_STYLE_PRESETS.md`: brainstorm dan kontrak `design.stylePreset`.
 - `docs/LEMON_SQUEEZY_INTEGRATION.md`: catatan integrasi checkout Lemon Squeezy.
 - `docs/DOMAIN_AVAILABILITY_RESEARCH.md`: riset provider gratis/murah untuk cek availability domain.
