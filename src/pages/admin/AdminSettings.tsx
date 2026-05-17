@@ -4,6 +4,7 @@ import { aiModelPrices, defaultInputTokens, defaultOutputTokens, estimateCostUsd
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { clearAiReadinessCache } from "../../lib/aiReadiness";
 import HelpTooltip from "../../components/HelpTooltip";
+import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import {
   defaultProspectScoreWeights,
@@ -91,6 +92,14 @@ const providerOptions: Array<{
     ],
   },
 ];
+
+const pricingProviderApiKeyMap: Record<string, string> = {
+  OpenRouter: "OPENROUTER_API_KEY",
+  OpenAI: "OPENAI_API_KEY",
+  Gemini: "GEMINI_API_KEY",
+  KIE: "KIE_API_KEY",
+  Opencode: "OPENCODE_API_KEY",
+};
 
 export default function AdminSettings() {
   const [settings, setSettings] = useState<Record<string, string>>(initialSettings);
@@ -246,6 +255,7 @@ export default function AdminSettings() {
 
   const pricingModels = aiModelPrices.filter((item) => item.provider === pricingProvider);
   const pricingEstimate = estimateCostUsd(pricingProvider, pricingModel, inputTokens, outputTokens);
+  const pricingProviderKeyReady = Boolean(String(settings?.[pricingProviderApiKeyMap[pricingProvider]] || "").trim());
 
   if (loading) {
     return <div className="p-8 flex items-center justify-center">Loading settings...</div>;
@@ -300,7 +310,7 @@ export default function AdminSettings() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+      <div id="settings-ai-provider" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="grid md:grid-cols-[240px_1fr]">
           <aside className="border-b md:border-b-0 md:border-r border-gray-100 p-4 bg-gray-50">
             <p className="mb-3 inline-flex items-center gap-1.5 px-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -354,7 +364,7 @@ export default function AdminSettings() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-6 mt-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div id="settings-google-places" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
           <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
             Google Places
             <HelpTooltip text="Server-side key used for Places search, details, reviews, and photo proxy calls. It should be API-restricted, not HTTP-referrer restricted." />
@@ -371,7 +381,7 @@ export default function AdminSettings() {
           />
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div id="settings-payment" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
           <h2 className="mb-4 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
             Payment Links
             <HelpTooltip text="Used by checkout/setup flows. Lemon Squeezy settings enable real checkout; WhatsApp remains useful for mock checkout or manual setup follow-up." />
@@ -542,7 +552,10 @@ export default function AdminSettings() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+            <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700">
+              Model
+              <HelpTooltip text="Selected model for this estimator and readiness check. Leads/Sites have their own saved generation model selectors." />
+            </label>
             <select
               value={pricingModel}
               onChange={(e) => setPricingModel(e.target.value)}
@@ -588,6 +601,21 @@ export default function AdminSettings() {
               className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
             />
           </div>
+        </div>
+        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
+              AI readiness
+              <HelpTooltip text="Checks the selected pricing provider/model against saved Settings keys and the supported model registry without running a paid generation." />
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">Use this to verify a newly saved key before returning to Leads or Sites.</p>
+          </div>
+          <AdminAiReadinessBadge
+            provider={pricingProvider}
+            model={pricingModel}
+            hasApiKey={pricingProviderKeyReady}
+            requiresAi
+          />
         </div>
         <div className="mt-5 rounded-xl bg-slate-50 border border-slate-200 p-4">
           <p className="text-sm text-slate-500">Total estimasi</p>

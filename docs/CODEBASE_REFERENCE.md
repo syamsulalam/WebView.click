@@ -48,6 +48,7 @@ Logic penting:
 - Pergantian tab menjalankan scroll-to-top.
 - Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section, sehingga old generated JSON yang tidak punya page `contact` tetap bisa memakai nav/footer Contact.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
+- Hero section memberi marker `data-wv-hero-section` dan `data-wv-hero-heading`; renderer memakai ResizeObserver + font-ready check untuk menurunkan ukuran H1 seperlunya agar headline hero maksimal sekitar tiga baris tanpa mengecilkan heading secara permanen.
 - `hoursLocation` memakai `content.hoursTitle` / `content.openingHoursTitle` atau fallback label `Business Hours` / `Jam Operasional` untuk card jam, bukan `content.title`, agar tidak dobel dengan card `Location & Contact`. Jam Google Places juga diringkas per kelompok jam yang sama dan menonjolkan jam hari ini.
 - Heading pair pada `hoursLocation` memakai marker `data-wv-hours-location-heading` dan CSS variable panjang teks agar dua card tetap simetris, satu baris, dan menyesuaikan ukuran saat font pairing display terlalu lebar.
 - Renderer otomatis menambahkan aggregate page `services` jika JSON punya `products`, `services`, atau `offers` tetapi belum punya `pageId: "services"`. Page ini menampilkan daftar semua produk/layanan dan tiap card tetap link ke detail page masing-masing.
@@ -85,6 +86,7 @@ Logic penting:
 Risiko debug:
 - Jika UI demo/public berbeda dari ekspektasi, cek mapping section di file ini dulu sebelum mengubah `PublicViewer`.
 - Jika menambah `section.type` baru di JSON, tambahkan renderer di file ini dan update dokumen ini.
+- Jika hero H1 masih menjadi empat baris pada font/viewport tertentu, cek selector `data-wv-hero-heading` dan CSS variable `--wv-hero-heading-size` di `SiteRenderer`.
 - Jika tool UI berubah mengikuti website, pastikan elemen tool tidak masuk ke `[data-wv-site-canvas]`.
 
 ### `src/components/EditableText.tsx`
@@ -158,6 +160,7 @@ Fungsi:
 Logic penting:
 - Memanggil `clearAiReadinessCache()` dari `src/lib/aiReadiness.ts`.
 - Helper cache mengirim browser event `webview:ai-readiness-refresh`; badge yang sedang mount mendengar event ini dan langsung memanggil ulang `/api/ai/readiness`.
+- Tombol memakai `HelpTooltip` untuk menjelaskan bahwa cache readiness 30 detik akan dibersihkan tanpa menjalankan generate.
 
 ### `src/components/AdminWorkspaceTabs.tsx`
 
@@ -223,16 +226,21 @@ Risiko debug:
 
 Fungsi:
 - Menampilkan overview CRM: total leads, conversion rate, total revenue, dan aktivitas terbaru.
+- Menampilkan setup readiness ringkas untuk Google Places, AI generation, dan payment setup sebelum admin masuk workflow detail.
 
 API yang dipakai:
 - `GET /api/stats`
 - `GET /api/activities`
+- `GET /api/settings`
 
 Logic penting:
 - Response API divalidasi. Jika endpoint 500 atau return shape salah, halaman tidak crash.
 - `toNumber()` memastikan `toFixed()` hanya dipanggil pada angka valid.
 - Jika API bermasalah, dashboard menampilkan banner fallback dan angka kosong.
+- Setup readiness membaca settings D1: Places ready jika `GOOGLE_PLACES_API_KEY` ada, AI ready jika minimal satu provider key ada, Payment ready jika Lemon Squeezy lengkap dan partial jika payment link/WhatsApp fallback ada.
+- Setup readiness cards deep-link ke Settings anchors: `#settings-google-places`, `#settings-ai-provider`, dan `#settings-payment`.
 - Metric cards dan aktivitas terbaru punya tooltip untuk membedakan angka dashboard dari source-of-truth workflow per prospek.
+- Readiness card memakai `HelpTooltip` pada heading dan setiap item agar admin tahu setup mana yang memblokir search, generation, atau checkout.
 
 ### `src/pages/admin/AdminLeads.tsx`
 
@@ -439,9 +447,11 @@ API yang dipakai:
 
 Logic penting:
 - Provider selector hanya menampilkan field API key untuk provider aktif.
+- Settings punya anchor sections `settings-ai-provider`, `settings-google-places`, dan `settings-payment` untuk dashboard readiness deep-links.
 - Provider tab dan estimator provider/model disimpan ke localStorage agar pilihan terakhir tetap dipakai setelah refresh.
 - Setelah settings berhasil tersimpan, cache AI readiness otomatis dibersihkan agar key baru langsung terbaca oleh badge/preflight.
 - Estimator provider/model punya tombol `Refresh AI readiness` untuk clear cache manual tanpa menunggu TTL 30 detik.
+- Estimator juga menampilkan inline `AI readiness` badge untuk provider/model yang sedang dipilih, sehingga key baru bisa diverifikasi dari `/admin/settings` tanpa pindah ke Leads/Sites.
 - Auto-save berjalan 1,2 detik setelah perubahan terakhir.
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
@@ -449,7 +459,7 @@ Logic penting:
 - Payment settings sekarang mencakup Lemon Squeezy API key, store ID, variant ID, dan nomor WhatsApp admin untuk mock/checkout notifications.
 - Section `Prospect Scoring` menyimpan preset, default threshold, dan bobot scoring ke D1 settings agar prioritas prospek bisa ditune dari UI tanpa edit kode.
 - Bobot scoring memakai angka positif/negatif. Reset weights mengembalikan default dari `src/lib/prospectScoring.ts`.
-- Tooltip dipasang pada Settings heading, manual save, provider tabs, Google Places, Payment Links, AI cost estimator, and scoring controls to clarify which settings affect generation, search, checkout, and estimates.
+- Tooltip dipasang pada Settings heading, manual save, provider tabs, Google Places, Payment Links, AI cost estimator, AI readiness refresh/result, and scoring controls to clarify which settings affect generation, search, checkout, and estimates.
 
 Risiko debug:
 - Jika save gagal, form tetap menyimpan state lokal dan banner merah meminta retry.

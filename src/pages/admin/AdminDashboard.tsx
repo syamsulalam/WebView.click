@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AlertTriangle, CheckCircle2, CircleDashed } from "lucide-react";
 import HelpTooltip from "../../components/HelpTooltip";
 
 type Stats = {
@@ -9,6 +10,17 @@ type Stats = {
 
 const emptyStats: Stats = { totalLeads: 0, conversionRate: 0, totalRevenue: 0 };
 
+type ReadinessLevel = "ready" | "partial" | "missing";
+
+type ReadinessItem = {
+  key: string;
+  label: string;
+  level: ReadinessLevel;
+  detail: string;
+  href: string;
+  tooltip: string;
+};
+
 function toNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -16,6 +28,7 @@ function toNumber(value: unknown) {
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats>(emptyStats);
   const [activities, setActivities] = useState<any[]>([]);
+  const [settings, setSettings] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [apiWarning, setApiWarning] = useState("");
 
@@ -39,8 +52,13 @@ export default function AdminDashboard() {
         console.error(error);
         setApiWarning("API activities belum siap. Dashboard tetap bisa dibuka dengan data kosong sementara.");
         return [];
+      }),
+      fetchJson("/api/settings").catch((error) => {
+        console.error(error);
+        setApiWarning("Settings belum bisa dibaca. Readiness setup memakai state kosong sementara.");
+        return {};
       })
-    ]).then(([statsData, activitiesData]) => {
+    ]).then(([statsData, activitiesData, settingsData]) => {
       const safeStats = statsData && typeof statsData === "object" ? statsData as Partial<Stats> : emptyStats;
       setStats({
         totalLeads: toNumber(safeStats.totalLeads),
@@ -48,6 +66,7 @@ export default function AdminDashboard() {
         totalRevenue: toNumber(safeStats.totalRevenue),
       });
       setActivities(Array.isArray(activitiesData) ? activitiesData : []);
+      setSettings(settingsData && typeof settingsData === "object" ? settingsData as Record<string, string> : {});
       setLoading(false);
     }).catch(e => {
       console.error(e);
@@ -55,6 +74,65 @@ export default function AdminDashboard() {
       setLoading(false);
     });
   }, []);
+
+  const aiProviderKeys = ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "KIE_API_KEY", "OPENCODE_API_KEY"];
+  const configuredAiKeys = aiProviderKeys.filter((key) => String(settings?.[key] || "").trim());
+  const lemonReady = Boolean(
+    String(settings?.LEMON_SQUEEZY_API_KEY || "").trim()
+    && String(settings?.LEMON_SQUEEZY_STORE_ID || "").trim()
+    && String(settings?.LEMON_SQUEEZY_VARIANT_ID || "").trim(),
+  );
+  const manualPaymentFallback = Boolean(
+    String(settings?.PAYMENT_LINK_BASIC || "").trim()
+    || String(settings?.PAYMENT_LINK_PREMIUM || "").trim()
+    || String(settings?.ADMIN_WHATSAPP_NUMBER || "").trim(),
+  );
+  const readinessItems: ReadinessItem[] = [
+    {
+      key: "places",
+      label: "Google Places",
+      level: String(settings?.GOOGLE_PLACES_API_KEY || "").trim() ? "ready" : "missing",
+      detail: String(settings?.GOOGLE_PLACES_API_KEY || "").trim()
+        ? "Search, details, reviews, and photo proxy can run."
+        : "Missing Places key blocks prospect search/details.",
+      href: "/admin/settings#settings-google-places",
+      tooltip: "Required for Google Maps prospect search, Place Details, reviews, and photo proxy calls.",
+    },
+    {
+      key: "ai",
+      label: "AI Generation",
+      level: configuredAiKeys.length > 0 ? "ready" : "missing",
+      detail: configuredAiKeys.length > 0
+        ? `${configuredAiKeys.length} provider key${configuredAiKeys.length === 1 ? "" : "s"} configured.`
+        : "No AI provider key found for generation.",
+      href: "/admin/settings#settings-ai-provider",
+      tooltip: "At least one AI provider key is needed for generate/regenerate actions that require AI copy enrichment.",
+    },
+    {
+      key: "payment",
+      label: "Payment Setup",
+      level: lemonReady ? "ready" : manualPaymentFallback ? "partial" : "missing",
+      detail: lemonReady
+        ? "Lemon Squeezy checkout is configured."
+        : manualPaymentFallback
+          ? "Manual/mock checkout fallback is available."
+          : "Missing checkout and manual fallback settings.",
+      href: "/admin/settings#settings-payment",
+      tooltip: "Lemon Squeezy API key, store ID, and variant ID enable real checkout. Payment links or WhatsApp can still support manual fallback.",
+    },
+  ];
+
+  const readinessStyle = (level: ReadinessLevel) => {
+    if (level === "ready") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+    if (level === "partial") return "border-amber-200 bg-amber-50 text-amber-800";
+    return "border-red-200 bg-red-50 text-red-800";
+  };
+
+  const readinessIcon = (level: ReadinessLevel) => {
+    if (level === "ready") return <CheckCircle2 size={16} />;
+    if (level === "partial") return <CircleDashed size={16} />;
+    return <AlertTriangle size={16} />;
+  };
 
   return (
     <div className="p-8 max-w-6xl mx-auto font-sans bg-gray-50/50 min-h-[calc(100vh-64px)] rounded-3xl mt-4 border border-gray-100">
@@ -97,6 +175,42 @@ export default function AdminDashboard() {
                 <HelpTooltip text="Revenue total returned by /api/stats. Checkout/mock checkout details still live in the lead status and payment records." />
               </p>
               <p className="text-4xl font-semibold text-green-600">${stats.totalRevenue.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div className="mb-12 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                  Setup readiness
+                  <HelpTooltip text="Quick check for the setup pieces that block prospect search, AI generation, or checkout before you enter each workflow." />
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">Missing items should be fixed in Settings before heavy prospecting or generation.</p>
+              </div>
+              <a href="/admin/settings" className="text-sm font-semibold text-indigo-700 hover:underline">Open Settings</a>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              {readinessItems.map((item) => (
+                <a
+                  key={item.key}
+                  href={item.href}
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-indigo-200 hover:bg-white"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                        {item.label}
+                        <HelpTooltip text={item.tooltip} />
+                      </p>
+                      <p className="mt-2 text-xs leading-relaxed text-slate-600">{item.detail}</p>
+                    </div>
+                    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold ${readinessStyle(item.level)}`}>
+                      {readinessIcon(item.level)}
+                      {item.level === "ready" ? "Ready" : item.level === "partial" ? "Partial" : "Missing"}
+                    </span>
+                  </div>
+                </a>
+              ))}
             </div>
           </div>
           

@@ -621,6 +621,63 @@ export default function SiteRenderer({
     return () => window.removeEventListener("scroll", updateHeaderState);
   }, []);
 
+  useEffect(() => {
+    const canvas = document.querySelector<HTMLElement>("#rendered-site [data-wv-site-canvas]");
+    if (!canvas) return;
+    let frame = 0;
+    const minScale = 0.58;
+    const maxLines = 3;
+
+    const lineHeightFor = (element: HTMLElement) => {
+      const styles = window.getComputedStyle(element);
+      const fontSize = Number.parseFloat(styles.fontSize) || 48;
+      const lineHeight = Number.parseFloat(styles.lineHeight);
+      return Number.isFinite(lineHeight) ? lineHeight : fontSize * 0.98;
+    };
+
+    const fitHeading = (heading: HTMLElement) => {
+      const page = heading.closest<HTMLElement>("[data-wv-page]");
+      if (page && page.getAttribute("data-wv-page") !== activeTab) return;
+      heading.style.removeProperty("--wv-hero-heading-size");
+      const baseFontSize = Number.parseFloat(window.getComputedStyle(heading).fontSize) || 56;
+
+      const fitsWithinLineLimit = () => heading.scrollHeight <= lineHeightFor(heading) * maxLines + 2;
+      if (fitsWithinLineLimit()) return;
+
+      let low = baseFontSize * minScale;
+      let high = baseFontSize;
+      for (let i = 0; i < 8; i += 1) {
+        const mid = (low + high) / 2;
+        heading.style.setProperty("--wv-hero-heading-size", `${mid.toFixed(2)}px`);
+        if (fitsWithinLineLimit()) {
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+      heading.style.setProperty("--wv-hero-heading-size", `${low.toFixed(2)}px`);
+    };
+
+    const fitHeroHeadings = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        canvas.querySelectorAll<HTMLElement>("[data-wv-hero-heading]").forEach(fitHeading);
+      });
+    };
+
+    fitHeroHeadings();
+    const resizeObserver = new ResizeObserver(fitHeroHeadings);
+    resizeObserver.observe(canvas);
+    canvas.querySelectorAll<HTMLElement>("[data-wv-hero-heading]").forEach((heading) => resizeObserver.observe(heading));
+    const fonts = (document as Document & { fonts?: { ready?: Promise<unknown> } }).fonts;
+    fonts?.ready?.then(fitHeroHeadings).catch(() => undefined);
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+    };
+  }, [activeTab, selectedFontPairingId, pages.map((page: any) => page.pageId).join("|")]);
+
   const navSubmenus = navigation.headerMenu
     .map((menu: any, idx: number) => {
       const pageId = String(menu.href || "").replace("#", "");
@@ -771,13 +828,13 @@ export default function SiteRenderer({
                 const heroContent = section.content || {};
                 const heroImage = heroContent.image || brand.preferredHeroImage;
                 return (
-                  <section key={section.id} className="px-6 py-16 md:py-24 bg-white">
+                  <section key={section.id} data-wv-hero-section="true" className="px-6 py-16 md:py-24 bg-white">
                     <div className="max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: colors.accent }}>
                           {editableText(`${section.id}.eyebrow`, businessProfile.typeLabel, "span")}
                         </p>
-                        <h1 className="text-4xl md:text-6xl font-bold mb-6 leading-tight text-slate-950">
+                        <h1 data-wv-hero-heading="true" className="text-4xl md:text-6xl font-bold mb-6 leading-tight text-slate-950">
                           {editableText(`${section.id}.headline`, heroContent.headline || labels.heroFallback, "span")}
                         </h1>
                         <p className="text-lg md:text-xl mb-8 text-slate-600 max-w-2xl">
@@ -1500,6 +1557,17 @@ export default function SiteRenderer({
       <style>{`
         @media print { .hide-in-export { display: none !important; } }
         ${siteStylePresetCss}
+        #rendered-site [data-wv-hero-section] [data-wv-hero-heading] {
+          font-size: var(--wv-hero-heading-size, clamp(2.45rem, 6vw, 5.55rem)) !important;
+          line-height: 0.96 !important;
+          text-wrap: balance;
+          overflow-wrap: normal;
+        }
+        @media (max-width: 767px) {
+          #rendered-site [data-wv-hero-section] [data-wv-hero-heading] {
+            font-size: var(--wv-hero-heading-size, clamp(2.2rem, 11vw, 3.35rem)) !important;
+          }
+        }
         #rendered-site [data-wv-site-canvas] > [data-wv-site-shader] {
           flex: 0 0 0;
           width: 0;
