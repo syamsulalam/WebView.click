@@ -155,6 +155,7 @@ Provider cooldown behavior:
 - Cooldown-blocked generate/regenerate/retry clicks write a failed `generation_jobs` row via `/api/generation-jobs/cooldown-blocked`, so paused attempts are visible under the Jobs `Preflight blocked` chip instead of disappearing silently.
 - Cooldown set/clear/blocked events also write to `provider_cooldown_events`; `/admin/settings` shows the latest small history feed for longer-term audit without scanning all Jobs rows.
 - `provider_cooldown_events` prunes itself on insert: keep events from the last 45 days and cap the table to the latest 500 rows.
+- `/admin/settings` and Jobs use client-side compact export buttons that copy currently visible audit rows to clipboard, avoiding a new backend export endpoint or extra D1 scan.
 - Gemini: docs describe RPM, TPM, and RPD limits evaluated per project, so per-minute errors cool down before retry and daily/quota wording cools down longer.
 - OpenAI: 429 can be rate-limit or quota/billing related; rate-limit errors cool down briefly, while quota/billing wording cools down longer and should be fixed in provider billing.
 - OpenRouter: docs note 429 rate limit and possible `Retry-After`; WebView.click honors retry hints when present and otherwise uses a short cooldown.
@@ -197,4 +198,4 @@ These are conservative operating budgets for staying well below the free tier wh
 
 ## Known Follow-Up
 
-Consider adding a compact export button for cooldown/job audit rows if support/debug sessions need to share provider incident history.
+Consider adding a signed incident bundle endpoint later only if clipboard exports become too small for support/debug sessions.

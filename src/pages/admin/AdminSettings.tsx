@@ -173,6 +173,32 @@ export default function AdminSettings() {
       .finally(() => setCooldownEventsLoading(false));
   };
 
+  const exportCooldownHistory = async () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      source: "admin_settings_provider_cooldown_history",
+      count: cooldownEvents.length,
+      events: cooldownEvents.map((event) => ({
+        provider: event.provider,
+        eventType: event.eventType,
+        createdAt: event.createdAt,
+        cooldownUntil: event.cooldownUntil || null,
+        reason: event.reason || "",
+        action: event.metadata?.action || "",
+        businessId: event.metadata?.businessId || "",
+        placeId: event.metadata?.placeId || "",
+        generationJobId: event.metadata?.generationJobId || "",
+      })),
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setMessage("Provider cooldown history copied for support/debug.");
+      window.setTimeout(() => setMessage((current) => current === "Provider cooldown history copied for support/debug." ? "" : current), 3000);
+    } catch {
+      setMessage("Could not copy cooldown history. Select the visible rows manually.");
+    }
+  };
+
   useEffect(() => {
     fetchCooldownHistory();
     window.addEventListener("focus", fetchCooldownHistory);
@@ -675,15 +701,25 @@ export default function AdminSettings() {
               </p>
               <p className="mt-0.5 text-xs text-slate-500">Useful when checking whether a provider was cleared, retried, or still causing blocked attempts.</p>
             </div>
-            <button
-              type="button"
-              onClick={fetchCooldownHistory}
-              disabled={cooldownEventsLoading}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              <RotateCcw size={13} className={cooldownEventsLoading ? "animate-spin" : ""} />
-              Refresh history
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={exportCooldownHistory}
+                disabled={!cooldownEvents.length}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Export compact
+              </button>
+              <button
+                type="button"
+                onClick={fetchCooldownHistory}
+                disabled={cooldownEventsLoading}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                <RotateCcw size={13} className={cooldownEventsLoading ? "animate-spin" : ""} />
+                Refresh history
+              </button>
+            </div>
           </div>
           <div className="space-y-2">
             {cooldownEvents.map((event) => {

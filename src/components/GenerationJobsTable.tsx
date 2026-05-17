@@ -248,6 +248,40 @@ export default function GenerationJobsTable({
     }
   };
 
+  const exportVisibleJobs = async () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      source: "generation_jobs_table",
+      filter,
+      sort,
+      searchQuery,
+      count: visibleJobs.length,
+      jobs: visibleJobs.map((job) => ({
+        id: job.id,
+        status: job.status,
+        provider: job.provider,
+        model: job.model,
+        businessId: job.businessId,
+        placeId: job.placeId,
+        prospectName: job.prospectName || job.metadata?.businessName || "",
+        error: job.error || "",
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        generationMode: job.metadata?.generationMode || "",
+        failureStage: job.metadata?.failureStage || "",
+        failureMessage: job.metadata?.failureMessage || "",
+        preflightBlocked: job.metadata?.preflightBlocked === true,
+        cooldownBlocked: job.metadata?.cooldownBlocked === true,
+        providerCooldown: job.metadata?.providerCooldown || null,
+        aiReadiness: job.metadata?.aiReadiness || null,
+        remoteValidation: job.metadata?.remoteValidation || job.metadata?.aiReadiness?.remoteValidation || null,
+        copyPatchApplied: job.metadata?.copyPatchApplied === true,
+        copyAuditSummary: job.metadata?.copyAuditSummary || null,
+      })),
+    };
+    await copyValue("jobs:compact-export", JSON.stringify(payload, null, 2));
+  };
+
   const retryGenerationJob = async (job: any) => {
     if (!job.businessId) return;
     setRetryingJobId(job.id);
@@ -415,6 +449,16 @@ export default function GenerationJobsTable({
             <option value="patch">Patch applied first</option>
             <option value="noRewrite">No AI rewrite first</option>
           </select>
+          <button
+            type="button"
+            onClick={exportVisibleJobs}
+            disabled={!visibleJobs.length}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
+            title="Copy compact JSON for the currently visible generation jobs."
+          >
+            {copiedKey === "jobs:compact-export" ? <Check size={12} /> : <Copy size={12} />}
+            Export compact
+          </button>
           {showFullPageLink && <Link to="/admin/jobs" className="text-xs font-semibold text-indigo-700 hover:underline">Full jobs page</Link>}
           <button type="button" onClick={() => fetchJobs()} className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline">
             {loading ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}

@@ -482,6 +482,7 @@ Logic penting:
 - Estimator provider/model punya tombol `Refresh AI readiness` untuk clear cache manual tanpa menunggu TTL 30 detik.
 - Estimator juga menampilkan inline `AI readiness` badge untuk provider/model yang sedang dipilih, sehingga key baru bisa diverifikasi dari `/admin/settings` tanpa pindah ke Leads/Sites.
 - Provider cooldown history refresh saat window focus atau event `webview:provider-cooldown`, dan menampilkan event `set`, `blocked`, serta `clear` dengan provider, action, reason, dan expiry.
+- Tombol `Export compact` menyalin JSON ringkas event cooldown yang sedang terlihat untuk support/debug tanpa endpoint export baru.
 - Auto-save berjalan 1,2 detik setelah perubahan terakhir.
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
@@ -754,6 +755,7 @@ Logic Generation Jobs:
 - `POST /api/generation-jobs/preflight-failure` mencatat generate/regenerate/retry yang diblokir oleh AI readiness sebelum `/api/sites/generate`, supaya kegagalan key/model/provider routing tetap terlihat di Jobs. Drawer detail `GenerationJobsTable` menampilkan ringkasan `AI readiness block` untuk key, local model registry, dan remote provider route.
 - `POST /api/generation-jobs/cooldown-blocked` mencatat generate/regenerate/retry yang diblokir oleh shared provider cooldown sebelum `/api/sites/generate`. Row ini ikut `Preflight blocked` filter dan drawer menampilkan `Provider cooldown block`.
 - `generation_jobs.metadata_json` menyimpan audit generate: `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, ringkasan/item audit copy AI (`copyAuditSummary`, `copyAuditItems`), provider/model, failure metadata bila generate gagal, dan `aiReadiness`/`remoteValidation` bila preflight memblokir sebelum generate.
+- `GenerationJobsTable` punya tombol `Export compact` yang menyalin JSON ringkas jobs yang sedang visible, termasuk provider/model, failure stage, readiness/cooldown metadata, dan copy audit summary untuk support/debug.
 - Jika generate sukses, prospect draft diupdate ke `site_generated` dan `generated_business_id` diisi.
 - Jika generate gagal, `generation_jobs.error` dan `places_prospects.last_error` diisi agar admin bisa melihat error di UI.
 - `GET /api/generation-jobs` mendukung query `limit` (1-500, default 100), `offset` (default 0), `q`, `status=running|success|failed`, `preflight=blocked`, `patch=applied|fallback`, `aiRewrite=zero`, dan `counts=1`.
