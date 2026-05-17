@@ -51,11 +51,12 @@ Logic penting:
 - `hoursLocation` memakai `content.hoursTitle` / `content.openingHoursTitle` atau fallback label `Business Hours` / `Jam Operasional` untuk card jam, bukan `content.title`, agar tidak dobel dengan card `Location & Contact`. Jam Google Places juga diringkas per kelompok jam yang sama dan menonjolkan jam hari ini.
 - Heading pair pada `hoursLocation` memakai marker `data-wv-hours-location-heading` dan CSS variable panjang teks agar dua card tetap simetris, satu baris, dan menyesuaikan ukuran saat font pairing display terlalu lebar.
 - Renderer otomatis menambahkan aggregate page `services` jika JSON punya `products`, `services`, atau `offers` tetapi belum punya `pageId: "services"`. Page ini menampilkan daftar semua produk/layanan dan tiap card tetap link ke detail page masing-masing.
-- Renderer otomatis menambahkan page `feedback` jika JSON belum punya, tetapi tidak memasukkannya ke navbar/footer default. Page ini meminta rating 1-5; rating 4-5 membuka Google Review exact place jika `sourceData.placeId` tersedia, sedangkan rating 1-3 membuka form feedback yang dikirim via `mailto:` ke email bisnis.
+- Renderer otomatis menambahkan page `feedback` jika JSON belum punya, tetapi tidak memasukkannya ke navbar. Footer menampilkan link Feedback supaya visitor tetap bisa membuka page ini tanpa memenuhi navbar. Page ini meminta rating 1-5; rating 4-5 membuka Google Review exact place jika `sourceData.placeId` tersedia, sedangkan rating 1-3 membuka form feedback yang dikirim via `mailto:` ke email bisnis.
+- Hash awal seperti `#feedback` dibaca saat renderer mount, termasuk page feedback yang ditambahkan otomatis.
 - Feature grid cards dirender center-aligned: icon, title, dan body berada di tengah card agar tampilan lebih rapi seperti demo.
 - Trust bar dan feature icons dirender sebagai SVG langsung tanpa wrapper background agar icon tidak terlihat mengecil; icon subheading `hoursLocation` memakai ukuran relatif heading.
 - Grid marketing 3 kolom seperti offers, reviews, dan generic grid cards memakai content text-center agar komposisi tiap card lebih seimbang.
-- Offer/service cards di homepage memakai `offer.href` atau `offer.detailPageId` sebagai full-card link menuju halaman detail; `offer.cta.href` hanya menjadi fallback jika tidak ada detail link. CTA button hanya dirender jika tidak duplikatif dengan full-card link, dan price/action text seperti `Contact for estimate` diarahkan ke contact action. Card headings dirapikan dengan title case sambil mempertahankan stop words dan kata uppercase.
+- Offer/service cards di homepage memakai `offer.href` atau `offer.detailPageId` sebagai full-card link menuju halaman detail; `offer.cta.href` hanya menjadi fallback jika tidak ada detail link. CTA button hanya dirender jika tidak duplikatif dengan full-card link, dan price/action text seperti `Contact for estimate` diarahkan ke contact action. Card headings dan individual offering detail headings dirapikan dengan title case sambil mempertahankan stop words dan kata uppercase.
 - Review cards memakai quotation marks dekoratif sebagai `wv-heading` spans kiri/kanan, sehingga mengikuti font heading aktif tanpa memakai heading tag.
 - Renderer membaca schema baru: `brand`, `businessProfile`, `trust`, `offers`, `capabilities`, `location`, `hours`, dan `conversion`.
 - Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
@@ -129,9 +130,40 @@ Logic penting:
 - Kolom Job menyediakan tombol copy kecil untuk Job ID dan Business ID; saat sukses icon berubah menjadi check sementara.
 - Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, retry dari drawer, audit copy AI, dan raw `metadata` JSON dengan tombol copy.
 - Retry mengambil current copy brief dari `GET /api/sites/:businessId/copy-brief`, menghitung hash browser-side, lalu memperingatkan jika hash berbeda dari job lama sebelum membuat job baru.
+- Retry mengirim `requireAi: true`, sehingga error provider/model/API key terlihat sebagai failed job dan pesan UI, bukan diam-diam menyimpan fallback copy.
+- Tombol retry menampilkan readiness badge; provider/model berasal dari job lama jika ada, atau fallback localStorage parent, dan key status dikirim parent dari `/api/settings`.
+- Retry memanggil `/api/ai/readiness` sebelum mengambil copy brief/site JSON agar model/provider/key yang salah berhenti sebelum job baru dibuat.
 - `variant="compact"` dipakai di `/admin/leads`; `variant="full"` dipakai di `/admin/jobs`.
 - `onJobsLoaded` dipakai parent `/admin/leads` untuk memperbarui angka pada tombol `Jobs`.
 - Header, filter group, dan drawer audit copy punya tooltip ringkas yang menjelaskan arti `Fallback`, `Patch`, dan `No rewrite` supaya admin tidak perlu menebak status job.
+
+### `src/components/AdminAiReadinessBadge.tsx`
+
+Fungsi:
+- Shared visible readiness badge untuk tombol generate/regenerate/retry di admin.
+- Menampilkan apakah klik berikutnya `AI required` atau `Data resave`, apakah key provider tersedia, dan provider/model yang akan dipakai.
+
+Logic penting:
+- Untuk action `requiresAi=false`, badge menampilkan `No AI key needed` agar admin tahu klik tersebut hanya refresh/resave data.
+- Untuk action AI, status key bisa `Key present`, `Key missing`, atau `Key unknown` saat settings belum selesai dimuat.
+- Untuk action AI, badge juga memanggil `/api/ai/readiness` dan menampilkan `Preflight ok`, `Model invalid`, `Provider invalid`, atau `Preflight failed`.
+- Dipakai oleh `/admin/leads`, `/admin/sites`, dan `GenerationJobsTable` supaya tombol generate tidak drift dalam cara menjelaskan kesiapan AI.
+
+### `src/components/AdminAiReadinessRefreshButton.tsx`
+
+Fungsi:
+- Tombol kecil shared untuk membersihkan cache AI readiness 30 detik dan memaksa badge readiness recheck.
+- Dipakai dekat selector provider/model di `/admin/leads`, `/admin/sites`, dan estimator `/admin/settings`.
+
+Logic penting:
+- Memanggil `clearAiReadinessCache()` dari `src/lib/aiReadiness.ts`.
+- Helper cache mengirim browser event `webview:ai-readiness-refresh`; badge yang sedang mount mendengar event ini dan langsung memanggil ulang `/api/ai/readiness`.
+
+### `src/components/AdminWorkspaceTabs.tsx`
+
+Fungsi:
+- Segmented tab control shared untuk workspace admin yang perlu memisahkan beberapa mode kerja dalam satu route.
+- Dipakai di `/admin/leads` agar tab `Find Leads`, `Search History`, dan `CRM Pipeline` konsisten secara visual.
 
 ### `src/components/AdminLayout.tsx`
 
@@ -218,9 +250,12 @@ API yang dipakai:
 - `GET /api/places/search?query=...`
 - `GET /api/places/search?query=...&refresh=1`
 - `GET /api/places/history`
+- `GET /api/places/manual-duplicates`
+- `POST /api/places/manual-duplicates/merge`
 - `POST /api/places/manual-import`
 - `GET /api/places/details?placeId=...`
 - `GET /api/places/photo?reference=...`
+- `GET /api/ai/readiness?provider=...&model=...`
 - `POST /api/sites/generate`
 - `PUT /api/leads/:id/status`
 
@@ -265,6 +300,9 @@ Logic penting:
 - Setiap result Google Places di-upsert ke `places_prospects` sebagai prospect draft agar pencarian lama tidak hilang.
 - Panel `Manual Google Maps import` menerima URL listing/search Google Maps dan optional captured JSON. Listing URL tanpa captured JSON membuat satu draft manual; search URL tanpa captured JSON memberi pesan agar admin memakai browser capture helper karena kartu bisnis ada di DOM Google Maps, bukan di URL.
 - Captured JSON dari helper Chrome/Opera dinormalisasi ke prospect fields (`name`, `address`, `phone`, `website`, `mapsUrl`, rating/reviews, website status), lalu di-upsert ke `places_prospects` dan dicatat di `places_search_cache` dengan status `MANUAL_CAPTURE`.
+- Workspace `/admin/leads` dipisah menjadi tab `Find Leads`, `Search History`, dan `CRM Pipeline` supaya pencarian Google Maps/manual import tidak tercampur dengan CRM follow-up.
+- Manual listing URL satuan tidak lagi dicatat sebagai search history; hanya manual search/captured multi-listing yang masuk cache history.
+- Tab `CRM Pipeline` menampilkan queue `Manual duplicate review` untuk kemungkinan duplikat saat URL-only import dan Maps DOM capture membuat prospect berbeda untuk bisnis yang sama. Queue ini dihitung dari nama bisnis, alamat, URL Maps, dan Google Maps CID bila tersedia; setiap duplicate menampilkan preview field yang akan dicopy sebelum tombol `Merge + skip` menyalin field kosong ke prospect yang disarankan untuk disimpan lalu mengubah duplicate ke status `skipped`.
 - Panel `Search history` membaca search term lama dari `places_search_cache`, lalu menghydrate setiap business card dari `places_prospects` berdasarkan Google `place_id`. Progress bisnis tetap current walaupun listing yang sama muncul di beberapa search term.
 - Klik search term history memuat prospect list dari cache tanpa panggil Google Places baru, tetap memakai action/status workflow yang sama seperti search aktif.
 - Filter prospect tersimpan memakai status, website/no website, minimum rating, minimum review count, city, state, dan niche. UI filter dibuat compact: toolbar `Filters`, chips aktif, tombol reset, dan panel advanced collapsible agar tidak memakan banyak ruang.
@@ -273,7 +311,10 @@ Logic penting:
 - Penjelasan panjang di toolbar/filter CRM dipindahkan ke tooltip hover agar UI admin tetap ringkas.
 - Tooltip juga dipasang pada heading search, AI Web Builder, status/rating/reviews/city/state/niche filters, bulk action area, drawer status, dan photo/palette source agar workflow gather/generate lebih jelas.
 - Hasil pencarian tidak dikosongkan setelah generate, termasuk saat `/api/sites/generate` gagal.
-- Generate status ditampilkan per bisnis, dengan link preview jika sukses.
+- Generate status ditampilkan per bisnis, dengan link preview jika sukses. Generate dari `/admin/leads` mengirim `requireAi: true`; jika provider/model/API key/JSON patch bermasalah, admin melihat error dan job failed, bukan fallback-only site yang terlihat seperti sukses.
+- Tombol `Generate selected`, setiap `Generate Site`, dan quick drawer retry jobs menampilkan AI readiness badge berisi status key provider, selected model, dan bahwa klik tersebut membutuhkan AI.
+- Sebelum full generate, handler memanggil `/api/ai/readiness`; jika key provider hilang atau model tidak ada di daftar model yang didukung, generate berhenti dengan pesan UI tanpa membuat request `/api/sites/generate`.
+- Selector AI Web Builder punya tombol `Refresh AI readiness` untuk clear cache readiness setelah key/model berubah.
 - Tombol `Load more photos/details` memanggil Place Details agar admin bisa memilih lebih banyak foto sebelum generate dan menyimpan `details_json`.
 - Tombol `Details` membuka drawer berisi website, phone, rating, status prospect, Google Maps link, error generate terakhir, dan grid foto/palette.
 - Tombol `Trim cache 30d` memanggil `POST /api/places/cache/trim` untuk membersihkan cache Places lama/expired.
@@ -290,6 +331,8 @@ Risiko debug:
 - Jika hanya satu foto muncul, klik `Load more photos/details`; Text Search memang sering mengembalikan foto terbatas.
 - Jika pencarian tidak menampilkan hasil, cek pesan di UI dan response `/api/places/search`; Function menormalisasi status Google seperti `ZERO_RESULTS`, `REQUEST_DENIED`, dan fetch failure ke JSON.
 - Jika manual import search URL menampilkan `browser capture required`, buka Google Maps di browser, pakai helper di `public/tools/google-maps-capture-extension`, lalu paste JSON hasil capture ke panel manual import.
+- Jika manual listing URL menghasilkan `MANUAL_CAPTURE_REQUIRED` saat `Gather data`, record tersebut hanya berisi data dari URL. Gunakan extension helper pada listing Google Maps yang sedang terbuka agar phone/rating/reviews/website ikut tersimpan tanpa Places API.
+- Jika duplicate queue terlalu agresif atau kurang agresif, cek normalisasi di `/api/places/manual-duplicates`; endpoint ini tidak membuat tabel baru, hanya menghitung kandidat dari `places_prospects`.
 - Error `API keys with referer restrictions cannot be used with this API` berarti key Google Places masih dibatasi HTTP referrer. Untuk Pages Functions/server-side, pakai server key tanpa application restriction dan batasi hanya API-nya di Google Cloud.
 - Canvas palette butuh image same-origin/CORS; karena itu foto harus lewat proxy `/api/places/photo`, bukan langsung URL Google.
 - Audit dan roadmap admin disimpan di `docs/ADMIN_WORKFLOW_AUDIT.md`.
@@ -299,7 +342,7 @@ Risiko debug:
 Fungsi:
 - Chrome/Opera unpacked extension helper untuk mengambil data visible Google Maps saat Places API quota habis.
 - `content.js` membaca link/detail yang sedang visible di DOM Google Maps dan mengirim array `items`.
-- `popup.js` menyalin JSON hasil capture ke clipboard agar bisa dipaste ke panel manual import di `/admin/leads`.
+- `popup.js` menyalin JSON hasil capture ke clipboard agar bisa dipaste ke panel manual import di `/admin/leads`, atau mengirimnya langsung ke `/api/places/manual-import` lewat tombol `Post to admin`.
 
 Risiko debug:
 - DOM Google Maps berubah-ubah; helper ini best-effort dan hanya menangkap listing yang visible atau detail panel yang sedang terbuka.
@@ -313,6 +356,7 @@ Fungsi:
 
 Logic penting:
 - Provider/model fallback untuk retry dibaca dari localStorage pilihan terakhir `/admin/leads`.
+- Page juga membaca `/api/settings` untuk mengirim status key provider ke `GenerationJobsTable`, sehingga tombol retry bisa menampilkan `Key present`, `Key missing`, atau `Key unknown`.
 - Semua logic table, filter, sort, hash, refresh, dan retry hidup di `src/components/GenerationJobsTable.tsx`.
 - Full page memakai `serverBackedFilters` agar filter jobs mencari dari server/D1, bukan hanya dari 200 row yang sedang loaded.
 - Full page juga memakai `serverBackedSearch` untuk mencari job lama berdasarkan nama bisnis, `businessId`, `placeId`, job ID, atau metadata JSON.
@@ -331,17 +375,19 @@ Fungsi:
 - Memberi link Google Maps/Google Business listing dari `sourceData.googleMapsUri` atau `businessProfile.contact.directionsUrl` untuk membandingkan hasil generate dengan listing asli.
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
 - Tombol `Brief` membuka `GET /api/sites/:businessId/copy-brief`, yaitu `copyTargetBrief` stored-site yang dipakai untuk debugging bahan copy-only yang dikirim ke AI. Saat regenerate, fresh Google Places details masih bisa menambah fakta baru sebelum AI call.
-- Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini refresh Place Details, membangun fallback JSON lengkap dari gathered data, lalu memanggil `/api/sites/generate` dengan provider/model pilihan. Jika AI provider gagal, fallback JSON tetap disimpan agar generate tidak berhenti di 502.
+- Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini refresh Place Details, membangun fallback JSON lengkap dari gathered data, lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true`. Jika AI provider gagal, error ditampilkan dan job ditandai failed agar fallback tidak menyamar sebagai hasil AI.
 - Fallback JSON dari `/admin/sites` mengisi `meta.generatedWithAi=false`, `meta.generationMode=google_places_fallback`, `meta.sourcePhotoCount`, title-cased service names, generalized niche copy profiles, service-area copy inferred from address, detail pages, dan gallery section jika Places mengembalikan lebih dari satu foto.
 - Fallback JSON dari `/admin/sites` juga memilih `design.fontPairing` dan `fontPairingConfig` dari registry industri sehingga site tetap punya typography yang sesuai walaupun AI gagal.
 - Tombol `Regen` memakai dropdown:
-  - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan untuk membuat copy patch AI yang di-merge ke JSON deterministik.
+  - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true` untuk membuat copy patch AI yang di-merge ke JSON deterministik.
   - `Re-gather Google data + resave` wajib punya `sourceData.placeId`, mengambil Place Details lagi, lalu mengirim `provider`/`model` kosong agar data Google Places, termasuk Maps URL exact, disimpan ulang tanpa memaksa AI call.
+  - Kedua action menampilkan AI readiness badge; AI regenerate menunjukkan key/model AI, sedangkan re-gather menunjukkan `Data resave` dan `No AI key needed`.
 
 API yang dipakai:
 - `GET /api/sites`
 - `GET /api/prospects?status=details_loaded`
 - `GET /api/places/details?placeId=...`
+- `GET /api/ai/readiness?provider=...&model=...`
 - `POST /api/sites/generate`
 - `GET /api/sites/:businessId/copy-brief`
 
@@ -352,6 +398,9 @@ Logic penting:
 - List Generated Sites menampilkan badge generation mode: `AI Copy Patch` jika `meta.generationMode=ai_copy_patch`/`generatedWithAi=true`, atau `Fallback Only` jika site dibuat dari gathered-data/scaffold tanpa copy patch AI.
 - Pilihan provider/model regenerate disimpan ke localStorage agar refresh halaman tetap memakai model terakhir yang dipilih admin.
 - Pilihan provider/model yang sama dipakai untuk `Generate` prospect gathered di section `Ready to Generate`.
+- Tombol `Generate` di section `Ready to Generate` menampilkan AI readiness badge agar admin tahu key provider/model sebelum membuat site pertama.
+- First generate dan `AI regenerate` memanggil `/api/ai/readiness` sebelum gather/generate berat; mode `Re-gather Google data + resave` tidak membutuhkan preflight AI.
+- Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
 - Tooltip dipasang pada heading Generated Sites, Ready to Generate, table actions, dan Regen dropdown untuk menjelaskan perbedaan Preview/Data/Brief/Regen, first generate, AI regenerate, dan re-gather.
 
@@ -391,6 +440,8 @@ API yang dipakai:
 Logic penting:
 - Provider selector hanya menampilkan field API key untuk provider aktif.
 - Provider tab dan estimator provider/model disimpan ke localStorage agar pilihan terakhir tetap dipakai setelah refresh.
+- Setelah settings berhasil tersimpan, cache AI readiness otomatis dibersihkan agar key baru langsung terbaca oleh badge/preflight.
+- Estimator provider/model punya tombol `Refresh AI readiness` untuk clear cache manual tanpa menunggu TTL 30 detik.
 - Auto-save berjalan 1,2 detik setelah perubahan terakhir.
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
@@ -548,6 +599,7 @@ Endpoint:
 - `GET /api/places/search`
 - `GET /api/places/history`
 - `GET /api/places/photo`
+- `GET/POST /api/ai/readiness`
 - `POST /api/sites/generate`
 - `POST /api/sites/migrate-r2`
 - `GET /api/sites`
@@ -572,9 +624,11 @@ Logic AI:
   - `kie/gpt-5-2` via `https://api.kie.ai/gpt-5-2/v1/chat/completions`
   - `kie/gemini-3.1-pro` via `https://api.kie.ai/gemini-3.1-pro/v1/chat/completions`
   - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
-- Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI key hilang, provider/model tidak valid, provider mengembalikan HTTP error, response kosong, atau JSON invalid. Flow `/admin/sites` untuk prospect gathered sekarang mengirim fallback `jsonContent`, sehingga tidak memakai `requireAi: true` dan tetap bisa menyimpan situs saat AI provider gagal.
+- `/api/ai/readiness` adalah preflight ringan untuk provider/model AI: membaca key dari `system_settings` atau env binding, mengecek provider didukung, dan mengecek model ada di registry internal tanpa memanggil provider eksternal.
+- Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI key hilang, provider/model tidak valid, provider mengembalikan HTTP error, response kosong, atau JSON invalid. Generate/regenerate AI dari `/admin/leads`, `/admin/sites`, dan job retry memakai `requireAi: true` agar masalah AI terlihat; mode `Re-gather Google data + resave` tetap tanpa AI.
 - Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
 - Full scaffold JSON tidak dikirim ke AI. AI tidak melihat image URL, maps URL, navigation href, sourceData mentah, palette, font, visual style, favicon, CSS, storage, atau field protected lain.
+- Untuk OpenRouter, model value UI yang diawali `~` dinormalisasi sebelum request API agar routing hint lokal tidak dikirim sebagai model slug mentah.
 - Copy patch AI di-merge deterministik oleh Function lewat `applyAiCopyPatch()`. AI tidak boleh mengubah `pageId`, `detailPageId`, navigation href, sourceData, photo URL, contact/maps fields, palette, font, visual style, storage, atau favicon.
 - Jika submitted JSON lama belum punya `design.shaderPreset`, Function mengisi shader procedural dari niche/context via `shaderPresetForBusiness()` sebelum menyimpan site.
 - Function membuat audit granular dari target copy sebelum patch dan copy final setelah patch. Audit ini disimpan di `generation_jobs.metadata_json.copyAuditSummary` dan `copyAuditItems`, dengan status `ai_rewritten`, `ai_filled_blank`, `source_kept`, `fallback_source`, atau `missing_after`.
@@ -615,13 +669,17 @@ Logic Places Cache:
 - `GET /api/places/search?query=...&refresh=1` melewati cache dan menyimpan response terbaru.
 - `GET /api/places/search?query=...&websitePrecheck=1&precheckLimit=10` menjalankan Place Details minimal untuk hasil teratas supaya `website_check_status` diketahui sejak list/search.
 - `GET /api/places/history?limit=30` mengembalikan daftar search term cache, summary progress, dan daftar prospects yang dihydrate dari `places_prospects` berdasarkan `place_id`.
+- `GET /api/places/manual-duplicates?limit=500` mengembalikan group kandidat duplikat manual dari `places_prospects` tanpa migration/schema baru. Group hanya ditampilkan jika minimal satu row berasal dari manual import.
+- `POST /api/places/manual-duplicates/merge` menerima `{ keepPlaceId, duplicatePlaceId }`, menyalin missing `phone`, `address`, `rating`, `reviews`, `website_url`, `maps_url`, status website, dan JSON detail/result dari duplicate ke keep prospect, lalu mengubah duplicate menjadi `skipped`.
 - `POST /api/places/manual-import` menerima `{ url, capturedText, capturedItems, query }`. Captured items membuat cache entry `MANUAL_CAPTURE`; search URL tanpa captured data sengaja tidak di-scrape server-side dan mengembalikan `needsBrowserCapture`.
+- `GET /api/places/details?placeId=manual:*|cid:*|maps:*` tidak memanggil Google Details. Endpoint mengembalikan data manual yang tersimpan jika cukup lengkap, atau `MANUAL_CAPTURE_REQUIRED` jika record hanya berasal dari URL.
 - `POST /api/places/cache/trim` menghapus cache lama/expired; body: `{ "olderThanDays": 30 }`.
 
 Logic Prospect Drafts:
 - `places_prospects` menyimpan result Places per `place_id`.
 - Search dan mock search memanggil upsert prospect draft.
 - Manual import juga memakai `places_prospects`; jika Google `place_id` tidak tersedia, endpoint membuat `manual:{hash}` dari nama/alamat/Maps URL agar duplicate import tetap stabil.
+- Importer tidak lagi memakai token internal Google Maps seperti `0x...:0x...` dari URL `data=!...` sebagai `place_id`, karena token itu bukan parameter valid untuk Google Place Details.
 - Place Details memperbarui `details_json`, phone, website, maps URL, `website_check_status`, `website_checked_at`, dan `details_loaded_at`.
 - Website pre-check memperbarui `phone`, `website_url`, `maps_url`, `website_check_status`, dan `website_checked_at` tanpa menandai `details_loaded_at`, sehingga admin tetap perlu `Gather data` sebelum generate.
 - `GET /api/prospects` menerima filter `status`, `website=none|unknown|has|all`, `minRating`, `minReviews`, `city`, `state`, dan `niche`.

@@ -14,6 +14,6 @@ This unpacked Chrome/Opera helper is for quota fallback prospecting. It runs on 
 1. Open a Google Maps search or business listing page.
 2. Click the WebView Maps Capture extension icon.
 3. Click `Capture visible Maps data`.
-4. Paste the copied JSON into `/admin/leads` together with the Maps URL.
+4. Either paste the copied JSON into `/admin/leads`, or click `Post to admin` to send the captured items to `https://webview.click/api/places/manual-import`.
 
 Search pages are browser-rendered, so the helper only captures visible businesses. Scroll the Maps result list and run capture again for more listings.

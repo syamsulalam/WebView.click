@@ -458,6 +458,109 @@ async function getSetting(db: D1Database, env: Env, key: keyof Env & string): Pr
   return row?.value || (typeof env[key] === "string" ? env[key] : undefined);
 }
 
+const aiProviderKeyMap: Record<string, keyof Env & string> = {
+  OpenRouter: "OPENROUTER_API_KEY",
+  OpenAI: "OPENAI_API_KEY",
+  Gemini: "GEMINI_API_KEY",
+  KIE: "KIE_API_KEY",
+  Opencode: "OPENCODE_API_KEY",
+};
+
+const aiProviderModels: Record<string, string[]> = {
+  OpenAI: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-4.1"],
+  Gemini: ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-2.5-pro"],
+  OpenRouter: [
+    "~anthropic/claude-sonnet-latest",
+    "anthropic/claude-sonnet-latest",
+    "~openai/gpt-latest",
+    "openai/gpt-latest",
+    "~google/gemini-pro-latest",
+    "google/gemini-pro-latest",
+    "~google/gemini-flash-latest",
+    "google/gemini-flash-latest",
+    "qwen/qwen3.6-max-preview",
+    "qwen/qwen3.6-flash",
+  ],
+  KIE: ["kie/gpt-5-5", "kie/gpt-5-2", "kie/gemini-3.1-pro", "kie/gemini-3-flash"],
+  Opencode: ["opencode-default", "qwen/qwen3.6-flash", "qwen/qwen3.6-max-preview", "custom-model"],
+};
+
+function normalizeAiModel(provider: string, model: string) {
+  if (provider === "OpenRouter") return model.replace(/^~/, "");
+  return model;
+}
+
+async function getAiReadiness(db: D1Database, env: Env, provider: string, model: string, requiresAi = true) {
+  const normalizedProvider = provider.trim();
+  const normalizedModel = normalizeAiModel(normalizedProvider, model.trim());
+  if (!requiresAi) {
+    return {
+      ready: true,
+      requiresAi,
+      provider: normalizedProvider,
+      model,
+      normalizedModel,
+      keyPresent: false,
+      providerSupported: true,
+      modelKnown: true,
+      message: "This action only resaves gathered data and does not require AI.",
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
+  const keyName = aiProviderKeyMap[normalizedProvider];
+  const providerSupported = Boolean(keyName);
+  const providerModels = aiProviderModels[normalizedProvider] || [];
+  const modelKnown = providerSupported && providerModels.includes(model.trim());
+  const key = keyName ? await getSetting(db, env, keyName) : "";
+  const keyPresent = Boolean(String(key || "").trim());
+  let message = "AI provider key and model look ready.";
+  if (!providerSupported) {
+    message = `Unsupported AI provider: ${normalizedProvider || "(blank)"}.`;
+  } else if (!model.trim()) {
+    message = `Select an AI model for ${normalizedProvider}.`;
+  } else if (!modelKnown) {
+    message = `${normalizedProvider} model is not in the supported WebView.click model list: ${model}.`;
+  } else if (!keyPresent) {
+    message = `${normalizedProvider} API key is not configured. Set it in /admin/settings first.`;
+  }
+
+  return {
+    ready: providerSupported && modelKnown && keyPresent,
+    requiresAi,
+    provider: normalizedProvider,
+    model,
+    normalizedModel,
+    keyName: keyName || "",
+    keyPresent,
+    providerSupported,
+    modelKnown,
+    message,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+async function handleAiReadiness(request: Request, db: D1Database, env: Env): Promise<Response> {
+  let provider = "";
+  let model = "";
+  let requiresAi = true;
+  if (request.method === "GET") {
+    const url = new URL(request.url);
+    provider = url.searchParams.get("provider") || "";
+    model = url.searchParams.get("model") || "";
+    requiresAi = !["0", "false", "no"].includes((url.searchParams.get("requiresAi") || "1").toLowerCase());
+  } else if (request.method === "POST") {
+    const body = await readJsonBody(request);
+    provider = asString(body.provider);
+    model = asString(body.model);
+    requiresAi = body.requiresAi !== false;
+  } else {
+    return errorJson("Method not allowed", 405);
+  }
+  const result = await getAiReadiness(db, env, provider, model, requiresAi);
+  return json(result);
+}
+
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
   try {
     const body = await request.json();
@@ -636,15 +739,11 @@ function manualPlaceIdFromMapsUrl(value: string) {
     const parsed = new URL(value);
     const queryPlaceId = parsed.searchParams.get("query_place_id") || parsed.searchParams.get("place_id");
     if (queryPlaceId) return queryPlaceId;
-    const cid = parsed.searchParams.get("cid");
-    if (cid) return `cid:${cid}`;
   } catch {
     // Fall through to regex extraction for copied or partial Maps URLs.
   }
   const placeIdMatch = value.match(/place_id:([^&?#]+)/i);
   if (placeIdMatch?.[1]) return decodeURIComponent(placeIdMatch[1]);
-  const dataIdMatch = value.match(/!1s([^!]+)/);
-  if (dataIdMatch?.[1]) return `maps:${decodeURIComponent(dataIdMatch[1])}`;
   return "";
 }
 
@@ -678,7 +777,11 @@ function manualPlaceFromCapturedItem(item: Record<string, unknown>, fallbackUrl:
   const website = placeString(item, ["website", "websiteUrl", "websiteUri"]);
   const explicitPlaceId = placeString(item, ["place_id", "placeId", "id"]);
   const cid = placeString(item, ["cid"]);
-  const placeId = explicitPlaceId || (cid ? `cid:${cid}` : manualPlaceIdFromMapsUrl(url)) || `manual:${manualShortHash(`${name}|${address}|${url}|${index}`)}`;
+  const googlePlaceId = manualPlaceIdFromMapsUrl(url);
+  const externalId = explicitPlaceId && !/^0x[0-9a-f]+:0x[0-9a-f]+$/i.test(explicitPlaceId) && !explicitPlaceId.startsWith("/")
+    ? explicitPlaceId
+    : googlePlaceId;
+  const placeId = externalId || `manual:${manualShortHash(`${name}|${address}|${url}|${cid}|${index}`)}`;
   const rawReviews = asNumber(item.user_ratings_total) ?? asNumber(item.userRatingCount) ?? asNumber(item.reviews) ?? asNumber(item.reviewCount);
   const hasWebsite = item.hasWebsite;
   const websiteStatus = website
@@ -706,6 +809,7 @@ function manualPlaceFromCapturedItem(item: Record<string, unknown>, fallbackUrl:
     websiteCheckedAt: websiteStatus ? new Date().toISOString() : "",
     manualImport: true,
     manualSourceUrl: fallbackUrl,
+    googleMapsCid: cid,
   };
 }
 
@@ -778,7 +882,9 @@ async function handlePlacesManualImport(request: Request, db: D1Database): Promi
 
   await ensureRequiredColumns(db, prospectListRequiredColumns);
   await upsertProspectsFromPlaces(db, queryKey, query, places);
-  await cacheManualPlacesSearch(db, queryKey, query, places);
+  if (urlType === "search" || places.length > 1) {
+    await cacheManualPlacesSearch(db, queryKey, query, places);
+  }
 
   return json({
     success: true,
@@ -787,7 +893,9 @@ async function handlePlacesManualImport(request: Request, db: D1Database): Promi
     query,
     queryKey,
     needsBrowserCapture: false,
-    message: `${places.length} manual Google Maps prospect${places.length === 1 ? "" : "s"} imported.`,
+    message: capturedItems.length === 0 && urlType === "listing"
+      ? "1 manual listing draft imported from the URL. Use the capture helper on the open Maps listing if you need phone, rating, reviews, website, and hours without the Places API."
+      : `${places.length} manual Google Maps prospect${places.length === 1 ? "" : "s"} imported.`,
     prospects: places,
   });
 }
@@ -1349,11 +1457,56 @@ async function precheckWebsiteForPlaces(db: D1Database, placesKey: string, resul
 
 async function handlePlacesDetails(url: URL, db: D1Database, env: Env): Promise<Response> {
   const placeId = url.searchParams.get("placeId") || url.searchParams.get("place_id") || "";
-  const placesKey = await getSetting(db, env, "GOOGLE_PLACES_API_KEY");
 
   if (!placeId) {
     return errorJson("Missing placeId", 400);
   }
+
+  if (placeId.startsWith("manual:") || placeId.startsWith("cid:") || placeId.startsWith("maps:") || /^0x[0-9a-f]+/i.test(placeId)) {
+    await ensureRequiredColumns(db, prospectDetailsRequiredColumns);
+    const row = await db
+      .prepare("SELECT * FROM places_prospects WHERE place_id = ?")
+      .bind(placeId)
+      .first<ProspectDbRow>();
+    if (!row) return errorJson("Manual prospect was not found.", 404);
+
+    const result = {
+      ...parseJsonObject(row.result_json),
+      ...parseJsonObject(row.details_json),
+      place_id: row.place_id,
+      name: row.business_name,
+      formatted_address: row.address,
+      formatted_phone_number: row.phone,
+      website: row.website_url,
+      url: row.maps_url,
+      rating: row.rating,
+      user_ratings_total: row.reviews,
+      types: row.niche ? [row.niche] : ["manual_import"],
+    };
+    const hasUsefulManualDetails = Boolean(row.phone || row.address || row.website_url || row.rating || row.reviews || row.details_json);
+    if (!hasUsefulManualDetails) {
+      return json({
+        status: "MANUAL_CAPTURE_REQUIRED",
+        error: "This manual URL-only prospect does not include Google Places details. Open the listing in Google Maps and use the capture helper to import visible details.",
+        result: null,
+      }, 400);
+    }
+
+    await updateProspectRecord(db, placeId, {
+      details_json: JSON.stringify(result),
+      website_check_status: row.website_url ? "has_website" : row.website_check_status || "",
+      website_checked_at: row.website_url || row.website_check_status ? new Date().toISOString() : row.website_checked_at,
+      details_loaded_at: new Date().toISOString(),
+      status: "details_loaded",
+    });
+
+    return json({
+      status: "MANUAL_DETAILS",
+      result,
+    });
+  }
+
+  const placesKey = await getSetting(db, env, "GOOGLE_PLACES_API_KEY");
 
   if (!placesKey) {
     return errorJson("Google Places API key is not configured", 400);
@@ -1487,6 +1640,196 @@ function prospectRowToPlace(row: ProspectDbRow, searchQueryOverride = "") {
     detailsLoadedAt: row.details_loaded_at,
     generatedAt: row.generated_at,
   };
+}
+
+function manualDuplicateNormalize(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\b(llc|inc|corp|corporation|co|company|ltd|limited|services?|service|the)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function manualDuplicateUrlKey(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    const parsed = new URL(text);
+    const placeMatch = parsed.pathname.match(/\/maps\/place\/([^/@]+)/i);
+    if (placeMatch?.[1]) return `url:${manualDuplicateNormalize(decodeURIComponent(placeMatch[1].replace(/\+/g, " ")))}`;
+    return `url:${parsed.hostname}${parsed.pathname}`.toLowerCase();
+  } catch {
+    const match = text.match(/\/maps\/place\/([^/@?#]+)/i);
+    return match?.[1] ? `url:${manualDuplicateNormalize(decodeURIComponent(match[1].replace(/\+/g, " ")))}` : "";
+  }
+}
+
+function manualDuplicateKeys(row: ProspectDbRow) {
+  const result = parseJsonObject(row.result_json);
+  const details = parseJsonObject(row.details_json);
+  const keys = new Set<string>();
+  const nameKey = manualDuplicateNormalize(row.business_name || result.name || details.name);
+  const addressKey = manualDuplicateNormalize(row.address || result.formatted_address || result.address || details.formatted_address);
+  const cid = asString(result.googleMapsCid) || asString(result.cid);
+  const urlKey = manualDuplicateUrlKey(row.maps_url || result.url || result.mapsUrl || result.googleMapsUri || result.manualSourceUrl);
+
+  if (cid) keys.add(`cid:${cid}`);
+  if (urlKey && !urlKey.endsWith("manual google maps listing")) keys.add(urlKey);
+  if (nameKey.length >= 5 && !["manual google maps listing", "manual maps prospect"].includes(nameKey)) keys.add(`name:${nameKey}`);
+  if (nameKey.length >= 5 && addressKey.length >= 8) keys.add(`name-address:${nameKey}|${addressKey}`);
+  if (addressKey.length >= 12) keys.add(`address:${addressKey}`);
+  return Array.from(keys);
+}
+
+function isManualProspectRow(row: ProspectDbRow) {
+  const result = parseJsonObject(row.result_json);
+  return row.place_id.startsWith("manual:") || Boolean(result.manualImport || result.manualSourceUrl || result.googleMapsCid);
+}
+
+function duplicateGroupReason(key: string) {
+  if (key.startsWith("cid:")) return "Same Google Maps CID from manual capture.";
+  if (key.startsWith("url:")) return "Same Google Maps place URL/name.";
+  if (key.startsWith("name-address:")) return "Same normalized business name and address.";
+  if (key.startsWith("address:")) return "Same normalized address.";
+  return "Same normalized business name.";
+}
+
+function hasMergeValue(value: unknown) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0;
+  return Boolean(value);
+}
+
+function mergeObjectsPreferringPresent(primary: Record<string, unknown>, secondary: Record<string, unknown>) {
+  const merged = { ...secondary };
+  for (const [key, value] of Object.entries(primary)) {
+    if (hasMergeValue(value) || !hasMergeValue(merged[key])) {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+async function handlePlacesManualDuplicateMerge(request: Request, db: D1Database): Promise<Response> {
+  if (request.method !== "POST") return errorJson("Not Found", 404);
+  const body = await readJsonBody(request);
+  const keepPlaceId = asString(body.keepPlaceId).trim();
+  const duplicatePlaceId = asString(body.duplicatePlaceId).trim();
+
+  if (!keepPlaceId || !duplicatePlaceId) {
+    return errorJson("Missing keepPlaceId or duplicatePlaceId", 400);
+  }
+  if (keepPlaceId === duplicatePlaceId) {
+    return errorJson("Cannot merge a prospect into itself.", 400);
+  }
+
+  await ensureRequiredColumns(db, [...prospectDetailsRequiredColumns, ...prospectStatusRequiredColumns]);
+  const keepRow = await db.prepare("SELECT * FROM places_prospects WHERE place_id = ?").bind(keepPlaceId).first<ProspectDbRow>();
+  const duplicateRow = await db.prepare("SELECT * FROM places_prospects WHERE place_id = ?").bind(duplicatePlaceId).first<ProspectDbRow>();
+
+  if (!keepRow) return errorJson("Keep prospect was not found.", 404);
+  if (!duplicateRow) return errorJson("Duplicate prospect was not found.", 404);
+
+  const copiedFields: string[] = [];
+  const updates: Record<string, unknown> = {};
+  const copyIfMissing = (column: keyof ProspectDbRow, label = String(column)) => {
+    if (!hasMergeValue(keepRow[column]) && hasMergeValue(duplicateRow[column])) {
+      updates[column] = duplicateRow[column];
+      copiedFields.push(label);
+    }
+  };
+
+  copyIfMissing("address");
+  copyIfMissing("phone");
+  copyIfMissing("website_url", "website");
+  copyIfMissing("maps_url", "maps URL");
+  copyIfMissing("rating");
+  copyIfMissing("reviews");
+  copyIfMissing("niche");
+  copyIfMissing("website_check_status", "website status");
+  copyIfMissing("website_checked_at", "website checked time");
+  copyIfMissing("details_loaded_at", "details loaded time");
+
+  const mergedResultJson = mergeObjectsPreferringPresent(parseJsonObject(keepRow.result_json), parseJsonObject(duplicateRow.result_json));
+  const mergedDetailsJson = mergeObjectsPreferringPresent(parseJsonObject(keepRow.details_json), parseJsonObject(duplicateRow.details_json));
+  if (hasMergeValue(mergedResultJson)) updates.result_json = JSON.stringify(mergedResultJson);
+  if (hasMergeValue(mergedDetailsJson)) updates.details_json = JSON.stringify(mergedDetailsJson);
+
+  if (Object.keys(updates).length > 0) {
+    await updateProspectRecord(db, keepPlaceId, updates);
+  }
+  await updateProspectRecord(db, duplicatePlaceId, { status: "skipped" });
+
+  const mergedRow = await db.prepare("SELECT * FROM places_prospects WHERE place_id = ?").bind(keepPlaceId).first<ProspectDbRow>();
+  return json({
+    success: true,
+    copiedFields,
+    skippedPlaceId: duplicatePlaceId,
+    keepPlaceId,
+    prospect: mergedRow ? prospectRowToPlace(mergedRow) : null,
+  });
+}
+
+async function handlePlacesManualDuplicates(url: URL, db: D1Database): Promise<Response> {
+  const limit = Math.max(50, Math.min(1000, Number(url.searchParams.get("limit") || 500)));
+  await ensureRequiredColumns(db, prospectListRequiredColumns);
+  const rows = await db
+    .prepare(
+      `SELECT *
+       FROM places_prospects
+       WHERE COALESCE(status, 'new') <> 'skipped'
+       ORDER BY datetime(updated_at) DESC
+       LIMIT ?`,
+    )
+    .bind(limit)
+    .all<ProspectDbRow>();
+
+  const allRows = rows.results || [];
+  const rowMap = new Map(allRows.map((row) => [row.place_id, row]));
+  const keyMap = new Map<string, Set<string>>();
+  for (const row of allRows) {
+    for (const key of manualDuplicateKeys(row)) {
+      if (!keyMap.has(key)) keyMap.set(key, new Set());
+      keyMap.get(key)?.add(row.place_id);
+    }
+  }
+
+  const seenGroups = new Set<string>();
+  const groups: Array<Record<string, unknown>> = [];
+  for (const [key, ids] of keyMap.entries()) {
+    if (ids.size < 2) continue;
+    const groupRows = Array.from(ids).map((id) => rowMap.get(id)).filter((row): row is ProspectDbRow => Boolean(row));
+    if (!groupRows.some(isManualProspectRow)) continue;
+    const signature = groupRows.map((row) => row.place_id).sort().join("|");
+    if (seenGroups.has(signature)) continue;
+    seenGroups.add(signature);
+    groups.push({
+      id: manualShortHash(signature),
+      key,
+      reason: duplicateGroupReason(key),
+      manualCount: groupRows.filter(isManualProspectRow).length,
+      prospects: groupRows
+        .sort((a, b) => {
+          const aScore = (a.generated_business_id ? 4 : 0) + (a.details_loaded_at ? 2 : 0) + (a.website_url || a.phone || a.address ? 1 : 0);
+          const bScore = (b.generated_business_id ? 4 : 0) + (b.details_loaded_at ? 2 : 0) + (b.website_url || b.phone || b.address ? 1 : 0);
+          return bScore - aScore;
+        })
+        .map((row) => ({
+          ...prospectRowToPlace(row),
+          duplicateManualImport: isManualProspectRow(row),
+        })),
+    });
+  }
+
+  return json({
+    success: true,
+    count: groups.length,
+    groups: groups.slice(0, 50),
+  });
 }
 
 function summarizeSearchProspects(prospects: Array<Record<string, unknown>>) {
@@ -2335,6 +2678,7 @@ async function generateAiCopyPatch(
 ): Promise<{ patch: Record<string, unknown>; copyBriefHash: string; copyPatchHash: string } | null> {
   const provider = asString(body.provider);
   const model = asString(body.model);
+  const openRouterModel = model.replace(/^~/, "");
   const requireAi = body.requireAi === true;
   const businessName = asString(body.businessName);
   const originData = body.originData || {};
@@ -2346,6 +2690,14 @@ async function generateAiCopyPatch(
   if (!provider || !model) {
     if (requireAi) {
       throw new Error("AI provider and model are required for this generate action.");
+    }
+    return null;
+  }
+
+  const readiness = await getAiReadiness(db, env, provider, model, requireAi);
+  if (!readiness.ready) {
+    if (requireAi) {
+      throw new Error(readiness.message || "AI provider/model is not ready.");
     }
     return null;
   }
@@ -2444,7 +2796,7 @@ Return only the copy patch JSON.`;
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model,
+        model: openRouterModel,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemMsg },
@@ -3375,7 +3727,14 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       generated_at: new Date().toISOString(),
     });
 
-    return json({ success: true, businessId });
+    return json({
+      success: true,
+      businessId,
+      generatedWithAi: aiGenerated,
+      generationMode: metaConfig.generationMode,
+      copyPatchApplied: Boolean(jobMetadata.copyPatchApplied),
+      copyPatchError: jobMetadata.copyPatchError || "",
+    });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       jobMetadata.failureStage = "site_generate";
@@ -3714,6 +4073,10 @@ async function route(context: PagesContext): Promise<Response> {
       return handleGenerationJobs(request, db);
     }
 
+    if (segments[0] === "ai" && segments[1] === "readiness") {
+      return handleAiReadiness(request, db, env);
+    }
+
     if (request.method === "GET" && segments[0] === "places" && segments[1] === "photo") {
       return handlePlacesPhoto(url, db, env);
     }
@@ -3728,6 +4091,14 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (request.method === "GET" && segments[0] === "places" && segments[1] === "history") {
       return handlePlacesHistory(url, db);
+    }
+
+    if (request.method === "GET" && segments[0] === "places" && segments[1] === "manual-duplicates") {
+      return handlePlacesManualDuplicates(url, db);
+    }
+
+    if (request.method === "POST" && segments[0] === "places" && segments[1] === "manual-duplicates" && segments[2] === "merge") {
+      return handlePlacesManualDuplicateMerge(request, db);
     }
 
     if (segments[0] === "places" && segments[1] === "manual-import") {

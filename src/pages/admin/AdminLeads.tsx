@@ -6,8 +6,12 @@ import { useLocalStorageState } from "../../lib/localStorageState";
 import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOptions } from "../../lib/prospectScoring";
+import { checkAiReadiness } from "../../lib/aiReadiness";
 import HelpTooltip from "../../components/HelpTooltip";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
+import AdminWorkspaceTabs from "../../components/AdminWorkspaceTabs";
+import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
+import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 
 export default function AdminLeads() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -15,6 +19,7 @@ export default function AdminLeads() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [prospectDrafts, setProspectDrafts] = useState<any[]>([]);
   const [prospectFilter, setProspectFilter] = useLocalStorageState("webview.adminLeads.prospectFilter", "active");
+  const [leadWorkspaceTab, setLeadWorkspaceTab] = useLocalStorageState("webview.adminLeads.workspaceTab", "search");
   const [websiteFilter, setWebsiteFilter] = useLocalStorageState("webview.adminLeads.websiteFilter", "none");
   const [minRatingFilter, setMinRatingFilter] = useLocalStorageState("webview.adminLeads.minRatingFilter", "0");
   const [minReviewsFilter, setMinReviewsFilter] = useLocalStorageState("webview.adminLeads.minReviewsFilter", "0");
@@ -34,6 +39,9 @@ export default function AdminLeads() {
   const [manualCaptureText, setManualCaptureText] = useLocalStorageState("webview.adminLeads.manualCaptureText", "");
   const [manualImportLoading, setManualImportLoading] = useState(false);
   const [manualImportMessage, setManualImportMessage] = useState("");
+  const [manualDuplicateQueue, setManualDuplicateQueue] = useState<any[]>([]);
+  const [manualDuplicateLoading, setManualDuplicateLoading] = useState(false);
+  const [manualDuplicateMessage, setManualDuplicateMessage] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingPlaceKey, setGeneratingPlaceKey] = useState("");
   const [generationMessages, setGenerationMessages] = useState<Record<string, { type: "success" | "error"; text: string; businessId?: string }>>({});
@@ -245,6 +253,22 @@ export default function AdminLeads() {
       .finally(() => setLoadingSearchHistory(false));
   };
 
+  const fetchManualDuplicateQueue = () => {
+    setManualDuplicateLoading(true);
+    fetch("/api/places/manual-duplicates?limit=500")
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.error) throw new Error(data.error || `Duplicate queue returned ${r.status}`);
+        setManualDuplicateQueue(Array.isArray(data.groups) ? data.groups : []);
+        setManualDuplicateMessage("");
+      })
+      .catch((error) => {
+        console.error(error);
+        setManualDuplicateMessage(error instanceof Error ? error.message : "Could not load duplicate queue.");
+      })
+      .finally(() => setManualDuplicateLoading(false));
+  };
+
   const selectedPrice = estimateCostUsd(activeProviderKey, activeModel);
   const providerApiKeyMap: Record<string, string> = {
     OpenRouter: "OPENROUTER_API_KEY",
@@ -254,6 +278,12 @@ export default function AdminLeads() {
     Opencode: "OPENCODE_API_KEY",
   };
   const settingsKey = providerApiKeyMap[activeProviderKey] || "";
+  const providerKeyStatus = Object.keys(providerApiKeyMap).reduce<Record<string, boolean | null>>((acc, provider) => {
+    const key = providerApiKeyMap[provider];
+    acc[provider] = loadingSettings ? null : Boolean(String(settings?.[key] || "").trim());
+    return acc;
+  }, {});
+  const activeProviderKeyReady = providerKeyStatus[activeProviderKey] ?? null;
   const missingRequiredSettings = [
     !String(settings?.GOOGLE_PLACES_API_KEY || "").trim() ? "Google Places API Key" : "",
     !String(settings?.[settingsKey] || "").trim() ? `${activeProvider.label} Key` : "",
@@ -610,6 +640,7 @@ export default function AdminLeads() {
     fetchProspectDrafts();
     fetchGenerationJobs();
     fetchSearchHistory();
+    fetchManualDuplicateQueue();
     fetch("/api/settings")
       .then(r => r.ok ? r.json() : {})
       .then(data => {
@@ -668,6 +699,7 @@ export default function AdminLeads() {
       });
       setSearchResults(results);
       setSearchActive(true);
+      setLeadWorkspaceTab("search");
       setSelectedSearchHistoryKey(data.queryKey || "");
       fetchProspectDrafts();
       fetchSearchHistory();
@@ -726,7 +758,9 @@ export default function AdminLeads() {
       setWebsiteFilter("all");
       fetchProspectDrafts();
       fetchSearchHistory();
+      fetchManualDuplicateQueue();
       setManualImportMessage(data.message || `${data.importedCount || 0} manual prospects imported.`);
+      if (importedProspects.length > 0) setLeadWorkspaceTab("search");
     } catch (error) {
       console.error(error);
       setManualImportMessage(error instanceof Error ? error.message : "Manual import failed.");
@@ -819,6 +853,7 @@ export default function AdminLeads() {
     setSearchQuery(historyItem?.query || "");
     setSearchResults(prospects.map((item: any) => ({ ...item, searchQuery: historyItem?.query || item.searchQuery || "" })));
     setSearchActive(true);
+    setLeadWorkspaceTab("search");
     setSelectedSearchHistoryKey(historyItem?.queryKey || "");
     setGenerationMessages({});
     const hydratedDetails = prospects.reduce((acc: Record<string, any>, item: any) => {
@@ -844,6 +879,92 @@ export default function AdminLeads() {
       : items.map((item) => getPlaceKey(item) === placeKey ? { ...item, prospectStatus: status } : item);
     setSearchResults(applyStatus);
     setProspectDrafts(applyStatus);
+    fetchManualDuplicateQueue();
+  };
+
+  const skipManualDuplicate = async (place: any) => {
+    const placeKey = getPlaceKey(place);
+    if (!placeKey) return;
+    setManualDuplicateMessage(`Skipping duplicate ${place.name || placeKey}...`);
+    try {
+      const res = await fetch(`/api/prospects/${encodeURIComponent(placeKey)}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "skipped" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) throw new Error(data.error || `Skip failed with HTTP ${res.status}`);
+      setSearchResults((items) => items.filter((item) => getPlaceKey(item) !== placeKey));
+      setProspectDrafts((items) => items.filter((item) => getPlaceKey(item) !== placeKey));
+      setManualDuplicateMessage("Duplicate skipped.");
+      fetchManualDuplicateQueue();
+    } catch (error) {
+      console.error(error);
+      setManualDuplicateMessage(error instanceof Error ? error.message : "Could not skip duplicate.");
+    }
+  };
+
+  const reviewDuplicateInList = (place: any) => {
+    setSearchResults([place]);
+    setSearchActive(true);
+    setLeadWorkspaceTab("search");
+    setManualDuplicateMessage(`Loaded ${place.name || "duplicate prospect"} for review.`);
+  };
+
+  const mergeManualDuplicate = async (keepPlace: any, duplicatePlace: any) => {
+    const keepPlaceId = getPlaceKey(keepPlace);
+    const duplicatePlaceId = getPlaceKey(duplicatePlace);
+    if (!keepPlaceId || !duplicatePlaceId || keepPlaceId === duplicatePlaceId) return;
+    setManualDuplicateLoading(true);
+    setManualDuplicateMessage(`Merging missing fields into ${keepPlace.name || keepPlaceId}...`);
+    try {
+      const res = await fetch("/api/places/manual-duplicates/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keepPlaceId, duplicatePlaceId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) throw new Error(data.error || `Merge failed with HTTP ${res.status}`);
+      const mergedProspect = data.prospect;
+      if (mergedProspect) {
+        setSearchResults((items) => items
+          .filter((item) => getPlaceKey(item) !== duplicatePlaceId)
+          .map((item) => getPlaceKey(item) === keepPlaceId ? { ...item, ...mergedProspect } : item));
+        setProspectDrafts((items) => items
+          .filter((item) => getPlaceKey(item) !== duplicatePlaceId)
+          .map((item) => getPlaceKey(item) === keepPlaceId ? { ...item, ...mergedProspect } : item));
+      }
+      setManualDuplicateMessage(
+        data.copiedFields?.length
+          ? `Merged ${data.copiedFields.join(", ")} and skipped duplicate.`
+          : "No missing fields needed copying; duplicate was skipped.",
+      );
+      fetchManualDuplicateQueue();
+    } catch (error) {
+      console.error(error);
+      setManualDuplicateMessage(error instanceof Error ? error.message : "Could not merge duplicate.");
+    } finally {
+      setManualDuplicateLoading(false);
+    }
+  };
+
+  const mergePreviewFields = (keepPlace: any, duplicatePlace: any) => {
+    const fields = [
+      { key: "formatted_address", label: "Address", keep: keepPlace?.formatted_address, duplicate: duplicatePlace?.formatted_address },
+      { key: "formatted_phone_number", label: "Phone", keep: placePhone(keepPlace), duplicate: placePhone(duplicatePlace) },
+      { key: "rating", label: "Rating", keep: keepPlace?.rating, duplicate: duplicatePlace?.rating },
+      { key: "user_ratings_total", label: "Reviews", keep: keepPlace?.user_ratings_total || keepPlace?.userRatingCount, duplicate: duplicatePlace?.user_ratings_total || duplicatePlace?.userRatingCount },
+      { key: "website", label: "Website", keep: keepPlace?.website || keepPlace?.websiteUri, duplicate: duplicatePlace?.website || duplicatePlace?.websiteUri },
+      { key: "url", label: "Maps URL", keep: placeMapsUrl(keepPlace), duplicate: placeMapsUrl(duplicatePlace) },
+      { key: "websiteCheckStatus", label: "Website status", keep: keepPlace?.websiteCheckStatus, duplicate: duplicatePlace?.websiteCheckStatus },
+    ];
+    return fields
+      .filter((field) => {
+        const keepValue = String(field.keep || "").trim();
+        const duplicateValue = String(field.duplicate || "").trim();
+        return !keepValue && duplicateValue;
+      })
+      .map((field) => ({ ...field, value: String(field.duplicate) }));
   };
 
   const handleGenerateSite = async (place: any) => {
@@ -856,13 +977,21 @@ export default function AdminLeads() {
       return;
     }
 
+    const readiness = await checkAiReadiness(activeProviderKey, activeModel, true);
+    if (!readiness.ready) {
+      setGenerationMessages(prev => ({
+        ...prev,
+        [placeKey]: { type: "error", text: readiness.message || "AI provider/model is not ready. Check /admin/settings before generating." },
+      }));
+      return;
+    }
+
     const fullPlace = mergePlaceWithDetails(place);
     setIsGenerating(true);
     setGeneratingPlaceKey(placeKey);
     setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: "Generating site JSON..." } }));
 
-    // Simulate AI generation process with a mock JSON
-    // A Real implementation would send 'place' to an OpenAI endpoint on our server
+    // Build a deterministic scaffold locally; /api/sites/generate only asks AI for copy enrichment.
     const businessId = fullPlace.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + "-" + Math.floor(Math.random() * 1000);
     const logoSelection = logoSelections[fullPlace.place_id || fullPlace.name] || logoSelections[placeKey];
     const fallbackPhoto = sortedPhotosForPlace(fullPlace)[0];
@@ -1274,6 +1403,7 @@ export default function AdminLeads() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          requireAi: true,
           model: activeModel,
           provider: activeProviderKey,
           jsonContent: mockJson,
@@ -1307,7 +1437,13 @@ export default function AdminLeads() {
       fetchGenerationJobs();
       setGenerationMessages(prev => ({
         ...prev,
-        [placeKey]: { type: "success", text: "Site generated. Preview is ready.", businessId: data.businessId || businessId },
+        [placeKey]: {
+          type: "success",
+          text: data.generatedWithAi === false
+            ? "Site saved with fallback copy only. Check Jobs for the AI copy patch error."
+            : "Site generated with AI-enriched copy. Preview is ready.",
+          businessId: data.businessId || businessId,
+        },
       }));
     } catch (e) {
       console.error(e);
@@ -1408,7 +1544,8 @@ export default function AdminLeads() {
 
     return { score: Math.max(0, Math.round(score)), rawScore: Math.round(score), reasons, breakdown };
   };
-  const visibleProspectsRaw = searchActive ? searchResults : prospectDrafts;
+  const activeWorkspaceTab = ["search", "crm", "history"].includes(leadWorkspaceTab) ? leadWorkspaceTab : "search";
+  const visibleProspectsRaw = activeWorkspaceTab === "search" ? searchResults : prospectDrafts;
   const minScore = Number(minScoreFilter || 0);
   const visibleProspects = [...visibleProspectsRaw]
     .filter((place) => prospectScore(place).score >= minScore)
@@ -1477,7 +1614,28 @@ export default function AdminLeads() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto font-sans">
-      <h1 className="text-3xl font-semibold mb-8 text-gray-900">CRM Leads</h1>
+      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold text-gray-900">Leads Workspace</h1>
+          <p className="mt-1 text-sm text-slate-500">Find prospects, review search history, then manage the CRM pipeline in separate views.</p>
+        </div>
+        <AdminWorkspaceTabs
+          activeTab={activeWorkspaceTab}
+          tabs={[
+            { key: "search", label: "Find Leads" },
+            { key: "history", label: "Search History" },
+            { key: "crm", label: "CRM Pipeline" },
+          ]}
+          onChange={(tabKey) => {
+            setLeadWorkspaceTab(tabKey);
+            if (tabKey === "crm") {
+              setSearchActive(false);
+              fetchProspectDrafts();
+            }
+            if (tabKey === "history") fetchSearchHistory();
+          }}
+        />
+      </div>
 
       {(!loadingSettings && missingRequiredSettings.length > 0) && (
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
@@ -1499,9 +1657,10 @@ export default function AdminLeads() {
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-8">
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
           <h2 className="inline-flex items-center gap-1.5 text-lg font-medium text-gray-900">
-            Cari Prospek Baru (Google Maps)
-            <HelpTooltip text="Search Google Places, save each listing as a prospect draft, then gather details before generating a demo website." />
+            {activeWorkspaceTab === "history" ? "Search History" : activeWorkspaceTab === "crm" ? "CRM Pipeline" : "Cari Prospek Baru (Google Maps)"}
+            <HelpTooltip text="Find Leads is for Google Maps searching/import. Search History is cached query review. CRM Pipeline is for saved prospect drafts and generated leads." />
           </h2>
+          {activeWorkspaceTab !== "history" && (
           <div className="flex items-center gap-2">
             <label className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500">
               AI Web Builder:
@@ -1528,8 +1687,14 @@ export default function AdminLeads() {
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
+            <AdminAiReadinessRefreshButton
+              className="py-1.5"
+              onRefresh={() => setBatchMessage("AI readiness cache cleared. Badges are rechecking the selected provider/model.")}
+            />
           </div>
+          )}
         </div>
+        {activeWorkspaceTab !== "history" && (
         <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div>
             <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
@@ -1544,6 +1709,9 @@ export default function AdminLeads() {
           </div>
           <a href="/admin/settings" className="text-indigo-700 font-medium hover:underline">Lihat pricing & API key</a>
         </div>
+        )}
+        {activeWorkspaceTab === "search" && (
+        <>
         <div className="mb-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
@@ -1627,6 +1795,9 @@ export default function AdminLeads() {
             </button>
           </div>
         </div>
+        </>
+        )}
+        {activeWorkspaceTab === "history" && (
         <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
@@ -1684,6 +1855,111 @@ export default function AdminLeads() {
             </div>
           )}
         </div>
+        )}
+        {activeWorkspaceTab === "crm" && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-950">
+                Manual duplicate review
+                <HelpTooltip text="Shows likely duplicate prospects when a manual URL-only import and a Maps DOM capture describe the same business with different IDs. Skipping a duplicate uses the normal prospect status workflow." />
+              </p>
+              <p className="mt-1 text-xs text-amber-800">
+                {manualDuplicateQueue.length > 0
+                  ? `${manualDuplicateQueue.length} possible duplicate group${manualDuplicateQueue.length === 1 ? "" : "s"} need review.`
+                  : "No likely manual duplicates found."}
+              </p>
+              {manualDuplicateMessage && <p className="mt-1 text-xs font-medium text-amber-900">{manualDuplicateMessage}</p>}
+            </div>
+            <button
+              type="button"
+              onClick={fetchManualDuplicateQueue}
+              disabled={manualDuplicateLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            >
+              {manualDuplicateLoading ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+              Refresh duplicates
+            </button>
+          </div>
+          {manualDuplicateQueue.length > 0 && (
+            <div className="grid gap-3">
+              {manualDuplicateQueue.slice(0, 5).map((group) => (
+                <div key={group.id || group.key} className="rounded-xl border border-amber-200 bg-white p-3">
+                  <p className="text-xs font-semibold text-amber-900">{group.reason || "Likely duplicate manual import"}</p>
+                  <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                    {(Array.isArray(group.prospects) ? group.prospects : []).map((place: any, index: number) => {
+                      const keepPlace = Array.isArray(group.prospects) ? group.prospects[0] : null;
+                      const placeKey = getPlaceKey(place);
+                      const suggestedKeep = index === 0;
+                      const previewFields = suggestedKeep ? [] : mergePreviewFields(keepPlace, place);
+                      return (
+                        <div key={placeKey || index} className={`rounded-lg border p-3 ${suggestedKeep ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-950">{place.name || "Untitled business"}</p>
+                              <p className="mt-1 text-xs text-slate-600">{place.formatted_address || place.searchQuery || placeKey}</p>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {place.duplicateManualImport && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">manual</span>}
+                                {place.detailsLoadedAt && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">details</span>}
+                                {place.generatedBusinessId && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">generated</span>}
+                                {suggestedKeep && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">suggest keep</span>}
+                              </div>
+                              {!suggestedKeep && (
+                                <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Merge preview</p>
+                                  {previewFields.length > 0 ? (
+                                    <div className="mt-1 space-y-1">
+                                      {previewFields.map((field) => (
+                                        <p key={field.key} className="text-[11px] text-slate-700">
+                                          <span className="font-semibold">{field.label}:</span> {field.value}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="mt-1 text-[11px] text-slate-500">No missing phone/address/rating/website fields would be copied. Merge will only skip this duplicate.</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 flex-col gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => reviewDuplicateInList(place)}
+                                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                              >
+                                Review
+                              </button>
+                              {!suggestedKeep && (
+                                <>
+                                <button
+                                  type="button"
+                                  onClick={() => mergeManualDuplicate(keepPlace, place)}
+                                  className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                                >
+                                  Merge + skip
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => skipManualDuplicate(place)}
+                                  className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100"
+                                >
+                                  Skip
+                                </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        )}
+        {activeWorkspaceTab !== "history" && (
         <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
@@ -1840,6 +2116,9 @@ export default function AdminLeads() {
             </div>
           )}
         </div>
+        )}
+        {activeWorkspaceTab === "search" && (
+        <>
         <div className="flex gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
@@ -1880,13 +2159,15 @@ export default function AdminLeads() {
             {searchMessage}
           </div>
         )}
+        </>
+        )}
 
-        {visibleProspects.length > 0 && (
+        {activeWorkspaceTab !== "history" && visibleProspects.length > 0 && (
           <div className="mt-6 space-y-4">
             <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
-                  {searchResults.length > 0 ? "Current search results" : "Saved prospect drafts"}
+                  {activeWorkspaceTab === "search" ? "Current search results" : "Saved prospect drafts"}
                   <HelpTooltip text="Bulk buttons act only on the visible filtered list. Generate selected runs sequentially from the browser so AI requests are not fired all at once." />
                 </p>
                 <p className="inline-flex items-center gap-1.5">
@@ -1949,6 +2230,12 @@ export default function AdminLeads() {
                   {batchQueueRunning ? <Loader2 className="animate-spin" size={14} /> : <Play size={14} />}
                   Generate selected
                 </button>
+                <AdminAiReadinessBadge
+                  provider={activeProviderKey}
+                  model={activeModel}
+                  hasApiKey={activeProviderKeyReady}
+                  requiresAi
+                />
                 <button
                   type="button"
                   onClick={() => {
@@ -1966,6 +2253,7 @@ export default function AdminLeads() {
                 storageKeyPrefix="webview.adminLeads.jobs"
                 fallbackProvider={activeProviderKey}
                 fallbackModel={activeModel}
+                providerKeyStatus={providerKeyStatus}
                 variant="compact"
                 showFullPageLink
                 onJobsLoaded={(jobs) => setGenerationJobCount(jobs.length)}
@@ -2082,13 +2370,21 @@ export default function AdminLeads() {
                       Gather data
                     </button>
                   ) : (
-                    <button
-                      onClick={() => handleGenerateSite(displayPlace)}
-                      disabled={isGenerating}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
-                    </button>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        onClick={() => handleGenerateSite(displayPlace)}
+                        disabled={isGenerating}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
+                      </button>
+                      <AdminAiReadinessBadge
+                        provider={activeProviderKey}
+                        model={activeModel}
+                        hasApiKey={activeProviderKeyReady}
+                        requiresAi
+                      />
+                    </div>
                   )}
                 </div>
                 </div>
@@ -2176,6 +2472,7 @@ export default function AdminLeads() {
       </div>
 
       {/* LEADS TABLE */}
+      {activeWorkspaceTab === "crm" && (
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -2258,6 +2555,7 @@ export default function AdminLeads() {
           </table>
         </div>
       </div>
+      )}
 
       {detailsPanelPlace && (
         <div className="fixed inset-0 z-[260] bg-slate-950/40">

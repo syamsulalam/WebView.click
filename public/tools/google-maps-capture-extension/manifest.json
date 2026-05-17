@@ -3,8 +3,8 @@
   "name": "WebView Maps Capture",
   "version": "0.1.0",
   "description": "Copy visible Google Maps listing data for WebView.click manual prospect import.",
-  "permissions": ["activeTab", "clipboardWrite", "scripting"],
-  "host_permissions": ["https://www.google.com/maps/*"],
+  "permissions": ["activeTab", "clipboardWrite", "scripting", "storage"],
+  "host_permissions": ["https://www.google.com/maps/*", "https://webview.click/*"],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Capture Maps prospects"

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, RotateCcw, Save, SlidersHorizontal } from "lucide-react";
 import { aiModelPrices, defaultInputTokens, defaultOutputTokens, estimateCostUsd, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
+import { clearAiReadinessCache } from "../../lib/aiReadiness";
 import HelpTooltip from "../../components/HelpTooltip";
+import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import {
   defaultProspectScoreWeights,
   parseProspectScoreWeights,
@@ -165,6 +167,7 @@ export default function AdminSettings() {
         throw new Error(`Server error ${response.status}: ${text.substring(0, 120)}`);
       }
 
+      clearAiReadinessCache();
       setDirty(false);
       setSaveStatus("saved");
       setMessage(showSavedMessage ? "Perubahan tersimpan otomatis." : "Perubahan tersimpan.");
@@ -517,7 +520,7 @@ export default function AdminSettings() {
             Perkiraan biaya per generate JSON. KIE.ai ditampilkan sebagai estimasi diskon karena pricing detail live ada di dashboard KIE.
           </p>
         </div>
-        <div className="grid md:grid-cols-4 gap-4">
+        <div className="grid md:grid-cols-5 gap-4">
           <div>
             <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700">
               Provider
@@ -549,6 +552,15 @@ export default function AdminSettings() {
                 <option key={model.model} value={model.model}>{model.label}</option>
               ))}
             </select>
+          </div>
+          <div className="flex items-end">
+            <AdminAiReadinessRefreshButton
+              className="w-full py-2.5"
+              onRefresh={() => {
+                setSaveStatus("idle");
+                setMessage("AI readiness cache cleared. Badges will recheck the selected provider/model.");
+              }}
+            />
           </div>
           <div>
             <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700">

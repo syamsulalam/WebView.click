@@ -4,7 +4,10 @@ import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
+import { checkAiReadiness } from "../../lib/aiReadiness";
 import HelpTooltip from "../../components/HelpTooltip";
+import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
+import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 
 type SiteRow = {
   id: string;
@@ -579,6 +582,7 @@ export default function AdminSites() {
   const [generatingProspectId, setGeneratingProspectId] = useState("");
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
   const [regenerateModel, setRegenerateModel] = useLocalStorageState("webview.adminSites.regenerateModel", "~anthropic/claude-sonnet-latest");
 
@@ -589,6 +593,12 @@ export default function AdminSites() {
     ? regenerateModel
     : regenerateModels[0]?.model || "";
   const activeRegenerateModelLabel = regenerateModels.find((item) => item.model === activeRegenerateModel)?.label || activeRegenerateModel;
+  const providerKeyStatus = Object.keys(providerApiKeyMap).reduce<Record<string, boolean | null>>((acc, provider) => {
+    const key = providerApiKeyMap[provider];
+    acc[provider] = settingsLoaded ? Boolean(String(settings?.[key] || "").trim()) : null;
+    return acc;
+  }, {});
+  const activeRegenerateKeyReady = providerKeyStatus[activeRegenerateProvider] ?? null;
 
   const fetchSites = async () => {
     setIsLoading(true);
@@ -627,6 +637,7 @@ export default function AdminSites() {
         const settingsData = await settingsResponse.json().catch(() => ({}));
         setSettings(settingsData && typeof settingsData === "object" ? settingsData : {});
       }
+      setSettingsLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal memuat daftar situs.");
     } finally {
@@ -735,6 +746,11 @@ export default function AdminSites() {
     setGeneratingProspectId(placeId);
     setActionMessage("");
     try {
+      const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true);
+      if (!readiness.ready) {
+        throw new Error(readiness.message || "AI provider/model is not ready. Check /admin/settings before generating.");
+      }
+
       let originData: any = { ...prospect };
       const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
       const detailsText = await detailsResponse.text();
@@ -775,7 +791,7 @@ export default function AdminSites() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          requireAi: false,
+          requireAi: true,
           provider: activeRegenerateProvider,
           model: activeRegenerateModel,
           jsonContent: fallbackJson,
@@ -801,8 +817,8 @@ export default function AdminSites() {
       const requiredKey = providerApiKeyMap[activeRegenerateProvider];
       const hasProviderKey = requiredKey && String(settings?.[requiredKey] || "").trim();
       setActionMessage(hasProviderKey
-        ? `Generated ${prospect.name}. If ${activeRegenerateProvider} returned a usable copy patch, it was merged into the deterministic site JSON; otherwise the gathered-data fallback was saved.`
-        : `Generated ${prospect.name} from gathered-data fallback. Add ${activeRegenerateProvider} API key in /admin/settings for AI copy improvement.`
+        ? `Generated ${prospect.name} with AI-enriched copy from ${activeRegenerateProvider}.`
+        : `AI generation needs a ${activeRegenerateProvider} API key in /admin/settings.`
       );
       fetchSites();
     } catch (err) {
@@ -816,6 +832,13 @@ export default function AdminSites() {
     setRegeneratingId(site.businessId);
     setActionMessage("");
     try {
+      if (mode === "ai") {
+        const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true);
+        if (!readiness.ready) {
+          throw new Error(readiness.message || "AI provider/model is not ready. Check /admin/settings before regenerating.");
+        }
+      }
+
       const siteJson = await fetchSiteJson(site);
       const sourceData = siteJson?.sourceData || {};
       let originData: any = {
@@ -860,6 +883,7 @@ export default function AdminSites() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          requireAi: mode === "ai",
           provider,
           model,
           jsonContent: siteJson,
@@ -943,7 +967,7 @@ export default function AdminSites() {
             </p>
             <p className="text-xs text-emerald-700">Prospect yang sudah gather data tapi belum dibuatkan site.</p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             <select
               value={activeRegenerateProvider}
               onChange={(event) => {
@@ -967,10 +991,14 @@ export default function AdminSites() {
                 <option key={model.model} value={model.model}>{model.label}</option>
               ))}
             </select>
+            <AdminAiReadinessRefreshButton
+              className="border-emerald-200 py-2"
+              onRefresh={() => setActionMessage("AI readiness cache cleared. Badges are rechecking the selected provider/model.")}
+            />
           </div>
         </div>
 
-        <div className="grid grid-cols-[1.4fr_0.8fr_0.7fr_0.8fr_1.1fr] gap-4 border-b border-gray-100 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <div className="grid grid-cols-[1.25fr_0.75fr_0.55fr_0.7fr_1.75fr] gap-4 border-b border-gray-100 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <span>Business</span>
           <span>Place ID</span>
           <span>Rating</span>
@@ -992,7 +1020,7 @@ export default function AdminSites() {
           </div>
         ) : (
           filteredGatheredProspects.map((prospect) => (
-            <div key={prospect.place_id} className="grid grid-cols-[1.4fr_0.8fr_0.7fr_0.8fr_1.1fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0">
+            <div key={prospect.place_id} className="grid grid-cols-[1.25fr_0.75fr_0.55fr_0.7fr_1.75fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0">
               <div className="min-w-0">
                 <p className="truncate font-semibold text-gray-900">{prospect.name}</p>
                 <p className="mt-1 truncate text-xs text-gray-500">{prospect.formatted_address || prospect.formattedAddress || "No address"}</p>
@@ -1022,15 +1050,23 @@ export default function AdminSites() {
                   <Database size={14} />
                   Data
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleGenerateProspect(prospect)}
-                  disabled={!activeRegenerateModel || Boolean(generatingProspectId || regeneratingId)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {generatingProspectId === prospect.place_id ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
-                  Generate
-                </button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateProspect(prospect)}
+                    disabled={!activeRegenerateModel || Boolean(generatingProspectId || regeneratingId)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {generatingProspectId === prospect.place_id ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
+                    Generate
+                  </button>
+                  <AdminAiReadinessBadge
+                    provider={activeRegenerateProvider}
+                    model={activeRegenerateModel}
+                    hasApiKey={activeRegenerateKeyReady}
+                    requiresAi
+                  />
+                </div>
               </div>
             </div>
           ))
@@ -1181,33 +1217,52 @@ export default function AdminSites() {
                             ))}
                           </select>
                         </label>
+                        <AdminAiReadinessRefreshButton
+                          onRefresh={() => setActionMessage("AI readiness cache cleared. Badges are rechecking the selected provider/model.")}
+                        />
                       </div>
 
                       <div className="grid grid-cols-1 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenRegenerateMenu("");
-                            handleRegenerate(site, "ai");
-                          }}
-                          disabled={!activeRegenerateModel || Boolean(regeneratingId)}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                          <Brain size={14} />
-                          AI regenerate with selected model
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenRegenerateMenu("");
-                            handleRegenerate(site, "resave");
-                          }}
-                          disabled={Boolean(regeneratingId)}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          <RotateCw size={14} />
-                          Re-gather Google data + resave
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenRegenerateMenu("");
+                              handleRegenerate(site, "ai");
+                            }}
+                            disabled={!activeRegenerateModel || Boolean(regeneratingId)}
+                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            <Brain size={14} />
+                            AI regenerate with selected model
+                          </button>
+                          <AdminAiReadinessBadge
+                            provider={activeRegenerateProvider}
+                            model={activeRegenerateModel}
+                            hasApiKey={activeRegenerateKeyReady}
+                            requiresAi
+                          />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenRegenerateMenu("");
+                              handleRegenerate(site, "resave");
+                            }}
+                            disabled={Boolean(regeneratingId)}
+                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            <RotateCw size={14} />
+                            Re-gather Google data + resave
+                          </button>
+                          <AdminAiReadinessBadge
+                            provider={activeRegenerateProvider}
+                            model={activeRegenerateModel}
+                            hasApiKey={activeRegenerateKeyReady}
+                            requiresAi={false}
+                          />
+                        </div>
                       </div>
                     </div>
                   )}

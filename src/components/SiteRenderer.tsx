@@ -548,6 +548,19 @@ export default function SiteRenderer({
     if (navCloseTimer.current) window.clearTimeout(navCloseTimer.current);
     navCloseTimer.current = window.setTimeout(() => setOpenMenuKey(""), 1800);
   };
+  useEffect(() => {
+    const hashPageId = window.location.hash.replace(/^#/, "");
+    if (hashPageId && pages.some((page: any) => page.pageId === hashPageId)) {
+      setActiveTab(hashPageId);
+    }
+  }, [pages.map((page: any) => page.pageId).join("|")]);
+
+  const footerPageMenu = [
+    ...navigation.headerMenu,
+    ...(pages.some((page: any) => page.pageId === "feedback") && !navigation.headerMenu.some((menu: any) => String(menu.href || "") === "#feedback")
+      ? [{ label: isIndonesian ? "Feedback" : "Feedback", href: "#feedback" }]
+      : []),
+  ];
   const footerSocials = Array.isArray(globalConfig.footer.socials) && globalConfig.footer.socials.length > 0
     ? globalConfig.footer.socials
     : [
@@ -953,12 +966,13 @@ export default function SiteRenderer({
                 const highlights = Array.isArray(detail.highlights) ? detail.highlights : [];
                 const included = Array.isArray(detail.included) ? detail.included : [];
                 const bestFor = Array.isArray(detail.bestFor) ? detail.bestFor : [];
+                const detailTitle = formatOfferHeading(detail.title);
                 return (
                   <section key={section.id} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto grid gap-10 lg:grid-cols-[1.05fr_0.95fr]">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
-                        {editableText(`${section.id}.title`, detail.title, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
+                        {editableText(`${section.id}.title`, detailTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
                         {editableText(`${section.id}.summary`, detail.summary || detail.description, "p", "mt-4 text-lg text-slate-600", undefined, true)}
                         {highlights.length > 0 && (
                           <div className="mt-8 grid gap-3 sm:grid-cols-2">
@@ -1373,7 +1387,7 @@ export default function SiteRenderer({
           <div>
             <p className="wv-heading mb-4 text-[1.05rem] font-semibold leading-tight">{labels.pages}</p>
             <div className="space-y-2 opacity-85">
-              {navigation.headerMenu.filter((menu: any) => String(menu.href || "") !== "#feedback").map((menu: any) => (
+              {footerPageMenu.map((menu: any) => (
                 <button key={menu.href} type="button" data-wv-tab={menu.href.replace("#", "")} onClick={() => changeTab(menu.href.replace("#", ""))} className="flex items-center gap-2 hover:opacity-100">
                   {menuIcon(menu.label, menu.href)}
                   {menu.label}

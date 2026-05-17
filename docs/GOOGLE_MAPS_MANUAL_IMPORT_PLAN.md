@@ -28,6 +28,7 @@ Add an `/admin` fallback flow for prospecting when Google Places API quota is ex
    - Runs only on `google.com/maps`.
    - Captures visible place links/cards and the currently opened detail panel using DOM heuristics.
    - Copies JSON that can be pasted into the admin manual import textarea.
+   - Can post captured items directly to `https://webview.click/api/places/manual-import` after the admin origin is reviewed/confirmed in the popup.
 
 4. Documentation and QA.
    - Update `docs/CODEBASE_REFERENCE.md` with the new admin panel, endpoint, and extension helper.
@@ -42,6 +43,5 @@ Add an `/admin` fallback flow for prospecting when Google Places API quota is ex
 
 ## Later Improvements
 
-- Add direct extension-to-admin posting after authentication/session handling is reviewed.
 - Add duplicate review UI when the same manual listing is captured with slightly different names or URLs.
 - Add richer DOM parsing for categories, hours, popular times, photos, and owner response snippets when visible in Google Maps.

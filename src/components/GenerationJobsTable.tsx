@@ -2,12 +2,15 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, ExternalLink, FileText, Loader2, RefreshCw, RotateCw, Search, X } from "lucide-react";
 import { useLocalStorageState } from "../lib/localStorageState";
+import { checkAiReadiness } from "../lib/aiReadiness";
+import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
 
 type GenerationJobsTableProps = {
   storageKeyPrefix: string;
   fallbackProvider: string;
   fallbackModel: string;
+  providerKeyStatus?: Record<string, boolean | null | undefined>;
   limit?: number;
   variant?: "compact" | "full";
   className?: string;
@@ -95,6 +98,7 @@ export default function GenerationJobsTable({
   storageKeyPrefix,
   fallbackProvider,
   fallbackModel,
+  providerKeyStatus = {},
   limit,
   variant = "full",
   className = "",
@@ -139,6 +143,16 @@ export default function GenerationJobsTable({
   const canLoadMore = serverBackedFilters && !compact && Boolean(remoteCounts) && jobs.length < activeTotal;
   const selectedAuditItems = copyAuditItems(selectedJob);
   const selectedAuditSummary = copyAuditSummary(selectedJob);
+
+  const retryReadiness = (job: any) => {
+    const provider = job?.provider || fallbackProvider;
+    return {
+      provider,
+      model: job?.model || fallbackModel,
+      hasApiKey: providerKeyStatus[provider] ?? null,
+    };
+  };
+  const selectedReadiness = selectedJob ? retryReadiness(selectedJob) : null;
 
   const fetchJobs = async (append = false) => {
     if (append) {
@@ -222,6 +236,13 @@ export default function GenerationJobsTable({
     if (!job.businessId) return;
     setRetryingJobId(job.id);
     try {
+      const retryProvider = job.provider || fallbackProvider;
+      const retryModel = job.model || fallbackModel;
+      const readiness = await checkAiReadiness(retryProvider, retryModel, true);
+      if (!readiness.ready) {
+        throw new Error(readiness.message || "AI provider/model is not ready. Check /admin/settings before retrying.");
+      }
+
       const briefResponse = await fetch(`/api/sites/${encodeURIComponent(job.businessId)}/copy-brief`);
       const briefData = await briefResponse.json().catch(() => ({}));
       if (!briefResponse.ok || briefData.error) {
@@ -248,8 +269,9 @@ export default function GenerationJobsTable({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider: job.provider || fallbackProvider,
-          model: job.model || fallbackModel,
+          requireAi: true,
+          provider: retryProvider,
+          model: retryModel,
           jsonContent: siteJson,
           businessId: job.businessId,
           businessName: meta.businessName || job.metadata?.businessName || job.prospectName || job.businessId,
@@ -379,6 +401,7 @@ export default function GenerationJobsTable({
                   const briefHash = shortHash(job.metadata?.copyBriefHash);
                   const patchHash = shortHash(job.metadata?.copyPatchHash);
                   const applied = patchApplied(job);
+                  const readiness = retryReadiness(job);
                   return (
                     <tr key={job.id} className="align-top hover:bg-slate-50">
                     <td className={`${compact ? "max-w-[260px] px-3 py-2" : "max-w-[320px] px-4 py-3"}`}>
@@ -445,16 +468,24 @@ export default function GenerationJobsTable({
                             </a>
                           )}
                           {job.businessId && (
-                            <button
-                              type="button"
-                              onClick={() => retryGenerationJob(job)}
-                              disabled={Boolean(retryingJobId)}
-                              className="inline-flex items-center gap-1 font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
-                              title="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms."
-                            >
-                              {retryingJobId === job.id ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
-                              {retryOverrideJobId === job.id ? "Retry anyway" : "Retry"}
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => retryGenerationJob(job)}
+                                disabled={Boolean(retryingJobId)}
+                                className="inline-flex items-center gap-1 font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
+                                title="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms."
+                              >
+                                {retryingJobId === job.id ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
+                                {retryOverrideJobId === job.id ? "Retry anyway" : "Retry"}
+                              </button>
+                              <AdminAiReadinessBadge
+                                provider={readiness.provider}
+                                model={readiness.model}
+                                hasApiKey={readiness.hasApiKey}
+                                requiresAi
+                              />
+                            </div>
                           )}
                           <button
                             type="button"
@@ -514,16 +545,26 @@ export default function GenerationJobsTable({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {selectedJob.businessId && (
-                  <button
-                    type="button"
-                    onClick={() => retryGenerationJob(selectedJob)}
-                    disabled={Boolean(retryingJobId)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-                    title="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms."
-                  >
-                    {retryingJobId === selectedJob.id ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
-                    {retryOverrideJobId === selectedJob.id ? "Retry anyway" : "Retry"}
-                  </button>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => retryGenerationJob(selectedJob)}
+                      disabled={Boolean(retryingJobId)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                      title="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms."
+                    >
+                      {retryingJobId === selectedJob.id ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
+                      {retryOverrideJobId === selectedJob.id ? "Retry anyway" : "Retry"}
+                    </button>
+                    {selectedReadiness && (
+                      <AdminAiReadinessBadge
+                        provider={selectedReadiness.provider}
+                        model={selectedReadiness.model}
+                        hasApiKey={selectedReadiness.hasApiKey}
+                        requiresAi
+                      />
+                    )}
+                  </div>
                 )}
                 <button
                   type="button"

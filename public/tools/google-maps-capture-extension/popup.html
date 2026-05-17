@@ -41,9 +41,24 @@
         background: #4f46e5;
         border-color: #4f46e5;
       }
+      button.secondary {
+        color: #334155;
+        background: #fff;
+        border-color: #cbd5e1;
+      }
       a {
         color: #334155;
         background: #fff;
+      }
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 34px;
+        margin: 0 0 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 0 9px;
+        font-size: 12px;
       }
       textarea {
         box-sizing: border-box;
@@ -72,8 +87,10 @@
   <body>
     <h1>WebView Maps Capture</h1>
     <p>Open Google Maps first. This copies visible listings or the open detail panel as JSON for the `/admin/leads` manual import box.</p>
+    <input id="adminOrigin" type="url" value="https://webview.click" aria-label="WebView admin origin" />
     <div class="actions">
       <button id="capture" type="button">Capture visible Maps data</button>
+      <button id="post" type="button" class="secondary">Post to admin</button>
       <a href="https://webview.click/admin/leads" target="_blank" rel="noreferrer">Open admin</a>
     </div>
     <div id="status" class="status"></div>

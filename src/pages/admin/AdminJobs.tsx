@@ -1,10 +1,34 @@
+import { useEffect, useState } from "react";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
 import HelpTooltip from "../../components/HelpTooltip";
 
+const providerApiKeyMap: Record<string, string> = {
+  OpenRouter: "OPENROUTER_API_KEY",
+  OpenAI: "OPENAI_API_KEY",
+  Gemini: "GEMINI_API_KEY",
+  KIE: "KIE_API_KEY",
+  Opencode: "OPENCODE_API_KEY",
+};
+
 export default function AdminJobs() {
   const [aiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
   const [aiModel] = useLocalStorageState("webview.adminLeads.aiModel", "~anthropic/claude-sonnet-latest");
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const providerKeyStatus = Object.keys(providerApiKeyMap).reduce<Record<string, boolean | null>>((acc, provider) => {
+    const key = providerApiKeyMap[provider];
+    acc[provider] = settingsLoaded ? Boolean(String(settings?.[key] || "").trim()) : null;
+    return acc;
+  }, {});
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((response) => response.ok ? response.json() : {})
+      .then((data) => setSettings(data && typeof data === "object" ? data : {}))
+      .catch(() => setSettings({}))
+      .finally(() => setSettingsLoaded(true));
+  }, []);
 
   return (
     <div className="min-h-screen p-6 lg:p-8">
@@ -23,6 +47,7 @@ export default function AdminJobs() {
         storageKeyPrefix="webview.adminJobs"
         fallbackProvider={aiProvider}
         fallbackModel={aiModel}
+        providerKeyStatus={providerKeyStatus}
         limit={200}
         variant="full"
         serverBackedFilters
