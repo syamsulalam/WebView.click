@@ -1,6 +1,6 @@
 # Free Tier Limits and Function Call Audit
 
-Last reviewed: 2026-05-17.
+Last reviewed: 2026-05-18.
 
 Purpose: keep WebView.click friendly to the Cloudflare Pages Free tier and avoid surprise usage from Google Places, AI providers, Clerk, R2, and payment/domain integrations. Treat these limits as planning guardrails, not as guaranteed billing advice. Recheck the linked vendor pages before increasing automation volume.
 
@@ -13,6 +13,10 @@ Sources:
 - Cloudflare R2 pricing: https://developers.cloudflare.com/r2/pricing/
 - Google Maps Platform billing/pricing: https://developers.google.com/maps/billing-and-pricing/overview
 - Clerk pricing: https://clerk.com/pricing
+- Gemini API rate limits: https://ai.google.dev/gemini-api/docs/rate-limits
+- OpenAI 429 guidance: https://help.openai.com/en/articles/5955604-how-can-i-solve-429-too-many-requests-errors
+- OpenRouter errors/debugging: https://openrouter.ai/docs/api/reference/errors-and-debugging
+- KIE.ai getting started/rate-limit notes: https://kie.ai/getting-started
 
 Cloudflare Pages Free:
 - 500 builds per month.
@@ -61,14 +65,14 @@ External paid providers:
 - Optional extra calls: `websitePrecheck=1` runs Place Details calls for the top `precheckLimit` results. The current server cap is 20.
 - D1 work: reads/writes `places_search_cache` and upserts `places_prospects`.
 - Risk: a single admin search can become 1 + N Google Places requests when website precheck is enabled.
-- Guardrail: keep `precheckLimit` bounded, default conservative, and avoid automatic refresh loops.
+- Guardrail: keep `precheckLimit` bounded, default conservative, avoid automatic refresh loops, and watch the dashboard `Places search` / `Places details` daily counters.
 
 `GET /api/places/details`
 - External calls: usually 1 Google Place Details call.
 - No Google call for `manual:*`, `cid:*`, or complete local manual records. `maps:*` query placeholders fail clearly because they are not valid Place IDs.
 - D1 work: updates detail fields, website status, phone, address, rating, maps URL, and cached details JSON.
 - Risk: repeated gather attempts can burn Places quota without improving data.
-- Guardrail: keep disabled UI states for placeholder IDs and surface last error instead of encouraging retries.
+- Guardrail: keep disabled UI states for placeholder IDs, surface last error instead of encouraging retries, and watch the dashboard `Places details` counter.
 
 `GET /api/places/photo`
 - External calls: 1 Google Places Photo proxy request per rendered image request.
@@ -83,7 +87,7 @@ External paid providers:
   - KIE.ai and Opencode: local registry only today.
 - D1 work: reads provider key/settings and caches supported remote validation results in `ai_readiness_cache` for 2 minutes per provider/model/key hash.
 - Risk: repeated badge refreshes across pages/tabs can consume Workers requests and provider metadata calls.
-- Guardrail: keep browser cache at 30 seconds, keep server remote-validation cache at 2 minutes, provide manual refresh with `refresh=1`, and avoid per-row readiness checks inside long lists.
+- Guardrail: keep browser cache at 30 seconds, keep server remote-validation cache at 2 minutes, provide manual refresh with `refresh=1`, avoid per-row readiness checks inside long lists, and watch the dashboard `Remote AI readiness` counter.
 
 `POST /api/generation-jobs/preflight-failure`
 - External calls: none.
@@ -96,7 +100,7 @@ External paid providers:
 - Possible R2 calls: upload final JSON and non-Google external image assets.
 - D1 work: generation job insert/update, site manifest writes, prospect status update, activity writes.
 - Risk: this is the most expensive app action because it can combine AI cost, D1 writes, R2 writes, and external asset fetches.
-- Guardrail: run AI readiness before generation, send only the enrichment brief to AI, keep full JSON/schema generation deterministic, and avoid re-uploading Google Places photos to R2.
+- Guardrail: run AI readiness before generation, send only the enrichment brief to AI, keep full JSON/schema generation deterministic, avoid re-uploading Google Places photos to R2, and watch the dashboard `Site generation` counter.
 
 `GET /api/sites/:businessId`
 - External calls: none expected.
@@ -136,6 +140,26 @@ Admin list endpoints such as `/api/stats`, `/api/activities`, `/api/leads`, `/ap
 - Risk: unbounded lists and global counts can scan too many rows as data grows.
 - Guardrail: keep limits, offsets, indexes, and search scopes. For Jobs, server-backed filters should isolate specific failure classes without loading every row.
 
+`daily_usage_counters`
+- D1 table with primary key `(usage_date, counter_key)`.
+- Tracks UTC-day counts for `places_search`, `places_details`, `ai_readiness_remote`, and `site_generation`.
+- `/api/stats` returns today plus 30 days of history; the dashboard can show either 7 days or 30 days to compare spikes across deploys and workflow changes.
+- Dashboard thresholds are deliberately conservative: Places search warns at 50/high at 100, Places details warns at 250/high at 500, remote AI readiness warns at 50/high at 100, and site generation warns at 30/high at 75.
+- These are operational guardrails, not vendor billing limits. They help prevent accidental loops/retries before the platform gets near free-tier or provider-cost trouble.
+
+Provider cooldown behavior:
+- 429/rate-limit/quota errors from generation flows create a provider cooldown in localStorage and D1 `provider_cooldowns` so batch generation pauses before the next prospect, with visible cooldown badges beside admin provider/model selectors.
+- Generate/regenerate/retry checks `/api/provider-cooldowns` before expensive provider calls, so a cooldown created by one admin session can pause another session.
+- The cooldown badge polls lightly every 15 seconds and uses a 5 second browser cache to avoid excessive D1 reads.
+- The cooldown badge has an inline confirmed clear action for cases where quota was raised or an admin deliberately wants to retry the same provider. Switching provider does not clear the old provider cooldown because it still protects other sessions using that provider.
+- Cooldown-blocked generate/regenerate/retry clicks write a failed `generation_jobs` row via `/api/generation-jobs/cooldown-blocked`, so paused attempts are visible under the Jobs `Preflight blocked` chip instead of disappearing silently.
+- Cooldown set/clear/blocked events also write to `provider_cooldown_events`; `/admin/settings` shows the latest small history feed for longer-term audit without scanning all Jobs rows.
+- `provider_cooldown_events` prunes itself on insert: keep events from the last 45 days and cap the table to the latest 500 rows.
+- Gemini: docs describe RPM, TPM, and RPD limits evaluated per project, so per-minute errors cool down before retry and daily/quota wording cools down longer.
+- OpenAI: 429 can be rate-limit or quota/billing related; rate-limit errors cool down briefly, while quota/billing wording cools down longer and should be fixed in provider billing.
+- OpenRouter: docs note 429 rate limit and possible `Retry-After`; WebView.click honors retry hints when present and otherwise uses a short cooldown.
+- KIE.ai: getting-started docs describe account/key limits and HTTP 429 for exceeded request bursts, so WebView.click uses a shorter burst cooldown.
+
 ## Implementation Rules For Future Features
 
 Before adding a new Pages Function endpoint, document:
@@ -173,4 +197,4 @@ These are conservative operating budgets for staying well below the free tier wh
 
 ## Known Follow-Up
 
-Add lightweight usage counters for high-risk endpoints such as Places search/detail, AI readiness remote validation, and site generation so daily admin activity can be compared against these guardrails.
+Consider adding a compact export button for cooldown/job audit rows if support/debug sessions need to share provider incident history.

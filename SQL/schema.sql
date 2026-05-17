@@ -75,6 +75,36 @@ CREATE TABLE IF NOT EXISTS ai_readiness_cache (
     expires_at DATETIME NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS daily_usage_counters (
+    usage_date TEXT NOT NULL,
+    counter_key TEXT NOT NULL,
+    count INTEGER DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (usage_date, counter_key)
+);
+
+CREATE TABLE IF NOT EXISTS provider_cooldowns (
+    provider_key TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    until_ms INTEGER NOT NULL,
+    reason TEXT,
+    raw_message TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS provider_cooldown_events (
+    id TEXT PRIMARY KEY,
+    provider_key TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    cooldown_until_ms INTEGER,
+    reason TEXT,
+    raw_message TEXT,
+    metadata_json TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS places_search_cache (
     query_key TEXT PRIMARY KEY,
     query TEXT NOT NULL,

@@ -8,6 +8,9 @@ import { checkAiReadiness, logAiReadinessBlockedJob } from "../../lib/aiReadines
 import HelpTooltip from "../../components/HelpTooltip";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
+import { useAdminToast } from "../../components/AdminToast";
+import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
+import { formatCooldownRemaining, getSharedProviderCooldown, logProviderCooldownBlockedJob } from "../../lib/providerCooldown";
 
 type SiteRow = {
   id: string;
@@ -579,6 +582,7 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
 }
 
 export default function AdminSites() {
+  const { showApiError, showToast } = useAdminToast();
   const [sites, setSites] = useState<SiteRow[]>([]);
   const [gatheredProspects, setGatheredProspects] = useState<ProspectRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -754,6 +758,21 @@ export default function AdminSites() {
     setGeneratingProspectId(placeId);
     setActionMessage("");
     try {
+      const cooldown = await getSharedProviderCooldown(activeRegenerateProvider, true);
+      if (cooldown) {
+        const message = `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`;
+        showToast({ kind: "warning", title: `${activeRegenerateProvider} cooldown active`, message, actions: ["Wait for the cooldown to end, then retry one site.", "Switch provider/model if this is urgent."] });
+        await logProviderCooldownBlockedJob({
+          provider: activeRegenerateProvider,
+          model: activeRegenerateModel,
+          cooldown,
+          action: "sites_first_generate",
+          businessName: prospect.name,
+          placeId,
+          message,
+        });
+        throw new Error(message);
+      }
       if (isMapsQueryPlaceholder(prospect)) {
         throw new Error("This row is a Maps search/query placeholder, not a specific business listing. Import captured listing JSON or choose a real Google business result before generating.");
       }
@@ -843,6 +862,9 @@ export default function AdminSites() {
       );
       fetchSites();
     } catch (err) {
+      if (!(err instanceof Error && err.message.includes("cooling down"))) {
+        showApiError(err, { source: "Generate site", provider: activeRegenerateProvider, model: activeRegenerateModel });
+      }
       setActionMessage(err instanceof Error ? err.message : "Generate gagal.");
     } finally {
       setGeneratingProspectId("");
@@ -854,6 +876,21 @@ export default function AdminSites() {
     setActionMessage("");
     try {
       if (mode === "ai") {
+        const cooldown = await getSharedProviderCooldown(activeRegenerateProvider, true);
+        if (cooldown) {
+          const message = `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`;
+          showToast({ kind: "warning", title: `${activeRegenerateProvider} cooldown active`, message, actions: ["Wait for the cooldown to end, then retry one site.", "Switch provider/model if this is urgent."] });
+          await logProviderCooldownBlockedJob({
+            provider: activeRegenerateProvider,
+            model: activeRegenerateModel,
+            cooldown,
+            action: "sites_ai_regenerate",
+            businessId: site.businessId,
+            businessName: site.businessName,
+            message,
+          });
+          throw new Error(message);
+        }
         const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true, true);
         if (!readiness.ready) {
           const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before regenerating.";
@@ -944,6 +981,9 @@ export default function AdminSites() {
       );
       fetchSites();
     } catch (err) {
+      if (!(err instanceof Error && err.message.includes("cooling down"))) {
+        showApiError(err, { source: mode === "ai" ? "AI regenerate" : "Re-gather/resave", provider: activeRegenerateProvider, model: activeRegenerateModel });
+      }
       setActionMessage(err instanceof Error ? err.message : "Regenerate gagal.");
     } finally {
       setRegeneratingId("");
@@ -1001,7 +1041,7 @@ export default function AdminSites() {
             </p>
             <p className="text-xs text-emerald-700">Prospect yang sudah gather data tapi belum dibuatkan site.</p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-4">
             <select
               value={activeRegenerateProvider}
               onChange={(event) => {
@@ -1029,6 +1069,7 @@ export default function AdminSites() {
               className="border-emerald-200 py-2"
               onRefresh={() => setActionMessage("AI readiness cache cleared. Badges are rechecking the selected provider/model.")}
             />
+            <AdminProviderCooldownBadge provider={activeRegenerateProvider} className="justify-center rounded-lg py-2" />
           </div>
         </div>
 
@@ -1263,6 +1304,7 @@ export default function AdminSites() {
                         <AdminAiReadinessRefreshButton
                           onRefresh={() => setActionMessage("AI readiness cache cleared. Badges are rechecking the selected provider/model.")}
                         />
+                        <AdminProviderCooldownBadge provider={activeRegenerateProvider} />
                       </div>
 
                       <div className="grid grid-cols-1 gap-2">
@@ -1286,6 +1328,7 @@ export default function AdminSites() {
                             requiresAi
                             remoteValidate
                           />
+                          <AdminProviderCooldownBadge provider={activeRegenerateProvider} compact />
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <button

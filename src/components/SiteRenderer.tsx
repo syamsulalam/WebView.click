@@ -827,6 +827,10 @@ export default function SiteRenderer({
               if (section.type === "hero") {
                 const heroContent = section.content || {};
                 const heroImage = heroContent.image || brand.preferredHeroImage;
+                const pageHasOfferingDetail = (Array.isArray(page.sections) ? page.sections : []).some((pageSection: any) => pageSection?.type === "offeringDetail");
+                const heroHeadline = pageHasOfferingDetail
+                  ? formatOfferHeading(heroContent.headline || labels.heroFallback)
+                  : heroContent.headline || labels.heroFallback;
                 return (
                   <section key={section.id} data-wv-hero-section="true" className="px-6 py-16 md:py-24 bg-white">
                     <div className="max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center">
@@ -835,7 +839,7 @@ export default function SiteRenderer({
                           {editableText(`${section.id}.eyebrow`, businessProfile.typeLabel, "span")}
                         </p>
                         <h1 data-wv-hero-heading="true" className="text-4xl md:text-6xl font-bold mb-6 leading-tight text-slate-950">
-                          {editableText(`${section.id}.headline`, heroContent.headline || labels.heroFallback, "span")}
+                          {editableText(`${section.id}.headline`, heroHeadline, "span")}
                         </h1>
                         <p className="text-lg md:text-xl mb-8 text-slate-600 max-w-2xl">
                           {editableText(`${section.id}.subheadline`, heroContent.subheadline || businessProfile.shortPitch, "span", "", undefined, true)}

@@ -6,6 +6,8 @@ import { clearAiReadinessCache } from "../../lib/aiReadiness";
 import HelpTooltip from "../../components/HelpTooltip";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
+import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
+import { providerCooldownEvent } from "../../lib/providerCooldown";
 import {
   defaultProspectScoreWeights,
   parseProspectScoreWeights,
@@ -18,6 +20,15 @@ import {
 
 type ProviderKey = "OPENROUTER" | "OPENAI" | "GEMINI" | "KIE" | "OPENCODE";
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
+type ProviderCooldownEvent = {
+  id: string;
+  provider: string;
+  eventType: "set" | "clear" | "blocked" | string;
+  cooldownUntil?: number | null;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+};
 
 const initialSettings: Record<string, string> = {
   OPENROUTER_API_KEY: "",
@@ -101,6 +112,19 @@ const pricingProviderApiKeyMap: Record<string, string> = {
   Opencode: "OPENCODE_API_KEY",
 };
 
+function cooldownEventLabel(eventType = "") {
+  if (eventType === "set") return "Cooldown set";
+  if (eventType === "clear") return "Cooldown cleared";
+  if (eventType === "blocked") return "Attempt blocked";
+  return eventType || "Cooldown event";
+}
+
+function cooldownEventClass(eventType = "") {
+  if (eventType === "clear") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (eventType === "blocked") return "border-red-200 bg-red-50 text-red-800";
+  return "border-amber-200 bg-amber-50 text-amber-900";
+}
+
 export default function AdminSettings() {
   const [settings, setSettings] = useState<Record<string, string>>(initialSettings);
   const [selectedProvider, setSelectedProvider] = useLocalStorageState<ProviderKey>("webview.adminSettings.selectedProvider", "OPENROUTER");
@@ -113,6 +137,8 @@ export default function AdminSettings() {
   const [pricingModel, setPricingModel] = useLocalStorageState("webview.adminSettings.pricingModel", "~anthropic/claude-sonnet-latest");
   const [inputTokens, setInputTokens] = useState(defaultInputTokens);
   const [outputTokens, setOutputTokens] = useState(defaultOutputTokens);
+  const [cooldownEvents, setCooldownEvents] = useState<ProviderCooldownEvent[]>([]);
+  const [cooldownEventsLoading, setCooldownEventsLoading] = useState(false);
 
   const selectedProviderConfig = useMemo(
     () => providerOptions.find((provider) => provider.key === selectedProvider) || providerOptions[0],
@@ -137,6 +163,25 @@ export default function AdminSettings() {
       setPricingModel(providerModels[0].model);
     }
   }, [pricingProvider, pricingModel]);
+
+  const fetchCooldownHistory = () => {
+    setCooldownEventsLoading(true);
+    fetch("/api/provider-cooldowns/history?limit=8")
+      .then((response) => response.ok ? response.json() : [])
+      .then((data) => setCooldownEvents(Array.isArray(data) ? data : []))
+      .catch(() => setCooldownEvents([]))
+      .finally(() => setCooldownEventsLoading(false));
+  };
+
+  useEffect(() => {
+    fetchCooldownHistory();
+    window.addEventListener("focus", fetchCooldownHistory);
+    window.addEventListener(providerCooldownEvent, fetchCooldownHistory);
+    return () => {
+      window.removeEventListener("focus", fetchCooldownHistory);
+      window.removeEventListener(providerCooldownEvent, fetchCooldownHistory);
+    };
+  }, []);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -610,13 +655,67 @@ export default function AdminSettings() {
             </p>
             <p className="mt-0.5 text-xs text-slate-500">Use this to verify a newly saved key before returning to Leads or Sites.</p>
           </div>
-          <AdminAiReadinessBadge
-            provider={pricingProvider}
-            model={pricingModel}
-            hasApiKey={pricingProviderKeyReady}
-            requiresAi
-            remoteValidate
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <AdminAiReadinessBadge
+              provider={pricingProvider}
+              model={pricingModel}
+              hasApiKey={pricingProviderKeyReady}
+              requiresAi
+              remoteValidate
+            />
+            <AdminProviderCooldownBadge provider={pricingProvider} />
+          </div>
+        </div>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
+                Provider cooldown history
+                <HelpTooltip text="Recent shared cooldown events stored in D1: quota/rate-limit cooldowns, blocked generate/retry attempts, and manual clears." />
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">Useful when checking whether a provider was cleared, retried, or still causing blocked attempts.</p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchCooldownHistory}
+              disabled={cooldownEventsLoading}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              <RotateCcw size={13} className={cooldownEventsLoading ? "animate-spin" : ""} />
+              Refresh history
+            </button>
+          </div>
+          <div className="space-y-2">
+            {cooldownEvents.map((event) => {
+              const action = String(event.metadata?.action || "");
+              const until = Number(event.cooldownUntil || 0);
+              return (
+                <div key={event.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${cooldownEventClass(event.eventType)}`}>
+                      {cooldownEventLabel(event.eventType)}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-900">{event.provider || "Provider"}</span>
+                    {action && <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">{action}</span>}
+                    <span className="ml-auto text-[11px] text-slate-500">{event.createdAt ? new Date(event.createdAt).toLocaleString() : ""}</span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-600">
+                    {event.reason || "No reason recorded."}
+                  </p>
+                  {until > 0 && (
+                    <p className="mt-1 text-[11px] font-medium text-slate-500">
+                      Cooldown until {new Date(until).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+            {!cooldownEvents.length && (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                No provider cooldown events recorded yet.
+              </div>
+            )}
+          </div>
         </div>
         <div className="mt-5 rounded-xl bg-slate-50 border border-slate-200 p-4">
           <p className="text-sm text-slate-500">Total estimasi</p>

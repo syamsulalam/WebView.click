@@ -12,8 +12,12 @@ import GenerationJobsTable from "../../components/GenerationJobsTable";
 import AdminWorkspaceTabs from "../../components/AdminWorkspaceTabs";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
+import { useAdminToast } from "../../components/AdminToast";
+import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
+import { formatCooldownRemaining, getSharedProviderCooldown, logProviderCooldownBlockedJob } from "../../lib/providerCooldown";
 
 export default function AdminLeads() {
+  const { showApiError, showToast } = useAdminToast();
   const [leads, setLeads] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -580,13 +584,28 @@ export default function AdminLeads() {
     return isEnglish ? "local service" : "layanan lokal";
   };
 
+  const titleCaseLabel = (value = "") => {
+    const stopWords = new Set(["and", "or", "for", "of", "the", "a", "an", "to", "in", "on", "at", "by", "with", "dan", "atau", "untuk", "di", "ke", "dari", "yang"]);
+    return String(value)
+      .replace(/[_-]+/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word, index) => {
+        const lower = word.toLowerCase();
+        if (/^[A-Z0-9]{2,}$/.test(word)) return word;
+        if (index > 0 && stopWords.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(" ");
+  };
+
   const buildOfferings = (place: any, isEnglish: boolean, mode: string, imageUrl: string, mapsUrl: string) => {
-    const typeLabel = meaningfulTypeLabel(place, isEnglish);
+    const typeLabel = titleCaseLabel(meaningfulTypeLabel(place, isEnglish));
     const serviceBase = [
       {
         id: "core-service",
         type: "service",
-        title: isEnglish ? `${typeLabel} service` : "Layanan utama",
+        title: isEnglish ? titleCaseLabel(`${typeLabel} service`) : "Layanan Utama",
         summary: isEnglish ? `Primary local service from ${place.name}.` : `Layanan utama dari ${place.name} untuk pelanggan lokal.`,
         description: isEnglish ? `Built around the needs customers usually search for when looking for ${typeLabel}.` : `Dibuat berdasarkan kebutuhan pelanggan yang mencari ${typeLabel}.`,
         priceHint: isEnglish ? "Contact for estimate" : "Hubungi untuk estimasi",
@@ -603,7 +622,7 @@ export default function AdminLeads() {
       {
         id: "fast-consultation",
         type: "service",
-        title: isEnglish ? "Fast consultation" : "Konsultasi cepat",
+        title: isEnglish ? "Fast Consultation" : "Konsultasi Cepat",
         summary: isEnglish ? "Ask questions and get clear next steps." : "Tanyakan kebutuhan dan dapatkan arahan yang jelas.",
         description: isEnglish ? "Useful for customers who need to understand availability, pricing, and timing before visiting or booking." : "Cocok untuk pelanggan yang ingin memahami ketersediaan, harga, dan jadwal sebelum datang atau booking.",
         priceHint: isEnglish ? "Fast response" : "Respon cepat",
@@ -621,7 +640,7 @@ export default function AdminLeads() {
       {
         id: "featured-product",
         type: "product",
-        title: isEnglish ? "Featured product" : "Produk unggulan",
+        title: isEnglish ? "Featured Product" : "Produk Unggulan",
         summary: isEnglish ? `A highlighted product or menu item from ${place.name}.` : `Produk atau menu unggulan dari ${place.name}.`,
         description: isEnglish ? "A product-led page for customers who want to understand the item before visiting or ordering." : "Halaman produk untuk pelanggan yang ingin memahami item sebelum datang atau memesan.",
         priceHint: isEnglish ? "Ask for current price" : "Tanya harga terbaru",
@@ -984,19 +1003,44 @@ export default function AdminLeads() {
 
   const handleGenerateSite = async (place: any) => {
     const placeKey = getPlaceKey(place);
+    const cooldown = await getSharedProviderCooldown(activeProviderKey, true);
+    if (cooldown) {
+      const message = `${activeProviderKey} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error. Batch generation is paused to avoid repeated 429 failures.`;
+      setGenerationMessages(prev => ({
+        ...prev,
+        [placeKey]: { type: "error", text: message },
+      }));
+      setBatchMessage(message);
+      showToast({
+        kind: "warning",
+        title: `${activeProviderKey} cooldown active`,
+        message,
+        actions: ["Wait for the cooldown to end, then retry one prospect.", "Switch provider/model before continuing a batch."],
+      });
+      await logProviderCooldownBlockedJob({
+        provider: activeProviderKey,
+        model: activeModel,
+        cooldown,
+        action: "lead_generate",
+        businessName: place?.name || placeKey,
+        placeId: String(place?.place_id || place?.id || ""),
+        message,
+      });
+      return false;
+    }
     if (isMapsQueryPlaceholder(place)) {
       setGenerationMessages(prev => ({
         ...prev,
         [placeKey]: { type: "error", text: "This row is a Maps search/query placeholder, not a specific business listing. Import captured listing JSON or choose a real Google business result before generating." },
       }));
-      return;
+      return false;
     }
     if (!hasGatheredDetails(place)) {
       setGenerationMessages(prev => ({
         ...prev,
         [placeKey]: { type: "error", text: "Gather Google Places details first so the generated site has phone, direct Maps URL, reviews, and photos." },
       }));
-      return;
+      return false;
     }
 
     const readiness = await checkAiReadiness(activeProviderKey, activeModel, true, true);
@@ -1015,7 +1059,7 @@ export default function AdminLeads() {
         ...prev,
         [placeKey]: { type: "error", text: message },
       }));
-      return;
+      return false;
     }
 
     const fullPlace = mergePlaceWithDetails(place);
@@ -1477,13 +1521,16 @@ export default function AdminLeads() {
           businessId: data.businessId || businessId,
         },
       }));
+      return true;
     } catch (e) {
       console.error(e);
+      showApiError(e, { source: "Generate site", provider: activeProviderKey, model: activeModel });
       setGenerationMessages(prev => ({
         ...prev,
         [placeKey]: { type: "error", text: e instanceof Error ? e.message : "Generate site gagal. Hasil pencarian tetap disimpan di layar." },
       }));
       fetchGenerationJobs();
+      return false;
     } finally {
       setIsGenerating(false);
       setGeneratingPlaceKey("");
@@ -1633,14 +1680,35 @@ export default function AdminLeads() {
     if (selectedVisibleProspects.length === 0 || batchQueueRunning) return;
     setBatchQueueRunning(true);
     setBatchMessage(`Starting queue for ${selectedVisibleProspects.length} prospects...`);
+    let pausedForCooldown = false;
     for (let index = 0; index < selectedVisibleProspects.length; index += 1) {
       const place = selectedVisibleProspects[index];
+      const cooldown = await getSharedProviderCooldown(activeProviderKey, true);
+      if (cooldown) {
+        const message = `${activeProviderKey} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error. Queue paused before prospect ${index + 1}/${selectedVisibleProspects.length}.`;
+        setBatchMessage(message);
+        await logProviderCooldownBlockedJob({
+          provider: activeProviderKey,
+          model: activeModel,
+          cooldown,
+          action: "lead_batch_generate",
+          businessName: place?.name || getPlaceKey(place),
+          placeId: String(place?.place_id || place?.id || ""),
+          message,
+        });
+        pausedForCooldown = true;
+        break;
+      }
       setBatchMessage(`Generating ${index + 1}/${selectedVisibleProspects.length}: ${place.name}`);
-      await handleGenerateSite(place);
+      const generated = await handleGenerateSite(place);
+      if (!generated && (await getSharedProviderCooldown(activeProviderKey, true))) {
+        pausedForCooldown = true;
+        break;
+      }
     }
     setBatchQueueRunning(false);
-    setBatchMessage("Batch queue finished.");
-    setSelectedProspects({});
+    if (!pausedForCooldown) setBatchMessage("Batch queue finished.");
+    if (!pausedForCooldown) setSelectedProspects({});
     fetchGenerationJobs();
   };
 
@@ -1723,6 +1791,7 @@ export default function AdminLeads() {
               className="py-1.5"
               onRefresh={() => setBatchMessage("AI readiness cache cleared. Badges are rechecking the selected provider/model.")}
             />
+            <AdminProviderCooldownBadge provider={activeProviderKey} />
           </div>
           )}
         </div>
@@ -2269,6 +2338,7 @@ export default function AdminLeads() {
                   requiresAi
                   remoteValidate
                 />
+                <AdminProviderCooldownBadge provider={activeProviderKey} compact />
                 <button
                   type="button"
                   onClick={() => {

@@ -65,6 +65,15 @@ const jsonHeaders = {
   "cache-control": "no-store",
 };
 
+const dailyUsageLimits = {
+  places_search: { label: "Places search", warnAt: 50, dangerAt: 100 },
+  places_details: { label: "Places details", warnAt: 250, dangerAt: 500 },
+  ai_readiness_remote: { label: "Remote AI readiness", warnAt: 50, dangerAt: 100 },
+  site_generation: { label: "Site generation", warnAt: 30, dangerAt: 75 },
+} as const;
+
+type DailyUsageKey = keyof typeof dailyUsageLimits;
+
 const corsHeaders = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
@@ -378,6 +387,9 @@ async function setupTables(db: D1Database) {
     "CREATE TABLE IF NOT EXISTS json_sites (id TEXT PRIMARY KEY, business_id TEXT UNIQUE NOT NULL, json_content TEXT NOT NULL, r2_json_key TEXT, r2_json_url TEXT, json_summary TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS ai_readiness_cache (cache_key TEXT PRIMARY KEY, provider TEXT NOT NULL, model TEXT NOT NULL, key_hash TEXT, validation_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS daily_usage_counters (usage_date TEXT NOT NULL, counter_key TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (usage_date, counter_key))",
+    "CREATE TABLE IF NOT EXISTS provider_cooldowns (provider_key TEXT PRIMARY KEY, provider TEXT NOT NULL, until_ms INTEGER NOT NULL, reason TEXT, raw_message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS provider_cooldown_events (id TEXT PRIMARY KEY, provider_key TEXT NOT NULL, provider TEXT NOT NULL, event_type TEXT NOT NULL, cooldown_until_ms INTEGER, reason TEXT, raw_message TEXT, metadata_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS places_search_cache (query_key TEXT PRIMARY KEY, query TEXT NOT NULL, results_json TEXT NOT NULL, provider_status TEXT, result_count INTEGER DEFAULT 0, hit_count INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME)",
     "CREATE TABLE IF NOT EXISTS places_prospects (place_id TEXT PRIMARY KEY, query_key TEXT, query TEXT, business_name TEXT NOT NULL, address TEXT, phone TEXT, website_url TEXT, maps_url TEXT, rating REAL, reviews INTEGER, niche TEXT, status TEXT DEFAULT 'new', result_json TEXT NOT NULL, details_json TEXT, selected_photo_json TEXT, selected_palette_json TEXT, palette_options_json TEXT, website_check_status TEXT, website_checked_at DATETIME, generated_business_id TEXT, last_error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, generated_at DATETIME, details_loaded_at DATETIME)",
     "CREATE TABLE IF NOT EXISTS generation_jobs (id TEXT PRIMARY KEY, business_id TEXT, place_id TEXT, provider TEXT, model TEXT, status TEXT NOT NULL, error TEXT, metadata_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -408,6 +420,25 @@ async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "ai_readiness_cache", "validation_json", "TEXT");
   await addColumnIfMissing(db, "ai_readiness_cache", "created_at", "DATETIME");
   await addColumnIfMissing(db, "ai_readiness_cache", "expires_at", "DATETIME");
+  await addColumnIfMissing(db, "daily_usage_counters", "usage_date", "TEXT");
+  await addColumnIfMissing(db, "daily_usage_counters", "counter_key", "TEXT");
+  await addColumnIfMissing(db, "daily_usage_counters", "count", "INTEGER DEFAULT 0");
+  await addColumnIfMissing(db, "daily_usage_counters", "updated_at", "DATETIME");
+  await addColumnIfMissing(db, "provider_cooldowns", "provider_key", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldowns", "provider", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldowns", "until_ms", "INTEGER");
+  await addColumnIfMissing(db, "provider_cooldowns", "reason", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldowns", "raw_message", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldowns", "created_at", "DATETIME");
+  await addColumnIfMissing(db, "provider_cooldowns", "updated_at", "DATETIME");
+  await addColumnIfMissing(db, "provider_cooldown_events", "provider_key", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldown_events", "provider", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldown_events", "event_type", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldown_events", "cooldown_until_ms", "INTEGER");
+  await addColumnIfMissing(db, "provider_cooldown_events", "reason", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldown_events", "raw_message", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldown_events", "metadata_json", "TEXT");
+  await addColumnIfMissing(db, "provider_cooldown_events", "created_at", "DATETIME");
   await addColumnIfMissing(db, "places_search_cache", "provider_status", "TEXT");
   await addColumnIfMissing(db, "places_search_cache", "result_count", "INTEGER DEFAULT 0");
   await addColumnIfMissing(db, "places_search_cache", "hit_count", "INTEGER DEFAULT 0");
@@ -447,7 +478,7 @@ async function setupTables(db: D1Database) {
 async function databaseRepairReport(db: D1Database) {
   const startedAt = new Date().toISOString();
   await setupTables(db);
-  const tables = ["leads", "subscriptions", "crm_activities", "json_sites", "system_settings", "ai_readiness_cache", "places_search_cache", "places_prospects", "generation_jobs"];
+  const tables = ["leads", "subscriptions", "crm_activities", "json_sites", "system_settings", "ai_readiness_cache", "daily_usage_counters", "provider_cooldowns", "provider_cooldown_events", "places_search_cache", "places_prospects", "generation_jobs"];
   const summary: Record<string, string[]> = {};
   for (const table of tables) {
     summary[table] = Array.from(await tableColumns(db, table)).sort();
@@ -463,6 +494,87 @@ async function databaseRepairReport(db: D1Database) {
 async function getSetting(db: D1Database, env: Env, key: keyof Env & string): Promise<string | undefined> {
   const row = await db.prepare("SELECT value FROM system_settings WHERE key = ?").bind(key).first<SettingRow>();
   return row?.value || (typeof env[key] === "string" ? env[key] : undefined);
+}
+
+function usageDateUtc(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function usageDateDaysAgo(daysAgo: number) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  return usageDateUtc(date);
+}
+
+async function incrementDailyUsage(db: D1Database, counterKey: DailyUsageKey, amount = 1) {
+  try {
+    await db
+      .prepare(
+        `INSERT INTO daily_usage_counters (usage_date, counter_key, count, updated_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(usage_date, counter_key) DO UPDATE SET
+           count = count + excluded.count,
+           updated_at = CURRENT_TIMESTAMP`,
+      )
+      .bind(usageDateUtc(), counterKey, Math.max(1, Math.floor(amount)))
+      .run();
+  } catch (error) {
+    console.error(`Daily usage counter failed for ${counterKey}:`, error);
+  }
+}
+
+async function getDailyUsage(db: D1Database) {
+  const date = usageDateUtc();
+  const historyDates = Array.from({ length: 30 }, (_, index) => usageDateDaysAgo(29 - index));
+  const emptyCounts = Object.fromEntries(Object.keys(dailyUsageLimits).map((key) => [key, 0])) as Record<DailyUsageKey, number>;
+  try {
+    const rows = await db
+      .prepare("SELECT usage_date, counter_key, count FROM daily_usage_counters WHERE usage_date >= ? ORDER BY usage_date ASC")
+      .bind(historyDates[0])
+      .all<{ usage_date: string; counter_key: DailyUsageKey; count: number }>();
+    const countsByDate = Object.fromEntries(historyDates.map((historyDate) => [historyDate, { ...emptyCounts }])) as Record<string, Record<DailyUsageKey, number>>;
+    for (const row of rows.results || []) {
+      if (row.usage_date in countsByDate && row.counter_key in dailyUsageLimits) {
+        countsByDate[row.usage_date][row.counter_key] = Number(row.count || 0);
+      }
+    }
+    const todayCounts = countsByDate[date] || { ...emptyCounts };
+    const countersForCounts = (counts: Record<DailyUsageKey, number>) => Object.entries(dailyUsageLimits).map(([key, limit]) => {
+      const count = counts[key as DailyUsageKey] || 0;
+      return {
+        key,
+        label: limit.label,
+        count,
+        warnAt: limit.warnAt,
+        dangerAt: limit.dangerAt,
+        level: count >= limit.dangerAt ? "danger" : count >= limit.warnAt ? "warn" : "ok",
+      };
+    });
+    return {
+      date,
+      timezone: "UTC",
+      counters: countersForCounts(todayCounts),
+      history: historyDates.map((historyDate) => ({
+        date: historyDate,
+        counters: countersForCounts(countsByDate[historyDate] || { ...emptyCounts }),
+      })),
+    };
+  } catch (error) {
+    console.error("Daily usage stats fallback:", error);
+    return {
+      date,
+      timezone: "UTC",
+      counters: Object.entries(dailyUsageLimits).map(([key, limit]) => ({
+        key,
+        label: limit.label,
+        count: 0,
+        warnAt: limit.warnAt,
+        dangerAt: limit.dangerAt,
+        level: "unknown",
+      })),
+      history: [],
+    };
+  }
 }
 
 const aiProviderKeyMap: Record<string, keyof Env & string> = {
@@ -745,7 +857,14 @@ async function getAiReadiness(db: D1Database, env: Env, provider: string, model:
           console.error("AI readiness cache read failed, continuing without cache:", cacheError);
         }
       }
-      remoteValidation = cachedValidation || await validateAiModelRemotely(db, env, normalizedProvider, model.trim());
+      if (cachedValidation) {
+        remoteValidation = cachedValidation;
+      } else {
+        if (["OpenRouter", "OpenAI", "Gemini"].includes(normalizedProvider)) {
+          await incrementDailyUsage(db, "ai_readiness_remote");
+        }
+        remoteValidation = await validateAiModelRemotely(db, env, normalizedProvider, model.trim());
+      }
       if (!cachedValidation && remoteValidation.supported === true) {
         try {
           await putCachedRemoteAiValidation(db, cacheKey, normalizedProvider, normalizedModel, keyHash, remoteValidation);
@@ -822,6 +941,184 @@ async function handleAiReadiness(request: Request, db: D1Database, env: Env): Pr
   }
   const result = await getAiReadiness(db, env, provider, model, requiresAi, remoteValidate, refreshRemoteValidation);
   return json(result);
+}
+
+function providerCooldownKey(provider = "") {
+  return provider.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "api-provider";
+}
+
+function providerCooldownRowToJson(row: { provider?: string; until_ms?: number; reason?: string; raw_message?: string } | null) {
+  if (!row?.until_ms || Number(row.until_ms) <= Date.now()) return null;
+  return {
+    provider: row.provider || "",
+    until: Number(row.until_ms),
+    reason: row.reason || "",
+    rawMessage: row.raw_message || "",
+  };
+}
+
+async function insertProviderCooldownEvent(db: D1Database, input: {
+  provider: string;
+  eventType: string;
+  cooldownUntil?: number | null;
+  reason?: string;
+  rawMessage?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  try {
+    await db
+      .prepare(
+        `INSERT INTO provider_cooldown_events
+          (id, provider_key, provider, event_type, cooldown_until_ms, reason, raw_message, metadata_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        providerCooldownKey(input.provider),
+        input.provider,
+        input.eventType,
+        input.cooldownUntil || null,
+        (input.reason || "").slice(0, 500),
+        (input.rawMessage || "").slice(0, 4000),
+        JSON.stringify(input.metadata || {}),
+      )
+      .run();
+    await pruneProviderCooldownEvents(db);
+  } catch (error) {
+    console.error("Provider cooldown event insert failed, continuing:", error);
+  }
+}
+
+async function pruneProviderCooldownEvents(db: D1Database) {
+  try {
+    await db
+      .prepare("DELETE FROM provider_cooldown_events WHERE datetime(created_at) < datetime('now', '-45 days')")
+      .run();
+    await db
+      .prepare(
+        `DELETE FROM provider_cooldown_events
+         WHERE id NOT IN (
+           SELECT id FROM provider_cooldown_events
+           ORDER BY datetime(created_at) DESC
+           LIMIT 500
+         )`,
+      )
+      .run();
+  } catch (error) {
+    console.error("Provider cooldown event prune failed, continuing:", error);
+  }
+}
+
+async function handleProviderCooldowns(request: Request, db: D1Database, url: URL, segments: string[]): Promise<Response> {
+  if (request.method === "GET" && segments[1] === "history") {
+    const requestedLimit = Number(url.searchParams.get("limit") || "20");
+    const limit = Math.min(100, Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 20));
+    const provider = url.searchParams.get("provider") || "";
+    const providerKey = provider ? providerCooldownKey(provider) : "";
+    const sql = providerKey
+      ? `SELECT id, provider, event_type, cooldown_until_ms, reason, raw_message, metadata_json, created_at
+         FROM provider_cooldown_events
+         WHERE provider_key = ?
+         ORDER BY datetime(created_at) DESC
+         LIMIT ?`
+      : `SELECT id, provider, event_type, cooldown_until_ms, reason, raw_message, metadata_json, created_at
+         FROM provider_cooldown_events
+         ORDER BY datetime(created_at) DESC
+         LIMIT ?`;
+    const rows = providerKey
+      ? await db.prepare(sql).bind(providerKey, limit).all<{ id: string; provider: string; event_type: string; cooldown_until_ms?: number; reason?: string; raw_message?: string; metadata_json?: string; created_at?: string }>()
+      : await db.prepare(sql).bind(limit).all<{ id: string; provider: string; event_type: string; cooldown_until_ms?: number; reason?: string; raw_message?: string; metadata_json?: string; created_at?: string }>();
+    return json((rows.results || []).map((row) => ({
+      id: row.id,
+      provider: row.provider || "",
+      eventType: row.event_type || "",
+      cooldownUntil: Number(row.cooldown_until_ms || 0) || null,
+      reason: row.reason || "",
+      rawMessage: row.raw_message || "",
+      metadata: parseJsonObject(row.metadata_json),
+      createdAt: row.created_at || "",
+    })));
+  }
+
+  if (request.method === "GET") {
+    const provider = url.searchParams.get("provider") || "";
+    const providerKey = providerCooldownKey(provider);
+    const row = await db
+      .prepare("SELECT provider, until_ms, reason, raw_message FROM provider_cooldowns WHERE provider_key = ?")
+      .bind(providerKey)
+      .first<{ provider: string; until_ms: number; reason?: string; raw_message?: string }>();
+    const cooldown = providerCooldownRowToJson(row);
+    if (!cooldown && row) {
+      await db.prepare("DELETE FROM provider_cooldowns WHERE provider_key = ?").bind(providerKey).run();
+    }
+    return json({ cooldown });
+  }
+
+  if (request.method === "POST") {
+    const body = await readJsonBody(request);
+    const provider = asString(body.provider).trim();
+    if (!provider) return errorJson("provider is required", 400);
+    const providerKey = providerCooldownKey(provider);
+    const untilMs = Math.floor(Number(body.until || body.untilMs || 0));
+    const cooldownMs = Math.floor(Number(body.cooldownMs || 0));
+    const computedUntil = cooldownMs > 0 ? Date.now() + cooldownMs : untilMs;
+    if (!Number.isFinite(computedUntil) || computedUntil <= Date.now()) {
+      return errorJson("until or cooldownMs must be in the future", 400);
+    }
+    const cappedUntil = Math.min(computedUntil, Date.now() + 24 * 60 * 60 * 1000);
+    const reason = asString(body.reason).slice(0, 500);
+    const rawMessage = asString(body.rawMessage || body.raw_message).slice(0, 4000);
+    await db
+      .prepare(
+        `INSERT INTO provider_cooldowns (provider_key, provider, until_ms, reason, raw_message, updated_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(provider_key) DO UPDATE SET
+           provider = excluded.provider,
+           until_ms = CASE
+             WHEN excluded.until_ms > provider_cooldowns.until_ms THEN excluded.until_ms
+             ELSE provider_cooldowns.until_ms
+           END,
+           reason = excluded.reason,
+           raw_message = excluded.raw_message,
+           updated_at = CURRENT_TIMESTAMP`,
+      )
+      .bind(providerKey, provider, cappedUntil, reason, rawMessage)
+      .run();
+    await insertProviderCooldownEvent(db, {
+      provider,
+      eventType: "set",
+      cooldownUntil: cappedUntil,
+      reason,
+      rawMessage,
+      metadata: { source: "api_provider_cooldown_post" },
+    });
+    const row = await db
+      .prepare("SELECT provider, until_ms, reason, raw_message FROM provider_cooldowns WHERE provider_key = ?")
+      .bind(providerKey)
+      .first<{ provider: string; until_ms: number; reason?: string; raw_message?: string }>();
+    return json({ success: true, cooldown: providerCooldownRowToJson(row) });
+  }
+
+  if (request.method === "DELETE") {
+    const provider = url.searchParams.get("provider") || "";
+    const providerKey = providerCooldownKey(provider);
+    const row = await db
+      .prepare("SELECT provider, until_ms, reason, raw_message FROM provider_cooldowns WHERE provider_key = ?")
+      .bind(providerKey)
+      .first<{ provider: string; until_ms: number; reason?: string; raw_message?: string }>();
+    await db.prepare("DELETE FROM provider_cooldowns WHERE provider_key = ?").bind(providerKey).run();
+    await insertProviderCooldownEvent(db, {
+      provider: provider || row?.provider || "API provider",
+      eventType: "clear",
+      cooldownUntil: row?.until_ms || null,
+      reason: "Manual cooldown clear",
+      rawMessage: row?.raw_message || "",
+      metadata: { previousReason: row?.reason || "" },
+    });
+    return json({ success: true, cooldown: null });
+  }
+
+  return errorJson("Method not allowed", 405);
 }
 
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
@@ -1393,6 +1690,7 @@ async function handleStats(db: D1Database): Promise<Response> {
       totalLeads,
       conversionRate: totalLeads > 0 ? (paidLeads / totalLeads) * 100 : 0,
       totalRevenue: Number(revenueData?.total_revenue || 0),
+      dailyUsage: await getDailyUsage(db),
     });
   } catch (error) {
     console.error("Stats fallback:", error);
@@ -1400,6 +1698,7 @@ async function handleStats(db: D1Database): Promise<Response> {
       totalLeads: 0,
       conversionRate: 0,
       totalRevenue: 0,
+      dailyUsage: await getDailyUsage(db),
     });
   }
 }
@@ -1549,6 +1848,7 @@ async function handlePlacesSearch(url: URL, db: D1Database, env: Env): Promise<R
   }
 
   try {
+    await incrementDailyUsage(db, "places_search");
     const response = await fetch(
       `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${encodeURIComponent(placesKey)}`,
     );
@@ -1660,6 +1960,7 @@ async function precheckWebsiteForPlaces(db: D1Database, placesKey: string, resul
     }
 
     try {
+      await incrementDailyUsage(db, "places_details");
       const { data } = await fetchPlaceDetailsLegacy(placeId, placesKey, [
         "place_id",
         "name",
@@ -1798,6 +2099,7 @@ async function handlePlacesDetails(url: URL, db: D1Database, env: Env): Promise<
   ].join(",");
 
   try {
+    await incrementDailyUsage(db, "places_details");
     const { response, data } = await fetchPlaceDetailsLegacy(placeId, placesKey, fields.split(","));
 
     if (!response.ok || (data.status && data.status !== "OK")) {
@@ -2289,6 +2591,70 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
 }
 
 async function handleGenerationJobs(request: Request, db: D1Database, segments: string[]): Promise<Response> {
+  if (request.method === "POST" && segments[1] === "cooldown-blocked") {
+    const body = await readJsonBody(request);
+    const provider = asString(body.provider);
+    const model = asString(body.model);
+    const businessId = asString(body.businessId);
+    const placeId = asString(body.placeId);
+    const businessName = asString(body.businessName, businessId || placeId || "Unknown business");
+    const action = asString(body.action, "generate");
+    const cooldown = body.cooldown && typeof body.cooldown === "object" ? body.cooldown as Record<string, unknown> : {};
+    const cooldownUntil = Number(cooldown.until || body.cooldownUntil || 0);
+    const message = asString(
+      body.message,
+      `${provider || "Provider"} generation was blocked by an active provider cooldown.`,
+    );
+    const id = crypto.randomUUID();
+    const metadata = {
+      businessName,
+      generationMode: "provider_cooldown_blocked",
+      preflightBlocked: true,
+      cooldownBlocked: true,
+      preflightAction: action,
+      failureStage: "provider_cooldown",
+      failureMessage: message,
+      providerCooldown: {
+        provider: asString(cooldown.provider, provider),
+        until: Number.isFinite(cooldownUntil) ? cooldownUntil : null,
+        reason: asString(cooldown.reason),
+        rawMessage: asString(cooldown.rawMessage || cooldown.raw_message).slice(0, 4000),
+      },
+      copyPatchApplied: false,
+      checkedAt: new Date().toISOString(),
+    };
+
+    await ensureRequiredColumns(db, generateRequiredColumns);
+    await createGenerationJob(db, {
+      id,
+      business_id: businessId,
+      place_id: placeId,
+      provider,
+      model,
+      status: "failed",
+      error: message,
+      metadata_json: JSON.stringify(metadata),
+    });
+    if (placeId) {
+      await updateProspectRecord(db, placeId, { last_error: message });
+    }
+    await insertProviderCooldownEvent(db, {
+      provider,
+      eventType: "blocked",
+      cooldownUntil: Number.isFinite(cooldownUntil) ? cooldownUntil : null,
+      reason: message,
+      rawMessage: asString(cooldown.rawMessage || cooldown.raw_message),
+      metadata: {
+        action,
+        businessId,
+        placeId,
+        businessName,
+        generationJobId: id,
+      },
+    });
+    return json({ success: true, id });
+  }
+
   if (request.method === "POST" && segments[1] === "preflight-failure") {
     const body = await readJsonBody(request);
     const provider = asString(body.provider);
@@ -3763,6 +4129,7 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       status: "running",
       metadata_json: JSON.stringify(jobMetadata),
     });
+    await incrementDailyUsage(db, "site_generation");
 
     try {
 
@@ -4390,6 +4757,10 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (segments[0] === "ai" && segments[1] === "readiness") {
       return handleAiReadiness(request, db, env);
+    }
+
+    if (segments[0] === "provider-cooldowns") {
+      return handleProviderCooldowns(request, db, url, segments);
     }
 
     if (request.method === "GET" && segments[0] === "places" && segments[1] === "photo") {

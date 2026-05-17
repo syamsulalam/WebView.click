@@ -2,17 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { Globe2, LayoutDashboard, ListChecks, Users, UserCircle, Webhook, Settings } from "lucide-react";
 import { SignIn, useUser, useClerk } from "@clerk/clerk-react";
+import { AdminToastProvider, useAdminToast } from "./AdminToast";
 
 export default function AdminLayout() {
   const isDevHost = window.location.hostname.includes('run.app') || window.location.hostname.includes('localhost');
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "";
   const isDevBypass = !clerkKey || (clerkKey.startsWith('pk_live_') && isDevHost);
 
-  if (isDevBypass) {
-    return <BypassLayout />;
-  }
-
-  return <ClerkSecureLayout />;
+  return (
+    <AdminToastProvider>
+      {isDevBypass ? <BypassLayout /> : <ClerkSecureLayout />}
+    </AdminToastProvider>
+  );
 }
 
 // Komponen Navbar yang sama
@@ -111,12 +112,13 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
 
 // Layout khusus jika bypass Clerk Dev
 function BypassLayout() {
+  const { showToast } = useAdminToast();
   return (
     <div className="relative h-screen w-screen overflow-hidden">
         <div className="absolute top-0 right-0 bg-yellow-500 text-xs px-2 py-1 text-black font-bold z-[10000] rounded-bl-lg shadow-sm">
           DEV BYPASS MODE
         </div>
-        <NavContent onSignOut={() => alert("Logout simulated in Devypass Mode")} />
+        <NavContent onSignOut={() => showToast({ kind: "info", title: "Dev bypass mode", message: "Logout is simulated because Clerk auth is bypassed on this host." })} />
     </div>
   );
 }

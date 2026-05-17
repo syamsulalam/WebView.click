@@ -5,6 +5,8 @@ import { useLocalStorageState } from "../lib/localStorageState";
 import { checkAiReadiness, logAiReadinessBlockedJob } from "../lib/aiReadiness";
 import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
+import { useAdminToast } from "./AdminToast";
+import { formatCooldownRemaining, getSharedProviderCooldown, logProviderCooldownBlockedJob } from "../lib/providerCooldown";
 
 type GenerationJobsTableProps = {
   storageKeyPrefix: string;
@@ -41,6 +43,10 @@ async function sha256Json(value: unknown) {
 
 function patchApplied(job: any) {
   return job?.metadata?.copyPatchApplied === true;
+}
+
+function cooldownBlocked(job: any) {
+  return job?.metadata?.cooldownBlocked === true;
 }
 
 function aiRewriteCount(job: any) {
@@ -110,6 +116,7 @@ export default function GenerationJobsTable({
   serverBackedSearch = false,
   onJobsLoaded,
 }: GenerationJobsTableProps) {
+  const { showApiError } = useAdminToast();
   const [jobs, setJobs] = useState<any[]>([]);
   const [remoteCounts, setRemoteCounts] = useState<GenerationJobCounts | null>(null);
   const [loading, setLoading] = useState(true);
@@ -149,6 +156,7 @@ export default function GenerationJobsTable({
   const selectedAuditSummary = copyAuditSummary(selectedJob);
   const selectedAiReadiness = selectedJob?.metadata?.aiReadiness || null;
   const selectedRemoteValidation = selectedJob?.metadata?.remoteValidation || selectedAiReadiness?.remoteValidation || null;
+  const selectedProviderCooldown = selectedJob?.metadata?.providerCooldown || null;
 
   const retryReadiness = (job: any) => {
     const provider = job?.provider || fallbackProvider;
@@ -246,6 +254,21 @@ export default function GenerationJobsTable({
     try {
       const retryProvider = job.provider || fallbackProvider;
       const retryModel = job.model || fallbackModel;
+      const cooldown = await getSharedProviderCooldown(retryProvider, true);
+      if (cooldown) {
+        const message = `${retryProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error. Retry is paused to avoid another 429.`;
+        await logProviderCooldownBlockedJob({
+          provider: retryProvider,
+          model: retryModel,
+          cooldown,
+          action: "job_retry",
+          businessId: job.businessId,
+          placeId: job.placeId,
+          businessName: job.prospectName || job.metadata?.businessName || job.businessId,
+          message,
+        });
+        throw new Error(message);
+      }
       const readiness = await checkAiReadiness(retryProvider, retryModel, true, true);
       if (!readiness.ready) {
         const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before retrying.";
@@ -313,6 +336,9 @@ export default function GenerationJobsTable({
       setMessage(`Retried ${job.businessId}. New job created from current brief ${shortHash(currentBriefHash)}.`);
       fetchJobs();
     } catch (error) {
+      if (!(error instanceof Error && error.message.includes("cooling down"))) {
+        showApiError(error, { source: "Retry generation job", provider: job?.provider || fallbackProvider, model: job?.model || fallbackModel });
+      }
       setMessage(error instanceof Error ? error.message : "Retry generation job failed.");
     } finally {
       setRetryingJobId("");
@@ -336,7 +362,7 @@ export default function GenerationJobsTable({
             Generation jobs
             <HelpTooltip
               widthClass="w-80"
-              text="Preflight blocked means AI readiness stopped the click before full generation. Fallback means no AI copy patch was applied. Patch means AI copy was merged into the deterministic site JSON. No rewrite means the patch ran but did not change source copy."
+              text="Preflight blocked means AI readiness or provider cooldown stopped the click before full generation. Fallback means no AI copy patch was applied. Patch means AI copy was merged into the deterministic site JSON. No rewrite means the patch ran but did not change source copy."
             />
           </p>
           {!compact && <p className="mt-1 text-xs text-slate-500">Filter, sort, and retry generation attempts.</p>}
@@ -422,6 +448,7 @@ export default function GenerationJobsTable({
                   const briefHash = shortHash(job.metadata?.copyBriefHash);
                   const patchHash = shortHash(job.metadata?.copyPatchHash);
                   const applied = patchApplied(job);
+                  const blockedByCooldown = cooldownBlocked(job);
                   const readiness = retryReadiness(job);
                   return (
                     <tr key={job.id} className="align-top hover:bg-slate-50">
@@ -456,6 +483,11 @@ export default function GenerationJobsTable({
                         <span className={`rounded-full ${compact ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs"} font-semibold ${
                           job.status === "success" ? "bg-emerald-100 text-emerald-800" : job.status === "failed" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
                         }`}>{job.status || "unknown"}</span>
+                        {blockedByCooldown && (
+                          <span className="mt-1.5 block w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                            cooldown blocked
+                          </span>
+                        )}
                         <p className={`${compact ? "text-[11px]" : "text-xs"} mt-2 text-slate-500`}>{job.createdAt ? new Date(job.createdAt).toLocaleString() : ""}</p>
                       </td>
                       <td className={`${compact ? "max-w-[180px] px-3 py-2" : "max-w-[210px] px-4 py-3"}`}>
@@ -476,8 +508,8 @@ export default function GenerationJobsTable({
                           ) : (
                             <span className="text-slate-400">-</span>
                           )}
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${applied ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
-                            {applied ? (compact ? "applied" : "patch applied") : (compact ? "fallback" : "fallback only")}
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${applied ? "bg-emerald-100 text-emerald-800" : blockedByCooldown ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-600"}`}>
+                            {applied ? (compact ? "applied" : "patch applied") : blockedByCooldown ? "blocked before AI" : (compact ? "fallback" : "fallback only")}
                           </span>
                         </div>
                       </td>
@@ -654,6 +686,30 @@ export default function GenerationJobsTable({
                   </div>
                   <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                     {selectedRemoteValidation?.message || selectedAiReadiness.message || selectedJob.error}
+                  </p>
+                </section>
+              )}
+
+              {selectedJob.metadata?.cooldownBlocked && selectedProviderCooldown && (
+                <section>
+                  <div className="mb-2">
+                    <h3 className="font-semibold text-slate-950">Provider cooldown block</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">This attempt stopped before `/api/sites/generate` because the selected provider had an active shared cooldown.</p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {[
+                      ["Provider", selectedProviderCooldown.provider || selectedJob.provider || "-"],
+                      ["Remaining", Number(selectedProviderCooldown.until || 0) > Date.now() ? formatCooldownRemaining(selectedProviderCooldown) : "Expired"],
+                      ["Action", selectedJob.metadata?.preflightAction || "-"],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{String(label)}</p>
+                        <p className="mt-1 font-semibold text-amber-900">{String(value || "-")}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                    {selectedProviderCooldown.reason || selectedJob.error}
                   </p>
                 </section>
               )}

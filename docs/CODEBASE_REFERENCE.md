@@ -1,6 +1,6 @@
 # WebView.click Codebase Reference
 
-Terakhir diperbarui: 17 Mei 2026.
+Terakhir diperbarui: 18 Mei 2026.
 
 Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
 
@@ -49,6 +49,7 @@ Logic penting:
 - Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section, sehingga old generated JSON yang tidak punya page `contact` tetap bisa memakai nav/footer Contact.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Hero section memberi marker `data-wv-hero-section` dan `data-wv-hero-heading`; renderer memakai ResizeObserver + font-ready check untuk menurunkan ukuran H1 seperlunya agar headline hero maksimal sekitar tiga baris tanpa mengecilkan heading secara permanen.
+- Hero H1 pada halaman detail produk/layanan yang memiliki `offeringDetail` diformat title case dengan stop words tetap lowercase, sehingga individual service page tidak menampilkan heading lower-case dari type/query Google.
 - `hoursLocation` memakai `content.hoursTitle` / `content.openingHoursTitle` atau fallback label `Business Hours` / `Jam Operasional` untuk card jam, bukan `content.title`, agar tidak dobel dengan card `Location & Contact`. Jam Google Places juga diringkas per kelompok jam yang sama dan menonjolkan jam hari ini.
 - Heading pair pada `hoursLocation` memakai marker `data-wv-hours-location-heading` dan CSS variable panjang teks agar dua card tetap simetris, satu baris, dan menyesuaikan ukuran saat font pairing display terlalu lebar.
 - Renderer otomatis menambahkan aggregate page `services` jika JSON punya `products`, `services`, atau `offers` tetapi belum punya `pageId: "services"`. Page ini menampilkan daftar semua produk/layanan dan tiap card tetap link ke detail page masing-masing.
@@ -162,6 +163,29 @@ Logic penting:
 - Helper cache mengirim browser event `webview:ai-readiness-refresh`; badge yang sedang mount mendengar event ini dan langsung memanggil ulang `/api/ai/readiness`.
 - Tombol memakai `HelpTooltip` untuk menjelaskan bahwa cache readiness 30 detik akan dibersihkan tanpa menjalankan generate.
 
+### `src/components/AdminToast.tsx`
+
+Fungsi:
+- Shared toast overlay untuk halaman admin, dipasang di `AdminLayout` agar `/admin/leads`, `/admin/sites`, dan `GenerationJobsTable` bisa menampilkan error penting tanpa browser `alert()`.
+
+Logic penting:
+- `AdminToastProvider` menyimpan maksimal 4 toast dan merender overlay fixed kanan atas dengan z-index tinggi.
+- `useAdminToast().showApiError()` memakai `src/lib/apiErrorInsights.ts` untuk mengubah error provider menjadi judul, arti error, action items, dan raw message.
+- Error generate/regenerate/retry dari `/api/sites/generate` muncul sebagai toast, sehingga pesan seperti Gemini 429 quota tidak tersembunyi di panel/card yang harus discroll.
+- 429/quota toast juga menulis cooldown provider ke `src/lib/providerCooldown.ts`; batch generate di `/admin/leads`, first generate/regenerate di `/admin/sites`, dan retry job membaca cooldown ini agar tidak langsung menghantam provider yang sedang exhausted.
+- Browser default `alert()` tidak dipakai di admin; dev bypass sign-out memakai toast info.
+
+### `src/components/AdminProviderCooldownBadge.tsx`
+
+Fungsi:
+- Badge kecil untuk menampilkan status cooldown provider AI di dekat selector provider/model admin.
+
+Logic penting:
+- Membaca `src/lib/providerCooldown.ts`, refresh ringan ke `/api/provider-cooldowns`, dan mendengar event `webview:provider-cooldown`, `storage`, dan `focus` agar status berubah saat error 429/quota terjadi atau tab kembali aktif.
+- Saat cooldown aktif, badge menampilkan sisa waktu setiap detik dan tooltip menjelaskan bahwa batch/generate ditahan untuk menghindari repeated 429.
+- Saat cooldown aktif, badge menampilkan aksi `Clear` dengan konfirmasi inline. Ini menghapus cooldown localStorage dan D1 via `DELETE /api/provider-cooldowns`; tidak otomatis terjadi saat switch provider karena cooldown lama tetap melindungi session/admin lain yang masih memakai provider tersebut.
+- Dipakai di `/admin/leads`, `/admin/sites`, dan `/admin/settings` supaya admin melihat cooldown sebelum klik generate/regenerate atau mengecek model.
+
 ### `src/components/AdminWorkspaceTabs.tsx`
 
 Fungsi:
@@ -227,6 +251,7 @@ Risiko debug:
 Fungsi:
 - Menampilkan overview CRM: total leads, conversion rate, total revenue, dan aktivitas terbaru.
 - Menampilkan setup readiness ringkas untuk Google Places, AI generation, dan payment setup sebelum admin masuk workflow detail.
+- Menampilkan daily usage guardrails untuk Places search, Places details, remote AI readiness, dan site generation agar admin melihat aktivitas quota-sensitive sebelum terlalu dekat batas operasional harian.
 
 API yang dipakai:
 - `GET /api/stats`
@@ -239,6 +264,8 @@ Logic penting:
 - Jika API bermasalah, dashboard menampilkan banner fallback dan angka kosong.
 - Setup readiness membaca settings D1: Places ready jika `GOOGLE_PLACES_API_KEY` ada, AI ready jika minimal satu provider key ada, Payment ready jika Lemon Squeezy lengkap dan partial jika payment link/WhatsApp fallback ada.
 - Setup readiness cards deep-link ke Settings anchors: `#settings-google-places`, `#settings-ai-provider`, dan `#settings-payment`.
+- Daily usage guardrails membaca `stats.dailyUsage` dari `/api/stats`, memakai reset hari UTC, dan memberi badge `OK`, `Watch`, atau `High` berdasarkan threshold konservatif di Pages Function.
+- Usage history menampilkan bar kecil 7 hari atau 30 hari dari `stats.dailyUsage.history`, sehingga spike setelah deploy, batch generation, atau perubahan workflow bisa dibandingkan langsung dari dashboard.
 - Metric cards dan aktivitas terbaru punya tooltip untuk membedakan angka dashboard dari source-of-truth workflow per prospek.
 - Readiness card memakai `HelpTooltip` pada heading dan setiap item agar admin tahu setup mana yang memblokir search, generation, atau checkout.
 
@@ -440,10 +467,12 @@ Logic penting:
 Fungsi:
 - Mengelola API keys dan payment links yang disimpan di D1.
 - Menghitung estimasi biaya AI sebelum generate.
+- Menampilkan provider cooldown history dari D1 supaya event cooldown set, blocked generate/retry, dan manual clear bisa diaudit lebih lama dari active cooldown row.
 
 API yang dipakai:
 - `GET /api/settings`
 - `POST /api/settings`
+- `GET /api/provider-cooldowns/history?limit=8`
 
 Logic penting:
 - Provider selector hanya menampilkan field API key untuk provider aktif.
@@ -452,6 +481,7 @@ Logic penting:
 - Setelah settings berhasil tersimpan, cache AI readiness otomatis dibersihkan agar key baru langsung terbaca oleh badge/preflight.
 - Estimator provider/model punya tombol `Refresh AI readiness` untuk clear cache manual tanpa menunggu TTL 30 detik.
 - Estimator juga menampilkan inline `AI readiness` badge untuk provider/model yang sedang dipilih, sehingga key baru bisa diverifikasi dari `/admin/settings` tanpa pindah ke Leads/Sites.
+- Provider cooldown history refresh saat window focus atau event `webview:provider-cooldown`, dan menampilkan event `set`, `blocked`, serta `clear` dengan provider, action, reason, dan expiry.
 - Auto-save berjalan 1,2 detik setelah perubahan terakhir.
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
@@ -591,6 +621,17 @@ Fungsi:
 
 ## Cloudflare Pages Functions
 
+### `src/lib/apiErrorInsights.ts`
+
+Fungsi:
+- Interpreter error API untuk toast admin.
+
+Logic penting:
+- Mengklasifikasi 429/rate limit/quota, 401/403 key-permission, 400 payload/model invalid, dan 5xx/provider temporary failure.
+- Untuk Gemini 429 `RESOURCE_EXHAUSTED`, message menjelaskan bahwa quota/rate limit diterapkan per project, lalu menyarankan wait/retry, hentikan batch retry, switch model/provider, atau naikkan quota/billing.
+- Provider cooldown memakai strategi konservatif: Gemini/OpenAI/custom default 90 detik untuk rate limit per menit, OpenRouter 75 detik kecuali ada retry hint, KIE.ai 30 detik karena KIE mendokumentasikan burst limit pendek, dan quota/billing/daily cases lebih lama.
+- Dipakai oleh `AdminToast.showApiError()` supaya UI menampilkan meaning/action items, bukan hanya raw provider string.
+
 ### `functions/api/[[path]].ts`
 
 Fungsi:
@@ -625,6 +666,7 @@ Logic D1:
 - Write path penting tetap defensif terhadap schema production lama: `/api/sites/generate`, `/api/payments/checkout`, `/api/places/details`, dan `/api/prospects/:placeId/selection` menjalankan self-heal kolom penting terlebih dahulu, lalu menulis dengan kolom lengkap.
 - Kolom penting tidak boleh diam-diam dilewati. Jika `ALTER TABLE` gagal atau kolom masih hilang setelah self-heal, Function mengembalikan error eksplisit agar schema D1 diperbaiki, bukan menyimpan data setengah lengkap.
 - `/api/stats`, `/api/activities`, dan `/api/settings` punya fallback JSON agar admin tidak blank saat DB belum sempurna.
+- `/api/stats` juga mengembalikan `dailyUsage` dari tabel `daily_usage_counters` untuk counter harian quota-sensitive, termasuk `history` 30 hari terakhir.
 
 Logic AI:
 - OpenRouter/OpenAI/Opencode memakai format Chat Completions.
@@ -636,9 +678,14 @@ Logic AI:
   - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
 - `/api/ai/readiness` adalah preflight ringan untuk provider/model AI: membaca key dari `system_settings` atau env binding, mengecek provider didukung, dan mengecek model ada di registry internal. Jika query/body membawa `remoteValidate=1`, endpoint juga menjalankan metadata check provider sebelum generate: OpenRouter `GET /api/v1/models` plus `GET /api/v1/models/{author}/{slug}/endpoints`, OpenAI `GET /v1/models/{model}`, dan Gemini `GET /v1beta/models/{model}`. KIE/Opencode tetap memakai registry lokal karena belum ada metadata check ringan yang aman.
 - Remote readiness validation memakai cache D1 `ai_readiness_cache` dengan TTL pendek 2 menit per provider/model/key hash. Query/body `refresh=1` atau `bypassCache=1` melewati cache server dan menulis hasil baru; tombol `Refresh AI readiness` mengirim bypass ini untuk recheck setelah key/model diubah.
+- Live remote readiness validation yang miss/bypass cache menambah counter harian `ai_readiness_remote`; hit cache server tidak dihitung sebagai provider metadata call baru.
+- `/api/provider-cooldowns` menyimpan cooldown provider di D1 `provider_cooldowns`. Toast 429/quota menulis cooldown ke endpoint ini, badge admin membacanya, dan generate/regenerate/retry memanggil shared cooldown sebelum request mahal agar session admin lain ikut tertahan.
+- `/api/provider-cooldowns/history` membaca D1 `provider_cooldown_events` untuk feed audit kecil di `/admin/settings`. Event ditulis saat cooldown di-set, cooldown di-clear manual, dan generate/regenerate/retry diblokir oleh cooldown.
+- Setiap insert `provider_cooldown_events` menjalankan prune ringan: hapus event lebih lama dari 45 hari dan batasi tabel ke 500 row terbaru, supaya audit tidak tumbuh tanpa batas di D1.
 - Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI key hilang, provider/model tidak valid, provider mengembalikan HTTP error, response kosong, atau JSON invalid. Generate/regenerate AI dari `/admin/leads`, `/admin/sites`, dan job retry memakai `requireAi: true` agar masalah AI terlihat; mode `Re-gather Google data + resave` tetap tanpa AI.
 - Admin generate/regenerate/retry calls memakai `checkAiReadiness(..., remoteValidate=true)` sebelum `/api/sites/generate`, sehingga model remote yang tidak dikenal bisa gagal di preflight tanpa menghabiskan klik generate penuh.
 - Jika preflight AI memblokir generate/regenerate/retry di browser, UI memanggil `POST /api/generation-jobs/preflight-failure` untuk menyimpan row `generation_jobs` berstatus `failed`; `metadata_json.aiReadiness` dan `metadata_json.remoteValidation` menyimpan alasan key/registry/provider routing yang memblokir.
+- Jika shared provider cooldown memblokir generate/regenerate/retry di browser, UI memanggil `POST /api/generation-jobs/cooldown-blocked` untuk menyimpan row `generation_jobs` berstatus `failed`; `metadata_json.cooldownBlocked`, `metadata_json.providerCooldown`, dan `failureStage: "provider_cooldown"` membuat attempt yang dipause tetap terlihat di Jobs.
 - Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
 - Full scaffold JSON tidak dikirim ke AI. AI tidak melihat image URL, maps URL, navigation href, sourceData mentah, palette, font, visual style, favicon, CSS, storage, atau field protected lain.
 - Untuk OpenRouter, model value UI yang diawali `~` dikirim apa adanya ke API karena OpenRouter memakai prefix itu untuk latest-model resolution seperti `~anthropic/claude-sonnet-latest`.
@@ -650,6 +697,7 @@ Logic AI:
 
 Logic Google Places/logo:
 - `/api/places/search` memakai Google Places Text Search.
+- Live Google Places Text Search menambah counter harian `places_search`; hasil dari `places_search_cache` tidak menambah counter search.
 - `/api/places/photo` mem-proxy Google Places Photo agar frontend bisa membaca pixel untuk palette.
 - `brandPalette` dan `selectedLogoImageUrl` dikirim dari `AdminLeads` ke generator.
 - `selectedLogoReference`, `selectedLogoSource`, `selectedLogoAttributions`, dan `selectedLogoPriority` ikut dikirim agar JSON final menyimpan provenance foto.
@@ -681,6 +729,7 @@ Logic Places Cache:
 - `GET /api/places/search?query=...` membaca cache jika masih valid.
 - `GET /api/places/search?query=...&refresh=1` melewati cache dan menyimpan response terbaru.
 - `GET /api/places/search?query=...&websitePrecheck=1&precheckLimit=10` menjalankan Place Details minimal untuk hasil teratas supaya `website_check_status` diketahui sejak list/search.
+- Google Place Details calls dari `GET /api/places/details` dan website precheck menambah counter harian `places_details`.
 - `GET /api/places/history?limit=30` mengembalikan daftar search term cache, summary progress, dan daftar prospects yang dihydrate dari `places_prospects` berdasarkan `place_id`.
 - `GET /api/places/manual-duplicates?limit=500` mengembalikan group kandidat duplikat manual dari `places_prospects` tanpa migration/schema baru. Group hanya ditampilkan jika minimal satu row berasal dari manual import.
 - `POST /api/places/manual-duplicates/merge` menerima `{ keepPlaceId, duplicatePlaceId }`, menyalin missing `phone`, `address`, `rating`, `reviews`, `website_url`, `maps_url`, status website, dan JSON detail/result dari duplicate ke keep prospect, lalu mengubah duplicate menjadi `skipped`.
@@ -701,7 +750,9 @@ Logic Prospect Drafts:
 
 Logic Generation Jobs:
 - `generation_jobs` mencatat setiap request `/api/sites/generate` dengan status `running`, `success`, atau `failed`.
+- Setiap request `/api/sites/generate` yang membuat generation job menambah counter harian `site_generation`, termasuk request yang akhirnya gagal, supaya admin melihat retry/generate volume sebenarnya.
 - `POST /api/generation-jobs/preflight-failure` mencatat generate/regenerate/retry yang diblokir oleh AI readiness sebelum `/api/sites/generate`, supaya kegagalan key/model/provider routing tetap terlihat di Jobs. Drawer detail `GenerationJobsTable` menampilkan ringkasan `AI readiness block` untuk key, local model registry, dan remote provider route.
+- `POST /api/generation-jobs/cooldown-blocked` mencatat generate/regenerate/retry yang diblokir oleh shared provider cooldown sebelum `/api/sites/generate`. Row ini ikut `Preflight blocked` filter dan drawer menampilkan `Provider cooldown block`.
 - `generation_jobs.metadata_json` menyimpan audit generate: `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, ringkasan/item audit copy AI (`copyAuditSummary`, `copyAuditItems`), provider/model, failure metadata bila generate gagal, dan `aiReadiness`/`remoteValidation` bila preflight memblokir sebelum generate.
 - Jika generate sukses, prospect draft diupdate ke `site_generated` dan `generated_business_id` diisi.
 - Jika generate gagal, `generation_jobs.error` dan `places_prospects.last_error` diisi agar admin bisa melihat error di UI.
@@ -760,7 +811,7 @@ Fungsi:
 
 Fungsi:
 - Skema Cloudflare D1 production.
-- Tabel inti: `leads`, `subscriptions`, `crm_activities`, `json_sites`, `system_settings`, `ai_readiness_cache`.
+- Tabel inti: `leads`, `subscriptions`, `crm_activities`, `json_sites`, `system_settings`, `ai_readiness_cache`, `daily_usage_counters`, `provider_cooldowns`, `provider_cooldown_events`.
 - Tabel admin prospecting: `places_search_cache`, `places_prospects`, dan `generation_jobs`.
 
 Tabel:
@@ -770,6 +821,9 @@ Tabel:
 - `json_sites`
 - `system_settings`
 - `ai_readiness_cache`
+- `daily_usage_counters`
+- `provider_cooldowns`
+- `provider_cooldown_events`
 
 ## Maintenance Rule
 

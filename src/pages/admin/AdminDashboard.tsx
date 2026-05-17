@@ -6,9 +6,26 @@ type Stats = {
   totalLeads: number;
   conversionRate: number;
   totalRevenue: number;
+  dailyUsage?: DailyUsage;
 };
 
 const emptyStats: Stats = { totalLeads: 0, conversionRate: 0, totalRevenue: 0 };
+
+type DailyUsageCounter = {
+  key: string;
+  label: string;
+  count: number;
+  warnAt: number;
+  dangerAt: number;
+  level: "ok" | "warn" | "danger" | "unknown";
+};
+
+type DailyUsage = {
+  date: string;
+  timezone: string;
+  counters: DailyUsageCounter[];
+  history?: Array<{ date: string; counters: DailyUsageCounter[] }>;
+};
 
 type ReadinessLevel = "ready" | "partial" | "missing";
 
@@ -29,6 +46,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats>(emptyStats);
   const [activities, setActivities] = useState<any[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [usageHistoryDays, setUsageHistoryDays] = useState<7 | 30>(7);
   const [loading, setLoading] = useState(true);
   const [apiWarning, setApiWarning] = useState("");
 
@@ -64,6 +82,7 @@ export default function AdminDashboard() {
         totalLeads: toNumber(safeStats.totalLeads),
         conversionRate: toNumber(safeStats.conversionRate),
         totalRevenue: toNumber(safeStats.totalRevenue),
+        dailyUsage: Array.isArray((safeStats as any).dailyUsage?.counters) ? (safeStats as any).dailyUsage as DailyUsage : undefined,
       });
       setActivities(Array.isArray(activitiesData) ? activitiesData : []);
       setSettings(settingsData && typeof settingsData === "object" ? settingsData as Record<string, string> : {});
@@ -132,6 +151,21 @@ export default function AdminDashboard() {
     if (level === "ready") return <CheckCircle2 size={16} />;
     if (level === "partial") return <CircleDashed size={16} />;
     return <AlertTriangle size={16} />;
+  };
+  const usageCounters = stats.dailyUsage?.counters || [];
+  const usageHistory = (stats.dailyUsage?.history || []).slice(usageHistoryDays === 7 ? -7 : -30);
+  const usageHistoryMax = Math.max(1, ...usageHistory.flatMap((day) => day.counters.map((counter) => counter.count)));
+  const usageStyle = (level: DailyUsageCounter["level"]) => {
+    if (level === "danger") return "border-red-200 bg-red-50 text-red-800";
+    if (level === "warn") return "border-amber-200 bg-amber-50 text-amber-800";
+    if (level === "unknown") return "border-slate-200 bg-slate-50 text-slate-600";
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  };
+  const usageLabel = (level: DailyUsageCounter["level"]) => {
+    if (level === "danger") return "High";
+    if (level === "warn") return "Watch";
+    if (level === "unknown") return "Unknown";
+    return "OK";
   };
 
   return (
@@ -212,6 +246,100 @@ export default function AdminDashboard() {
                 </a>
               ))}
             </div>
+          </div>
+
+          <div className="mb-12 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                  Daily usage guardrails
+                  <HelpTooltip text="UTC-day counters for quota-sensitive workflows. Counts increase only when the app performs live Google Places search/details, live remote AI model validation, or a site generation attempt." />
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  {stats.dailyUsage?.date ? `Tracking ${stats.dailyUsage.date} (${stats.dailyUsage.timezone || "UTC"} reset).` : "Usage counters are not available yet."}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold">
+                  {[7, 30].map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => setUsageHistoryDays(days as 7 | 30)}
+                      className={`px-3 py-2 ${usageHistoryDays === days ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-white"}`}
+                    >
+                      {days}d
+                    </button>
+                  ))}
+                </div>
+                <a href="/admin/jobs" className="text-sm font-semibold text-indigo-700 hover:underline">Review Jobs</a>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              {usageCounters.map((item) => {
+                const ratio = item.dangerAt > 0 ? Math.min(100, Math.round((item.count / item.dangerAt) * 100)) : 0;
+                return (
+                  <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-950">{item.label}</p>
+                      <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${usageStyle(item.level)}`}>
+                        {usageLabel(item.level)}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-3xl font-semibold text-slate-950">{item.count}</p>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                      <div className={`h-full ${item.level === "danger" ? "bg-red-500" : item.level === "warn" ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${ratio}%` }} />
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Warn {item.warnAt} / High {item.dangerAt}</p>
+                  </div>
+                );
+              })}
+              {!usageCounters.length && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 md:col-span-4">
+                  No usage data returned by `/api/stats` yet.
+                </div>
+              )}
+            </div>
+            {usageHistory.length > 0 && (
+              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                    Usage history
+                    <HelpTooltip text="Small bar history for the last 7 or 30 UTC days. Use it to spot spikes after deploys, batch generation, or workflow changes." />
+                  </p>
+                  <p className="text-xs text-slate-500">Max day count: {usageHistoryMax}</p>
+                </div>
+                <div className="space-y-3">
+                  {usageCounters.map((counter) => (
+                    <div key={`history-${counter.key}`}>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-slate-700">{counter.label}</p>
+                        <p className="text-[11px] text-slate-500">Warn {counter.warnAt} / High {counter.dangerAt}</p>
+                      </div>
+                      <div className="flex h-14 items-end gap-1">
+                        {usageHistory.map((day) => {
+                          const dayCounter = day.counters.find((item) => item.key === counter.key);
+                          const count = dayCounter?.count || 0;
+                          const height = Math.max(3, Math.round((count / Math.max(1, counter.dangerAt)) * 52));
+                          const level = dayCounter?.level || "ok";
+                          return (
+                            <div key={`${counter.key}-${day.date}`} className="group relative flex flex-1 items-end justify-center">
+                              <div
+                                className={`w-full rounded-t ${level === "danger" ? "bg-red-500" : level === "warn" ? "bg-amber-500" : "bg-emerald-500"}`}
+                                style={{ height: `${Math.min(52, height)}px` }}
+                              />
+                              <span className="pointer-events-none absolute bottom-full mb-1 hidden whitespace-nowrap rounded bg-slate-950 px-2 py-1 text-[11px] font-semibold text-white shadow-lg group-hover:block">
+                                {day.date}: {count}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
