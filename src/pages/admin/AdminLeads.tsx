@@ -30,6 +30,10 @@ export default function AdminLeads() {
   const [jobsOpen, setJobsOpen] = useState(false);
   const [searchMessage, setSearchMessage] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [manualMapsUrl, setManualMapsUrl] = useLocalStorageState("webview.adminLeads.manualMapsUrl", "");
+  const [manualCaptureText, setManualCaptureText] = useLocalStorageState("webview.adminLeads.manualCaptureText", "");
+  const [manualImportLoading, setManualImportLoading] = useState(false);
+  const [manualImportMessage, setManualImportMessage] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingPlaceKey, setGeneratingPlaceKey] = useState("");
   const [generationMessages, setGenerationMessages] = useState<Record<string, { type: "success" | "error"; text: string; businessId?: string }>>({});
@@ -681,6 +685,53 @@ export default function AdminLeads() {
       setSearchMessage(e instanceof Error ? e.message : "Gagal mencari prospek.");
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const handleManualMapsImport = async () => {
+    const url = manualMapsUrl.trim();
+    const capturedText = manualCaptureText.trim();
+    if (!url && !capturedText) {
+      setManualImportMessage("Paste a Google Maps URL or captured JSON first.");
+      return;
+    }
+
+    setManualImportLoading(true);
+    setManualImportMessage("Importing manual Google Maps data...");
+    try {
+      const res = await fetch("/api/places/manual-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, capturedText }),
+      });
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`Response bukan JSON: ${text.substring(0, 120)}`);
+      }
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Manual import failed with HTTP ${res.status}`);
+      }
+
+      const importedProspects = Array.isArray(data.prospects) ? data.prospects : [];
+      if (importedProspects.length > 0) {
+        setSearchResults(importedProspects.map((item: any) => ({ ...item, searchQuery: data.query || item.searchQuery || "" })));
+        setSearchQuery(data.query || searchQuery);
+        setSearchActive(true);
+        setSelectedSearchHistoryKey(data.queryKey || "");
+        setManualCaptureText("");
+      }
+      setWebsiteFilter("all");
+      fetchProspectDrafts();
+      fetchSearchHistory();
+      setManualImportMessage(data.message || `${data.importedCount || 0} manual prospects imported.`);
+    } catch (error) {
+      console.error(error);
+      setManualImportMessage(error instanceof Error ? error.message : "Manual import failed.");
+    } finally {
+      setManualImportLoading(false);
     }
   };
 
@@ -1510,6 +1561,71 @@ export default function AdminLeads() {
             {isTrimmingCache ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
             Trim cache 30d
           </button>
+        </div>
+        <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
+          <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                Manual Google Maps import
+                <HelpTooltip text="Fallback for quota outages: paste a single Google Maps listing URL, or paste captured JSON from the browser helper when you are on a Maps search result page." />
+              </p>
+              <p className="mt-1 text-xs text-slate-600">
+                Listing URLs can create one draft. Search URLs need captured browser JSON because Google Maps renders the business cards inside the page.
+              </p>
+            </div>
+            <a
+              href="/tools/google-maps-capture-extension/README.md"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+              title="Open the extension helper instructions for capturing visible Google Maps cards."
+            >
+              <ExternalLink size={14} />
+              Capture helper
+            </a>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <label className="text-sm">
+              <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                Google Maps URL
+                <HelpTooltip text="Paste a /maps/place listing URL for one business, or the /maps/search URL you used while capturing visible listings with the extension helper." />
+              </span>
+              <input
+                value={manualMapsUrl}
+                onChange={(event) => setManualMapsUrl(event.target.value)}
+                placeholder="https://www.google.com/maps/place/..."
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 flex items-center gap-1.5 font-medium text-slate-700">
+                Captured listing JSON
+                <HelpTooltip text="Optional for one listing. Required for Maps search pages; paste the JSON copied by the Chrome/Opera helper so each visible business becomes a prospect draft." />
+              </span>
+              <textarea
+                value={manualCaptureText}
+                onChange={(event) => setManualCaptureText(event.target.value)}
+                rows={3}
+                placeholder='[{"name":"Business Name","address":"...","hasWebsite":false}]'
+                className="min-h-[42px] w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <p className={`text-xs ${manualImportMessage.includes("failed") || manualImportMessage.includes("Paste") ? "text-red-700" : "text-slate-600"}`}>
+              {manualImportMessage || "Imported drafts appear in the same prospect pipeline below."}
+            </p>
+            <button
+              type="button"
+              onClick={handleManualMapsImport}
+              disabled={manualImportLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              title="Import URL-derived or browser-captured Google Maps data into prospect drafts."
+            >
+              {manualImportLoading ? <Loader2 className="animate-spin" size={16} /> : <ListChecks size={16} />}
+              Import manual prospects
+            </button>
+          </div>
         </div>
         <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

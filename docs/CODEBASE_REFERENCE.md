@@ -218,6 +218,7 @@ API yang dipakai:
 - `GET /api/places/search?query=...`
 - `GET /api/places/search?query=...&refresh=1`
 - `GET /api/places/history`
+- `POST /api/places/manual-import`
 - `GET /api/places/details?placeId=...`
 - `GET /api/places/photo?reference=...`
 - `POST /api/sites/generate`
@@ -262,6 +263,8 @@ Logic penting:
 - Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.
 - Search default membaca cache D1 `places_search_cache`; tombol `Refresh` memaksa request baru ke Google Places.
 - Setiap result Google Places di-upsert ke `places_prospects` sebagai prospect draft agar pencarian lama tidak hilang.
+- Panel `Manual Google Maps import` menerima URL listing/search Google Maps dan optional captured JSON. Listing URL tanpa captured JSON membuat satu draft manual; search URL tanpa captured JSON memberi pesan agar admin memakai browser capture helper karena kartu bisnis ada di DOM Google Maps, bukan di URL.
+- Captured JSON dari helper Chrome/Opera dinormalisasi ke prospect fields (`name`, `address`, `phone`, `website`, `mapsUrl`, rating/reviews, website status), lalu di-upsert ke `places_prospects` dan dicatat di `places_search_cache` dengan status `MANUAL_CAPTURE`.
 - Panel `Search history` membaca search term lama dari `places_search_cache`, lalu menghydrate setiap business card dari `places_prospects` berdasarkan Google `place_id`. Progress bisnis tetap current walaupun listing yang sama muncul di beberapa search term.
 - Klik search term history memuat prospect list dari cache tanpa panggil Google Places baru, tetap memakai action/status workflow yang sama seperti search aktif.
 - Filter prospect tersimpan memakai status, website/no website, minimum rating, minimum review count, city, state, dan niche. UI filter dibuat compact: toolbar `Filters`, chips aktif, tombol reset, dan panel advanced collapsible agar tidak memakan banyak ruang.
@@ -286,9 +289,21 @@ Risiko debug:
 - Jika foto Google tidak muncul, cek Places API key dan apakah Text Search mengembalikan `photos`.
 - Jika hanya satu foto muncul, klik `Load more photos/details`; Text Search memang sering mengembalikan foto terbatas.
 - Jika pencarian tidak menampilkan hasil, cek pesan di UI dan response `/api/places/search`; Function menormalisasi status Google seperti `ZERO_RESULTS`, `REQUEST_DENIED`, dan fetch failure ke JSON.
+- Jika manual import search URL menampilkan `browser capture required`, buka Google Maps di browser, pakai helper di `public/tools/google-maps-capture-extension`, lalu paste JSON hasil capture ke panel manual import.
 - Error `API keys with referer restrictions cannot be used with this API` berarti key Google Places masih dibatasi HTTP referrer. Untuk Pages Functions/server-side, pakai server key tanpa application restriction dan batasi hanya API-nya di Google Cloud.
 - Canvas palette butuh image same-origin/CORS; karena itu foto harus lewat proxy `/api/places/photo`, bukan langsung URL Google.
 - Audit dan roadmap admin disimpan di `docs/ADMIN_WORKFLOW_AUDIT.md`.
+
+### `public/tools/google-maps-capture-extension`
+
+Fungsi:
+- Chrome/Opera unpacked extension helper untuk mengambil data visible Google Maps saat Places API quota habis.
+- `content.js` membaca link/detail yang sedang visible di DOM Google Maps dan mengirim array `items`.
+- `popup.js` menyalin JSON hasil capture ke clipboard agar bisa dipaste ke panel manual import di `/admin/leads`.
+
+Risiko debug:
+- DOM Google Maps berubah-ubah; helper ini best-effort dan hanya menangkap listing yang visible atau detail panel yang sedang terbuka.
+- Search list panjang perlu discroll dan dicapture ulang jika admin ingin mengambil lebih banyak prospek.
 
 ### `src/pages/admin/AdminJobs.tsx`
 
@@ -600,11 +615,13 @@ Logic Places Cache:
 - `GET /api/places/search?query=...&refresh=1` melewati cache dan menyimpan response terbaru.
 - `GET /api/places/search?query=...&websitePrecheck=1&precheckLimit=10` menjalankan Place Details minimal untuk hasil teratas supaya `website_check_status` diketahui sejak list/search.
 - `GET /api/places/history?limit=30` mengembalikan daftar search term cache, summary progress, dan daftar prospects yang dihydrate dari `places_prospects` berdasarkan `place_id`.
+- `POST /api/places/manual-import` menerima `{ url, capturedText, capturedItems, query }`. Captured items membuat cache entry `MANUAL_CAPTURE`; search URL tanpa captured data sengaja tidak di-scrape server-side dan mengembalikan `needsBrowserCapture`.
 - `POST /api/places/cache/trim` menghapus cache lama/expired; body: `{ "olderThanDays": 30 }`.
 
 Logic Prospect Drafts:
 - `places_prospects` menyimpan result Places per `place_id`.
 - Search dan mock search memanggil upsert prospect draft.
+- Manual import juga memakai `places_prospects`; jika Google `place_id` tidak tersedia, endpoint membuat `manual:{hash}` dari nama/alamat/Maps URL agar duplicate import tetap stabil.
 - Place Details memperbarui `details_json`, phone, website, maps URL, `website_check_status`, `website_checked_at`, dan `details_loaded_at`.
 - Website pre-check memperbarui `phone`, `website_url`, `maps_url`, `website_check_status`, dan `website_checked_at` tanpa menandai `details_loaded_at`, sehingga admin tetap perlu `Gather data` sebelum generate.
 - `GET /api/prospects` menerima filter `status`, `website=none|unknown|has|all`, `minRating`, `minReviews`, `city`, `state`, dan `niche`.

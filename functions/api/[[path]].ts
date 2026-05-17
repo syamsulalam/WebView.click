@@ -585,6 +585,213 @@ function prospectFromPlace(place: Record<string, unknown>, fallbackQuery = "", f
   };
 }
 
+function compactText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function manualShortHash(value: string) {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+  return Math.abs(hash >>> 0).toString(36);
+}
+
+function manualMapsUrlType(value: string): "listing" | "search" | "unknown" {
+  const lower = value.toLowerCase();
+  if (lower.includes("/maps/search")) {
+    return "search";
+  }
+  if (lower.includes("/maps/place") || lower.includes("place_id:") || lower.includes("query_place_id=") || lower.includes("cid=") || /!1s[^!]+/.test(value)) {
+    return "listing";
+  }
+  if (lower.includes("maps?q=") || lower.includes("search/")) {
+    return "search";
+  }
+  return lower.includes("google.") || lower.includes("maps.app.goo.gl") || lower.includes("goo.gl/maps") ? "search" : "unknown";
+}
+
+function decodeMapsPathLabel(value: string) {
+  const decoded = decodeURIComponent(value.replace(/\+/g, " "));
+  return compactText(decoded.replace(/[@!].*$/, "").replace(/[-_]+/g, " "));
+}
+
+function manualQueryFromMapsUrl(value: string, fallback = "") {
+  try {
+    const parsed = new URL(value);
+    const query = parsed.searchParams.get("q") || parsed.searchParams.get("query") || parsed.searchParams.get("destination") || "";
+    if (query) return compactText(query.replace(/^place_id:/i, ""));
+    const segments = parsed.pathname.split("/").map((segment) => segment.trim()).filter(Boolean);
+    const placeIndex = segments.findIndex((segment) => segment === "place" || segment === "search");
+    if (placeIndex >= 0 && segments[placeIndex + 1]) return decodeMapsPathLabel(segments[placeIndex + 1]);
+  } catch {
+    const match = value.match(/\/maps\/(?:place|search)\/([^/?#]+)/i);
+    if (match?.[1]) return decodeMapsPathLabel(match[1]);
+  }
+  return fallback;
+}
+
+function manualPlaceIdFromMapsUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    const queryPlaceId = parsed.searchParams.get("query_place_id") || parsed.searchParams.get("place_id");
+    if (queryPlaceId) return queryPlaceId;
+    const cid = parsed.searchParams.get("cid");
+    if (cid) return `cid:${cid}`;
+  } catch {
+    // Fall through to regex extraction for copied or partial Maps URLs.
+  }
+  const placeIdMatch = value.match(/place_id:([^&?#]+)/i);
+  if (placeIdMatch?.[1]) return decodeURIComponent(placeIdMatch[1]);
+  const dataIdMatch = value.match(/!1s([^!]+)/);
+  if (dataIdMatch?.[1]) return `maps:${decodeURIComponent(dataIdMatch[1])}`;
+  return "";
+}
+
+function parseManualCapturedItems(body: Record<string, unknown>) {
+  const directItems = Array.isArray(body.capturedItems) ? body.capturedItems : [];
+  if (directItems.length) return directItems;
+
+  const text = asString(body.capturedText).trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") {
+      const object = parsed as Record<string, unknown>;
+      for (const key of ["items", "businesses", "listings", "results", "prospects"]) {
+        if (Array.isArray(object[key])) return object[key] as unknown[];
+      }
+      return [object];
+    }
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+function manualPlaceFromCapturedItem(item: Record<string, unknown>, fallbackUrl: string, fallbackQuery: string, index: number) {
+  const url = placeString(item, ["url", "mapsUrl", "googleMapsUri", "link"], fallbackUrl);
+  const nameFromUrl = manualQueryFromMapsUrl(url);
+  const name = compactText(placeString(item, ["name", "title", "businessName"], nameFromUrl || `Manual Maps prospect ${index + 1}`));
+  const address = compactText(placeString(item, ["formatted_address", "formattedAddress", "address", "vicinity"]));
+  const website = placeString(item, ["website", "websiteUrl", "websiteUri"]);
+  const explicitPlaceId = placeString(item, ["place_id", "placeId", "id"]);
+  const cid = placeString(item, ["cid"]);
+  const placeId = explicitPlaceId || (cid ? `cid:${cid}` : manualPlaceIdFromMapsUrl(url)) || `manual:${manualShortHash(`${name}|${address}|${url}|${index}`)}`;
+  const rawReviews = asNumber(item.user_ratings_total) ?? asNumber(item.userRatingCount) ?? asNumber(item.reviews) ?? asNumber(item.reviewCount);
+  const hasWebsite = item.hasWebsite;
+  const websiteStatus = website
+    ? "has_website"
+    : hasWebsite === false || placeString(item, ["websiteCheckStatus", "websiteStatus"]) === "no_website"
+      ? "no_website"
+      : "";
+  const types = Array.isArray(item.types)
+    ? item.types
+    : [placeString(item, ["category", "niche", "type"], fallbackQuery || "manual_import")].filter(Boolean);
+
+  return {
+    ...item,
+    place_id: placeId,
+    name,
+    formatted_address: address,
+    formatted_phone_number: placeString(item, ["formatted_phone_number", "phone", "phoneNumber", "telephone"]),
+    website,
+    url,
+    googleMapsUri: url,
+    rating: asNumber(item.rating),
+    user_ratings_total: rawReviews,
+    types,
+    websiteCheckStatus: websiteStatus,
+    websiteCheckedAt: websiteStatus ? new Date().toISOString() : "",
+    manualImport: true,
+    manualSourceUrl: fallbackUrl,
+  };
+}
+
+async function cacheManualPlacesSearch(db: D1Database, queryKey: string, query: string, places: Record<string, unknown>[]) {
+  if (!queryKey || !query || !places.length) return;
+  const cacheExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    await db
+      .prepare(
+        `INSERT INTO places_search_cache (query_key, query, results_json, provider_status, result_count, expires_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(query_key) DO UPDATE SET
+           query = excluded.query,
+           results_json = excluded.results_json,
+           provider_status = excluded.provider_status,
+           result_count = excluded.result_count,
+           expires_at = excluded.expires_at,
+           updated_at = CURRENT_TIMESTAMP`,
+      )
+      .bind(queryKey, query, JSON.stringify(places), "MANUAL_CAPTURE", places.length, cacheExpiresAt)
+      .run();
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+    await db
+      .prepare(
+        `INSERT INTO places_search_cache (query_key, query, results_json)
+         VALUES (?, ?, ?)
+         ON CONFLICT(query_key) DO UPDATE SET query = excluded.query, results_json = excluded.results_json`,
+      )
+      .bind(queryKey, query, JSON.stringify(places))
+      .run();
+  }
+}
+
+async function handlePlacesManualImport(request: Request, db: D1Database): Promise<Response> {
+  if (request.method !== "POST") return errorJson("Not Found", 404);
+  const body = await readJsonBody(request);
+  const sourceUrl = asString(body.url).trim();
+  const capturedItems = parseManualCapturedItems(body);
+  const urlType = sourceUrl ? manualMapsUrlType(sourceUrl) : "unknown";
+  const inferredQuery = compactText(asString(body.query) || manualQueryFromMapsUrl(sourceUrl, urlType === "listing" ? "Manual Google Maps listing" : "Manual Google Maps search"));
+  const query = inferredQuery || "Manual Google Maps import";
+  const queryKey = normalizeSearchQuery(`manual ${query}`);
+
+  if (!sourceUrl && capturedItems.length === 0) {
+    return errorJson("Paste a Google Maps URL or captured listing JSON first.", 400);
+  }
+
+  if (capturedItems.length === 0 && urlType !== "listing") {
+    return json({
+      success: true,
+      importedCount: 0,
+      urlType,
+      query,
+      needsBrowserCapture: true,
+      message: "Search-result Maps URLs need browser capture JSON because the business cards are rendered inside your browser.",
+      prospects: [],
+    });
+  }
+
+  const places = capturedItems.length > 0
+    ? capturedItems
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+      .map((item, index) => manualPlaceFromCapturedItem(item, sourceUrl, query, index))
+    : [manualPlaceFromCapturedItem({
+      name: manualQueryFromMapsUrl(sourceUrl, "Manual Google Maps listing"),
+      url: sourceUrl,
+      types: ["manual_import"],
+    }, sourceUrl, query, 0)];
+
+  await ensureRequiredColumns(db, prospectListRequiredColumns);
+  await upsertProspectsFromPlaces(db, queryKey, query, places);
+  await cacheManualPlacesSearch(db, queryKey, query, places);
+
+  return json({
+    success: true,
+    importedCount: places.length,
+    urlType,
+    query,
+    queryKey,
+    needsBrowserCapture: false,
+    message: `${places.length} manual Google Maps prospect${places.length === 1 ? "" : "s"} imported.`,
+    prospects: places,
+  });
+}
+
 async function upsertProspectsFromPlaces(db: D1Database, queryKey: string, query: string, results: unknown[]) {
   const columns = await tableColumns(db, "places_prospects");
   const statements = results
@@ -3521,6 +3728,10 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (request.method === "GET" && segments[0] === "places" && segments[1] === "history") {
       return handlePlacesHistory(url, db);
+    }
+
+    if (segments[0] === "places" && segments[1] === "manual-import") {
+      return handlePlacesManualImport(request, db);
     }
 
     if (request.method === "GET" && segments[0] === "places" && segments[1] === "search") {
