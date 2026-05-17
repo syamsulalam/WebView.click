@@ -123,6 +123,14 @@ function prospectPhone(prospect: ProspectRow) {
   return isPlaceholderPhone(phone) ? "" : phone;
 }
 
+function isMapsQueryPlaceId(placeId: string) {
+  return String(placeId || "").startsWith("maps:");
+}
+
+function isMapsQueryPlaceholder(prospect: ProspectRow) {
+  return isMapsQueryPlaceId(prospect.place_id);
+}
+
 function photoReference(photo: any) {
   return String(photo?.photo_reference || photo?.name || photo?.reference || "");
 }
@@ -746,6 +754,9 @@ export default function AdminSites() {
     setGeneratingProspectId(placeId);
     setActionMessage("");
     try {
+      if (isMapsQueryPlaceholder(prospect)) {
+        throw new Error("This row is a Maps search/query placeholder, not a specific business listing. Import captured listing JSON or choose a real Google business result before generating.");
+      }
       const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true);
       if (!readiness.ready) {
         throw new Error(readiness.message || "AI provider/model is not ready. Check /admin/settings before generating.");
@@ -851,9 +862,10 @@ export default function AdminSites() {
       };
       let detailsGathered = false;
       let detailsError = "";
+      const sourcePlaceId = String(sourceData.placeId || "");
 
-      if (sourceData.placeId) {
-        const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(sourceData.placeId)}`);
+      if (sourcePlaceId && !isMapsQueryPlaceId(sourcePlaceId)) {
+        const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(sourcePlaceId)}`);
         const detailsText = await detailsResponse.text();
         let details: any = {};
         try {
@@ -867,9 +879,11 @@ export default function AdminSites() {
         } else {
           detailsError = details.error || `Place Details returned HTTP ${detailsResponse.status}`;
         }
+      } else if (sourcePlaceId) {
+        detailsError = "Saved sourceData.placeId is a Maps search/query placeholder, not a specific business listing.";
       }
 
-      if (mode === "resave" && !sourceData.placeId) {
+      if (mode === "resave" && !sourcePlaceId) {
         throw new Error("Site lama ini belum punya sourceData.placeId, jadi Google Places tidak bisa di-gather ulang.");
       }
       if (mode === "resave" && !detailsGathered) {
@@ -1019,11 +1033,17 @@ export default function AdminSites() {
             Belum ada prospect gathered yang menunggu generate.
           </div>
         ) : (
-          filteredGatheredProspects.map((prospect) => (
+          filteredGatheredProspects.map((prospect) => {
+            const mapsQueryPlaceholder = isMapsQueryPlaceholder(prospect);
+            return (
             <div key={prospect.place_id} className="grid grid-cols-[1.25fr_0.75fr_0.55fr_0.7fr_1.75fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0">
               <div className="min-w-0">
                 <p className="truncate font-semibold text-gray-900">{prospect.name}</p>
-                <p className="mt-1 truncate text-xs text-gray-500">{prospect.formatted_address || prospect.formattedAddress || "No address"}</p>
+                <p className="mt-1 truncate text-xs text-gray-500">
+                  {mapsQueryPlaceholder
+                    ? "Maps search/query placeholder. Import captured listing JSON before generating."
+                    : prospect.formatted_address || prospect.formattedAddress || "No address"}
+                </p>
               </div>
               <code className="truncate rounded-lg bg-gray-50 px-2 py-1 text-xs text-gray-600">{prospect.place_id}</code>
               <span className="text-xs text-gray-600">
@@ -1054,7 +1074,8 @@ export default function AdminSites() {
                   <button
                     type="button"
                     onClick={() => handleGenerateProspect(prospect)}
-                    disabled={!activeRegenerateModel || Boolean(generatingProspectId || regeneratingId)}
+                    disabled={!activeRegenerateModel || mapsQueryPlaceholder || Boolean(generatingProspectId || regeneratingId)}
+                    title={mapsQueryPlaceholder ? "This is not a specific business listing yet." : undefined}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                   >
                     {generatingProspectId === prospect.place_id ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
@@ -1069,7 +1090,8 @@ export default function AdminSites() {
                 </div>
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
 

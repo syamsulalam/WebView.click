@@ -44,7 +44,7 @@ Logic penting:
 - Desktop submenu dirender sebagai fixed overlay sibling setelah header, bukan child layout di dalam header, agar navbar tidak membesar saat submenu terbuka.
 - Header default lebih lega di posisi top, lalu berubah compact dengan `data-wv-header-compact` setelah scroll; export owner HTML mengaktifkan behavior yang sama via inline JS.
 - Header memakai grid 3 kolom `brand | centered nav | CTA` di desktop supaya menu tetap center terhadap seluruh navbar. Nama bisnis panjang ditruncate di rail kiri, bukan mendorong menu ke kanan.
-- Submenu diberi boundary `data-wv-site-submenu` agar mengikuti konteks navbar, bukan mewarisi styling body/card generated site.
+- Header/submenu memakai preset layer berbasis CSS variables di boundary `data-wv-site-header` / `data-wv-site-submenu`: `soft-glass`, `authority-bar`, `industrial-rail`, `warm-translucent`, atau `energy-band`, sehingga navbar cocok dengan niche style tanpa mewarisi efek body/card generated site.
 - Pergantian tab menjalankan scroll-to-top.
 - Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section, sehingga old generated JSON yang tidak punya page `contact` tetap bisa memakai nav/footer Contact.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
@@ -67,7 +67,7 @@ Logic penting:
 - Tool UI seperti edit text, `WebsiteActionPanel`, demo inspector, download/domain/setup controls berada di luar `[data-wv-site-canvas]` agar tidak terkena CSS website.
 - Font pairing aktif hanya diterapkan ke `[data-wv-site-canvas]`; panel/tools tetap memakai style app.
 - Shader layer dirender sebagai inert `<div data-wv-site-shader>` di dalam `[data-wv-site-canvas]`; pointer JS hanya mengubah CSS variables `--wv-pointer-x`/`--wv-pointer-y`.
-- Header website diberi `data-wv-site-header` dan CSS kompaktornya sendiri agar style/shader experience layer tidak membuat navbar ikut melebar/meninggi.
+- Header website diberi `data-wv-site-header` dan CSS kompaktornya sendiri agar style/shader experience layer tidak membuat navbar ikut melebar/meninggi. Variabel seperti `--wv-header-bg`, `--wv-header-shadow`, `--wv-header-submenu-bg`, dan `--wv-header-treatment` didefinisikan di `src/lib/siteStylePresets.ts`.
 - `data-wv-tool-ui` punya reset typography di renderer; inline toolbar B/I/U memakai marker khusus `data-wv-format-toolbar` karena posisinya menempel di editable text dalam canvas website.
 - Gambar dirender sebagai `<img>` jika URL usable (`http`, `/`, atau `data:`); filename placeholder tetap ditampilkan sebagai fallback supaya preview tidak blank.
 - Untuk gambar Google Places, renderer menampilkan attribution overlay dari `brand.photoCaption` dan `brand.photoAttributions`.
@@ -387,7 +387,7 @@ Fungsi:
 - Fallback JSON dari `/admin/sites` mengisi `meta.generatedWithAi=false`, `meta.generationMode=google_places_fallback`, `meta.sourcePhotoCount`, title-cased service names, generalized niche copy profiles, service-area copy inferred from address, detail pages, dan gallery section jika Places mengembalikan lebih dari satu foto.
 - Fallback JSON dari `/admin/sites` juga memilih `design.fontPairing` dan `fontPairingConfig` dari registry industri sehingga site tetap punya typography yang sesuai walaupun AI gagal.
 - Tombol `Regen` memakai dropdown:
-  - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia, lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true` untuk membuat copy patch AI yang di-merge ke JSON deterministik.
+  - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia dan bukan placeholder `maps:*`, lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true` untuk membuat copy patch AI yang di-merge ke JSON deterministik.
   - `Re-gather Google data + resave` wajib punya `sourceData.placeId`, mengambil Place Details lagi, lalu mengirim `provider`/`model` kosong agar data Google Places, termasuk Maps URL exact, disimpan ulang tanpa memaksa AI call.
   - Kedua action menampilkan AI readiness badge; AI regenerate menunjukkan key/model AI, sedangkan re-gather menunjukkan `Data resave` dan `No AI key needed`.
 
@@ -490,8 +490,8 @@ Logic penting:
 - Inspector bisa diminimize dan di-drag agar tidak menutup navbar/preview.
 - Inspector punya toggle `QA` untuk visual boundary check: `[data-wv-site-canvas]` diberi outline hijau, WebView tool UI `[data-wv-tool-ui]` diberi outline biru, dan tool yang bocor ke canvas akan terlihat merah.
 - QA checklist memastikan generated site canvas ada, tool UI terdeteksi, download/setup panel berada di luar CSS website, dan demo inspector berada di luar CSS website.
-- QA checklist juga memverifikasi boundary `data-wv-site-header`, boundary `data-wv-site-footer`, submenu overlay berada di luar header, tinggi/shadow navbar sesuai state top/scrolled, dan icon marker `data-wv-qa-icon` untuk `features`, `trustBar`, dan `hoursLocation`.
-- Saat QA aktif, navbar diberi outline amber, footer diberi outline purple, dan icon yang diukur diberi outline biru agar style/shader preset bisa dicek visual sebelum produksi.
+- QA checklist juga memverifikasi boundary `data-wv-site-header`, boundary `data-wv-site-footer`, submenu overlay berada di luar header, preset layer navbar aktif, submenu memakai variable header, tinggi/shadow navbar sesuai state top/scrolled, dan icon marker `data-wv-qa-icon` untuk `features`, `trustBar`, dan `hoursLocation`. Saat QA aktif, panel remeasure on scroll/resize supaya compact navbar bisa dicek langsung.
+- Saat QA aktif, navbar diberi outline amber, submenu outline orange, footer outline purple, dan icon yang diukur diberi outline biru agar style/shader preset bisa dicek visual sebelum produksi.
 - Menggunakan `SiteRenderer` dengan `showProspectPanel={false}` agar demo fokus ke hasil render website.
 
 Risiko debug:
@@ -638,7 +638,7 @@ Logic AI:
 - Jika request `/api/sites/generate` membawa `requireAi: true`, Function gagal eksplisit saat AI key hilang, provider/model tidak valid, provider mengembalikan HTTP error, response kosong, atau JSON invalid. Generate/regenerate AI dari `/admin/leads`, `/admin/sites`, dan job retry memakai `requireAi: true` agar masalah AI terlihat; mode `Re-gather Google data + resave` tetap tanpa AI.
 - Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
 - Full scaffold JSON tidak dikirim ke AI. AI tidak melihat image URL, maps URL, navigation href, sourceData mentah, palette, font, visual style, favicon, CSS, storage, atau field protected lain.
-- Untuk OpenRouter, model value UI yang diawali `~` dinormalisasi sebelum request API agar routing hint lokal tidak dikirim sebagai model slug mentah.
+- Untuk OpenRouter, model value UI yang diawali `~` dikirim apa adanya ke API karena OpenRouter memakai prefix itu untuk latest-model resolution seperti `~anthropic/claude-sonnet-latest`.
 - Copy patch AI di-merge deterministik oleh Function lewat `applyAiCopyPatch()`. AI tidak boleh mengubah `pageId`, `detailPageId`, navigation href, sourceData, photo URL, contact/maps fields, palette, font, visual style, storage, atau favicon.
 - Jika submitted JSON lama belum punya `design.shaderPreset`, Function mengisi shader procedural dari niche/context via `shaderPresetForBusiness()` sebelum menyimpan site.
 - Function membuat audit granular dari target copy sebelum patch dan copy final setelah patch. Audit ini disimpan di `generation_jobs.metadata_json.copyAuditSummary` dan `copyAuditItems`, dengan status `ai_rewritten`, `ai_filled_blank`, `source_kept`, `fallback_source`, atau `missing_after`.
@@ -682,7 +682,7 @@ Logic Places Cache:
 - `GET /api/places/manual-duplicates?limit=500` mengembalikan group kandidat duplikat manual dari `places_prospects` tanpa migration/schema baru. Group hanya ditampilkan jika minimal satu row berasal dari manual import.
 - `POST /api/places/manual-duplicates/merge` menerima `{ keepPlaceId, duplicatePlaceId }`, menyalin missing `phone`, `address`, `rating`, `reviews`, `website_url`, `maps_url`, status website, dan JSON detail/result dari duplicate ke keep prospect, lalu mengubah duplicate menjadi `skipped`.
 - `POST /api/places/manual-import` menerima `{ url, capturedText, capturedItems, query }`. Captured items membuat cache entry `MANUAL_CAPTURE`; search URL tanpa captured data sengaja tidak di-scrape server-side dan mengembalikan `needsBrowserCapture`.
-- `GET /api/places/details?placeId=manual:*|cid:*|maps:*` tidak memanggil Google Details. Endpoint mengembalikan data manual yang tersimpan jika cukup lengkap, atau `MANUAL_CAPTURE_REQUIRED` jika record hanya berasal dari URL.
+- `GET /api/places/details?placeId=manual:*|cid:*|maps:*` tidak memanggil Google Details. Endpoint mengembalikan data manual yang tersimpan jika cukup lengkap, atau `MANUAL_CAPTURE_REQUIRED` jika record hanya berasal dari URL. `maps:*` yang hanya mewakili search/query placeholder dikembalikan sebagai 400 jelas; admin UI menonaktifkan gather/generate untuk row seperti itu sampai listing spesifik/captured JSON diimport.
 - `POST /api/places/cache/trim` menghapus cache lama/expired; body: `{ "olderThanDays": 30 }`.
 
 Logic Prospect Drafts:

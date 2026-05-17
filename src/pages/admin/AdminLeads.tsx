@@ -121,6 +121,11 @@ export default function AdminLeads() {
 
   const getPlaceKey = (place: any) => String(place?.place_id || place?.id || place?.name || "");
 
+  const isMapsQueryPlaceholder = (place: any) => {
+    const placeId = String(place?.place_id || place?.id || "");
+    return placeId.startsWith("maps:") && !place?.manualImport;
+  };
+
   const isPlaceholderPhone = (value?: string) => {
     const digits = String(value || "").replace(/\D/g, "");
     return !digits || /^0+$/.test(digits);
@@ -773,6 +778,16 @@ export default function AdminLeads() {
     const placeKey = getPlaceKey(place);
     const placeId = place?.place_id || place?.id;
     if (!placeId || placeDetailsLoading[placeKey]) return null;
+    if (isMapsQueryPlaceholder(place)) {
+      setGenerationMessages(prev => ({
+        ...prev,
+        [placeKey]: {
+          type: "error",
+          text: "This row is a Maps search/query placeholder, not a specific business listing. Select an actual business result or import captured listing JSON before gathering details.",
+        },
+      }));
+      return null;
+    }
 
     setPlaceDetailsLoading(prev => ({ ...prev, [placeKey]: true }));
     try {
@@ -969,6 +984,13 @@ export default function AdminLeads() {
 
   const handleGenerateSite = async (place: any) => {
     const placeKey = getPlaceKey(place);
+    if (isMapsQueryPlaceholder(place)) {
+      setGenerationMessages(prev => ({
+        ...prev,
+        [placeKey]: { type: "error", text: "This row is a Maps search/query placeholder, not a specific business listing. Import captured listing JSON or choose a real Google business result before generating." },
+      }));
+      return;
+    }
     if (!hasGatheredDetails(place)) {
       setGenerationMessages(prev => ({
         ...prev,
@@ -2265,6 +2287,7 @@ export default function AdminLeads() {
               const generationMessage = generationMessages[placeKey];
               const currentPhotos = sortedPhotosForPlace(displayPlace);
               const detailsReady = hasGatheredDetails(displayPlace);
+              const mapsQueryPlaceholder = isMapsQueryPlaceholder(displayPlace);
               const websiteStatus = websiteBadge(displayPlace);
               const listingUrl = googleBusinessListingUrl(displayPlace);
               const score = prospectScore(displayPlace);
@@ -2363,7 +2386,8 @@ export default function AdminLeads() {
                         updateProspectStatus(displayPlace, "details_loaded");
                         loadPlaceDetails(displayPlace);
                       }}
-                      disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id}
+                      disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id || mapsQueryPlaceholder}
+                      title={mapsQueryPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : undefined}
                       className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                     >
                       {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={18} /> : <ListChecks size={18} />}
@@ -2373,7 +2397,8 @@ export default function AdminLeads() {
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <button
                         onClick={() => handleGenerateSite(displayPlace)}
-                        disabled={isGenerating}
+                        disabled={isGenerating || mapsQueryPlaceholder}
+                        title={mapsQueryPlaceholder ? "This is not a specific business listing yet." : undefined}
                         className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                       >
                         {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
@@ -2411,6 +2436,8 @@ export default function AdminLeads() {
                   <span className="text-xs text-gray-500">
                     {detailsReady
                       ? currentPhotos.length > 0 ? `${currentPhotos.length} foto tersedia untuk dipilih.` : "Detail sudah diambil, tapi belum ada foto dari response ini."
+                      : mapsQueryPlaceholder
+                        ? "This row is a search/query placeholder. Import captured listing JSON or choose a specific Google business before gathering details."
                       : "Klik Gather data untuk mengambil website, phone, direct Maps URL, reviews, dan foto dari Place Details."}
                   </span>
                 </div>
@@ -2570,6 +2597,7 @@ export default function AdminLeads() {
                   : detailsPanelPlace.photos,
               };
               const photos = sortedPhotosForPlace(mergedPlace);
+              const mapsQueryPlaceholder = isMapsQueryPlaceholder(mergedPlace);
               return (
                 <div className="p-6">
                   <div className="mb-5 flex items-start justify-between gap-4">
@@ -2619,7 +2647,8 @@ export default function AdminLeads() {
                     <button
                       type="button"
                       onClick={() => loadPlaceDetails(mergedPlace)}
-                      disabled={placeDetailsLoading[placeKey] || !mergedPlace.place_id}
+                      disabled={placeDetailsLoading[placeKey] || !mergedPlace.place_id || mapsQueryPlaceholder}
+                      title={mapsQueryPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : undefined}
                       className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
                     >
                       {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={15} /> : <Images size={15} />}
@@ -2631,6 +2660,11 @@ export default function AdminLeads() {
                       </a>
                     )}
                   </div>
+                  {mapsQueryPlaceholder && (
+                    <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                      This row is a Maps search/query placeholder. Open a specific business listing or import captured listing JSON before refreshing details.
+                    </p>
+                  )}
                   {mergedPlace.lastError && (
                     <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                       <p className="font-semibold">Last generate error</p>

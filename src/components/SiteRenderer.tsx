@@ -723,7 +723,7 @@ export default function SiteRenderer({
       <header
         data-wv-site-header="true"
         data-wv-header-compact={headerCompact ? "true" : undefined}
-        style={{ backgroundColor: colors.primary, color: "#fff" }}
+        style={{ background: "var(--wv-header-bg)", color: "var(--wv-header-text)" }}
         className={`${headerCompact ? "px-5 py-2.5" : "px-5 py-4"} md:px-12 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 sticky top-0 z-50 shadow-sm`}
       >
         <button
@@ -1576,15 +1576,29 @@ export default function SiteRenderer({
         #rendered-site [data-wv-site-header] {
           min-height: 4.5rem;
           margin: 0;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-          box-shadow: 0 10px 28px rgba(15, 23, 42, 0.10) !important;
+          border-bottom: 1px solid var(--wv-header-border);
+          box-shadow: var(--wv-header-shadow) !important;
           line-height: 1.15;
-          transition: min-height 180ms ease, padding-block 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+          backdrop-filter: blur(var(--wv-header-blur));
+          -webkit-backdrop-filter: blur(var(--wv-header-blur));
+          transition: min-height 180ms ease, padding-block 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease, backdrop-filter 180ms ease;
+        }
+        #rendered-site [data-wv-site-header]::after {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: -1px;
+          height: 2px;
+          background: var(--wv-header-accent-line);
+          opacity: 0.8;
+          pointer-events: none;
         }
         #rendered-site [data-wv-site-header][data-wv-header-compact="true"] {
+          background: var(--wv-header-bg-compact) !important;
           min-height: 3.5rem;
-          border-bottom-color: rgba(255, 255, 255, 0.18);
-          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+          border-bottom-color: var(--wv-header-border-compact);
+          box-shadow: var(--wv-header-shadow-compact) !important;
           padding-top: 0.625rem !important;
           padding-bottom: 0.625rem !important;
         }
@@ -1597,9 +1611,13 @@ export default function SiteRenderer({
           flex: none;
         }
         #rendered-site [data-wv-site-submenu] {
-          border-radius: 14px !important;
-          border-color: rgba(15, 23, 42, 0.12) !important;
-          box-shadow: 0 22px 50px rgba(15, 23, 42, 0.18) !important;
+          background: var(--wv-header-submenu-bg) !important;
+          color: var(--wv-header-submenu-text) !important;
+          border-radius: var(--wv-header-submenu-radius) !important;
+          border-color: var(--wv-header-submenu-border) !important;
+          box-shadow: var(--wv-header-submenu-shadow) !important;
+          backdrop-filter: blur(var(--wv-header-submenu-blur));
+          -webkit-backdrop-filter: blur(var(--wv-header-submenu-blur));
           font-family: ${activeFontPairing.bodyCss || typography.bodyFont};
           line-height: 1.35;
           overflow: hidden;
@@ -1625,9 +1643,12 @@ export default function SiteRenderer({
           transition: background-color 150ms ease, color 150ms ease, opacity 150ms ease;
         }
         #rendered-site [data-wv-site-submenu] :where(button, a):hover {
-          background: rgba(15, 23, 42, 0.055);
+          background: var(--wv-header-submenu-hover-bg);
           box-shadow: none !important;
           transform: none !important;
+        }
+        #rendered-site [data-wv-site-submenu] .text-slate-500 {
+          color: var(--wv-header-submenu-muted) !important;
         }
         #rendered-site [data-wv-site-submenu] svg {
           flex: none;

@@ -347,6 +347,25 @@ export const siteStylePresetCss = `
     --wv-subtle-border: rgba(15, 23, 42, 0.12);
     --wv-gradient-primary: linear-gradient(135deg, var(--color-primary), var(--color-accent));
     --wv-gradient-accent: linear-gradient(135deg, var(--color-accent), var(--color-secondary));
+    --wv-header-treatment: solid;
+    --wv-header-bg: var(--color-primary);
+    --wv-header-bg-compact: var(--color-primary);
+    --wv-header-text: #ffffff;
+    --wv-header-border: rgba(255, 255, 255, 0.14);
+    --wv-header-border-compact: rgba(255, 255, 255, 0.18);
+    --wv-header-shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    --wv-header-shadow-compact: 0 1px 2px rgba(15, 23, 42, 0.08);
+    --wv-header-blur: 0px;
+    --wv-header-accent-line: transparent;
+    --wv-header-link-hover-bg: rgba(255, 255, 255, 0.10);
+    --wv-header-submenu-bg: #ffffff;
+    --wv-header-submenu-text: #0f172a;
+    --wv-header-submenu-muted: #64748b;
+    --wv-header-submenu-border: rgba(15, 23, 42, 0.12);
+    --wv-header-submenu-shadow: 0 22px 50px rgba(15, 23, 42, 0.18);
+    --wv-header-submenu-radius: 14px;
+    --wv-header-submenu-hover-bg: rgba(15, 23, 42, 0.055);
+    --wv-header-submenu-blur: 0px;
     position: relative;
     isolation: isolate;
     overflow-x: clip;
@@ -534,6 +553,9 @@ export const siteStylePresetCss = `
       --wv-subtle-border: color-mix(in oklab, var(--color-primary) 15%, transparent);
       --wv-gradient-primary: linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 62%, var(--color-accent)));
       --wv-gradient-accent: linear-gradient(135deg, var(--color-accent), color-mix(in oklab, var(--color-accent) 58%, white));
+      --wv-header-bg: color-mix(in oklab, var(--color-primary) 96%, black);
+      --wv-header-bg-compact: color-mix(in oklab, var(--color-primary) 92%, black);
+      --wv-header-submenu-border: color-mix(in oklab, var(--color-primary) 16%, transparent);
     }
   }
 
@@ -781,6 +803,127 @@ export const siteStylePresetCss = `
       opacity: 0.66;
       scale: 1;
       rotate: -2deg;
+    }
+  }
+
+  .wv-preset-local-clean,
+  .wv-preset-pool-aqua,
+  .wv-preset-dental-clean,
+  .wv-preset-cleaning-fresh,
+  .wv-preset-salon-soft-luxe,
+  .wv-preset-education-friendly,
+  .wv-preset-pet-care-friendly {
+    --wv-header-treatment: soft-glass;
+    --wv-header-bg: rgba(15, 23, 42, 0.86);
+    --wv-header-bg-compact: rgba(15, 23, 42, 0.78);
+    --wv-header-border: rgba(255, 255, 255, 0.22);
+    --wv-header-border-compact: rgba(255, 255, 255, 0.28);
+    --wv-header-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
+    --wv-header-shadow-compact: 0 10px 28px rgba(15, 23, 42, 0.13);
+    --wv-header-blur: 16px;
+    --wv-header-submenu-bg: rgba(255, 255, 255, 0.92);
+    --wv-header-submenu-border: rgba(255, 255, 255, 0.62);
+    --wv-header-submenu-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+    --wv-header-submenu-blur: 16px;
+  }
+
+  .wv-preset-legal-authority,
+  .wv-preset-financial-trust,
+  .wv-preset-real-estate-premium {
+    --wv-header-treatment: authority-bar;
+    --wv-header-bg: rgba(15, 23, 42, 0.98);
+    --wv-header-bg-compact: rgba(15, 23, 42, 0.96);
+    --wv-header-border: rgba(255, 255, 255, 0.18);
+    --wv-header-shadow: 0 12px 34px rgba(15, 23, 42, 0.14);
+    --wv-header-shadow-compact: 0 6px 18px rgba(15, 23, 42, 0.10);
+    --wv-header-submenu-radius: 6px;
+    --wv-header-submenu-shadow: 0 18px 44px rgba(15, 23, 42, 0.17);
+  }
+
+  .wv-preset-contractor-rugged,
+  .wv-preset-auto-shop-steel,
+  .wv-preset-security-trust {
+    --wv-header-treatment: industrial-rail;
+    --wv-header-bg: rgba(17, 24, 39, 0.98);
+    --wv-header-bg-compact: rgba(17, 24, 39, 0.94);
+    --wv-header-border: rgba(245, 158, 11, 0.34);
+    --wv-header-shadow: 0 18px 42px rgba(15, 23, 42, 0.22);
+    --wv-header-shadow-compact: 0 8px 20px rgba(15, 23, 42, 0.18);
+    --wv-header-accent-line: var(--color-accent);
+    --wv-header-submenu-radius: 8px;
+    --wv-header-submenu-shadow: 10px 10px 0 rgba(15, 23, 42, 0.16), 0 18px 38px rgba(15, 23, 42, 0.16);
+  }
+
+  .wv-preset-cafe-warm,
+  .wv-preset-garden-organic {
+    --wv-header-treatment: warm-translucent;
+    --wv-header-bg: rgba(78, 52, 46, 0.92);
+    --wv-header-bg-compact: rgba(78, 52, 46, 0.84);
+    --wv-header-border: rgba(255, 255, 255, 0.20);
+    --wv-header-shadow: 0 18px 44px rgba(78, 52, 46, 0.18);
+    --wv-header-shadow-compact: 0 9px 22px rgba(78, 52, 46, 0.14);
+    --wv-header-blur: 12px;
+    --wv-header-submenu-bg: rgba(255, 251, 247, 0.94);
+    --wv-header-submenu-border: rgba(120, 53, 15, 0.16);
+    --wv-header-submenu-shadow: 0 24px 54px rgba(78, 52, 46, 0.18);
+    --wv-header-submenu-blur: 12px;
+  }
+
+  .wv-preset-fitness-energy {
+    --wv-header-treatment: energy-band;
+    --wv-header-bg: rgba(24, 24, 27, 0.98);
+    --wv-header-bg-compact: rgba(24, 24, 27, 0.94);
+    --wv-header-border: rgba(132, 204, 22, 0.34);
+    --wv-header-shadow: 0 18px 48px rgba(24, 24, 27, 0.24);
+    --wv-header-shadow-compact: 0 8px 24px rgba(24, 24, 27, 0.18);
+    --wv-header-accent-line: var(--color-accent);
+    --wv-header-submenu-radius: 10px;
+    --wv-header-submenu-shadow: 0 22px 52px rgba(24, 24, 27, 0.22);
+  }
+
+  @supports (color: color-mix(in oklab, white, black)) {
+    .wv-preset-local-clean,
+    .wv-preset-pool-aqua,
+    .wv-preset-dental-clean,
+    .wv-preset-cleaning-fresh,
+    .wv-preset-salon-soft-luxe,
+    .wv-preset-education-friendly,
+    .wv-preset-pet-care-friendly {
+      --wv-header-bg: color-mix(in oklab, var(--color-primary) 82%, transparent);
+      --wv-header-bg-compact: color-mix(in oklab, var(--color-primary) 72%, transparent);
+      --wv-header-submenu-bg: color-mix(in oklab, white 88%, var(--color-secondary));
+      --wv-header-submenu-border: color-mix(in oklab, var(--color-accent) 20%, white);
+    }
+
+    .wv-preset-legal-authority,
+    .wv-preset-financial-trust,
+    .wv-preset-real-estate-premium {
+      --wv-header-bg: color-mix(in oklab, var(--color-primary) 96%, black);
+      --wv-header-bg-compact: color-mix(in oklab, var(--color-primary) 92%, black);
+      --wv-header-submenu-border: color-mix(in oklab, var(--color-primary) 18%, transparent);
+    }
+
+    .wv-preset-contractor-rugged,
+    .wv-preset-auto-shop-steel,
+    .wv-preset-security-trust {
+      --wv-header-bg: color-mix(in oklab, var(--color-primary) 96%, black);
+      --wv-header-bg-compact: color-mix(in oklab, var(--color-primary) 90%, black);
+      --wv-header-border: color-mix(in oklab, var(--color-accent) 38%, transparent);
+      --wv-header-submenu-border: color-mix(in oklab, var(--color-accent) 20%, var(--color-primary));
+    }
+
+    .wv-preset-cafe-warm,
+    .wv-preset-garden-organic {
+      --wv-header-bg: color-mix(in oklab, var(--color-primary) 88%, transparent);
+      --wv-header-bg-compact: color-mix(in oklab, var(--color-primary) 78%, transparent);
+      --wv-header-submenu-bg: color-mix(in oklab, white 86%, var(--color-secondary));
+      --wv-header-submenu-border: color-mix(in oklab, var(--color-accent) 20%, white);
+    }
+
+    .wv-preset-fitness-energy {
+      --wv-header-bg: color-mix(in oklab, var(--color-primary) 96%, black);
+      --wv-header-bg-compact: color-mix(in oklab, var(--color-primary) 90%, black);
+      --wv-header-border: color-mix(in oklab, var(--color-accent) 38%, transparent);
     }
   }
 

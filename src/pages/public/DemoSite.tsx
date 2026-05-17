@@ -16,6 +16,16 @@ function emptyVisualQa() {
       heightOk: false,
       shadowBlur: 0,
       shadowOk: false,
+      treatment: "",
+      presetLayerOk: false,
+      backdropBlur: 0,
+      blurOk: false,
+    },
+    submenu: {
+      count: 0,
+      radius: 0,
+      shadowBlur: 0,
+      styleOk: false,
     },
     icons: {
       features: { count: 0, minSize: 0, sizeOk: false },
@@ -29,6 +39,11 @@ function maxShadowBlur(boxShadow: string) {
   const pxValues = Array.from(boxShadow.matchAll(/(-?\d+(?:\.\d+)?)px/g)).map((match) => Math.abs(Number(match[1])));
   const blurValues = pxValues.filter((_, index) => index % 4 === 2);
   return blurValues.length ? Math.max(...blurValues) : 0;
+}
+
+function cssBlurPx(value: string) {
+  const match = value.match(/blur\((\d+(?:\.\d+)?)px\)/);
+  return match ? Math.round(Number(match[1])) : 0;
 }
 
 function iconStats(group: "features" | "trustBar" | "hoursLocation", minExpectedSize: number) {
@@ -158,8 +173,15 @@ export default function DemoSite() {
       const footer = document.querySelector<HTMLElement>("[data-wv-site-footer]");
       const submenus = Array.from(document.querySelectorAll<HTMLElement>("[data-wv-submenu]"));
       const navbarRect = navbar?.getBoundingClientRect();
-      const navbarShadowBlur = navbar ? maxShadowBlur(window.getComputedStyle(navbar).boxShadow) : 0;
+      const navbarStyles = navbar ? window.getComputedStyle(navbar) : null;
+      const navbarShadowBlur = navbarStyles ? maxShadowBlur(navbarStyles.boxShadow) : 0;
       const navbarCompact = navbar?.getAttribute("data-wv-header-compact") === "true";
+      const headerTreatment = navbarStyles?.getPropertyValue("--wv-header-treatment").trim() || "";
+      const headerBackdropBlur = navbarStyles ? cssBlurPx(navbarStyles.backdropFilter || navbarStyles.getPropertyValue("-webkit-backdrop-filter") || "") : 0;
+      const headerBlurExpected = headerTreatment === "soft-glass" || headerTreatment === "warm-translucent";
+      const submenuStyles = submenus[0] ? window.getComputedStyle(submenus[0]) : null;
+      const submenuRadius = submenuStyles ? Math.round(Number.parseFloat(submenuStyles.borderTopLeftRadius) || 0) : 0;
+      const submenuShadowBlur = submenuStyles ? maxShadowBlur(submenuStyles.boxShadow) : 0;
       const features = iconStats("features", 28);
       const trustBar = iconStats("trustBar", 28);
       const hoursLocation = iconStats("hoursLocation", 24);
@@ -185,7 +207,17 @@ export default function DemoSite() {
           height: Math.round(navbarRect?.height || 0),
           heightOk: Boolean(navbarRect && navbarRect.height <= (navbarCompact ? 60 : 76)),
           shadowBlur: Math.round(navbarShadowBlur),
-          shadowOk: !navbar || navbarShadowBlur <= (navbarCompact ? 12 : 32),
+          shadowOk: !navbar || navbarShadowBlur <= (navbarCompact ? 30 : 54),
+          treatment: headerTreatment,
+          presetLayerOk: Boolean(headerTreatment && navbarStyles?.getPropertyValue("--wv-header-bg").trim() && navbarStyles?.getPropertyValue("--wv-header-submenu-bg").trim()),
+          backdropBlur: headerBackdropBlur,
+          blurOk: Boolean(navbarStyles && (headerBlurExpected ? headerBackdropBlur > 0 : headerBackdropBlur === 0)),
+        },
+        submenu: {
+          count: submenus.length,
+          radius: submenuRadius,
+          shadowBlur: Math.round(submenuShadowBlur),
+          styleOk: Boolean(submenus.length && submenuRadius >= 6 && submenuShadowBlur >= 18),
         },
         icons: {
           features,
@@ -200,7 +232,13 @@ export default function DemoSite() {
 
     inspectBoundary();
     const timeout = window.setTimeout(inspectBoundary, 80);
-    return () => window.clearTimeout(timeout);
+    window.addEventListener("scroll", inspectBoundary, { passive: true });
+    window.addEventListener("resize", inspectBoundary);
+    return () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener("scroll", inspectBoundary);
+      window.removeEventListener("resize", inspectBoundary);
+    };
   }, [boundaryQaOpen, inspectorMinimized, selectedFontPairing, selectedPaletteOption, selectedPreset, selectedShaderPreset]);
 
   const beginInspectorDrag = (event: PointerEvent<HTMLDivElement>) => {
@@ -254,6 +292,11 @@ export default function DemoSite() {
 
           [data-wv-site-footer] {
             outline: 3px solid rgba(168, 85, 247, 0.9) !important;
+            outline-offset: -3px !important;
+          }
+
+          [data-wv-site-submenu] {
+            outline: 3px solid rgba(251, 146, 60, 0.9) !important;
             outline-offset: -3px !important;
           }
 
@@ -367,8 +410,11 @@ export default function DemoSite() {
                 <p className="font-semibold text-emerald-900">Navbar</p>
                 <div className="mt-1.5 space-y-1.5">
                   {[
+                    [`Preset header layer active (${visualQa.navbar.treatment || "none"})`, visualQa.navbar.exists && visualQa.navbar.presetLayerOk],
                     [`Height fits ${visualQa.navbar.compact ? "scrolled" : "top"} state (${visualQa.navbar.height}px)`, visualQa.navbar.exists && visualQa.navbar.heightOk],
                     [`Shadow fits ${visualQa.navbar.compact ? "scrolled" : "top"} state (${visualQa.navbar.shadowBlur}px blur)`, visualQa.navbar.exists && visualQa.navbar.shadowOk],
+                    [`Blur matches treatment (${visualQa.navbar.backdropBlur}px)`, visualQa.navbar.exists && visualQa.navbar.blurOk],
+                    [`Submenu uses header preset variables (${visualQa.submenu.count}, radius ${visualQa.submenu.radius}px, shadow ${visualQa.submenu.shadowBlur}px)`, visualQa.submenu.styleOk],
                   ].map(([label, passed]) => (
                     <p key={String(label)} className="flex items-center gap-2">
                       {passed ? <CheckCircle2 size={14} className="text-emerald-700" /> : <XCircle size={14} className="text-red-600" />}

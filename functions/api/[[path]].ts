@@ -486,7 +486,6 @@ const aiProviderModels: Record<string, string[]> = {
 };
 
 function normalizeAiModel(provider: string, model: string) {
-  if (provider === "OpenRouter") return model.replace(/^~/, "");
   return model;
 }
 
@@ -1468,7 +1467,12 @@ async function handlePlacesDetails(url: URL, db: D1Database, env: Env): Promise<
       .prepare("SELECT * FROM places_prospects WHERE place_id = ?")
       .bind(placeId)
       .first<ProspectDbRow>();
-    if (!row) return errorJson("Manual prospect was not found.", 404);
+    if (!row) {
+      if (placeId.startsWith("maps:")) {
+        return errorJson("This Maps search/query placeholder is not a business listing. Select a specific business result or import a captured listing before gathering details.", 400);
+      }
+      return errorJson("Manual prospect was not found.", 404);
+    }
 
     const result = {
       ...parseJsonObject(row.result_json),
@@ -2678,7 +2682,7 @@ async function generateAiCopyPatch(
 ): Promise<{ patch: Record<string, unknown>; copyBriefHash: string; copyPatchHash: string } | null> {
   const provider = asString(body.provider);
   const model = asString(body.model);
-  const openRouterModel = model.replace(/^~/, "");
+  const openRouterModel = model.trim();
   const requireAi = body.requireAi === true;
   const businessName = asString(body.businessName);
   const originData = body.originData || {};
@@ -3742,7 +3746,7 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       await updateGenerationJob(db, jobId, { status: "failed", error: message, metadata_json: JSON.stringify(jobMetadata) });
       await updateProspectRecord(db, originPlaceId, { last_error: message });
       const statusCode = body.requireAi === true
-        ? (/api key|provider and model|required|unsupported/i.test(message) ? 400 : 502)
+        ? (/api key|provider and model|required|unsupported|invalid|not found|HTTP 4\d\d/i.test(message) ? 400 : 502)
         : 500;
       return errorJson(message, statusCode);
     }
