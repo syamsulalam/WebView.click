@@ -136,10 +136,10 @@ External paid providers:
 - Guardrail: run manually in small batches.
 
 `POST /api/payments/checkout`
-- External calls: 1 Lemon Squeezy checkout request if configured.
+- External calls: at most 1 checkout request to the selected configured processor (`xendit`, `midtrans`, `doku`, or legacy `lemon_squeezy_legacy`), or no external API call for `mock`, `paypal`, `wise`, and `payoneer` link modes.
 - D1 work: records checkout pending lead/activity.
 - Risk: repeated checkout attempts can create duplicate payment records and external calls.
-- Guardrail: keep checkout button intentional and continue recording mock checkout only when Lemon Squeezy is missing.
+- Guardrail: keep checkout button intentional and continue recording mock checkout when selected processor keys are missing.
 
 `GET /api/domains/check`
 - External calls: RDAP via `rdap.net`, with Google Public DNS SOA fallback when needed.

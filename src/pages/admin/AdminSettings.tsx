@@ -39,6 +39,21 @@ const initialSettings: Record<string, string> = {
   OPENCODE_API_KEY: "",
   OPENCODE_BASE_URL: "",
   GOOGLE_PLACES_API_KEY: "",
+  PAYMENT_PROCESSOR: "mock",
+  PAYMENT_USD_AMOUNT: "197",
+  PAYMENT_USD_TO_IDR_RATE: "16000",
+  PAYMENT_PACKAGE_NAME: "WebView.click Done-for-you Website Setup",
+  PAYMENT_PACKAGE_DESCRIPTION: "$197 total: domain/hosting coordination and done-for-you website setup.",
+  XENDIT_SECRET_KEY: "",
+  MIDTRANS_SERVER_KEY: "",
+  MIDTRANS_CLIENT_KEY: "",
+  MIDTRANS_IS_PRODUCTION: "false",
+  DOKU_CLIENT_ID: "",
+  DOKU_SECRET_KEY: "",
+  DOKU_IS_PRODUCTION: "false",
+  PAYPAL_BUSINESS_URL: "",
+  WISE_PAYMENT_URL: "",
+  PAYONEER_PAYMENT_URL: "",
   PAYMENT_LINK_BASIC: "",
   PAYMENT_LINK_PREMIUM: "",
   LEMON_SQUEEZY_API_KEY: "",
@@ -112,6 +127,80 @@ const pricingProviderApiKeyMap: Record<string, string> = {
   KIE: "KIE_API_KEY",
   Opencode: "OPENCODE_API_KEY",
 };
+
+const paymentProcessorOptions = [
+  { value: "mock", label: "Mock / manual follow-up", helper: "No external payment call. Saves checkout_pending and shows admin follow-up." },
+  { value: "xendit", label: "Xendit hosted invoice", helper: "Recommended first live option for an Indonesia merchant accepting cards and local methods." },
+  { value: "midtrans", label: "Midtrans Snap", helper: "Indonesia-local gateway with broad local methods and card checkout." },
+  { value: "doku", label: "DOKU Checkout", helper: "Indonesia-local hosted checkout with Client ID + Secret Key HMAC signing." },
+  { value: "paypal", label: "PayPal Business link", helper: "Fallback link. Use Business, not Personal, for commercial volume." },
+  { value: "wise", label: "Wise payment/request link", helper: "Manual invoice/bank-transfer style fallback for larger B2B clients." },
+  { value: "payoneer", label: "Payoneer payment request", helper: "Manual payment request fallback for clients who prefer Payoneer." },
+  { value: "lemon_squeezy_legacy", label: "Lemon Squeezy legacy", helper: "Legacy only. Lemon Squeezy prohibits web development/services for this offer." },
+];
+
+const paymentFieldGroups: Array<{
+  title: string;
+  description: string;
+  fields: Array<{ key: string; label: string; type?: "text" | "password" | "number" | "select"; placeholder?: string; tooltip: string; options?: Array<{ value: string; label: string }> }>;
+}> = [
+  {
+    title: "Offer and conversion",
+    description: "Shown as USD to US clients, then converted to IDR for Indonesia-local gateways.",
+    fields: [
+      { key: "PAYMENT_USD_AMOUNT", label: "USD amount", type: "number", placeholder: "197", tooltip: "Customer-facing USD price for the done-for-you setup offer. Local Indonesia gateways receive an IDR conversion." },
+      { key: "PAYMENT_USD_TO_IDR_RATE", label: "USD to IDR rate", type: "number", placeholder: "16000", tooltip: "Manual conversion rate used before sending IDR amount to Xendit, Midtrans, or DOKU. Update this if exchange rates move." },
+      { key: "PAYMENT_PACKAGE_NAME", label: "Package name", placeholder: "WebView.click Done-for-you Website Setup", tooltip: "Name sent to hosted checkout/invoice providers." },
+      { key: "PAYMENT_PACKAGE_DESCRIPTION", label: "Package description", placeholder: "$197 total...", tooltip: "Description sent to checkout providers and useful for payment dispute clarity." },
+    ],
+  },
+  {
+    title: "Xendit",
+    description: "Use hosted invoice creation. Keep the key secret; it is only used server-side.",
+    fields: [
+      { key: "XENDIT_SECRET_KEY", label: "Secret API key", type: "password", placeholder: "xnd_development_... / xnd_production_...", tooltip: "Xendit secret key for creating hosted invoices from /api/payments/checkout." },
+    ],
+  },
+  {
+    title: "Midtrans",
+    description: "Use Snap Redirect. Sandbox and production keys are different.",
+    fields: [
+      { key: "MIDTRANS_SERVER_KEY", label: "Server key", type: "password", placeholder: "SB-Mid-server-... / Mid-server-...", tooltip: "Server-side key used to create Midtrans Snap transactions. Do not expose it in public pages." },
+      { key: "MIDTRANS_CLIENT_KEY", label: "Client key", placeholder: "SB-Mid-client-... / Mid-client-...", tooltip: "Client key for reference/readiness. Current flow uses hosted Snap redirect from the server response." },
+      { key: "MIDTRANS_IS_PRODUCTION", label: "Mode", type: "select", tooltip: "Use sandbox while testing. Switch to production only after Midtrans account approval and test checkout.", options: [{ value: "false", label: "Sandbox" }, { value: "true", label: "Production" }] },
+    ],
+  },
+  {
+    title: "DOKU",
+    description: "Use DOKU Checkout with signed backend requests.",
+    fields: [
+      { key: "DOKU_CLIENT_ID", label: "Client ID", placeholder: "BRN-... / MCH-...", tooltip: "DOKU Client ID from Back Office > API Keys / Service." },
+      { key: "DOKU_SECRET_KEY", label: "Secret Key", type: "password", placeholder: "DOKU secret key", tooltip: "Secret Key used to sign DOKU Checkout requests with HMAC-SHA256." },
+      { key: "DOKU_IS_PRODUCTION", label: "Mode", type: "select", tooltip: "Use sandbox while testing. Switch to production only after DOKU approval and callback testing.", options: [{ value: "false", label: "Sandbox" }, { value: "true", label: "Production" }] },
+    ],
+  },
+  {
+    title: "Manual fallback links",
+    description: "Use these when hosted gateway keys are missing or a client asks for another rail.",
+    fields: [
+      { key: "PAYPAL_BUSINESS_URL", label: "PayPal Business link", placeholder: "https://www.paypal.com/...", tooltip: "Use a PayPal Business checkout/invoice/payment link. Avoid relying on PayPal Personal for business volume." },
+      { key: "WISE_PAYMENT_URL", label: "Wise payment/request link", placeholder: "https://wise.com/...", tooltip: "Wise request/payment link or invoice link for clients who can pay by bank transfer-style rails." },
+      { key: "PAYONEER_PAYMENT_URL", label: "Payoneer payment request link", placeholder: "https://payoneer.com/...", tooltip: "Payoneer payment request link for clients who prefer Payoneer." },
+      { key: "ADMIN_WHATSAPP_NUMBER", label: "Admin WhatsApp number", placeholder: "62812...", tooltip: "Used when checkout is mock or fails, so the admin still receives a follow-up-ready message." },
+    ],
+  },
+  {
+    title: "Legacy links",
+    description: "Kept for compatibility. Lemon Squeezy is not recommended for web development/service sales.",
+    fields: [
+      { key: "PAYMENT_LINK_BASIC", label: "Basic package URL", placeholder: "Legacy/basic payment link", tooltip: "Legacy public setting. Prefer selected processor checkout for the done-for-you flow." },
+      { key: "PAYMENT_LINK_PREMIUM", label: "Premium package URL", placeholder: "Legacy/premium payment link", tooltip: "Legacy public setting. Prefer selected processor checkout for the done-for-you flow." },
+      { key: "LEMON_SQUEEZY_API_KEY", label: "Lemon API Key", type: "password", placeholder: "Lemon Squeezy API Key", tooltip: "Legacy only. Lemon Squeezy prohibits services including web development in its prohibited-products docs." },
+      { key: "LEMON_SQUEEZY_STORE_ID", label: "Lemon Store ID", placeholder: "Store ID", tooltip: "Legacy Lemon Squeezy store ID." },
+      { key: "LEMON_SQUEEZY_VARIANT_ID", label: "Lemon Variant ID", placeholder: "Variant ID", tooltip: "Legacy Lemon Squeezy variant ID." },
+    ],
+  },
+];
 
 function cooldownEventLabel(eventType = "") {
   if (eventType === "set") return "Cooldown set";
@@ -454,55 +543,71 @@ export default function AdminSettings() {
         </div>
 
         <div id="settings-payment" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className="mb-4 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-            Payment Links
-            <HelpTooltip text="Used by checkout/setup flows. Lemon Squeezy settings enable real checkout; WhatsApp remains useful for mock checkout or manual setup follow-up." />
+          <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+            Payment Setup
+            <HelpTooltip text="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up." />
           </h2>
-          <div className="space-y-4">
-            <input
-              type="text"
-              value={settings.PAYMENT_LINK_BASIC || ""}
-              onChange={(e) => handleChange("PAYMENT_LINK_BASIC", e.target.value)}
-              placeholder="Basic package URL"
-              className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
-            />
-            <input
-              type="text"
-              value={settings.PAYMENT_LINK_PREMIUM || ""}
-              onChange={(e) => handleChange("PAYMENT_LINK_PREMIUM", e.target.value)}
-              placeholder="Premium package URL"
-              className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
-            />
-            <input
-              type="password"
-              value={settings.LEMON_SQUEEZY_API_KEY || ""}
-              onChange={(e) => handleChange("LEMON_SQUEEZY_API_KEY", e.target.value)}
-              placeholder="Lemon Squeezy API Key"
-              className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <input
-                type="text"
-                value={settings.LEMON_SQUEEZY_STORE_ID || ""}
-                onChange={(e) => handleChange("LEMON_SQUEEZY_STORE_ID", e.target.value)}
-                placeholder="Store ID"
-                className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
-              />
-              <input
-                type="text"
-                value={settings.LEMON_SQUEEZY_VARIANT_ID || ""}
-                onChange={(e) => handleChange("LEMON_SQUEEZY_VARIANT_ID", e.target.value)}
-                placeholder="Variant ID"
-                className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
-              />
-            </div>
-            <input
-              type="text"
-              value={settings.ADMIN_WHATSAPP_NUMBER || ""}
-              onChange={(e) => handleChange("ADMIN_WHATSAPP_NUMBER", e.target.value)}
-              placeholder="Admin WhatsApp number"
-              className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
-            />
+          <p className="mb-4 text-xs leading-relaxed text-gray-500">
+            Lemon Squeezy is kept only as legacy because its prohibited-products docs disallow web development/services. Prefer Xendit, Midtrans, or DOKU for Indonesia merchant checkout, with PayPal Business/Wise/Payoneer as fallback links.
+          </p>
+
+          <label className="block text-sm">
+            <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
+              Active payment processor
+              <HelpTooltip text="This controls /api/payments/checkout. Select mock while keys are missing; switch to Xendit, Midtrans, or DOKU after account approval and sandbox testing." />
+            </span>
+            <select
+              value={settings.PAYMENT_PROCESSOR || "mock"}
+              onChange={(e) => handleChange("PAYMENT_PROCESSOR", e.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+            >
+              {paymentProcessorOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-gray-500">
+              {paymentProcessorOptions.find((option) => option.value === (settings.PAYMENT_PROCESSOR || "mock"))?.helper}
+            </span>
+          </label>
+
+          <div className="mt-5 space-y-5">
+            {paymentFieldGroups.map((group) => (
+              <section key={group.title} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3">
+                  <p className="text-sm font-semibold text-slate-900">{group.title}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{group.description}</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {group.fields.map((field) => (
+                    <label key={field.key} className="text-sm">
+                      <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
+                        {field.label}
+                        <HelpTooltip text={field.tooltip} widthClass="w-72" />
+                      </span>
+                      {field.type === "select" ? (
+                        <select
+                          value={settings[field.key] || "false"}
+                          onChange={(e) => handleChange(field.key, e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          {(field.options || []).map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={field.type || "text"}
+                          value={settings[field.key] || ""}
+                          onChange={(e) => handleChange(field.key, e.target.value)}
+                          placeholder={field.placeholder}
+                          className="w-full rounded-lg border border-gray-300 bg-white p-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
         </div>
       </div>

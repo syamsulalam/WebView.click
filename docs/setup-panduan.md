@@ -97,29 +97,18 @@ Agar fitur "cari prospek" berfungsi dengan data dunia nyata:
 
 ---
 
-## 3. Setup Pembayaran Ekstensif (IDR ke USD)
+## 3. Setup Pembayaran
 
-Sebagai developer/bisnis di Indonesia yang menargetkan pasar US ($120 - $297/tahun), menggunakan **Stripe lokal (Indonesia)** seringkali menjadi kendala karena currency conversion dan syarat perusahaan (PT/CV). Berikut solusi terbaik untuk menerima pembayaran dari klien US:
+Untuk offer done-for-you website setup, jangan jadikan Lemon Squeezy sebagai default karena aturan prohibited products mereka melarang services termasuk web development/design/consulting. Riset lebih lengkap ada di `docs/PAYMENT_PROCESSOR_RESEARCH.md`.
 
-### Opsi A: Paddle / Lemon Squeezy (Merchant of Record - Rekomendasi 🏆)
-Metode ini paling mudah bagi perorangan di Indonesia karena mereka bertindak sebagai pihak penjual (MoR) resmi.
-1. Daftar di [LemonSqueezy](https://www.lemonsqueezy.com) atau [Paddle](https://www.paddle.com).
-2. Buat produk berlangganan (Subscription Product): "Premium Managed Hosting - $120/year" & "Basic Setup - $197/one-time".
-3. Aktifkan pembayaran via Card, Apple Pay, dan PayPal (ditangani otomatis oleh LS/Paddle).
-4. Ambil **Checkout Link** dari produk tersebut.
-5. Masukkan ke dalam `.env` aplikasi ini, sehingga ketika klien menekan "Checkout/Bayar" dari web preview, mereka akan diarahkan ke Lemon Squeezy. Pencairan dana otomatis ditransfer setiap bulan / dua minggu langsung ke rekening BCA/Mandiri Anda dalam bentuk Rupiah (IDR).
+Rekomendasi praktis:
+1. Mulai dari `PAYMENT_PROCESSOR=mock` agar checkout tetap mencatat lead `checkout_pending`.
+2. Setelah akun merchant siap, pilih salah satu live processor di `/admin/settings#settings-payment`: `xendit`, `midtrans`, atau `doku`.
+3. Isi `PAYMENT_USD_AMOUNT` dan `PAYMENT_USD_TO_IDR_RATE`. App menampilkan USD ke calon klien, lalu mengirim amount IDR ke gateway Indonesia.
+4. Simpan key provider:
+   - Xendit: `XENDIT_SECRET_KEY`
+   - Midtrans: `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`
+   - DOKU: `DOKU_CLIENT_ID`, `DOKU_SECRET_KEY`, `DOKU_IS_PRODUCTION`
+5. Tambahkan fallback manual: `PAYPAL_BUSINESS_URL`, `WISE_PAYMENT_URL`, atau `PAYONEER_PAYMENT_URL`.
 
-### Opsi B: Stripe Atlas + Wise/Payoneer (Untuk Badan Usaha Kelas Dunia)
-Bila ingin terlihat 100% korporat Amerika Serikat.
-1. Daftar [Stripe Atlas](https://stripe.com/atlas) ($500) untuk membuka entitas LLC di Delaware, USA.
-2. Kamu akan memilik Stripe Account resmi USA dan rekening Mercury Bank USA.
-3. Klien US dapat membayar menggunakan kartu kredit atau ACH Transfer (sangat diminati pebisnis B2B lokal di US).
-4. Buat Stripe Payment Links dan gunakan URL tersebut di aplikasi ini.
-5. Pindahkan uang dari Mercury Bank LLC -> Akun Wise -> Rekening Pribadi di Indonesia.
-
-### Opsi C: PayPal Pribadi (Bootstrap Pemula 🚀)
-Sesuai PRD, untuk awal yang cepat tanpa modal.
-1. Kunjungi dompet PayPal dan buat tautan **PayPal.Me**. (Misal: `paypal.me/akunanda`).
-2. Kirim email B2B dengan faktur tagihan PayPal manual.
-3. Di CRM Aplikasi ini, terdapat tombol "Tandai Sudah Bayar" yang hanya Anda (admin) yang bisa mengeklik. Ubah statusnya secara manual.
-4. *Peringatan:* Jika transaksi di atas $2000 per bulan dari akun pribadi menggunakan PayPal biasa tanpa verifikasi bisnis yang kuat, risiko funds diblokir sepihak cukup tinggi.
+Gunakan PayPal Business, bukan PayPal Personal, untuk volume bisnis. Legacy Lemon Squeezy fields tetap ada hanya untuk kompatibilitas lama.

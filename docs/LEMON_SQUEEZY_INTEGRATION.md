@@ -1,8 +1,10 @@
 # Lemon Squeezy Integration Notes
 
-Last updated: 14 Mei 2026.
+Last updated: 18 Mei 2026.
 
 Dokumen ini merangkum rencana integrasi Lemon Squeezy untuk paket WebView.click `$197 Domain + Hosting + Free Setup`.
+
+Status: legacy only. Lemon Squeezy's prohibited-products documentation currently prohibits services of any kind, including web development/design/consulting. Do not use this as the default processor for the current done-for-you service offer. See `docs/PAYMENT_PROCESSOR_RESEARCH.md`.
 
 Sources:
 - API requests/auth: https://docs.lemonsqueezy.com/api/getting-started/requests

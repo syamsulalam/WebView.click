@@ -262,7 +262,7 @@ Logic penting:
 - Untuk domain milik sendiri, user diarahkan mengganti nameserver ke Cloudflare kita atau menambah DNS record yang kita berikan jika ingin tetap memakai nameserver lama.
 - Indikator hijau pada domain baru berarti `available` dari pre-check; indikator hijau pada domain sendiri berarti domain terdeteksi registered/usable untuk setup DNS, bukan tersedia untuk dibeli.
 - Domain sendiri hanya bisa lanjut jika RDAP/DNS memberi sinyal registered/aktif; hasil inconclusive tetap ditahan sebagai warning.
-- Mode mock checkout tetap mencatat lead `checkout_pending` jika Lemon Squeezy belum dikonfigurasi.
+- Mode mock checkout tetap mencatat lead `checkout_pending` jika payment processor aktif belum dikonfigurasi atau dipilih `mock`.
 - Jika font pairing selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti pilihan yang aktif saat download.
 - Jika palette selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti warna yang aktif saat download.
 
@@ -517,7 +517,7 @@ Logic penting:
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - KIE.ai ditampilkan sebagai estimasi diskon karena pricing live berada di dashboard/pricing KIE.
-- Payment settings sekarang mencakup Lemon Squeezy API key, store ID, variant ID, dan nomor WhatsApp admin untuk mock/checkout notifications.
+- Payment settings sekarang mencakup active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), USD amount, USD->IDR rate, package copy, Xendit key, Midtrans keys/mode, DOKU keys/mode, manual fallback links, legacy Lemon fields, dan nomor WhatsApp admin untuk mock/checkout notifications.
 - Section `Prospect Scoring` menyimpan preset, default threshold, dan bobot scoring ke D1 settings agar prioritas prospek bisa ditune dari UI tanpa edit kode.
 - Bobot scoring memakai angka positif/negatif. Reset weights mengembalikan default dari `src/lib/prospectScoring.ts`.
 - Tooltip dipasang pada Settings heading, manual save, provider tabs, Google Places, Payment Links, AI cost estimator, AI readiness refresh/result, and scoring controls to clarify which settings affect generation, search, checkout, and estimates.
@@ -561,7 +561,7 @@ Risiko debug:
 - Tombol floating demo:
   - Download Free membuat zip owner berisi `index.html` saja via `downloadOwnerSiteZip`.
   - Paket `$197 Domain + Hosting` memanggil `POST /api/payments/checkout`.
-  - Jika Lemon Squeezy belum dikonfigurasi, endpoint mencatat mock checkout dan membuka link WhatsApp admin.
+  - Jika payment processor aktif belum dikonfigurasi, endpoint mencatat mock checkout dan membuka link WhatsApp admin.
 - Demo memiliki selector style preset dan shader preset dari `src/lib/siteStylePresets.ts` agar visual layer bisa diuji tanpa edit JSON.
 - Checkout demo memakai flow domain shared dari `WebsiteActionPanel`: domain baru atau domain milik sendiri, inline check, dan email hanya setelah domain lolos pre-check.
 - Download/setup action panel memakai `WebsiteActionPanel` dengan `variant="demo"`, shared dengan public preview.
@@ -839,10 +839,10 @@ Logic Owner HTML Export:
 - Jika gambar gagal di-fetch saat export karena network/CORS/provider error, exporter mencatat warning di console dan mempertahankan URL absolute sebagai fallback terakhir.
 
 Logic Payments:
-- `/api/payments/checkout` membuat checkout Lemon Squeezy jika `LEMON_SQUEEZY_API_KEY`, `LEMON_SQUEEZY_STORE_ID`, dan `LEMON_SQUEEZY_VARIANT_ID` sudah ada.
-- Jika belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
-- Paket saat ini: `$197` one-time untuk domain 1 tahun, hosting 1 tahun, dan free setup.
-- Request checkout menyimpan `domainMode` (`new` atau `owned`) ke custom data Lemon Squeezy dan notifikasi admin.
+- `/api/payments/checkout` membaca `PAYMENT_PROCESSOR` dari Settings. Mode live yang didukung: Xendit hosted invoice, Midtrans Snap Redirect, DOKU Checkout, PayPal Business link, Wise link, Payoneer link, dan legacy Lemon Squeezy.
+- Jika processor aktif belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
+- Paket default saat ini: `$197` one-time untuk done-for-you website setup, dengan `PAYMENT_USD_TO_IDR_RATE` untuk mengirim amount IDR ke gateway Indonesia.
+- Request checkout menyimpan `domainMode` (`new` atau `owned`), requested domain, amount, dan processor ke CRM activity; gateway live juga menerima metadata/custom fields jika provider mendukung.
 
 Logic Domains:
 - `/api/domains/check?domain=...` melakukan availability pre-check gratis.

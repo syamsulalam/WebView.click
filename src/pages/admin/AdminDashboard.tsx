@@ -101,9 +101,22 @@ export default function AdminDashboard() {
     && String(settings?.LEMON_SQUEEZY_STORE_ID || "").trim()
     && String(settings?.LEMON_SQUEEZY_VARIANT_ID || "").trim(),
   );
+  const activePaymentProcessor = String(settings?.PAYMENT_PROCESSOR || "mock").trim();
+  const processorReady = (
+    (activePaymentProcessor === "xendit" && String(settings?.XENDIT_SECRET_KEY || "").trim())
+    || (activePaymentProcessor === "midtrans" && String(settings?.MIDTRANS_SERVER_KEY || "").trim())
+    || (activePaymentProcessor === "doku" && String(settings?.DOKU_CLIENT_ID || "").trim() && String(settings?.DOKU_SECRET_KEY || "").trim())
+    || (activePaymentProcessor === "paypal" && String(settings?.PAYPAL_BUSINESS_URL || "").trim())
+    || (activePaymentProcessor === "wise" && String(settings?.WISE_PAYMENT_URL || "").trim())
+    || (activePaymentProcessor === "payoneer" && String(settings?.PAYONEER_PAYMENT_URL || "").trim())
+    || (activePaymentProcessor === "lemon_squeezy_legacy" && lemonReady)
+  );
   const manualPaymentFallback = Boolean(
     String(settings?.PAYMENT_LINK_BASIC || "").trim()
     || String(settings?.PAYMENT_LINK_PREMIUM || "").trim()
+    || String(settings?.PAYPAL_BUSINESS_URL || "").trim()
+    || String(settings?.WISE_PAYMENT_URL || "").trim()
+    || String(settings?.PAYONEER_PAYMENT_URL || "").trim()
     || String(settings?.ADMIN_WHATSAPP_NUMBER || "").trim(),
   );
   const readinessItems: ReadinessItem[] = [
@@ -130,14 +143,14 @@ export default function AdminDashboard() {
     {
       key: "payment",
       label: "Payment Setup",
-      level: lemonReady ? "ready" : manualPaymentFallback ? "partial" : "missing",
-      detail: lemonReady
-        ? "Lemon Squeezy checkout is configured."
+      level: processorReady ? "ready" : manualPaymentFallback ? "partial" : "missing",
+      detail: processorReady
+        ? `${activePaymentProcessor || "Selected"} checkout is configured.`
         : manualPaymentFallback
           ? "Manual/mock checkout fallback is available."
           : "Missing checkout and manual fallback settings.",
       href: "/admin/settings#settings-payment",
-      tooltip: "Lemon Squeezy API key, store ID, and variant ID enable real checkout. Payment links or WhatsApp can still support manual fallback.",
+      tooltip: "Payment processor readiness checks the selected rail: Xendit, Midtrans, DOKU, PayPal Business, Wise, Payoneer, or legacy Lemon. Missing keys fall back to mock checkout.",
     },
   ];
 
