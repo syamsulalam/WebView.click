@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { getShaderPreset, normalizeShaderPreset, normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, googleFontImportUrl } from "../lib/fontPairings";
+import { applyGeneratedSitePageInserts } from "../lib/generatedSitePostProcess";
 import EditableText, { type EditableTextTag } from "./EditableText";
 import WebsiteActionPanel from "./WebsiteActionPanel";
 
@@ -66,82 +67,32 @@ function normalizeSiteData(siteData: any) {
   const shaderPreset = design.shaderPreset || shaderConfig.preset || themeVariables.shaderPreset || "local-aurora";
   const fontPairing = design.fontPairing || typography.fontPairing || "montserrat-raleway";
   const isIndonesian = meta.language === "id";
-  const offeringIndexItems = [...products, ...services].length > 0
-    ? [...products, ...services].map((item: any) => ({
-        title: item.title || item.label,
-        description: item.summary || item.description,
-        priceHint: item.priceHint,
-        image: item.image,
-        href: item.href,
-        detailPageId: item.detailPageId,
-        cta: item.cta,
-      }))
-    : offers.map((item: any) => ({
-        title: item.title || item.label,
-        description: item.description || item.summary,
-        priceHint: item.priceHint,
-        image: item.image,
-        href: item.href,
-        detailPageId: item.detailPageId,
-        cta: item.cta,
-      }));
-  const hasServicesPage = pages.some((page: any) => String(page?.pageId || "") === "services");
-  const pagesWithServices = hasServicesPage || offeringIndexItems.length === 0 ? pages : [
-    ...pages,
-    {
-      pageId: "services",
-      pageTitle: isIndonesian ? "Layanan" : "Services",
-      sections: [
-        {
-          type: "offers",
-          id: "services",
-          content: {
-            title: isIndonesian ? "Semua produk dan layanan" : "All Products and Services",
-            description: isIndonesian
-              ? "Pilih penawaran untuk melihat halaman detail, manfaat, dan langkah berikutnya."
-              : "Choose an offering to view details, benefits, and the next step.",
-            items: offeringIndexItems,
-          },
-        },
-      ],
+  const contactNormalizedSite = {
+    ...siteData,
+    meta,
+    offers,
+    products,
+    services,
+    businessProfile,
+    location,
+    hours,
+    sourceData,
+    global: globalConfig,
+    navigation: {
+      ...navigation,
+      headerMenu: Array.isArray(navigation.headerMenu) ? [...navigation.headerMenu] : navigation.headerMenu,
     },
-  ];
-  const hasFeedbackPage = pagesWithServices.some((page: any) => String(page?.pageId || "") === "feedback");
-  const normalizedPages = hasFeedbackPage ? pagesWithServices : [
-    ...pagesWithServices,
-    {
-      pageId: "feedback",
-      pageTitle: isIndonesian ? "Feedback" : "Feedback",
-      sections: [
-        {
-          type: "feedback",
-          id: "feedback",
-          content: {
-            title: isIndonesian ? "Bagaimana pengalaman Anda?" : "How was your experience?",
-            description: isIndonesian
-              ? "Jika Anda sudah memakai layanan ini, beri rating agar bisnis bisa menjaga kualitasnya."
-              : "If you have used this service, share a quick rating so the business can keep improving.",
-          },
-        },
-      ],
-    },
-  ];
-  const baseHeaderMenu = Array.isArray(navigation.headerMenu)
-    ? navigation.headerMenu
-    : pagesWithServices.map((page: any) => ({ label: page.pageTitle || page.pageId, href: `#${page.pageId}` }));
-  const headerMenuWithServices = offeringIndexItems.length > 0 && !baseHeaderMenu.some((item: any) => String(item?.href || "") === "#services")
-    ? [
-        ...baseHeaderMenu,
-        {
-          label: isIndonesian ? "Layanan" : "Services",
-          href: "#services",
-          children: offeringIndexItems
-            .map((item: any) => ({ label: item.title, href: item.detailPageId ? `#${item.detailPageId}` : item.href || item.cta?.href || "" }))
-            .filter((item: any) => item.label && item.href),
-        },
-      ]
-    : baseHeaderMenu;
-  const headerMenu = headerMenuWithServices.filter((item: any) => String(item?.href || "") !== "#feedback");
+    pages: [...pages],
+  };
+  applyGeneratedSitePageInserts(contactNormalizedSite, sourceData);
+  const normalizedPages = Array.isArray(contactNormalizedSite.pages) ? contactNormalizedSite.pages : pages;
+  const normalizedNavigation: any = contactNormalizedSite.navigation && typeof contactNormalizedSite.navigation === "object"
+    ? contactNormalizedSite.navigation
+    : navigation;
+  const baseHeaderMenu = Array.isArray(normalizedNavigation.headerMenu)
+    ? normalizedNavigation.headerMenu
+    : normalizedPages.map((page: any) => ({ label: page.pageTitle || page.pageId, href: `#${page.pageId}` }));
+  const headerMenu = baseHeaderMenu.filter((item: any) => String(item?.href || "") !== "#feedback");
 
   return {
     meta: {
@@ -683,8 +634,12 @@ export default function SiteRenderer({
     if (hashPageId) {
       const targetPage = pageForTarget(hashPageId);
       if (targetPage?.pageId) {
+        const isDirectPage = normalizedAnchorId(targetPage.pageId) === normalizedAnchorId(hashPageId);
         setActiveTab(targetPage.pageId);
-        window.requestAnimationFrame(() => scrollToTarget(hashPageId));
+        window.requestAnimationFrame(() => {
+          if (isDirectPage) window.scrollTo({ top: 0, behavior: "smooth" });
+          else scrollToTarget(hashPageId);
+        });
       }
     }
   }, [pages.map((page: any) => page.pageId).join("|")]);
@@ -1504,7 +1459,12 @@ export default function SiteRenderer({
                 const contactEmail = section.content?.email || displayEmail;
                 const rawContactPhone = section.content?.phone || displayPhone;
                 const contactPhone = isPlaceholderPhone(rawContactPhone) ? "" : rawContactPhone;
-                const formFields = Array.isArray(section.content?.formConfig?.fields) ? section.content.formConfig.fields : [];
+                const formConfig = section.content?.formConfig || {};
+                const formFields = Array.isArray(formConfig.fields) ? formConfig.fields : [
+                  { label: isIndonesian ? "Nama" : "Name", type: "text", required: true },
+                  { label: "Email", type: "email", required: true },
+                  { label: isIndonesian ? "Pesan" : "Message", type: "textarea", required: true },
+                ];
                 return (
                   <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className="py-20 px-6">
                     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row border border-gray-100">
@@ -1533,7 +1493,7 @@ export default function SiteRenderer({
                         </div>
                       </div>
                       <div className="p-10 md:w-3/5">
-                        {editableText(`${section.id}.formHeading`, section.content.formConfig.heading, "h3", "text-xl font-bold mb-6")}
+                        {editableText(`${section.id}.formHeading`, formConfig.heading || (isIndonesian ? "Kirim pertanyaan" : "Send an Inquiry"), "h3", "text-xl font-bold mb-6")}
                         <form
                           className="space-y-4"
                           data-wv-mailto={contactEmail}
@@ -1572,7 +1532,7 @@ export default function SiteRenderer({
                           })}
                           <button type="submit" style={{ backgroundColor: colors.accent, color: "#fff" }} className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium hover:opacity-90 transition pt-2">
                             <Mail size={16} />
-                            {section.content.formConfig.buttonText}
+                            {formConfig.buttonText || (isIndonesian ? "Kirim Pesan" : "Send Message")}
                           </button>
                         </form>
                       </div>

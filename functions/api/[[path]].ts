@@ -1,4 +1,5 @@
 import templateSchema from "../../JSON/template-schema.json";
+import { applyGeneratedSitePageInserts } from "../../src/lib/generatedSitePostProcess";
 
 type D1Result<T = unknown> = {
   results?: T[];
@@ -4272,89 +4273,6 @@ function compactSiteManifest(finalJson: Record<string, unknown>, env: Env, busin
   };
 }
 
-function photoReferenceFromPlacePhoto(photo: unknown) {
-  if (!photo || typeof photo !== "object" || Array.isArray(photo)) return "";
-  const record = photo as Record<string, unknown>;
-  return asString(record.photo_reference, asString(record.reference, asString(record.name)));
-}
-
-function googlePlacesPhotoProxyUrl(reference: string, maxWidth = 960) {
-  return `/api/places/photo?reference=${encodeURIComponent(reference)}&maxwidth=${maxWidth}`;
-}
-
-function addUniqueImageUrl(target: string[], value: unknown) {
-  const url = asString(value).trim();
-  if (!url || target.includes(url)) return;
-  target.push(url);
-}
-
-function collectGalleryImages(finalJson: Record<string, unknown>, originData: Record<string, unknown>) {
-  const images: string[] = [];
-  const brand = finalJson.brand && typeof finalJson.brand === "object" ? finalJson.brand as Record<string, unknown> : {};
-  addUniqueImageUrl(images, brand.preferredHeroImage);
-  addUniqueImageUrl(images, brand.logoImageUrl);
-
-  for (const key of ["products", "services", "offers"]) {
-    const items = Array.isArray(finalJson[key]) ? finalJson[key] as Array<Record<string, unknown>> : [];
-    for (const item of items) {
-      addUniqueImageUrl(images, item.image);
-    }
-  }
-
-  const photos = Array.isArray(originData.photos) ? originData.photos : [];
-  for (const photo of photos) {
-    const reference = photoReferenceFromPlacePhoto(photo);
-    if (reference) addUniqueImageUrl(images, googlePlacesPhotoProxyUrl(reference, 960));
-  }
-
-  return images.filter((image) => !image.startsWith("data:")).slice(0, 8);
-}
-
-function ensureGalleryPage(finalJson: Record<string, unknown>, originData: Record<string, unknown>) {
-  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
-  const hasGallery = pages.some((page) =>
-    asString(page.pageId) === "gallery" ||
-    (Array.isArray(page.sections) && (page.sections as Array<Record<string, unknown>>).some((section) => asString(section.type) === "imageGallery")),
-  );
-  if (hasGallery) return;
-
-  const galleryImages = collectGalleryImages(finalJson, originData);
-  if (galleryImages.length < 2) return;
-
-  const meta = finalJson.meta && typeof finalJson.meta === "object" ? finalJson.meta as Record<string, unknown> : {};
-  const isIndonesian = asString(meta.language).toLowerCase().startsWith("id");
-  pages.push({
-    pageId: "gallery",
-    pageTitle: isIndonesian ? "Galeri" : "Gallery",
-    sections: [
-      {
-        type: "imageGallery",
-        id: "gallery-main",
-        content: {
-          title: isIndonesian ? "Galeri Foto" : "Photo Gallery",
-          description: isIndonesian ? "Foto profil bisnis dan visual yang tersedia dari data Google Business Profile." : "Business profile photos and available visuals from Google Business Profile data.",
-          images: galleryImages,
-        },
-      },
-    ],
-  });
-  finalJson.pages = pages;
-
-  const navigation = finalJson.navigation && typeof finalJson.navigation === "object" ? finalJson.navigation as Record<string, unknown> : {};
-  const headerMenu = Array.isArray(navigation.headerMenu) ? navigation.headerMenu as Array<Record<string, unknown>> : [];
-  if (!headerMenu.some((item) => asString(item.href) === "#gallery")) {
-    const galleryItem = { label: isIndonesian ? "Galeri" : "Gallery", href: "#gallery" };
-    const contactIndex = headerMenu.findIndex((item) => /contact|kontak/i.test(asString(item.label)) || asString(item.href) === "#contact");
-    if (contactIndex >= 0) {
-      headerMenu.splice(contactIndex, 0, galleryItem);
-    } else {
-      headerMenu.push(galleryItem);
-    }
-    navigation.headerMenu = headerMenu;
-    finalJson.navigation = navigation;
-  }
-}
-
 async function readSiteJsonFromStorage(row: { business_id: string; json_content?: string; r2_json_key?: string }, env: Env) {
   const parsed = parseJsonObject(row.json_content);
   const r2Key = asString(row.r2_json_key, asString(parsed.r2JsonKey));
@@ -4787,7 +4705,7 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       finalJson.design = design;
     }
 
-    ensureGalleryPage(finalJson, originData);
+    applyGeneratedSitePageInserts(finalJson, originData);
     normalizeSiteColorContrast(finalJson);
 
     try {

@@ -46,7 +46,7 @@ Logic penting:
 - Header memakai grid 3 kolom `brand | centered nav | CTA` di desktop supaya menu tetap center terhadap seluruh navbar. Nama bisnis panjang ditruncate di rail kiri, bukan mendorong menu ke kanan.
 - Header/submenu memakai preset layer berbasis CSS variables di boundary `data-wv-site-header` / `data-wv-site-submenu`: `soft-glass`, `authority-bar`, `industrial-rail`, `warm-translucent`, atau `energy-band`, sehingga navbar cocok dengan niche style tanpa mewarisi efek body/card generated site.
 - Pergantian tab menjalankan scroll-to-top.
-- Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section; jika tidak ada exact `id="contact"`, renderer mencari section semantik `contactForm`/`hoursLocation`, id yang berakhir `-contact`, atau marker `data-wv-contact-section`, sehingga old generated JSON yang memakai id seperti `location-1` tetap bisa memakai nav/footer/hero CTA Contact.
+- Anchor menu lama seperti `#contact` diprioritaskan ke page `contact` jika ada. Jika JSON belum punya contact page/form, renderer otomatis menambahkan page `contact` berisi `contactForm` dari data phone/email/address/hours; fallback terakhir baru mencari section semantik `contactForm`/`hoursLocation`, id yang berakhir `-contact`, atau marker `data-wv-contact-section`.
 - Hero buttons dari JSON lama yang punya `href` kosong atau `#` diberi fallback di renderer: label call/phone memakai `tel:` bila nomor tersedia, sedangkan estimate/request/schedule/contact diarahkan ke section/page contact. Renderer juga merapikan orphan lowercase letter di akhir hero subheadline lama yang sudah pernah terpotong.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Hero section memberi marker `data-wv-hero-section` dan `data-wv-hero-heading`; renderer memakai ResizeObserver + font-ready check untuk menurunkan ukuran H1 seperlunya agar headline hero maksimal sekitar tiga baris tanpa mengecilkan heading secara permanen.
@@ -54,6 +54,7 @@ Logic penting:
 - `hoursLocation` memakai `content.hoursTitle` / `content.openingHoursTitle` atau fallback label `Business Hours` / `Jam Operasional` untuk card jam, bukan `content.title`, agar tidak dobel dengan card `Location & Contact`. Jam Google Places juga diringkas per kelompok jam yang sama dan menonjolkan jam hari ini.
 - Heading pair pada `hoursLocation` memakai marker `data-wv-hours-location-heading` dan CSS variable panjang teks agar dua card tetap simetris, satu baris, dan menyesuaikan ukuran saat font pairing display terlalu lebar.
 - Renderer otomatis menambahkan aggregate page `services` jika JSON punya `products`, `services`, atau `offers` tetapi belum punya `pageId: "services"`. Page ini menampilkan daftar semua produk/layanan dan tiap card tetap link ke detail page masing-masing.
+- Renderer otomatis menambahkan page `contact` dengan form mailto jika JSON lama hanya punya contact section di homepage/detail page, supaya header/footer/hero `#contact` membuka page kontak sendiri terlebih dulu.
 - Renderer otomatis menambahkan page `feedback` jika JSON belum punya, tetapi tidak memasukkannya ke navbar. Footer menampilkan link Feedback supaya visitor tetap bisa membuka page ini tanpa memenuhi navbar. Page ini meminta rating 1-5; rating 4-5 membuka Google Review exact place jika `sourceData.placeId` tersedia, sedangkan rating 1-3 membuka form feedback yang dikirim via `mailto:` ke email bisnis.
 - Hash awal seperti `#feedback` dibaca saat renderer mount, termasuk page feedback yang ditambahkan otomatis.
 - Feature grid cards dirender center-aligned: icon, title, dan body berada di tengah card agar tampilan lebih rapi seperti demo.
@@ -190,6 +191,7 @@ Logic penting:
 - `AdminToastProvider` menyimpan maksimal 4 toast dan merender overlay fixed kanan atas dengan z-index tinggi.
 - `useAdminToast().showApiError()` memakai `src/lib/apiErrorInsights.ts` untuk mengubah error provider menjadi judul, arti error, action items, dan raw message.
 - Error generate/regenerate/retry dari `/api/sites/generate` muncul sebagai toast, sehingga pesan seperti Gemini 429 quota tidak tersembunyi di panel/card yang harus discroll.
+- Success/info action notices on `/admin/sites`, including AI copy patch regenerated, Google data resaved, first site generated, and AI readiness refreshed, also use the floating toast stack instead of an inline fixed-position page notice.
 - `src/lib/apiResponse.ts` dipakai oleh API fetch penting supaya body error non-JSON/HTML dari provider atau Cloudflare edge tetap muncul sebagai pesan actionable, bukan hanya fallback `HTTP 502` atau dump HTML. Jika response HTML Cloudflare 5xx, pesan mengarahkan admin cek Pages deployment logs, Functions logs, dan Cloudflare Status.
 - Toast raw error punya tombol `Copy warning` agar provider error lengkap, action items, dan raw message bisa disalin dari UI.
 - 429/quota toast juga menulis cooldown provider ke `src/lib/providerCooldown.ts`; batch generate di `/admin/leads`, first generate/regenerate di `/admin/sites`, dan retry job membaca cooldown ini agar tidak langsung menghantam provider yang sedang exhausted.
@@ -350,18 +352,19 @@ Logic penting:
 - Nama bisnis di list link ke Google Business/Maps listing. Jika exact `url` dari Place Details belum tersedia, fallback memakai `/maps/place/?q=place_id:{placeId}` agar tidak membuka search query generik.
 - Search result diberi `searchQuery` agar generator tidak memakai tipe Places generik seperti `establishment` sebagai niche ketika Google tidak memberi kategori spesifik.
 - Untuk situs gratis, foto Google Places tetap hotlink/proxy runtime dan tidak di-upload ke R2.
-- JSON mock fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
+- JSON scaffold fallback memakai palette tersebut untuk `primary`, `accent`, dan `secondary`.
 - Jika admin lupa memilih foto/palette, generator memakai foto pertama dari hasil Places sebagai fallback visual dan palette default aman; jika `paletteOptions` sudah ada, opsi pertama dipakai sebagai palette default.
 - Palette hasil ekstraksi digelapkan bila terlalu terang untuk teks putih; Function juga menormalisasi `primary` dan `accent` sebelum menyimpan JSON.
-- JSON mock fallback menentukan `meta.language` dari alamat/region Places: US default English, Indonesia default Indonesian.
-- JSON mock fallback menentukan `design.stylePreset`, `design.stylePresetConfig`, `design.visualStyle`, dan `design.visualStyleConfig` via `src/lib/siteStylePresets.ts`.
-- JSON mock fallback menentukan `design.fontPairing`, `design.fontPairingConfig`, dan `themeVariables.typography` via `src/lib/fontPairings.ts`.
+- JSON scaffold fallback dibuat oleh `src/lib/generatedSiteScaffold.ts` melalui helper orchestration `src/lib/adminSiteGeneration.ts`, sehingga `/admin/leads` dan `/admin/sites` memakai shape fallback yang sama.
+- JSON scaffold fallback menentukan `meta.language` dari alamat/region Places: US default English, Indonesia default Indonesian.
+- JSON scaffold fallback menentukan `design.stylePreset`, `design.stylePresetConfig`, `design.visualStyle`, dan `design.visualStyleConfig` via `src/lib/siteStylePresets.ts`.
+- JSON scaffold fallback menentukan `design.fontPairing`, `fontPairingConfig`, dan `themeVariables.typography` via `src/lib/fontPairings.ts`.
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
 - Prompt AI generator dan Function post-process menjaga parity dengan `/demo`: jika ada minimal dua foto bisnis yang usable, JSON final harus punya page `gallery`, nav item `#gallery`, dan section `imageGallery`.
 - Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
 - Prompt AI copy patch ditulis sebagai suara bisnis yang berbicara ke calon pelanggan, bukan sebagai admin/demo/report; prompt meminta first-person owner voice seperti `we`, `our team`, `our customers`, dan `call us`, serta melarang frasa meta seperti `the listed address`, `this page`, `owner can replace this copy`, `website-ready`, dan `no website detected` pada copy visitor-facing.
 - Renderer memilih icon `features` dan `trustBar` dari teks final title/description saat render, menjaga icon tidak duplikat dalam satu grid, dan tidak terkunci ke `iconSvg` scaffold lama; product/service detail page tetap punya features section berikon.
-- Mock fallback di `AdminLeads` juga membuat product/service detail pages memakai section `hero`, `offeringDetail`, `features`, `reviews`, `faq`, dan `hoursLocation`.
+- Shared scaffold fallback juga membuat product/service detail pages memakai section `hero`, `offeringDetail`, `features`, `reviews`, `faq`, dan `hoursLocation`.
 - Place Details mengambil field `reviews`; detail page bisa memakai review Google yang relevan via keyword best-effort.
 - Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.
 - Search default membaca cache D1 `places_search_cache`; tombol `Refresh` memaksa request baru ke Google Places.
@@ -381,7 +384,7 @@ Logic penting:
 - Hasil pencarian tidak dikosongkan setelah generate, termasuk saat `/api/sites/generate` gagal.
 - Generate status ditampilkan per bisnis, dengan link preview jika sukses. Generate dari `/admin/leads` mengirim `requireAi: true`; jika provider/model/API key/JSON patch bermasalah, admin melihat error dan job failed, bukan fallback-only site yang terlihat seperti sukses.
 - Tombol `Generate selected`, setiap `Generate Site`, dan quick drawer retry jobs menampilkan AI readiness badge berisi status key provider, selected model, dan bahwa klik tersebut membutuhkan AI.
-- Sebelum full generate, handler memanggil `/api/ai/readiness`; jika key provider hilang atau model tidak ada di daftar model yang didukung, generate berhenti dengan pesan UI tanpa membuat request `/api/sites/generate`.
+- Sebelum full generate, handler memakai `src/lib/adminSiteGeneration.ts` untuk cek provider cooldown dan `/api/ai/readiness`; jika key provider hilang, model tidak ada di daftar model yang didukung, atau provider sedang cooldown, generate berhenti dengan pesan UI tanpa membuat request `/api/sites/generate`.
 - Selector AI Web Builder punya tombol `Refresh AI readiness` untuk clear cache readiness setelah key/model berubah.
 - Tombol `Load more photos/details` memanggil Place Details agar admin bisa memilih lebih banyak foto sebelum generate dan menyimpan `details_json`.
 - Tombol `Details` membuka drawer berisi website, phone, rating, status prospect, Google Maps link, error generate terakhir, dan grid foto/palette.
@@ -444,9 +447,10 @@ Fungsi:
 - Memberi link Google Maps/Google Business listing dari `sourceData.googleMapsUri` atau `businessProfile.contact.directionsUrl` untuk membandingkan hasil generate dengan listing asli.
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
 - Tombol `Brief` membuka `GET /api/sites/:businessId/copy-brief`, yaitu `copyTargetBrief` stored-site yang dipakai untuk debugging bahan copy-only yang dikirim ke AI. Saat regenerate, fresh Google Places details masih bisa menambah fakta baru sebelum AI call.
-- Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini refresh Place Details, membangun fallback JSON lengkap dari gathered data, lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true`. Jika AI provider gagal, error ditampilkan dan job ditandai failed agar fallback tidak menyamar sebagai hasil AI.
-- Fallback JSON dari `/admin/sites` mengisi `meta.generatedWithAi=false`, `meta.generationMode=google_places_fallback`, `meta.sourcePhotoCount`, title-cased service names, generalized niche copy profiles, service-area copy inferred from address, detail pages, dan gallery section jika Places mengembalikan lebih dari satu foto.
-- Fallback JSON dari `/admin/sites` juga memilih `design.fontPairing` dan `fontPairingConfig` dari registry industri sehingga site tetap punya typography yang sesuai walaupun AI gagal.
+- Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini memakai `src/lib/adminSiteGeneration.ts` untuk provider cooldown, AI readiness, refresh Place Details, shared scaffold payload, lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true`. Jika AI provider gagal, error ditampilkan dan job ditandai failed agar fallback tidak menyamar sebagai hasil AI.
+- Fallback JSON dari `/admin/sites` dibuat oleh `src/lib/generatedSiteScaffold.ts`, sama seperti `/admin/leads`, lalu di-post-process untuk page services/contact/feedback/gallery.
+- Fallback JSON mengisi `meta.generatedWithAi=false`, `meta.generationMode=google_places_fallback`, `meta.sourcePhotoCount`, title-cased service names, generalized niche copy profiles, service-area copy inferred from address, detail pages, dan gallery section/page jika Places mengembalikan cukup foto.
+- Fallback JSON juga memilih `design.fontPairing` dan `fontPairingConfig` dari registry industri sehingga site tetap punya typography yang sesuai walaupun AI gagal.
 - Tombol `Regen` memakai dropdown:
   - `AI regenerate with selected model` mengambil JSON site saat ini, mencoba refresh Place Details lagi jika `sourceData.placeId` tersedia dan bukan placeholder `maps:*`, lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true` untuk membuat copy patch AI yang di-merge ke JSON deterministik.
   - `Re-gather Google data + resave` wajib punya `sourceData.placeId`, mengambil Place Details lagi, lalu mengirim `provider`/`model` kosong agar data Google Places, termasuk Maps URL exact, disimpan ulang tanpa memaksa AI call.
@@ -468,8 +472,9 @@ Logic penting:
 - Pilihan provider/model regenerate disimpan ke localStorage agar refresh halaman tetap memakai model terakhir yang dipilih admin.
 - Pilihan provider/model yang sama dipakai untuk `Generate` prospect gathered di section `Ready to Generate`.
 - Tombol `Generate` di section `Ready to Generate` menampilkan AI readiness badge agar admin tahu key provider/model sebelum membuat site pertama.
-- First generate dan `AI regenerate` memanggil `/api/ai/readiness` sebelum gather/generate berat; mode `Re-gather Google data + resave` tidak membutuhkan preflight AI.
+- First generate dan `AI regenerate` memakai `src/lib/adminSiteGeneration.ts` untuk shared cooldown/readiness preflight sebelum gather/generate berat; mode `Re-gather Google data + resave` tidak membutuhkan preflight AI.
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
+- Generate/regenerate/readiness action notices memakai `AdminToast`, sehingga pesan sukses seperti `AI copy patch regenerated ...` tetap floating di kanan atas meski admin sedang melihat bagian bawah list.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
 - Initial load `/admin/sites` memakai `readApiJson` untuk `/api/sites` dan `/api/prospects`, sehingga Cloudflare HTML 503 ditampilkan sebagai masalah Pages Functions/edge, bukan pesan mentah `Response bukan JSON`.
 - Tooltip dipasang pada heading Generated Sites, Ready to Generate, table actions, dan Regen dropdown untuk menjelaskan perbedaan Preview/Data/Brief/Regen, first generate, AI regenerate, dan re-gather.
@@ -648,6 +653,48 @@ Logic penting:
 - Scroll reveal hanya aktif jika browser mendukung `animation-timeline: view()` dan user tidak memilih reduced motion.
 - Shader motion tetap menghormati reduced motion karena selector global generated-site memendekkan animasi saat `prefers-reduced-motion: reduce`.
 
+### `src/lib/generatedSitePostProcess.ts`
+
+Fungsi:
+- Pure generated-site post-processing helpers shared by Cloudflare generation and renderer normalization.
+
+Logic penting:
+- `ensureContactPage(site, originData)` menambahkan page `contact` dengan section `contactForm` dari section contact-like lama, `businessProfile`, `location`, `hours`, `sourceData`, footer, dan origin Google Places.
+- `ensureServicesPage(site)` menambahkan aggregate page `services` dari `products`, `services`, atau `offers`, termasuk children nav menuju detail pages jika header navigation sudah tersedia.
+- `ensureFeedbackPage(site)` menambahkan page `feedback` tanpa memasukkannya ke header navigation.
+- `ensureGalleryPage(site, originData)` menambahkan page `gallery` jika minimal dua gambar usable tersedia dari brand, products/services/offers, atau Google Places photos.
+- `applyGeneratedSitePageInserts(site, originData)` menjalankan urutan shared `services -> contact -> feedback -> gallery`, dan dipakai oleh Function generation serta `SiteRenderer` runtime normalization.
+- Gallery nav disisipkan sebelum `#contact` jika contact nav sudah ada.
+- Modul ini DOM-free dan dependency-free supaya aman dipakai dari `functions/api/[[path]].ts`, React renderer, dan fixture tests.
+- Fixture tests ada di `tests/generatedSitePostProcess.test.ts`; jalankan `npm run test:postprocess` saat local dependencies tersedia.
+
+### `src/lib/generatedSiteScaffold.ts`
+
+Fungsi:
+- Shared deterministic generated-site scaffold builder used before AI copy enrichment.
+
+Logic penting:
+- `buildGeneratedSiteScaffold(place, options)` creates the fallback JSON shape from Google Places data, selected image, palette, and business id.
+- The scaffold includes `meta`, `sourceData`, `design`, `brand`, `businessProfile`, `trust`, `productServiceStrategy`, products/services/offers, capabilities, location, hours, conversion, SEO, navigation, homepage sections, and offering detail pages.
+- The builder calls `applyGeneratedSitePageInserts()` so services/contact/feedback/gallery pages are centralized with post-processing.
+- `/admin/leads` and `/admin/sites` both use this builder before calling `/api/sites/generate`, so first generate and regenerate-from-gathered flows no longer maintain separate fallback JSON shapes.
+- Utility helpers include `businessSlug`, `placeDisplayName`, `placePhone`, `placeMapsUrl`, `photoReference`, and `photoAttributions`.
+- Fixture tests live in `tests/generatedSiteScaffold.test.ts`; run `npm run test:scaffold` when local dependencies are installed.
+
+### `src/lib/adminSiteGeneration.ts`
+
+Fungsi:
+- Shared admin orchestration for generate/regenerate flows.
+
+Logic penting:
+- `ensureAiGenerationReady()` centralizes provider cooldown checks, remote AI readiness checks, and blocked job audit logging before any AI-required `/api/sites/generate` call.
+- `ensureNoProviderCooldown()` is reused by the batch queue so batch generation pauses from the same server-side cooldown logic as one-off generate/regenerate.
+- `fetchGooglePlaceDetails()` centralizes Place Details fetch/parsing and non-JSON error handling.
+- `buildScaffoldGeneratePayload()` and `buildSelectedPhotoGeneratePayload()` centralize fallback scaffold creation plus `/api/sites/generate` payload fields (`jsonContent`, `originData`, brand palette, selected logo/photo metadata, provider/model, and phone).
+- `postGenerateSite()` is the shared POST wrapper for `/api/sites/generate`, using `readApiJson()` so Cloudflare/provider HTML errors stay actionable.
+- `/admin/leads` and `/admin/sites` should call this helper for new generate/regenerate flows instead of hand-writing readiness, cooldown, scaffold, or generate POST logic.
+- Fixture tests live in `tests/adminSiteGeneration.test.ts`; run `npm run test:admin-generation` when local dependencies are installed.
+
 ### `src/lib/domainExtensions.ts`
 
 Fungsi:
@@ -752,9 +799,10 @@ Logic AI:
 - Untuk OpenRouter, model value UI yang diawali `~` dikirim apa adanya ke API karena OpenRouter memakai prefix itu untuk latest-model resolution seperti `~anthropic/claude-sonnet-latest`.
 - Copy patch AI di-merge deterministik oleh Function lewat `applyAiCopyPatch()`. AI tidak boleh mengubah `pageId`, `detailPageId`, navigation href, sourceData, photo URL, contact/maps fields, palette, font, visual style, storage, atau favicon.
 - Jika submitted JSON lama belum punya `design.shaderPreset`, Function mengisi shader procedural dari niche/context via `shaderPresetForBusiness()` sebelum menyimpan site.
+- Sebelum JSON disimpan ke D1/R2, Function menjalankan shared `applyGeneratedSitePageInserts()` dari `src/lib/generatedSitePostProcess.ts` agar semua generate/regenerate punya page services/contact/feedback/gallery yang konsisten. Ini membuat source/export JSON cocok dengan renderer runtime normalization.
 - Function membuat audit granular dari target copy sebelum patch dan copy final setelah patch. Audit ini disimpan di `generation_jobs.metadata_json.copyAuditSummary` dan `copyAuditItems`, dengan status `ai_rewritten`, `ai_filled_blank`, `source_kept`, `fallback_source`, atau `missing_after`.
 - Jika copy patch AI sukses, `meta.generatedWithAi=true` dan `meta.generationMode=ai_copy_patch`; jika gagal dan `requireAi` false, scaffold/fallback JSON tetap disimpan dengan `submitted_json_ai_fallback`.
-- Setelah AI/fallback selesai, Function menjalankan `ensureGalleryPage()` agar generated sites otomatis mendapat gallery page dari foto Places/brand/offers bila minimal dua gambar tersedia, meskipun model AI lupa membuatnya.
+- Gallery hanya dibuat jika minimal dua gambar tersedia dari foto Places/brand/offers, meskipun model AI lupa membuatnya.
 
 Logic Google Places/logo:
 - `/api/places/search` memakai Google Places Text Search.

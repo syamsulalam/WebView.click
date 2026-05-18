@@ -3,11 +3,16 @@ import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, 
 import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
-import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
-import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOptions } from "../../lib/prospectScoring";
-import { checkAiReadiness, logAiReadinessBlockedJob } from "../../lib/aiReadiness";
-import { readApiJson } from "../../lib/apiResponse";
+import { placeMapsUrl, placePhone } from "../../lib/generatedSiteScaffold";
+import {
+  buildScaffoldGeneratePayload,
+  ensureAiGenerationReady,
+  ensureNoProviderCooldown,
+  isAdminGenerationBlockedError,
+  mapsQueryPlaceholder,
+  postGenerateSite,
+} from "../../lib/adminSiteGeneration";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
@@ -16,7 +21,7 @@ import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import { useAdminToast } from "../../components/AdminToast";
 import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
-import { formatCooldownRemaining, getSharedProviderCooldown, logProviderCooldownBlockedJob } from "../../lib/providerCooldown";
+import { formatCooldownRemaining } from "../../lib/providerCooldown";
 
 export default function AdminLeads() {
   const { showApiError, showToast } = useAdminToast();
@@ -128,23 +133,6 @@ export default function AdminLeads() {
     : activeProvider.models[0].value;
 
   const getPlaceKey = (place: any) => String(place?.place_id || place?.id || place?.name || "");
-
-  const isMapsQueryPlaceholder = (place: any) => {
-    const placeId = String(place?.place_id || place?.id || "");
-    return placeId.startsWith("maps:") && !place?.manualImport;
-  };
-
-  const isPlaceholderPhone = (value?: string) => {
-    const digits = String(value || "").replace(/\D/g, "");
-    return !digits || /^0+$/.test(digits);
-  };
-
-  const placePhone = (place: any) => {
-    const phone = place.formatted_phone_number || place.international_phone_number || place.nationalPhoneNumber || "";
-    return isPlaceholderPhone(phone) ? "" : phone;
-  };
-
-  const placeMapsUrl = (place: any) => place.url || place.googleMapsUri || place.maps_url || "";
 
   const isWeakGoogleMapsSearchUrl = (value: string) => {
     if (!value) return true;
@@ -509,160 +497,6 @@ export default function AdminLeads() {
     return options;
   };
 
-  const inferLocaleFromPlace = (place: any) => {
-    const text = [
-      place.formatted_address,
-      place.formattedAddress,
-      place.plus_code?.compound_code,
-      place.vicinity,
-    ].filter(Boolean).join(" ").toLowerCase();
-
-    if (/\b(united states|usa|tx|texas|ca|california|fl|florida|ny|new york|az|arizona|ga|georgia)\b/.test(text)) {
-      return { language: "en", region: "US" };
-    }
-    if (/\b(indonesia|jakarta|bandung|surabaya|bali|yogyakarta|semarang|medan)\b/.test(text)) {
-      return { language: "id", region: "ID" };
-    }
-    return { language: "en", region: "US" };
-  };
-
-  const inferStylePresetFromPlace = (place: any) => {
-    const text = [
-      place.name,
-      place.formatted_address,
-      ...(Array.isArray(place.types) ? place.types : []),
-    ].filter(Boolean).join(" ").toLowerCase();
-
-    return inferStylePresetFromText(text);
-  };
-
-  const faviconSvgForBusiness = (businessName: string, background = "#111827") => {
-    const initial = String(businessName || "S").trim().slice(0, 1).toUpperCase() || "S";
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${background}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${initial}</text></svg>`;
-  };
-
-  const iconSvgForText = (text: string) => {
-    const key = text.toLowerCase();
-    if (key.includes("contact") || key.includes("hubung") || key.includes("call")) {
-      return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.34 1.9.63 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.2a2 2 0 0 1 2.11-.45c.91.29 1.85.5 2.81.63A2 2 0 0 1 22 16.92z'/></svg>";
-    }
-    if (key.includes("local") || key.includes("lokal") || key.includes("maps") || key.includes("location")) {
-      return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 10c0 4.99-5.54 10.18-7.4 11.78a1 1 0 0 1-1.2 0C9.54 20.18 4 14.99 4 10a8 8 0 0 1 16 0z'/><circle cx='12' cy='10' r='3'/></svg>";
-    }
-    if (key.includes("fast") || key.includes("cepat") || key.includes("response")) {
-      return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 13a8 8 0 0 1 7-7.94'/><path d='M12 2v4'/><path d='m13 12 4-4'/><path d='M20.49 15A8 8 0 1 1 5 8'/></svg>";
-    }
-    if (key.includes("product") || key.includes("produk") || key.includes("order")) {
-      return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7.5 4.27 9 5.15'/><path d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/><path d='m3.3 7 8.7 5 8.7-5'/><path d='M12 22V12'/></svg>";
-    }
-    return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>";
-  };
-
-  const inferProductServiceMode = (place: any) => {
-    const text = [place.name, ...(Array.isArray(place.types) ? place.types : [])].join(" ").toLowerCase();
-    const productSignals = ["store", "shop", "restaurant", "cafe", "bakery", "meal", "food", "bar", "florist", "clothing", "furniture", "jewelry"];
-    const serviceSignals = ["contractor", "repair", "lawyer", "dentist", "doctor", "plumber", "electrician", "cleaning", "salon", "spa", "agency", "service"];
-    const hasProducts = productSignals.some((signal) => text.includes(signal));
-    const hasServices = serviceSignals.some((signal) => text.includes(signal));
-    if (hasProducts && hasServices) return "both";
-    if (hasProducts) return "products";
-    return hasServices ? "services" : "services";
-  };
-
-  const keywordRelevantReviews = (reviews: any[], keywords: string[]) => {
-    const normalized = keywords.map((keyword) => keyword.toLowerCase());
-    const matching = reviews.filter((review) => {
-      const text = String(review.text || "").toLowerCase();
-      return normalized.some((keyword) => text.includes(keyword));
-    });
-    return (matching.length ? matching : reviews).slice(0, 3);
-  };
-
-  const meaningfulTypeLabel = (place: any, isEnglish: boolean) => {
-    const rawTypes = Array.isArray(place.types) ? place.types.map((item: string) => String(item).replace(/_/g, " ")) : [];
-    const generic = new Set(["establishment", "point of interest", "store", "local business"]);
-    const fromType = rawTypes.find((type) => type && !generic.has(type.toLowerCase()));
-    if (fromType) return fromType;
-    const fromQuery = String(place.searchQuery || searchQuery || "").replace(/\b(near me|texas|dallas|usa|united states)\b/gi, "").trim();
-    if (fromQuery) return fromQuery;
-    return isEnglish ? "local service" : "layanan lokal";
-  };
-
-  const titleCaseLabel = (value = "") => {
-    const stopWords = new Set(["and", "or", "for", "of", "the", "a", "an", "to", "in", "on", "at", "by", "with", "dan", "atau", "untuk", "di", "ke", "dari", "yang"]);
-    return String(value)
-      .replace(/[_-]+/g, " ")
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((word, index) => {
-        const lower = word.toLowerCase();
-        if (/^[A-Z0-9]{2,}$/.test(word)) return word;
-        if (index > 0 && stopWords.has(lower)) return lower;
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
-      })
-      .join(" ");
-  };
-
-  const buildOfferings = (place: any, isEnglish: boolean, mode: string, imageUrl: string, mapsUrl: string) => {
-    const typeLabel = titleCaseLabel(meaningfulTypeLabel(place, isEnglish));
-    const serviceBase = [
-      {
-        id: "core-service",
-        type: "service",
-        title: isEnglish ? titleCaseLabel(`${typeLabel} service`) : "Layanan Utama",
-        summary: isEnglish ? `Primary local service from ${place.name}.` : `Layanan utama dari ${place.name} untuk pelanggan lokal.`,
-        description: isEnglish ? `Built around the needs customers usually search for when looking for ${typeLabel}.` : `Dibuat berdasarkan kebutuhan pelanggan yang mencari ${typeLabel}.`,
-        priceHint: isEnglish ? "Contact for estimate" : "Hubungi untuk estimasi",
-        image: imageUrl,
-        detailPageId: "service-core-service",
-        bestFor: isEnglish ? ["Local customers", "Fast inquiry", "Custom needs"] : ["Pelanggan lokal", "Tanya cepat", "Kebutuhan khusus"],
-        included: isEnglish ? ["Initial consultation", "Clear next steps", "Local support"] : ["Konsultasi awal", "Arahan langkah berikutnya", "Dukungan lokal"],
-        highlights: [
-          { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: isEnglish ? "CTA connects directly to the business." : "CTA diarahkan langsung ke kontak bisnis." },
-          { title: isEnglish ? "Local relevance" : "Relevan lokal", description: place.formatted_address || place.formattedAddress || "" }
-        ],
-        relatedReviewKeywords: ["service", "help", "professional", "layanan", "ramah"]
-      },
-      {
-        id: "fast-consultation",
-        type: "service",
-        title: isEnglish ? "Fast Consultation" : "Konsultasi Cepat",
-        summary: isEnglish ? "Ask questions and get clear next steps." : "Tanyakan kebutuhan dan dapatkan arahan yang jelas.",
-        description: isEnglish ? "Useful for customers who need to understand availability, pricing, and timing before visiting or booking." : "Cocok untuk pelanggan yang ingin memahami ketersediaan, harga, dan jadwal sebelum datang atau booking.",
-        priceHint: isEnglish ? "Fast response" : "Respon cepat",
-        image: "",
-        detailPageId: "service-fast-consultation",
-        bestFor: isEnglish ? ["Price questions", "Availability", "Planning"] : ["Tanya harga", "Cek ketersediaan", "Perencanaan"],
-        included: isEnglish ? ["Question intake", "Basic recommendation", "Contact handoff"] : ["Penerimaan pertanyaan", "Rekomendasi awal", "Arahan kontak"],
-        highlights: [
-          { title: isEnglish ? "Low friction" : "Mudah dimulai", description: isEnglish ? "Customers can call or message directly." : "Pelanggan bisa langsung telepon atau kirim pesan." }
-        ],
-        relatedReviewKeywords: ["fast", "quick", "response", "cepat", "ramah"]
-      }
-    ];
-    const productBase = [
-      {
-        id: "featured-product",
-        type: "product",
-        title: isEnglish ? "Featured Product" : "Produk Unggulan",
-        summary: isEnglish ? `A highlighted product or menu item from ${place.name}.` : `Produk atau menu unggulan dari ${place.name}.`,
-        description: isEnglish ? "A product-led page for customers who want to understand the item before visiting or ordering." : "Halaman produk untuk pelanggan yang ingin memahami item sebelum datang atau memesan.",
-        priceHint: isEnglish ? "Ask for current price" : "Tanya harga terbaru",
-        image: imageUrl,
-        detailPageId: "product-featured-product",
-        bestFor: isEnglish ? ["First-time buyers", "Local pickup", "Popular choice"] : ["Pembeli pertama", "Pickup lokal", "Pilihan populer"],
-        included: isEnglish ? ["Product overview", "Current availability", "How to order"] : ["Ringkasan produk", "Ketersediaan terbaru", "Cara pesan"],
-        highlights: [
-          { title: isEnglish ? "Easy to understand" : "Mudah dipahami", description: isEnglish ? "Clear product benefit and ordering path." : "Benefit produk dan cara pesan dibuat jelas." }
-        ],
-        relatedReviewKeywords: ["product", "menu", "food", "coffee", "produk", "enak"]
-      }
-    ];
-    if (mode === "products") return productBase;
-    if (mode === "both") return [...productBase, ...serviceBase.slice(0, 1)];
-    return serviceBase;
-  };
-
   useEffect(() => {
     fetchLeads();
     fetchProspectDrafts();
@@ -801,7 +635,7 @@ export default function AdminLeads() {
     const placeKey = getPlaceKey(place);
     const placeId = place?.place_id || place?.id;
     if (!placeId || placeDetailsLoading[placeKey]) return null;
-    if (isMapsQueryPlaceholder(place)) {
+    if (mapsQueryPlaceholder(place)) {
       setGenerationMessages(prev => ({
         ...prev,
         [placeKey]: {
@@ -1007,500 +841,53 @@ export default function AdminLeads() {
 
   const handleGenerateSite = async (place: any) => {
     const placeKey = getPlaceKey(place);
-    const cooldown = await getSharedProviderCooldown(activeProviderKey, true);
-    if (cooldown) {
-      const message = `${activeProviderKey} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error. Batch generation is paused to avoid repeated 429 failures.`;
-      setGenerationMessages(prev => ({
-        ...prev,
-        [placeKey]: { type: "error", text: message },
-      }));
-      setBatchMessage(message);
-      showToast({
-        kind: "warning",
-        title: `${activeProviderKey} cooldown active`,
-        message,
-        actions: ["Wait for the cooldown to end, then retry one prospect.", "Switch provider/model before continuing a batch."],
-      });
-      await logProviderCooldownBlockedJob({
+    try {
+      await ensureAiGenerationReady({
         provider: activeProviderKey,
         model: activeModel,
-        cooldown,
         action: "lead_generate",
         businessName: place?.name || placeKey,
         placeId: String(place?.place_id || place?.id || ""),
-        message,
+        readinessMessage: "AI provider/model is not ready. Check /admin/settings before generating.",
+        cooldownMessage: (cooldown) => `${activeProviderKey} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error. Batch generation is paused to avoid repeated 429 failures.`,
+        cooldownActions: ["Wait for the cooldown to end, then retry one prospect.", "Switch provider/model before continuing a batch."],
       });
-      return false;
-    }
-    if (isMapsQueryPlaceholder(place)) {
-      setGenerationMessages(prev => ({
-        ...prev,
-        [placeKey]: { type: "error", text: "This row is a Maps search/query placeholder, not a specific business listing. Import captured listing JSON or choose a real Google business result before generating." },
-      }));
-      return false;
-    }
-    if (!hasGatheredDetails(place)) {
-      setGenerationMessages(prev => ({
-        ...prev,
-        [placeKey]: { type: "error", text: "Gather Google Places details first so the generated site has phone, direct Maps URL, reviews, and photos." },
-      }));
-      return false;
-    }
 
-    const readiness = await checkAiReadiness(activeProviderKey, activeModel, true, true);
-    if (!readiness.ready) {
-      const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before generating.";
-      await logAiReadinessBlockedJob({
+      if (mapsQueryPlaceholder(place)) {
+        throw new Error("This row is a Maps search/query placeholder, not a specific business listing. Import captured listing JSON or choose a real Google business result before generating.");
+      }
+      if (!hasGatheredDetails(place)) {
+        throw new Error("Gather Google Places details first so the generated site has phone, direct Maps URL, reviews, and photos.");
+      }
+
+      const fullPlace = mergePlaceWithDetails(place);
+      setIsGenerating(true);
+      setGeneratingPlaceKey(placeKey);
+      setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: "Generating site JSON..." } }));
+
+      const logoSelection = logoSelections[fullPlace.place_id || fullPlace.name] || logoSelections[placeKey];
+      const fallbackPhoto = sortedPhotosForPlace(fullPlace)[0];
+      const fallbackImageUrl = fallbackPhoto ? getPhotoUrl(fallbackPhoto, 960) : "";
+      const selectedImageUrl = logoSelection?.url || fallbackImageUrl;
+      const selectedReference = logoSelection?.reference || (fallbackPhoto ? getPhotoReference(fallbackPhoto) : "");
+      const selectedAttributions = logoSelection?.attributions || (fallbackPhoto ? getPhotoAttributions(fallbackPhoto) : []);
+      const paletteOptions = paletteOptionsByPlace[placeKey] || fullPlace.paletteOptions || [];
+      const brandPalette = logoSelection?.palette || paletteOptions[0]?.colors || [];
+      const payload = buildScaffoldGeneratePayload({
+        place: fullPlace,
+        requireAi: true,
         provider: activeProviderKey,
         model: activeModel,
-        readiness,
-        action: "lead_generate",
-        businessName: place?.name || placeKey,
-        placeId: String(place?.place_id || place?.id || ""),
-        message,
-      });
-      setGenerationMessages(prev => ({
-        ...prev,
-        [placeKey]: { type: "error", text: message },
-      }));
-      return false;
-    }
-
-    const fullPlace = mergePlaceWithDetails(place);
-    setIsGenerating(true);
-    setGeneratingPlaceKey(placeKey);
-    setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: "Generating site JSON..." } }));
-
-    // Build a deterministic scaffold locally; /api/sites/generate only asks AI for copy enrichment.
-    const businessId = fullPlace.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + "-" + Math.floor(Math.random() * 1000);
-    const logoSelection = logoSelections[fullPlace.place_id || fullPlace.name] || logoSelections[placeKey];
-    const fallbackPhoto = sortedPhotosForPlace(fullPlace)[0];
-    const fallbackImageUrl = fallbackPhoto ? getPhotoUrl(fallbackPhoto, 960) : "";
-    const selectedImageUrl = logoSelection?.url || fallbackImageUrl;
-    const selectedReference = logoSelection?.reference || (fallbackPhoto ? getPhotoReference(fallbackPhoto) : "");
-    const selectedAttributions = logoSelection?.attributions || (fallbackPhoto ? getPhotoAttributions(fallbackPhoto) : []);
-    const paletteOptions = paletteOptionsByPlace[placeKey] || fullPlace.paletteOptions || [];
-    const brandPalette = logoSelection?.palette || paletteOptions[0]?.colors || [];
-    const primaryColor = brandPalette[0] || "#111827";
-    const accentColor = brandPalette[1] || "#4F46E5";
-    const secondaryColor = brandPalette[2] || "#F3F4F6";
-    const phone = placePhone(fullPlace);
-    const mapsUrl = placeMapsUrl(fullPlace);
-    const rating = Number(fullPlace.rating || 0);
-    const reviewCount = Number(fullPlace.user_ratings_total || fullPlace.userRatingCount || 0);
-    const locale = inferLocaleFromPlace(fullPlace);
-    const stylePreset = inferStylePresetFromPlace(fullPlace);
-    const stylePresetMeta = getStylePreset(stylePreset);
-    const visualStyle = inferVisualStyleFromText([
-      fullPlace.name,
-      fullPlace.formatted_address,
-      fullPlace.formattedAddress,
-      Array.isArray(fullPlace.types) ? fullPlace.types.join(" ") : "",
-      fullPlace.searchQuery,
-    ].filter(Boolean).join(" "));
-    const fontContext = [
-      fullPlace.name,
-      fullPlace.formatted_address,
-      fullPlace.formattedAddress,
-      Array.isArray(fullPlace.types) ? fullPlace.types.join(" ") : "",
-      fullPlace.searchQuery,
-    ].filter(Boolean).join(" ");
-    const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
-    const shaderPreset = inferShaderPresetFromText(fontContext);
-    const shaderPresetMeta = getShaderPreset(shaderPreset);
-    const fontPairing = inferFontPairingFromText(fontContext);
-    const fontPairingMeta = getFontPairing(fontPairing);
-    const fontPairingOptions = fontPairingsForText(fontContext, 5);
-    const isEnglish = locale.language === "en";
-    const googleReviews = Array.isArray(fullPlace.reviews) ? fullPlace.reviews : [];
-    const offeringMode = inferProductServiceMode(fullPlace);
-    const offerings = buildOfferings(fullPlace, isEnglish, offeringMode, selectedImageUrl, mapsUrl);
-    const businessName = fullPlace.name;
-    const address = fullPlace.formatted_address || fullPlace.formattedAddress || "";
-    const typeLabel = meaningfulTypeLabel(fullPlace, isEnglish);
-    const businessStatus = fullPlace.business_status || fullPlace.businessStatus || "";
-    const websiteUrl = fullPlace.website || fullPlace.websiteUri || "";
-    const products = offerings.filter((item) => item.type === "product");
-    const services = offerings.filter((item) => item.type === "service");
-    const offeringMenuChildren = offerings.map((item) => ({
-      label: item.title,
-      href: `#${item.detailPageId}`,
-      description: item.type === "product"
-        ? (isEnglish ? "Product detail" : "Detail produk")
-        : (isEnglish ? "Service detail" : "Detail layanan"),
-    }));
-    const offeringDetailPages = offerings.map((item) => ({
-      pageId: item.detailPageId,
-      pageTitle: item.title,
-      sections: [
-        {
-          type: "hero",
-          id: `${item.id}-hero`,
-          content: {
-            headline: isEnglish ? `${item.title} from ${businessName}` : `${item.title} dari ${businessName}`,
-            subheadline: item.summary,
-            buttons: [
-              { text: isEnglish ? "Ask about this" : "Tanya layanan/produk ini", href: "#contact", style: "primary" },
-              { text: isEnglish ? "Back to offers" : "Lihat pilihan lain", href: "#services", style: "outline" },
-            ],
-            image: item.image,
-          },
-        },
-        {
-          type: "offeringDetail",
-          id: `${item.id}-detail`,
-          content: {
-            kind: item.type === "product" ? (isEnglish ? "Product" : "Produk") : (isEnglish ? "Service" : "Layanan"),
-            title: item.title,
-            summary: item.summary,
-            description: item.description,
-            priceHint: item.priceHint,
-            image: item.image,
-            bestFor: item.bestFor,
-            included: item.included,
-            highlights: item.highlights,
-          },
-        },
-        {
-          type: "features",
-          id: `${item.id}-features`,
-          content: {
-            title: isEnglish ? `Why choose ${item.title}` : `Kenapa memilih ${item.title}`,
-            items: [
-              {
-                title: item.type === "product" ? (isEnglish ? "Clear product fit" : "Produk mudah dipahami") : (isEnglish ? "Clear service fit" : "Layanan mudah dipahami"),
-                description: item.summary,
-                iconSvg: iconSvgForText(item.type === "product" ? "product" : "service"),
-              },
-              {
-                title: isEnglish ? "Fast next step" : "Langkah berikutnya cepat",
-                description: isEnglish ? "Call, ask questions, or open maps when you are ready for the next step." : "Telepon, bertanya, atau buka maps saat siap mengambil langkah berikutnya.",
-                iconSvg: iconSvgForText("fast contact"),
-              },
-              {
-                title: isEnglish ? "Local context" : "Konteks lokal",
-                description: address || (isEnglish ? "Built around local customer intent." : "Disusun sesuai kebutuhan pelanggan lokal."),
-                iconSvg: iconSvgForText("local maps"),
-              },
-            ],
-          },
-        },
-        {
-          type: "reviews",
-          id: `${item.id}-reviews`,
-          content: {
-            title: isEnglish ? `Relevant customer notes for ${item.title}` : `Catatan pelanggan terkait ${item.title}`,
-            reviews: keywordRelevantReviews(googleReviews, item.relatedReviewKeywords),
-          },
-        },
-        {
-          type: "faq",
-          id: `${item.id}-faq`,
-          content: {
-            title: isEnglish ? `Questions about ${item.title}` : `Pertanyaan tentang ${item.title}`,
-            items: [
-              {
-                question: isEnglish ? `How do I ask about ${item.title}?` : `Bagaimana cara bertanya tentang ${item.title}?`,
-                answer: isEnglish ? "Use the contact button or call the business directly for current availability and pricing." : "Gunakan tombol kontak atau hubungi bisnis langsung untuk ketersediaan dan harga terbaru.",
-              },
-              {
-                question: isEnglish ? "Can details be customized?" : "Apakah detail bisa disesuaikan?",
-                answer: isEnglish ? "Yes. Call with your exact need, timing, location, and any requirements so the next step is clear." : "Bisa. Hubungi dengan kebutuhan, waktu, lokasi, dan syarat khusus agar langkah berikutnya jelas.",
-              },
-            ],
-          },
-        },
-        {
-          type: "hoursLocation",
-          id: `${item.id}-contact`,
-          content: {
-            title: isEnglish ? "Contact and location" : "Kontak dan lokasi",
-            address,
-            phone,
-            directionsUrl: mapsUrl,
-          },
-        },
-      ],
-    }));
-    const mockJson = {
-      meta: {
-        businessName,
-        businessId: businessId,
-        niche: typeLabel,
-        language: locale.language,
-        region: locale.region,
-        seoDescription: isEnglish ? `Official website for ${businessName}.` : `Website resmi untuk ${businessName}.`,
-        faviconSvg: faviconSvgForBusiness(businessName, primaryColor),
-        brandPalette,
-      },
-      sourceData: {
-        provider: "google_places",
-        placeId: fullPlace.place_id || fullPlace.id || "",
-        resourceName: fullPlace.name?.startsWith?.("places/") ? fullPlace.name : "",
-        googleMapsUri: mapsUrl,
-        lastSyncedAt: new Date().toISOString(),
-        businessStatus,
-        pureServiceAreaBusiness: Boolean(fullPlace.pureServiceAreaBusiness),
-        hasWebsite: Boolean(websiteUrl),
-        websiteUri: websiteUrl || null,
-        attributions: logoSelection?.attributions || []
-      },
-      design: {
-        stylePreset,
-        stylePresetConfig: {
-          label: stylePresetMeta.label,
-          mood: stylePresetMeta.mood,
-          industries: stylePresetMeta.industries,
-          recommendedColors: stylePresetMeta.recommendedColors,
-        },
-        visualStyle,
-        visualStyleConfig: {
-          label: visualStyleMeta.label,
-          description: visualStyleMeta.description,
-          allowedValues: siteVisualStyles.map((item) => item.id),
-          selectionRule: "Choose the visual structure that best matches the industry and desired feel.",
-        },
-        shaderPreset,
-        shaderConfig: {
-          preset: shaderPreset,
-          label: shaderPresetMeta.label,
-          description: shaderPresetMeta.description,
-          defaultOpacity: shaderPresetMeta.defaultOpacity,
-          defaultMotion: shaderPresetMeta.defaultMotion,
-          allowedValues: siteShaderPresets.map((item) => item.id),
-          selectionRule: "Choose a lightweight CSS procedural shader that matches the industry mood. Use none for maximum restraint.",
-        },
-        fontPairing,
-        fontPairingConfig: {
-          label: fontPairingMeta.label,
-          headingFont: fontPairingMeta.headingFont,
-          bodyFont: fontPairingMeta.bodyFont,
-          mood: fontPairingMeta.mood,
-          allowedValues: fontPairingOptions.map((item) => item.id),
-          selectionRule: "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download.",
-        },
-        themeVariables: {
-          colors: {
-            primary: primaryColor,
-            secondary: secondaryColor,
-            accent: accentColor,
-            textMain: "#1F2937",
-            textMuted: "#6B7280",
-            background: "#FFFFFF"
-          },
-          typography: {
-            headingFont: fontPairingMeta.headingCss,
-            bodyFont: fontPairingMeta.bodyCss
-          }
-        }
-      },
-      brand: {
-        logoImageUrl: selectedImageUrl,
-        logoSvg: "",
-        faviconSvg: faviconSvgForBusiness(businessName, primaryColor),
+        imageUrl: selectedImageUrl,
         palette: brandPalette,
         paletteOptions,
-        preferredHeroImage: selectedImageUrl,
-        photoSource: selectedImageUrl ? (logoSelection?.source || "google_places") : "",
-        googlePhotoReference: selectedReference,
-        photoCaption: selectedImageUrl ? "Photo from Google Business Profile" : "",
-        photoAttributions: selectedAttributions,
-        selectedPhotoPriority: logoSelection?.priorityLabel || ""
-      },
-      businessProfile: {
-        name: businessName,
-        primaryType: typeLabel,
-        typeLabel,
-        categories: Array.isArray(fullPlace.types) ? fullPlace.types : [],
-        shortPitch: isEnglish
-          ? `A trusted ${typeLabel} serving customers around ${address || "the local area"}.`
-          : `Layanan lokal terpercaya di ${address || "area sekitar"}.`,
-        address: {
-          formatted: address,
-        },
-        contact: {
-          phoneNational: phone,
-          phoneInternational: phone,
-          directionsUrl: mapsUrl
-        }
-      },
-      trust: {
-        rating,
-        reviewCount,
-        reviewSummary: reviewCount
-          ? isEnglish
-            ? `${businessName} has a ${rating.toFixed(1)} rating from ${reviewCount} Google reviews.`
-            : `${businessName} memiliki rating ${rating.toFixed(1)} dari ${reviewCount} review Google.`
-          : "",
-        reviews: googleReviews.slice(0, 3).map((review: any) => ({
-          authorName: review.author_name || review.authorName || "Google reviewer",
-          rating: Number(review.rating || 5),
-          text: review.text || "",
-          relativePublishTimeDescription: review.relative_time_description || review.relativePublishTimeDescription || "",
-          attribution: "Google",
-        })),
-        badges: [
-          businessStatus === "OPERATIONAL" ? "Operational" : "",
-          websiteUrl ? "Has website" : "No website lead",
-          phone ? "Has phone" : ""
-        ].filter(Boolean)
-      },
-      productServiceStrategy: {
-        mode: offeringMode,
-        reasoning: isEnglish
-          ? "The generator inferred whether this business should emphasize products, services, or both from Google Places types and the business name."
-          : "Generator menentukan apakah bisnis ini lebih cocok menampilkan produk, layanan, atau keduanya dari tipe Google Places dan nama bisnis.",
-        navbarGroupLabel: offeringMode === "products"
-          ? (isEnglish ? "Products" : "Produk")
-          : offeringMode === "both"
-            ? (isEnglish ? "Products & Services" : "Produk & Layanan")
-            : (isEnglish ? "Services" : "Layanan"),
-        detailPageRule: isEnglish
-          ? "Each offering has a dedicated page with overview, benefits, included details, reviews, FAQ, and conversion CTA."
-          : "Setiap penawaran punya halaman detail berisi overview, manfaat, detail yang termasuk, review, FAQ, dan CTA."
-      },
-      products,
-      services,
-      offers: offerings.map((item) => ({
-        title: item.title,
-        description: item.summary,
-        priceHint: item.priceHint,
-        image: item.image,
-        cta: { text: isEnglish ? "View details" : "Lihat detail", href: `#${item.detailPageId}` },
-      })),
-      capabilities: [
-        { label: isEnglish ? "Local business" : "Bisnis lokal", enabled: true, source: "google_places.types", description: isEnglish ? "Business profile data is gathered from Google Places." : "Profil bisnis diambil dari data Google Places." },
-        { label: "Google rating", enabled: rating > 0, source: "google_places.rating", description: reviewCount ? (isEnglish ? `${reviewCount} reviews available.` : `${reviewCount} review tersedia.`) : (isEnglish ? "Rating is not available yet." : "Rating belum tersedia.") },
-        { label: isEnglish ? "Direct contact" : "Kontak langsung", enabled: Boolean(phone), source: "google_places.phone", description: isEnglish ? "CTA points to the business contact when available." : "CTA diarahkan ke kontak bisnis." }
-      ],
-      location: {
-        formattedAddress: address,
-        directionsUrl: mapsUrl,
-        isServiceAreaBusiness: Boolean(fullPlace.pureServiceAreaBusiness)
-      },
-      hours: {
-        timezone: "",
-        openNow: Boolean(fullPlace.opening_hours?.open_now),
-        regular: Array.isArray(fullPlace.opening_hours?.weekday_text) ? fullPlace.opening_hours.weekday_text : [],
-        current: []
-      },
-      conversion: {
-        primaryCta: { text: isEnglish ? "Call Now" : "Hubungi Sekarang", href: phone ? `tel:${phone}` : "#contact" },
-        secondaryCta: { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl || "#contact" },
-        stickyMobileCta: true,
-        leadForm: { enabled: true, fields: ["name", "phone", "message"], submitLabel: "Kirim Pesan" }
-      },
-      seo: {
-        title: isEnglish ? `${businessName} - Official Website` : `${businessName} - Website Resmi`,
-        description: isEnglish ? `Official website for ${businessName} in ${address || "the local area"}.` : `Website resmi untuk ${businessName} di ${address || "area lokal"}.`,
-        localBusinessSchema: {},
-        keywords: Array.isArray(fullPlace.types) ? fullPlace.types : [],
-        cityLandingPhrase: address
-      },
-      global: {
-        header: {
-          logoImageUrl: logoSelection?.url || "",
-          ctaButton: { text: isEnglish ? "Call Now" : "Hubungi", href: phone ? `tel:${phone}` : "#contact" }
-        },
-        footer: { text: `© 2026 ${businessName}. All rights reserved.` }
-      },
-      navigation: {
-        headerMenu: [
-          { label: isEnglish ? "Home" : "Beranda", href: "#home" },
-          {
-            label: offeringMode === "products"
-              ? (isEnglish ? "Products" : "Produk")
-              : offeringMode === "both"
-                ? (isEnglish ? "Products & Services" : "Produk & Layanan")
-                : (isEnglish ? "Services" : "Layanan"),
-            href: "#services",
-            children: offeringMenuChildren,
-          },
-          { label: isEnglish ? "Contact" : "Kontak", href: "#contact" }
-        ]
-      },
-      pages: [
-        {
-          pageId: "home",
-          sections: [
-            {
-              type: "hero",
-              id: "hero-1",
-              content: {
-                headline: isEnglish ? `${businessName} is ready to help locally` : `${businessName} siap membantu kebutuhan lokal Anda`,
-                subheadline: address || (isEnglish ? "Business information from Google Places." : "Informasi bisnis dari Google Places."),
-                buttons: [
-                  { text: isEnglish ? "Contact Us" : "Hubungi Kami", href: "#contact", style: "primary" },
-                  { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl || "#contact", style: "outline" }
-                ],
-                image: selectedImageUrl
-              }
-            },
-            { type: "trustBar", id: "trust-1", content: {} },
-            {
-              type: "features",
-              id: "features-1",
-              content: {
-                title: isEnglish ? "Why this business stands out" : "Kenapa bisnis ini relevan",
-                items: [
-                  { title: isEnglish ? "Local business profile" : "Profil bisnis lokal", description: businessStatus || (isEnglish ? "Find service details, location, and next steps in one place." : "Temukan detail layanan, lokasi, dan langkah berikutnya di satu tempat."), iconSvg: iconSvgForText("local maps") },
-                  { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: phone || (isEnglish ? "Reach out with your questions and preferred timing." : "Hubungi kami dengan pertanyaan dan waktu yang diinginkan."), iconSvg: iconSvgForText("contact call") },
-                  { title: isEnglish ? "Simple next step" : "Langkah berikutnya mudah", description: websiteUrl ? (isEnglish ? "Review the available details, then contact us when you are ready." : "Lihat detail yang tersedia, lalu hubungi kami saat siap.") : (isEnglish ? "Call or send a question to confirm service fit and availability." : "Telepon atau kirim pertanyaan untuk memastikan kecocokan layanan dan ketersediaan."), iconSvg: iconSvgForText("contact next step") }
-                ]
-              }
-            },
-            { type: "offers", id: "offers-1", content: { title: isEnglish ? "Services to highlight" : "Layanan yang bisa ditonjolkan" } },
-            { type: "reviews", id: "reviews-1", content: { title: isEnglish ? "Google social proof" : "Social proof dari Google" } },
-            {
-              type: "hoursLocation",
-              id: "location-1",
-              content: {
-                title: isEnglish ? "Location and contact" : "Lokasi dan kontak",
-                address,
-                phone,
-                directionsUrl: mapsUrl
-              }
-            },
-            {
-              type: "faq",
-              id: "faq-1",
-              content: {
-                title: isEnglish ? "Common questions" : "Pertanyaan umum",
-                items: [
-                  { question: isEnglish ? "How do I contact this business?" : "Bagaimana cara menghubungi bisnis ini?", "answer": phone ? (isEnglish ? `Call directly at ${phone}.` : `Hubungi langsung di ${phone}.`) : (isEnglish ? "Phone number is not available yet and can be completed manually." : "Nomor telepon belum tersedia dan bisa dilengkapi manual.") },
-                  { question: isEnglish ? "What should I prepare before contacting you?" : "Apa yang perlu disiapkan sebelum menghubungi?", "answer": isEnglish ? "Share what you need, your location, preferred timing, and any important details so we can point you to the right next step." : "Sampaikan kebutuhan, lokasi, waktu yang diinginkan, dan detail penting agar kami bisa mengarahkan langkah berikutnya." }
-                ]
-              }
-            }
-          ]
-        },
-        ...offeringDetailPages
-      ]
-    };
-
-    try {
-      const response = await fetch("/api/sites/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requireAi: true,
-          model: activeModel,
-          provider: activeProviderKey,
-          jsonContent: mockJson,
-          businessId,
-          businessName,
-          phone,
-          originData: fullPlace,
-          brandPalette,
-          paletteOptions,
-          selectedLogoImageUrl: selectedImageUrl,
-          selectedLogoReference: selectedReference,
-          selectedLogoSource: selectedImageUrl ? (logoSelection?.source || "google_places") : "",
-          selectedLogoAttributions: selectedAttributions,
-          selectedLogoPriority: logoSelection?.priorityLabel || ""
-        })
+        selectedPhotoReference: selectedReference,
+        selectedPhotoSource: selectedImageUrl ? (logoSelection?.source || "google_places") : "",
+        selectedPhotoAttributions: selectedAttributions,
+        selectedPhotoPriority: logoSelection?.priorityLabel || "",
+        searchQuery,
       });
-      const data = await readApiJson<any>(response, "Generate site");
+      const data = await postGenerateSite(payload, "Generate site");
 
       fetchLeads();
       fetchProspectDrafts();
@@ -1512,13 +899,18 @@ export default function AdminLeads() {
           text: data.generatedWithAi === false
             ? "Site saved with fallback copy only. Check Jobs for the AI copy patch error."
             : "Site generated with AI-enriched copy. Preview is ready.",
-          businessId: data.businessId || businessId,
+          businessId: data.businessId || payload.businessId,
         },
       }));
       return true;
     } catch (e) {
-      console.error(e);
-      showApiError(e, { source: "Generate site", provider: activeProviderKey, model: activeModel });
+      if (isAdminGenerationBlockedError(e) && e.kind === "cooldown") {
+        setBatchMessage(e.message);
+        showToast({ kind: "warning", title: e.title || `${activeProviderKey} cooldown active`, message: e.message, actions: e.actions });
+      } else if (!isAdminGenerationBlockedError(e)) {
+        console.error(e);
+        showApiError(e, { source: "Generate site", provider: activeProviderKey, model: activeModel });
+      }
       setGenerationMessages(prev => ({
         ...prev,
         [placeKey]: { type: "error", text: e instanceof Error ? e.message : "Generate site gagal. Hasil pencarian tetap disimpan di layar." },
@@ -1677,27 +1069,40 @@ export default function AdminLeads() {
     let pausedForCooldown = false;
     for (let index = 0; index < selectedVisibleProspects.length; index += 1) {
       const place = selectedVisibleProspects[index];
-      const cooldown = await getSharedProviderCooldown(activeProviderKey, true);
-      if (cooldown) {
-        const message = `${activeProviderKey} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error. Queue paused before prospect ${index + 1}/${selectedVisibleProspects.length}.`;
-        setBatchMessage(message);
-        await logProviderCooldownBlockedJob({
+      try {
+        await ensureNoProviderCooldown({
           provider: activeProviderKey,
           model: activeModel,
-          cooldown,
           action: "lead_batch_generate",
           businessName: place?.name || getPlaceKey(place),
           placeId: String(place?.place_id || place?.id || ""),
-          message,
+          cooldownMessage: (cooldown) => `${activeProviderKey} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error. Queue paused before prospect ${index + 1}/${selectedVisibleProspects.length}.`,
         });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Batch queue paused by provider cooldown.";
+        setBatchMessage(message);
+        if (isAdminGenerationBlockedError(error) && error.kind === "cooldown") {
+          showToast({ kind: "warning", title: error.title || `${activeProviderKey} cooldown active`, message, actions: error.actions });
+        }
         pausedForCooldown = true;
         break;
       }
       setBatchMessage(`Generating ${index + 1}/${selectedVisibleProspects.length}: ${place.name}`);
       const generated = await handleGenerateSite(place);
-      if (!generated && (await getSharedProviderCooldown(activeProviderKey, true))) {
-        pausedForCooldown = true;
-        break;
+      if (!generated) {
+        try {
+          await ensureNoProviderCooldown({
+            provider: activeProviderKey,
+            model: activeModel,
+            action: "lead_batch_generate",
+            businessName: place?.name || getPlaceKey(place),
+            placeId: String(place?.place_id || place?.id || ""),
+            cooldownMessage: (cooldown) => `${activeProviderKey} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error. Queue paused after prospect ${index + 1}/${selectedVisibleProspects.length}.`,
+          });
+        } catch {
+          pausedForCooldown = true;
+          break;
+        }
       }
     }
     setBatchQueueRunning(false);
@@ -2366,7 +1771,7 @@ export default function AdminLeads() {
               const generationMessage = generationMessages[placeKey];
               const currentPhotos = sortedPhotosForPlace(displayPlace);
               const detailsReady = hasGatheredDetails(displayPlace);
-              const mapsQueryPlaceholder = isMapsQueryPlaceholder(displayPlace);
+              const isMapsPlaceholder = mapsQueryPlaceholder(displayPlace);
               const websiteStatus = websiteBadge(displayPlace);
               const listingUrl = googleBusinessListingUrl(displayPlace);
               const score = prospectScore(displayPlace);
@@ -2462,14 +1867,14 @@ export default function AdminLeads() {
                     Skip
                   </button>
                   {!detailsReady ? (
-                    <HoverTooltip text={mapsQueryPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : ""}>
+                    <HoverTooltip text={isMapsPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : ""}>
                       <button
                         type="button"
                         onClick={() => {
                           updateProspectStatus(displayPlace, "details_loaded");
                           loadPlaceDetails(displayPlace);
                         }}
-                        disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id || mapsQueryPlaceholder}
+                        disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id || isMapsPlaceholder}
                         className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                       >
                         {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={18} /> : <ListChecks size={18} />}
@@ -2478,10 +1883,10 @@ export default function AdminLeads() {
                     </HoverTooltip>
                   ) : (
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <HoverTooltip text={mapsQueryPlaceholder ? "This is not a specific business listing yet." : ""}>
+                      <HoverTooltip text={isMapsPlaceholder ? "This is not a specific business listing yet." : ""}>
                         <button
                           onClick={() => handleGenerateSite(displayPlace)}
-                          disabled={isGenerating || mapsQueryPlaceholder}
+                          disabled={isGenerating || isMapsPlaceholder}
                           className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                         >
                           {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
@@ -2521,7 +1926,7 @@ export default function AdminLeads() {
                   <span className="text-xs text-gray-500">
                     {detailsReady
                       ? currentPhotos.length > 0 ? `${currentPhotos.length} foto tersedia untuk dipilih.` : "Detail sudah diambil, tapi belum ada foto dari response ini."
-                      : mapsQueryPlaceholder
+                      : isMapsPlaceholder
                         ? "This row is a search/query placeholder. Import captured listing JSON or choose a specific Google business before gathering details."
                       : "Klik Gather data untuk mengambil website, phone, direct Maps URL, reviews, dan foto dari Place Details."}
                   </span>
@@ -2686,7 +2091,7 @@ export default function AdminLeads() {
                   : detailsPanelPlace.photos,
               };
               const photos = sortedPhotosForPlace(mergedPlace);
-              const mapsQueryPlaceholder = isMapsQueryPlaceholder(mergedPlace);
+              const isMapsPlaceholder = mapsQueryPlaceholder(mergedPlace);
               return (
                 <div className="p-6">
                   <div className="mb-5 flex items-start justify-between gap-4">
@@ -2733,11 +2138,11 @@ export default function AdminLeads() {
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-2">
-                    <HoverTooltip text={mapsQueryPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : ""}>
+                    <HoverTooltip text={isMapsPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : ""}>
                       <button
                         type="button"
                         onClick={() => loadPlaceDetails(mergedPlace)}
-                        disabled={placeDetailsLoading[placeKey] || !mergedPlace.place_id || mapsQueryPlaceholder}
+                        disabled={placeDetailsLoading[placeKey] || !mergedPlace.place_id || isMapsPlaceholder}
                         className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
                       >
                         {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={15} /> : <Images size={15} />}
@@ -2750,7 +2155,7 @@ export default function AdminLeads() {
                       </a>
                     )}
                   </div>
-                  {mapsQueryPlaceholder && (
+                  {isMapsPlaceholder && (
                     <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
                       This row is a Maps search/query placeholder. Open a specific business listing or import captured listing JSON before refreshing details.
                     </p>

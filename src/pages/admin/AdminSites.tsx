@@ -2,17 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 import { Brain, ChevronDown, Database, FileText, Globe2, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
-import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
-import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
-import { checkAiReadiness, logAiReadinessBlockedJob } from "../../lib/aiReadiness";
 import { readApiJson } from "../../lib/apiResponse";
+import { isPlaceholderPhone } from "../../lib/generatedSiteScaffold";
+import {
+  buildSelectedPhotoGeneratePayload,
+  ensureAiGenerationReady,
+  fetchGooglePlaceDetails,
+  isAdminGenerationBlockedError,
+  mapsQueryPlaceId,
+  mapsQueryPlaceholder,
+  postGenerateSite,
+} from "../../lib/adminSiteGeneration";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import { useAdminToast } from "../../components/AdminToast";
 import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
-import { formatCooldownRemaining, getSharedProviderCooldown, logProviderCooldownBlockedJob } from "../../lib/providerCooldown";
+import { formatCooldownRemaining } from "../../lib/providerCooldown";
 
 type SiteRow = {
   id: string;
@@ -112,475 +119,13 @@ function gatheredSnapshot(siteData: any) {
   };
 }
 
-function businessSlug(name: string, placeId = "") {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "business";
-  const suffix = placeId.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(-6);
-  return suffix ? `${slug}-${suffix}` : slug;
-}
-
-function isPlaceholderPhone(value?: string) {
-  const digits = String(value || "").replace(/\D/g, "");
-  return !digits || /^0+$/.test(digits);
-}
-
 function prospectPhone(prospect: ProspectRow) {
   const phone = prospect.formatted_phone_number || prospect.international_phone_number || prospect.nationalPhoneNumber || "";
   return isPlaceholderPhone(phone) ? "" : phone;
 }
 
-function isMapsQueryPlaceId(placeId: string) {
-  return String(placeId || "").startsWith("maps:");
-}
-
 function isMapsQueryPlaceholder(prospect: ProspectRow) {
-  return isMapsQueryPlaceId(prospect.place_id);
-}
-
-function photoReference(photo: any) {
-  return String(photo?.photo_reference || photo?.name || photo?.reference || "");
-}
-
-function photoAttributions(photo: any) {
-  if (Array.isArray(photo?.html_attributions)) {
-    return photo.html_attributions.map((value: string) => String(value).replace(/<[^>]*>/g, "").trim()).filter(Boolean);
-  }
-  if (Array.isArray(photo?.authorAttributions)) {
-    return photo.authorAttributions.map((item: any) => item?.displayName || item?.uri || item?.photoUri || "").filter(Boolean);
-  }
-  return [];
-}
-
-function inferLanguage(place: any) {
-  const text = `${place.formatted_address || place.formattedAddress || ""} ${place.adr_address || ""}`.toLowerCase();
-  if (text.includes("indonesia") || text.includes(" jakarta") || text.includes(" jawa ") || text.includes(" bali")) {
-    return { language: "id", region: "ID" };
-  }
-  return { language: "en", region: "US" };
-}
-
-function meaningfulType(place: any) {
-  const types = Array.isArray(place.types) ? place.types : [];
-  return types.find((type: string) => !["establishment", "point_of_interest"].includes(type)) || types[0] || "local business";
-}
-
-function toTitleCase(value = "") {
-  const stopWords = new Set(["and", "or", "for", "of", "the", "a", "an", "to", "in", "on", "at", "by", "with"]);
-  return value
-    .replace(/[_-]+/g, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word, index) => {
-      const lower = word.toLowerCase();
-      if (index > 0 && stopWords.has(lower)) return lower;
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    })
-    .join(" ");
-}
-
-function inferServiceArea(address = "", fallback = "the local area") {
-  const parts = address.split(",").map((part) => part.trim()).filter(Boolean);
-  const usStatePattern = /\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/;
-  const usCity = parts.find((part, index) => index > 0 && !usStatePattern.test(part) && !/\bUSA\b/i.test(part));
-  if (usCity) return `${usCity}-area`;
-  const idCity = parts.find((part) => /jakarta|bandung|surabaya|denpasar|medan|bekasi|tangerang|bogor|semarang|yogyakarta/i.test(part));
-  if (idCity) return `area ${idCity}`;
-  return parts.length > 1 ? `${parts[parts.length - 2]} area` : fallback;
-}
-
-function industryCopyProfile({
-  businessName,
-  nicheText,
-  typeLabel,
-  serviceArea,
-  phone,
-  isEnglish,
-}: {
-  businessName: string;
-  nicheText: string;
-  typeLabel: string;
-  serviceArea: string;
-  phone: string;
-  isEnglish: boolean;
-}) {
-  const lower = nicheText.toLowerCase();
-  const directContact = phone
-    ? (isEnglish ? `Call ${phone} directly to ask about availability and next steps.` : `Hubungi ${phone} untuk menanyakan ketersediaan dan langkah berikutnya.`)
-    : (isEnglish ? "Contact us to ask about availability and next steps." : "Hubungi kami untuk menanyakan ketersediaan dan langkah berikutnya.");
-  const base = {
-    serviceTitle: isEnglish ? `${typeLabel} Services` : `Layanan ${typeLabel}`,
-    consultationTitle: isEnglish ? "Fast Consultation" : "Konsultasi Cepat",
-    summary: isEnglish ? `Local ${typeLabel} help from ${businessName}.` : `Bantuan ${typeLabel} lokal dari ${businessName}.`,
-    description: isEnglish
-      ? `${businessName} helps local customers understand their options, ask practical questions, and take the next step with confidence.`
-      : `${businessName} membantu pelanggan lokal memahami pilihan, bertanya dengan mudah, dan mengambil langkah berikutnya dengan percaya diri.`,
-    bestFor: isEnglish ? ["Local customers", "Fast inquiry", "Custom needs"] : ["Pelanggan lokal", "Pertanyaan cepat", "Kebutuhan khusus"],
-    included: isEnglish ? ["Initial consultation", "Clear next steps", "Local support"] : ["Konsultasi awal", "Langkah berikutnya jelas", "Dukungan lokal"],
-    highlights: [
-      { title: isEnglish ? "Local Context" : "Konteks Lokal", description: isEnglish ? `Built around customer intent in the ${serviceArea}.` : `Disusun untuk kebutuhan pelanggan di ${serviceArea}.` },
-      { title: isEnglish ? "Easy Next Step" : "Langkah Mudah", description: directContact },
-    ],
-    detailFeatures: [
-      { title: isEnglish ? "Clear Fit" : "Kebutuhan Jelas", description: isEnglish ? "Visitors can quickly understand whether this service matches their need." : "Pengunjung bisa cepat memahami apakah layanan ini cocok untuk kebutuhan mereka." },
-      { title: isEnglish ? "Local Context" : "Konteks Lokal", description: serviceArea },
-      { title: isEnglish ? "Simple Contact" : "Kontak Sederhana", description: directContact },
-    ],
-    shortPitch: isEnglish ? `A trusted local business serving customers in the ${serviceArea}.` : `Bisnis lokal terpercaya yang melayani pelanggan di ${serviceArea}.`,
-    homeFeatureTitle: isEnglish ? "Clear Service Guidance" : "Arahan Layanan Jelas",
-    homeFeatureDescription: isEnglish ? "Get practical details, hours, contact options, and a simple way to ask for help." : "Dapatkan detail praktis, jam operasional, kontak, dan cara mudah untuk bertanya.",
-    consultationSummary: isEnglish ? "Ask questions and get clear next steps." : "Tanyakan kebutuhan dan dapatkan langkah berikutnya.",
-    consultationDescription: isEnglish ? "Useful for visitors who need availability, pricing, and timing before booking or visiting." : "Berguna untuk pengunjung yang ingin tahu ketersediaan, harga, dan waktu sebelum datang atau booking.",
-    consultationBestFor: isEnglish ? ["Price questions", "Availability", "Planning"] : ["Pertanyaan harga", "Ketersediaan", "Perencanaan"],
-    consultationIncluded: isEnglish ? ["Question intake", "Basic recommendation", "Contact handoff"] : ["Input pertanyaan", "Rekomendasi dasar", "Arahan kontak"],
-    consultationHighlightTitle: isEnglish ? "Low Friction" : "Mudah Dihubungi",
-  };
-
-  if (/concrete|foundation|slab|driveway|patio|walkway|garage|general contractor|construction|roof|paving|masonry/i.test(lower)) {
-    return {
-      ...base,
-      serviceTitle: /concrete|slab|driveway|patio|walkway/i.test(lower) ? "Concrete Repair and Flatwork" : "Project Repair and Construction Services",
-      consultationTitle: "Estimate and Project Consultation",
-      summary: `${businessName} helps ${serviceArea} property owners understand repair needs, project scope, and practical next steps.`,
-      description: `${businessName} helps property owners discuss visible damage, worn surfaces, safety concerns, timing, estimate questions, and whether the work is right for a home or commercial property.`,
-      bestFor: ["Repair needs", "Project estimates", "Home or property improvements"],
-      included: ["Issue review", "Scope discussion", "Clear next step for estimate"],
-      highlights: [
-        { title: "Repair-Focused Copy", description: "Explains customer problems instead of repeating a generic Google category." },
-        { title: "Estimate Ready", description: directContact },
-      ],
-      detailFeatures: [
-        { title: "Problem-Focused", description: "Frames the service around visible issues, timing, and project scope." },
-        { title: toTitleCase(serviceArea), description: `Built around local customer intent in the ${serviceArea}.` },
-        { title: "Clear Next Step", description: directContact },
-      ],
-      shortPitch: `${businessName} gives ${serviceArea} property owners a clearer path for repair questions, project planning, and estimate requests.`,
-      homeFeatureTitle: "Project-Focused Help",
-      homeFeatureDescription: "Start with practical repair questions, estimate needs, timing, and the clearest next step.",
-      consultationSummary: "A focused next step for homeowners or property managers who need project scope before scheduling.",
-      consultationDescription: "Share the project location, surface or project type, approximate size, visible damage, timing, and preferred contact method so the next step is easier.",
-      consultationBestFor: ["Repair estimates", "Project timing", "Scope questions"],
-      consultationIncluded: ["Project intake", "Photo-ready questions", "Scheduling handoff"],
-      consultationHighlightTitle: "Built for Estimate Requests",
-    };
-  }
-
-  if (/law|legal|attorney|notary|immigration|tax|accounting|bookkeeping|financial|insurance|mortgage/i.test(lower)) {
-    return {
-      ...base,
-      serviceTitle: `${typeLabel} Guidance`,
-      consultationTitle: "Confidential Consultation Request",
-      summary: `${businessName} helps ${serviceArea} clients understand their options and choose a practical next step.`,
-      description: "This page should clarify service fit, explain when to reach out, reduce uncertainty, and encourage visitors to request a consultation without making unsupported claims.",
-      bestFor: ["Private questions", "Document review", "Next-step planning"],
-      included: ["Initial intake", "Fit review", "Clear follow-up path"],
-      shortPitch: `${businessName} supports ${serviceArea} clients with professional guidance and a clear path to contact.`,
-      homeFeatureTitle: "Professional Trust",
-      homeFeatureDescription: "Ask a focused question, understand the next step, and request a consultation with less uncertainty.",
-    };
-  }
-
-  if (/dentist|dental|clinic|medical|doctor|therapy|chiropractor|health/i.test(lower)) {
-    return {
-      ...base,
-      serviceTitle: `${typeLabel} Care`,
-      consultationTitle: "Appointment and Care Questions",
-      summary: `${businessName} helps ${serviceArea} patients understand care options and appointment next steps.`,
-      description: `${businessName} helps patients understand care options, appointment expectations, contact options, and trust signals without unsupported medical claims.`,
-      bestFor: ["New patients", "Care questions", "Appointment planning"],
-      included: ["Care inquiry", "Availability questions", "Contact handoff"],
-      shortPitch: `${businessName} gives ${serviceArea} patients a clearer path to ask questions and plan a visit.`,
-      homeFeatureTitle: "Patient-Friendly Flow",
-      homeFeatureDescription: "Find contact options, reviews, hours, and care questions in one simple place.",
-    };
-  }
-
-  if (/landscap|garden|lawn|tree|pool|spa|cleaning|janitorial|maid|pressure washing|auto|mechanic|tire|salon|beauty|fitness|gym|restaurant|cafe|coffee|bakery|real estate|realtor|property/i.test(lower)) {
-    return {
-      ...base,
-      serviceTitle: `${typeLabel} Services`,
-      consultationTitle: isEnglish ? "Service Questions and Booking" : "Pertanyaan dan Booking Layanan",
-      summary: `${businessName} helps ${serviceArea} customers compare options, ask practical questions, and take the next step.`,
-      description: `${businessName} helps customers understand what to ask, what kind of help may be available, and what to prepare before getting in touch.`,
-      bestFor: ["Local service needs", "Availability questions", "Planning before booking"],
-      included: ["Need review", "Availability questions", "Contact handoff"],
-      shortPitch: `${businessName} helps ${serviceArea} customers move from search intent to a practical next step.`,
-      homeFeatureTitle: "Local Service Fit",
-      homeFeatureDescription: "Compare service fit, check trust signals, and contact the business without extra searching.",
-    };
-  }
-
-  return base;
-}
-
-function faviconSvg(name: string, color = "#111827") {
-  const initial = (name.trim()[0] || "W").toUpperCase();
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="${color}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="white">${initial}</text></svg>`;
-}
-
-function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", palette: string[] = [], paletteOptions: any[] = []) {
-  const businessName = place.name || "Untitled Business";
-  const locale = inferLanguage(place);
-  const isEnglish = locale.language === "en";
-  const address = place.formatted_address || place.formattedAddress || "";
-  const phone = prospectPhone(place);
-  const mapsUrl = place.url || place.googleMapsUri || "";
-  const websiteUrl = place.website || place.websiteUri || "";
-  const typeLabel = toTitleCase(meaningfulType(place));
-  const serviceArea = inferServiceArea(address, isEnglish ? "the local area" : "area sekitar");
-  const rating = Number(place.rating || 0);
-  const reviewCount = Number(place.user_ratings_total || place.userRatingCount || 0);
-  const primary = palette[0] || "#111827";
-  const accent = palette[1] || "#4F46E5";
-  const secondary = palette[2] || "#F3F4F6";
-  const nicheText = [
-    businessName,
-    address,
-    Array.isArray(place.types) ? place.types.join(" ") : "",
-    place.searchQuery,
-  ].filter(Boolean).join(" ");
-  const stylePreset = inferStylePresetFromText(nicheText);
-  const stylePresetMeta = getStylePreset(stylePreset);
-  const visualStyle = inferVisualStyleFromText(nicheText);
-  const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
-  const shaderPreset = inferShaderPresetFromText(nicheText);
-  const shaderPresetMeta = getShaderPreset(shaderPreset);
-  const fontPairing = inferFontPairingFromText(nicheText);
-  const fontPairingMeta = getFontPairing(fontPairing);
-  const fontPairingOptions = fontPairingsForText(nicheText, 5);
-  const profile = industryCopyProfile({ businessName, nicheText, typeLabel, serviceArea, phone, isEnglish });
-  const serviceTitle = profile.serviceTitle;
-  const consultationTitle = profile.consultationTitle;
-  const serviceId = "core-service";
-  const servicePageId = `service-${serviceId}`;
-  const consultationPageId = "service-fast-consultation";
-  const photoUrls = Array.isArray(place.photos)
-    ? place.photos
-        .map((photo: any) => photoReference(photo))
-        .filter(Boolean)
-        .slice(0, 8)
-        .map((reference: string) => `/api/places/photo?reference=${encodeURIComponent(reference)}&maxwidth=960`)
-    : [];
-  const reviews = Array.isArray(place.reviews) ? place.reviews.slice(0, 3).map((review: any) => ({
-    authorName: review.author_name || review.authorName || "Google reviewer",
-    rating: Number(review.rating || 5),
-    text: review.text || "",
-    relativePublishTimeDescription: review.relative_time_description || review.relativePublishTimeDescription || "",
-    attribution: "Google",
-  })) : [];
-  const services = [
-    {
-      id: serviceId,
-      type: "service",
-      title: serviceTitle,
-      summary: profile.summary,
-      description: profile.description,
-      priceHint: isEnglish ? "Contact for estimate" : "Hubungi untuk estimasi",
-      image: imageUrl,
-      detailPageId: servicePageId,
-      bestFor: profile.bestFor,
-      included: profile.included,
-      highlights: profile.highlights,
-      relatedReviewKeywords: ["service", "help", "professional", "fast", "local"],
-    },
-    {
-      id: "fast-consultation",
-      type: "service",
-      title: consultationTitle,
-      summary: profile.consultationSummary,
-      description: profile.consultationDescription,
-      priceHint: isEnglish ? "Fast response" : "Respons cepat",
-      image: imageUrl,
-      detailPageId: consultationPageId,
-      bestFor: profile.consultationBestFor,
-      included: profile.consultationIncluded,
-      highlights: [{ title: profile.consultationHighlightTitle, description: isEnglish ? "Customers can call or open maps directly." : "Pelanggan bisa menelepon atau membuka maps langsung." }],
-      relatedReviewKeywords: ["fast", "quick", "response", "help"],
-    },
-  ];
-  const detailPages = services.map((service) => ({
-    pageId: service.detailPageId,
-    pageTitle: service.title,
-    sections: [
-      {
-        type: "hero",
-        id: `${service.id}-hero`,
-        content: {
-          headline: isEnglish ? `${service.title} from ${businessName}` : `${service.title} dari ${businessName}`,
-          subheadline: service.summary,
-          buttons: [
-            { text: isEnglish ? "Ask about this" : "Tanya layanan ini", href: "#contact", style: "primary" },
-            { text: isEnglish ? "Back to services" : "Lihat layanan lain", href: "#services", style: "outline" },
-          ],
-          image: service.image,
-        },
-      },
-      { type: "offeringDetail", id: `${service.id}-detail`, content: { kind: isEnglish ? "Service" : "Layanan", ...service } },
-      {
-        type: "features",
-        id: `${service.id}-features`,
-        content: {
-          title: isEnglish ? `Why choose ${service.title}` : `Kenapa memilih ${service.title}`,
-          items: [
-            ...profile.detailFeatures,
-          ],
-        },
-      },
-      { type: "reviews", id: `${service.id}-reviews`, content: { title: isEnglish ? "Customer notes" : "Catatan pelanggan", reviews } },
-      {
-        type: "faq",
-        id: `${service.id}-faq`,
-        content: {
-          title: isEnglish ? `Questions about ${service.title}` : `Pertanyaan tentang ${service.title}`,
-          items: [
-            { question: isEnglish ? "How do I contact this business?" : "Bagaimana cara menghubungi bisnis ini?", answer: phone ? (isEnglish ? `Call ${phone}.` : `Hubungi ${phone}.`) : (isEnglish ? "Contact us with your question and preferred timing." : "Hubungi kami dengan pertanyaan dan waktu yang diinginkan.") },
-            { question: isEnglish ? "How do I request an estimate?" : "Bagaimana cara meminta estimasi?", answer: phone ? (isEnglish ? `Call ${phone} with your project details, timing, and any questions about availability.` : `Hubungi ${phone} dengan detail kebutuhan, waktu, dan pertanyaan ketersediaan.`) : (isEnglish ? "Contact us with your project details, timing, and any questions about availability." : "Hubungi kami dengan detail kebutuhan, waktu, dan pertanyaan ketersediaan.") },
-          ],
-        },
-      },
-      { type: "hoursLocation", id: `${service.id}-contact`, content: { title: isEnglish ? "Contact and location" : "Kontak dan lokasi", address, phone, directionsUrl: mapsUrl } },
-    ],
-  }));
-
-  return {
-    meta: {
-      businessName,
-      businessId,
-      niche: typeLabel,
-      language: locale.language,
-      region: locale.region,
-      seoDescription: isEnglish ? `Official website for ${businessName}.` : `Website resmi untuk ${businessName}.`,
-      faviconSvg: faviconSvg(businessName, primary),
-      brandPalette: palette,
-      generatedWithAi: false,
-      generationMode: "google_places_fallback",
-      generationNote: "Generated from gathered Google Places data because AI output was unavailable or not required.",
-      sourcePhotoCount: photoUrls.length,
-    },
-    sourceData: {
-      provider: "google_places",
-      placeId: place.place_id || place.id || "",
-      resourceName: place.name?.startsWith?.("places/") ? place.name : "",
-      googleMapsUri: mapsUrl,
-      lastSyncedAt: new Date().toISOString(),
-      businessStatus: place.business_status || place.businessStatus || "",
-      pureServiceAreaBusiness: Boolean(place.pureServiceAreaBusiness),
-      hasWebsite: Boolean(websiteUrl),
-      websiteUri: websiteUrl || null,
-      attributions: [],
-    },
-    design: {
-      stylePreset,
-      stylePresetConfig: {
-        label: stylePresetMeta.label,
-        mood: stylePresetMeta.mood,
-        industries: stylePresetMeta.industries,
-        recommendedColors: stylePresetMeta.recommendedColors,
-      },
-      visualStyle,
-      visualStyleConfig: {
-        label: visualStyleMeta.label,
-        description: visualStyleMeta.description,
-        allowedValues: siteVisualStyles.map((item) => item.id),
-        selectionRule: "Choose the visual structure that best matches the industry and desired feel.",
-      },
-      shaderPreset,
-      shaderConfig: {
-        preset: shaderPreset,
-        label: shaderPresetMeta.label,
-        description: shaderPresetMeta.description,
-        defaultOpacity: shaderPresetMeta.defaultOpacity,
-        defaultMotion: shaderPresetMeta.defaultMotion,
-        allowedValues: siteShaderPresets.map((item) => item.id),
-        selectionRule: "Choose a lightweight CSS procedural shader that matches the industry mood. Use none for maximum restraint.",
-      },
-      fontPairing,
-      fontPairingConfig: {
-        label: fontPairingMeta.label,
-        headingFont: fontPairingMeta.headingFont,
-        bodyFont: fontPairingMeta.bodyFont,
-        mood: fontPairingMeta.mood,
-        allowedValues: fontPairingOptions.map((item) => item.id),
-        selectionRule: "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download.",
-      },
-      themeVariables: {
-        colors: { primary, secondary, accent, textMain: "#1F2937", textMuted: "#6B7280", background: "#FFFFFF" },
-        typography: { headingFont: fontPairingMeta.headingCss, bodyFont: fontPairingMeta.bodyCss },
-      },
-    },
-    brand: {
-      logoImageUrl: imageUrl,
-      logoSvg: "",
-      faviconSvg: faviconSvg(businessName, primary),
-      palette,
-      paletteOptions,
-      preferredHeroImage: imageUrl,
-      photoSource: imageUrl ? "google_places" : "",
-      googlePhotoReference: "",
-      photoCaption: imageUrl ? "Photo from Google Business Profile" : "",
-      photoAttributions: Array.isArray(place.selectedPhoto?.attributions) ? place.selectedPhoto.attributions : [],
-    },
-    businessProfile: {
-      name: businessName,
-      primaryType: typeLabel,
-      typeLabel,
-      categories: Array.isArray(place.types) ? place.types : [],
-      shortPitch: profile.shortPitch,
-      address: { formatted: address },
-      contact: { phoneNational: phone, phoneInternational: phone, directionsUrl: mapsUrl },
-    },
-    trust: {
-      rating,
-      reviewCount,
-      reviewSummary: reviewCount ? (isEnglish ? `${businessName} has a ${rating.toFixed(1)} rating from ${reviewCount} Google reviews.` : `${businessName} memiliki rating ${rating.toFixed(1)} dari ${reviewCount} review Google.`) : "",
-      reviews,
-      badges: [place.business_status === "OPERATIONAL" ? "Operational" : "", websiteUrl ? "Has website" : "No website lead", phone ? "Has phone" : ""].filter(Boolean),
-    },
-    productServiceStrategy: {
-      mode: "services",
-      reasoning: "Generated from gathered Google Places data with a local fallback structure.",
-      navbarGroupLabel: isEnglish ? "Services" : "Layanan",
-      detailPageRule: "Each service has a dedicated detail page with overview, benefits, reviews, FAQ, and conversion CTA.",
-    },
-    products: [],
-    services,
-    offers: services.map((service) => ({ title: service.title, description: service.summary, priceHint: service.priceHint, image: service.image, cta: { text: isEnglish ? "View details" : "Lihat detail", href: `#${service.detailPageId}` } })),
-    capabilities: [
-      { label: isEnglish ? "Local business" : "Bisnis lokal", enabled: true, source: "google_places.types", description: isEnglish ? "Business profile data is gathered from Google Places." : "Profil bisnis diambil dari Google Places." },
-      { label: "Google rating", enabled: rating > 0, source: "google_places.rating", description: reviewCount ? `${reviewCount} reviews available.` : "Rating not available yet." },
-      { label: isEnglish ? "Direct contact" : "Kontak langsung", enabled: Boolean(phone), source: "google_places.phone", description: isEnglish ? "CTA points to the business contact when available." : "CTA diarahkan ke kontak bisnis." },
-    ],
-    location: { formattedAddress: address, directionsUrl: mapsUrl, isServiceAreaBusiness: Boolean(place.pureServiceAreaBusiness) },
-    hours: { timezone: "", openNow: Boolean(place.opening_hours?.open_now), regular: Array.isArray(place.opening_hours?.weekday_text) ? place.opening_hours.weekday_text : [], current: [] },
-    conversion: {
-      primaryCta: { text: isEnglish ? "Call Now" : "Hubungi Sekarang", href: phone ? `tel:${phone}` : "#contact" },
-      secondaryCta: { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl || "#contact" },
-      stickyMobileCta: true,
-      leadForm: { enabled: true, fields: ["name", "phone", "message"], submitLabel: isEnglish ? "Send Message" : "Kirim Pesan" },
-    },
-    navigation: {
-      headerMenu: [
-        { label: isEnglish ? "Home" : "Beranda", href: "#home" },
-        { label: isEnglish ? "Services" : "Layanan", href: "#services", children: services.map((service) => ({ label: service.title, href: `#${service.detailPageId}` })) },
-        { label: isEnglish ? "Contact" : "Kontak", href: "#contact" },
-      ],
-    },
-    pages: [
-      {
-        pageId: "home",
-        pageTitle: isEnglish ? "Home" : "Beranda",
-        sections: [
-          { type: "hero", id: "hero", content: { headline: isEnglish ? `${businessName} is ready to help locally` : `${businessName} siap membantu pelanggan lokal`, subheadline: address, image: imageUrl, buttons: [{ text: isEnglish ? "Contact Us" : "Hubungi Kami", href: "#contact", style: "primary" }, { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl || "#contact", style: "outline" }] } },
-          { type: "trustBar", id: "trust", content: { items: [{ label: "Google Rating", value: rating ? rating.toFixed(1) : "-" }, { label: "Reviews", value: reviewCount ? `${reviewCount}+` : "-" }, { label: "Phone", value: phone || (isEnglish ? "Available soon" : "Segera tersedia") }] } },
-          { type: "features", id: "features", content: { title: isEnglish ? "Why customers contact us" : "Kenapa pelanggan menghubungi kami", items: [{ title: profile.homeFeatureTitle, description: profile.homeFeatureDescription }, { title: isEnglish ? "Easy to Contact" : "Mudah Dihubungi", description: phone || (isEnglish ? "Reach out with your questions and preferred timing." : "Hubungi kami dengan pertanyaan dan waktu yang diinginkan.") }, { title: isEnglish ? "Simple Next Step" : "Langkah Berikutnya Mudah", description: websiteUrl ? (isEnglish ? "Explore the available details, then contact us when you are ready." : "Lihat detail yang tersedia, lalu hubungi kami saat siap.") : (isEnglish ? "Call or send a question to confirm service fit and availability." : "Telepon atau kirim pertanyaan untuk memastikan kecocokan layanan dan ketersediaan.") }] } },
-          { type: "offers", id: "services", content: { title: isEnglish ? "Services to highlight" : "Layanan utama", items: services } },
-          ...(photoUrls.length > 1 ? [{ type: "imageGallery", id: "gallery", content: { title: isEnglish ? "Project and profile photos" : "Foto profil dan pekerjaan", images: photoUrls } }] : []),
-          { type: "reviews", id: "reviews", content: { title: isEnglish ? "Google social proof" : "Bukti sosial Google", reviews } },
-          { type: "hoursLocation", id: "contact", content: { title: isEnglish ? "Location and contact" : "Lokasi & Kontak", address, phone, directionsUrl: mapsUrl } },
-          { type: "faq", id: "faq", content: { title: isEnglish ? "Common questions" : "Pertanyaan umum", items: [{ question: isEnglish ? "How do I contact this business?" : "Bagaimana menghubungi bisnis ini?", answer: phone ? (isEnglish ? `Call ${phone}.` : `Hubungi ${phone}.`) : (isEnglish ? "Contact us with your question and preferred timing." : "Hubungi kami dengan pertanyaan dan waktu yang diinginkan.") }, { question: isEnglish ? "What should I prepare before contacting you?" : "Apa yang perlu disiapkan sebelum menghubungi?", answer: isEnglish ? "Share what you need, your location, preferred timing, and any important details so we can point you to the right next step." : "Sampaikan kebutuhan, lokasi, waktu yang diinginkan, dan detail penting agar kami bisa mengarahkan langkah berikutnya." }] } },
-        ],
-      },
-      ...detailPages,
-    ],
-  };
+  return mapsQueryPlaceholder(prospect);
 }
 
 export default function AdminSites() {
@@ -591,7 +136,6 @@ export default function AdminSites() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
-  const [actionMessage, setActionMessage] = useState("");
   const [regeneratingId, setRegeneratingId] = useState("");
   const [generatingProspectId, setGeneratingProspectId] = useState("");
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
@@ -599,6 +143,14 @@ export default function AdminSites() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
   const [regenerateModel, setRegenerateModel] = useLocalStorageState("webview.adminSites.regenerateModel", "~anthropic/claude-sonnet-latest");
+  const notifyAction = (
+    kind: "success" | "error" | "warning" | "info",
+    title: string,
+    message?: string,
+    actions?: string[],
+  ) => {
+    showToast({ kind, title, message, actions });
+  };
 
   const providerOptions = useMemo<string[]>(() => Array.from(new Set(aiModelPrices.map((item) => item.provider))), []);
   const activeRegenerateProvider = providerOptions.includes(regenerateProvider) ? regenerateProvider : "OpenRouter";
@@ -695,17 +247,15 @@ export default function AdminSites() {
   };
 
   const handleSeeGatheredData = async (site: SiteRow) => {
-    setActionMessage("");
     try {
       const siteJson = await fetchSiteJson(site);
       setActiveData({ title: "Gathered data", subtitle: `${site.businessName} · ${site.businessId}`, data: gatheredSnapshot(siteJson) });
     } catch (err) {
-      setActionMessage(err instanceof Error ? err.message : "Gagal memuat gathered data.");
+      showApiError(err, { source: "Gathered data" });
     }
   };
 
   const handleSeeCopyBrief = async (site: SiteRow) => {
-    setActionMessage("");
     try {
       const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/copy-brief`);
       const text = await response.text();
@@ -720,7 +270,7 @@ export default function AdminSites() {
       }
       setActiveData({ title: "AI copy brief", subtitle: `${site.businessName} · ${site.businessId}`, data });
     } catch (err) {
-      setActionMessage(err instanceof Error ? err.message : "Gagal memuat AI copy brief.");
+      showApiError(err, { source: "AI copy brief" });
     }
   };
 
@@ -740,113 +290,57 @@ export default function AdminSites() {
   const handleGenerateProspect = async (prospect: ProspectRow) => {
     const placeId = prospect.place_id;
     setGeneratingProspectId(placeId);
-    setActionMessage("");
     try {
-      const cooldown = await getSharedProviderCooldown(activeRegenerateProvider, true);
-      if (cooldown) {
-        const message = `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`;
-        showToast({ kind: "warning", title: `${activeRegenerateProvider} cooldown active`, message, actions: ["Wait for the cooldown to end, then retry one site.", "Switch provider/model if this is urgent."] });
-        await logProviderCooldownBlockedJob({
-          provider: activeRegenerateProvider,
-          model: activeRegenerateModel,
-          cooldown,
-          action: "sites_first_generate",
-          businessName: prospect.name,
-          placeId,
-          message,
-        });
-        throw new Error(message);
-      }
+      await ensureAiGenerationReady({
+        provider: activeRegenerateProvider,
+        model: activeRegenerateModel,
+        action: "sites_first_generate",
+        businessName: prospect.name,
+        placeId,
+        readinessMessage: "AI provider/model is not ready. Check /admin/settings before generating.",
+        cooldownMessage: (cooldown) => `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`,
+      });
       if (isMapsQueryPlaceholder(prospect)) {
         throw new Error("This row is a Maps search/query placeholder, not a specific business listing. Import captured listing JSON or choose a real Google business result before generating.");
       }
-      const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true, true);
-      if (!readiness.ready) {
-        const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before generating.";
-        await logAiReadinessBlockedJob({
-          provider: activeRegenerateProvider,
-          model: activeRegenerateModel,
-          readiness,
-          action: "sites_first_generate",
-          businessName: prospect.name,
-          placeId,
-          message,
-        });
-        throw new Error(message);
-      }
 
       let originData: any = { ...prospect };
-      const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
-      const detailsText = await detailsResponse.text();
-      let details: any = {};
-      try {
-        details = detailsText ? JSON.parse(detailsText) : {};
-      } catch {
-        details = { error: `Place Details response bukan JSON: ${detailsText.slice(0, 120)}` };
-      }
-      if (detailsResponse.ok && details.result) {
-        originData = { ...originData, ...details.result };
-      } else {
-        throw new Error(details.error || `Place Details returned HTTP ${detailsResponse.status}`);
-      }
+      originData = { ...originData, ...await fetchGooglePlaceDetails(placeId) };
 
       const selectedPhoto = prospect.selectedPhoto || {};
-      const fallbackPhoto = Array.isArray(originData.photos) ? originData.photos.find((photo: any) => photoReference(photo)) : null;
-      const fallbackReference = fallbackPhoto ? photoReference(fallbackPhoto) : "";
-      const selectedReference = selectedPhoto.reference || fallbackReference;
-      const selectedImageUrl = selectedPhoto.url || (selectedReference ? `/api/places/photo?reference=${encodeURIComponent(selectedReference)}&maxwidth=320` : "");
-      const businessId = businessSlug(prospect.name || originData.name || "business", placeId);
       const paletteOptions = Array.isArray(prospect.paletteOptions) ? prospect.paletteOptions : [];
       const selectedPalette = Array.isArray(prospect.selectedPalette) && prospect.selectedPalette.length > 0
         ? prospect.selectedPalette
         : Array.isArray(paletteOptions[0]?.colors) ? paletteOptions[0].colors : [];
-      const fallbackJson = buildFallbackSiteJson(
-        {
-          ...originData,
-          selectedPhoto,
-          selectedPalette,
-        },
-        businessId,
-        selectedImageUrl,
-        selectedPalette,
+      const payload = buildSelectedPhotoGeneratePayload({
+        place: { ...originData, selectedPhoto, selectedPalette },
+        requireAi: true,
+        provider: activeRegenerateProvider,
+        model: activeRegenerateModel,
+        businessName: prospect.name || originData.name || "Untitled Business",
+        phone: prospectPhone({ ...prospect, ...originData }),
+        selectedPhoto,
+        palette: selectedPalette,
         paletteOptions,
-      );
-      const response = await fetch("/api/sites/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requireAi: true,
-          provider: activeRegenerateProvider,
-          model: activeRegenerateModel,
-          jsonContent: fallbackJson,
-          businessId,
-          businessName: prospect.name || originData.name || "Untitled Business",
-          phone: prospectPhone({ ...prospect, ...originData }),
-          originData,
-          brandPalette: selectedPalette,
-          paletteOptions,
-          selectedLogoImageUrl: selectedImageUrl,
-          selectedLogoReference: selectedReference,
-          selectedLogoSource: selectedImageUrl ? (selectedPhoto.source || "google_places") : "",
-          selectedLogoAttributions: Array.isArray(selectedPhoto.attributions) && selectedPhoto.attributions.length > 0
-            ? selectedPhoto.attributions
-            : fallbackPhoto ? photoAttributions(fallbackPhoto) : [],
-          selectedLogoPriority: selectedPhoto.priorityLabel || "",
-        }),
+        photoMaxWidth: 320,
       });
-      const result = await readApiJson<any>(response, "Generate site");
+      await postGenerateSite(payload, "Generate site");
       const requiredKey = providerApiKeyMap[activeRegenerateProvider];
       const hasProviderKey = requiredKey && String(settings?.[requiredKey] || "").trim();
-      setActionMessage(hasProviderKey
-        ? `Generated ${prospect.name} with AI-enriched copy from ${activeRegenerateProvider}.`
-        : `AI generation needs a ${activeRegenerateProvider} API key in /admin/settings.`
+      notifyAction(
+        hasProviderKey ? "success" : "warning",
+        hasProviderKey ? "Site generated" : "AI key needed",
+        hasProviderKey
+          ? `Generated ${prospect.name} with AI-enriched copy from ${activeRegenerateProvider}.`
+          : `AI generation needs a ${activeRegenerateProvider} API key in /admin/settings.`,
       );
       fetchSites();
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("cooling down"))) {
+      if (isAdminGenerationBlockedError(err) && err.kind === "cooldown") {
+        showToast({ kind: "warning", title: err.title || `${activeRegenerateProvider} cooldown active`, message: err.message, actions: err.actions });
+      } else {
         showApiError(err, { source: "Generate site", provider: activeRegenerateProvider, model: activeRegenerateModel });
       }
-      setActionMessage(err instanceof Error ? err.message : "Generate gagal.");
     } finally {
       setGeneratingProspectId("");
     }
@@ -854,38 +348,17 @@ export default function AdminSites() {
 
   const handleRegenerate = async (site: SiteRow, mode: RegenerateMode) => {
     setRegeneratingId(site.businessId);
-    setActionMessage("");
     try {
       if (mode === "ai") {
-        const cooldown = await getSharedProviderCooldown(activeRegenerateProvider, true);
-        if (cooldown) {
-          const message = `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`;
-          showToast({ kind: "warning", title: `${activeRegenerateProvider} cooldown active`, message, actions: ["Wait for the cooldown to end, then retry one site.", "Switch provider/model if this is urgent."] });
-          await logProviderCooldownBlockedJob({
-            provider: activeRegenerateProvider,
-            model: activeRegenerateModel,
-            cooldown,
-            action: "sites_ai_regenerate",
-            businessId: site.businessId,
-            businessName: site.businessName,
-            message,
-          });
-          throw new Error(message);
-        }
-        const readiness = await checkAiReadiness(activeRegenerateProvider, activeRegenerateModel, true, true);
-        if (!readiness.ready) {
-          const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before regenerating.";
-          await logAiReadinessBlockedJob({
-            provider: activeRegenerateProvider,
-            model: activeRegenerateModel,
-            readiness,
-            action: "sites_ai_regenerate",
-            businessId: site.businessId,
-            businessName: site.businessName,
-            message,
-          });
-          throw new Error(message);
-        }
+        await ensureAiGenerationReady({
+          provider: activeRegenerateProvider,
+          model: activeRegenerateModel,
+          action: "sites_ai_regenerate",
+          businessId: site.businessId,
+          businessName: site.businessName,
+          readinessMessage: "AI provider/model is not ready. Check /admin/settings before regenerating.",
+          cooldownMessage: (cooldown) => `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`,
+        });
       }
 
       const siteJson = await fetchSiteJson(site);
@@ -902,20 +375,12 @@ export default function AdminSites() {
       let detailsError = "";
       const sourcePlaceId = String(sourceData.placeId || "");
 
-      if (sourcePlaceId && !isMapsQueryPlaceId(sourcePlaceId)) {
-        const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(sourcePlaceId)}`);
-        const detailsText = await detailsResponse.text();
-        let details: any = {};
+      if (sourcePlaceId && !mapsQueryPlaceId(sourcePlaceId)) {
         try {
-          details = detailsText ? JSON.parse(detailsText) : {};
-        } catch {
-          details = { error: `Place Details response bukan JSON: ${detailsText.slice(0, 120)}` };
-        }
-        if (detailsResponse.ok && details.result) {
-          originData = { ...originData, ...details.result };
+          originData = { ...originData, ...await fetchGooglePlaceDetails(sourcePlaceId) };
           detailsGathered = true;
-        } else {
-          detailsError = details.error || `Place Details returned HTTP ${detailsResponse.status}`;
+        } catch (err) {
+          detailsError = err instanceof Error ? err.message : "Place Details failed.";
         }
       } else if (sourcePlaceId) {
         detailsError = "Saved sourceData.placeId is a Maps search/query placeholder, not a specific business listing.";
@@ -931,38 +396,38 @@ export default function AdminSites() {
       const contact = siteJson?.businessProfile?.contact || {};
       const provider = mode === "ai" ? activeRegenerateProvider : "";
       const model = mode === "ai" ? activeRegenerateModel : "";
-      const response = await fetch("/api/sites/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requireAi: mode === "ai",
-          provider,
-          model,
-          jsonContent: siteJson,
-          businessId: site.businessId,
-          businessName: site.businessName,
-          phone: contact.phoneInternational || contact.phoneNational || "",
-          originData,
-          brandPalette: siteJson?.meta?.brandPalette || siteJson?.brand?.palette || [],
-          selectedLogoImageUrl: siteJson?.brand?.logoImageUrl || "",
-          selectedLogoReference: siteJson?.brand?.googlePhotoReference || "",
-          selectedLogoSource: siteJson?.brand?.photoSource || "",
-          selectedLogoAttributions: siteJson?.brand?.photoAttributions || [],
-          selectedLogoPriority: siteJson?.brand?.selectedPhotoPriority || "",
-        }),
+      await postGenerateSite({
+        requireAi: mode === "ai",
+        provider,
+        model,
+        jsonContent: siteJson,
+        businessId: site.businessId,
+        businessName: site.businessName,
+        phone: contact.phoneInternational || contact.phoneNational || "",
+        originData,
+        brandPalette: siteJson?.meta?.brandPalette || siteJson?.brand?.palette || [],
+        selectedLogoImageUrl: siteJson?.brand?.logoImageUrl || "",
+        selectedLogoReference: siteJson?.brand?.googlePhotoReference || "",
+        selectedLogoSource: siteJson?.brand?.photoSource || "",
+        selectedLogoAttributions: siteJson?.brand?.photoAttributions || [],
+        selectedLogoPriority: siteJson?.brand?.selectedPhotoPriority || "",
       });
-      const result = await readApiJson<any>(response, "Regenerate site");
-      setActionMessage(
+      const successMessage =
         mode === "ai"
           ? `AI copy patch regenerated ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`
-          : `Re-gathered Google data and resaved ${site.businessName} without an AI call.`
+          : `Re-gathered Google data and resaved ${site.businessName} without an AI call.`;
+      notifyAction(
+        "success",
+        mode === "ai" ? "AI copy patch regenerated" : "Google data resaved",
+        successMessage,
       );
       fetchSites();
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("cooling down"))) {
+      if (isAdminGenerationBlockedError(err) && err.kind === "cooldown") {
+        showToast({ kind: "warning", title: err.title || `${activeRegenerateProvider} cooldown active`, message: err.message, actions: err.actions });
+      } else {
         showApiError(err, { source: mode === "ai" ? "AI regenerate" : "Re-gather/resave", provider: activeRegenerateProvider, model: activeRegenerateModel });
       }
-      setActionMessage(err instanceof Error ? err.message : "Regenerate gagal.");
     } finally {
       setRegeneratingId("");
     }
@@ -1004,12 +469,6 @@ export default function AdminSites() {
           {error}
         </div>
       )}
-      {actionMessage && (
-        <div className="mb-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800">
-          {actionMessage}
-        </div>
-      )}
-
       <div className="mb-6 overflow-visible rounded-2xl border border-emerald-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-emerald-100 bg-emerald-50 px-5 py-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -1045,7 +504,11 @@ export default function AdminSites() {
             </select>
             <AdminAiReadinessRefreshButton
               className="border-emerald-200 py-2"
-              onRefresh={() => setActionMessage("AI readiness cache cleared. Badges are rechecking the selected provider/model.")}
+              onRefresh={() => notifyAction(
+                "info",
+                "AI readiness refreshed",
+                "AI readiness cache cleared. Badges are rechecking the selected provider/model.",
+              )}
             />
             <AdminProviderCooldownBadge provider={activeRegenerateProvider} className="justify-center rounded-lg py-2" />
           </div>
@@ -1283,7 +746,11 @@ export default function AdminSites() {
                           </select>
                         </label>
                         <AdminAiReadinessRefreshButton
-                          onRefresh={() => setActionMessage("AI readiness cache cleared. Badges are rechecking the selected provider/model.")}
+                          onRefresh={() => notifyAction(
+                            "info",
+                            "AI readiness refreshed",
+                            "AI readiness cache cleared. Badges are rechecking the selected provider/model.",
+                          )}
                         />
                         <AdminProviderCooldownBadge provider={activeRegenerateProvider} />
                       </div>
