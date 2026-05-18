@@ -46,7 +46,7 @@ Logic penting:
 - Header memakai grid 3 kolom `brand | centered nav | CTA` di desktop supaya menu tetap center terhadap seluruh navbar. Nama bisnis panjang ditruncate di rail kiri, bukan mendorong menu ke kanan.
 - Header/submenu memakai preset layer berbasis CSS variables di boundary `data-wv-site-header` / `data-wv-site-submenu`: `soft-glass`, `authority-bar`, `industrial-rail`, `warm-translucent`, atau `energy-band`, sehingga navbar cocok dengan niche style tanpa mewarisi efek body/card generated site.
 - Pergantian tab menjalankan scroll-to-top.
-- Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section, sehingga old generated JSON yang tidak punya page `contact` tetap bisa memakai nav/footer Contact.
+- Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section, sehingga old generated JSON yang tidak punya page `contact` tetap bisa memakai nav/footer/hero CTA Contact.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Hero section memberi marker `data-wv-hero-section` dan `data-wv-hero-heading`; renderer memakai ResizeObserver + font-ready check untuk menurunkan ukuran H1 seperlunya agar headline hero maksimal sekitar tiga baris tanpa mengecilkan heading secara permanen.
 - Hero H1 pada halaman detail produk/layanan yang memiliki `offeringDetail` diformat title case dengan stop words tetap lowercase, sehingga individual service page tidak menampilkan heading lower-case dari type/query Google.
@@ -355,7 +355,7 @@ Logic penting:
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
 - Prompt AI generator dan Function post-process menjaga parity dengan `/demo`: jika ada minimal dua foto bisnis yang usable, JSON final harus punya page `gallery`, nav item `#gallery`, dan section `imageGallery`.
 - Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
-- Prompt AI copy patch ditulis sebagai suara bisnis yang berbicara ke calon pelanggan, bukan sebagai admin/demo/report; prompt melarang frasa meta seperti `the listed address`, `this page`, `owner can replace this copy`, `website-ready`, dan `no website detected` pada copy visitor-facing.
+- Prompt AI copy patch ditulis sebagai suara bisnis yang berbicara ke calon pelanggan, bukan sebagai admin/demo/report; prompt meminta first-person owner voice seperti `we`, `our team`, `our customers`, dan `call us`, serta melarang frasa meta seperti `the listed address`, `this page`, `owner can replace this copy`, `website-ready`, dan `no website detected` pada copy visitor-facing.
 - Renderer memilih icon `features` dan `trustBar` dari teks final title/description saat render, menjaga icon tidak duplikat dalam satu grid, dan tidak terkunci ke `iconSvg` scaffold lama; product/service detail page tetap punya features section berikon.
 - Mock fallback di `AdminLeads` juga membuat product/service detail pages memakai section `hero`, `offeringDetail`, `features`, `reviews`, `faq`, dan `hoursLocation`.
 - Place Details mengambil field `reviews`; detail page bisa memakai review Google yang relevan via keyword best-effort.

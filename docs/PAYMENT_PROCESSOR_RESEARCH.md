@@ -22,6 +22,64 @@ Use a multi-rail payment setup:
 
 Keep the app capable of mock checkout when keys are missing. Every checkout attempt should still create `checkout_pending` CRM activity so follow-up is not lost.
 
+## USD-First Options Familiar to US Buyers
+
+The short answer: yes, there are more USD-first alternatives, but most Lemon/Paddle-style Merchant of Record platforms are built for software, SaaS, templates, downloads, or automated digital products. They often reject custom web development, consulting, freelancing, manual services, or anything where the main value is human labor.
+
+For the current WebView.click offer, the cleanest USD-first options are:
+
+1. PayPal Business
+2. Payoneer Request a Payment
+3. Upwork Direct Contracts
+4. Contra contracts/payments
+5. Stripe through a properly formed US entity, if you want the most familiar card checkout
+
+For a future productized self-serve offer, such as “downloadable website template pack”, “AI website generator SaaS subscription”, or “licensed generated site software”, then Merchant of Record tools like FastSpring, 2Checkout/Verifone, PayPro Global, Paddle, Polar, or Dodo may become more viable. For manual done-for-you service, they are risky unless support confirms approval in writing.
+
+### Better Fit for Current Service Offer
+
+| Option | USD-first? | Familiar to US buyers? | Fit for web dev service? | Notes |
+| --- | --- | --- | --- | --- |
+| PayPal Business | Yes | High | Good fallback | Use Business, not Personal. Good for US buyers, but account holds/disputes are still a risk. |
+| Payoneer Request a Payment | Yes | Medium | Good B2B fallback | Supports requesting payment from global clients with card/bank/ACH-style options. Approval/feature availability can vary. |
+| Upwork Direct Contracts | Yes | High for freelance/web work | Strong | Designed for freelance service contracts, escrow, credit card/PayPal/ACH. Not your own checkout API, but very trustable for US clients. |
+| Contra | USD-centric | Medium | Strong | Designed for contractor/freelance work; clients can pay by major cards and bank account. Less familiar than Upwork/PayPal. |
+| US LLC + Stripe | Yes | Very high | Strong if compliant | Best checkout UX, but requires entity, tax, bank, bookkeeping, and proper Stripe onboarding. Do not fake location/entity details. |
+
+### Risky for Current Service Offer
+
+| Option | USD-first? | Why risky |
+| --- | --- | --- |
+| Paddle | Yes | Their help docs say Paddle is built for software companies and that primary human services like consulting/design/IT services are not a good fit. |
+| Polar | Yes | Acceptable use says acceptable products are software/digital goods/access; prohibited list includes human services. |
+| Dodo Payments | Yes | Their policy explicitly prohibits “Manual Digital Services”, including custom design, development, freelancing, or consulting. |
+| Lemon Squeezy | Yes | Prohibited-products docs prohibit services including web development/design/consulting. |
+| Gumroad / Payhip / Ko-fi | Usually USD | More creator/digital-product oriented; may be okay for template/download products, but not a strong B2B web development checkout and can inherit Stripe/PayPal risk. |
+
+### Possible but Needs Approval
+
+| Option | USD-first? | Why it may still be useful |
+| --- | --- | --- |
+| FastSpring | Yes | MoR for software, SaaS, and digital goods/services. Could fit if WebView.click is positioned as software/SaaS/productized digital delivery, but custom service approval should be confirmed before integrating. |
+| 2Checkout / Verifone | Yes | Broad global payment/currency support and mature checkout. Underwriting can be strict; confirm service category and Indonesia payout/onboarding before building deep integration. |
+| PayPro Global | Yes | MoR for software/SaaS/digital products. Confirm whether productized website generation is accepted and whether manual setup/service labor is allowed. |
+
+## Practical Path
+
+For the current offer:
+
+1. Keep Xendit/Midtrans/DOKU for Indonesia-local card checkout and IDR settlement.
+2. Add PayPal Business as the most recognizable US fallback.
+3. Add Payoneer Request a Payment for invoice-style USD B2B payment.
+4. Add an optional “Pay via Upwork Direct Contract” or “Pay via Contra” manual link for clients who want escrow/trust.
+5. Treat Stripe as the long-term best checkout only if you set up a proper supported entity and tax/accounting process.
+
+For a future MoR-compatible offer:
+
+1. Productize delivery so the buyer immediately receives a digital product or software access.
+2. Separate “manual setup” into optional post-purchase support, or sell it through PayPal/Payoneer/Upwork/Contra instead.
+3. Ask FastSpring, 2Checkout/Verifone, PayPro Global, Paddle, Polar, or Dodo support for written approval before using them for anything service-like.
+
 ## Processor Notes
 
 ### Xendit
@@ -100,6 +158,39 @@ Operational note:
 - Ask buyers to include business name/domain in the payment note.
 - Keep CRM checkout activity because PayPal link payments may not auto-update without webhooks.
 
+### Upwork Direct Contracts
+
+Best fit: high-trust USD service payment for US buyers who want escrow and a familiar freelance workflow.
+
+What matters:
+- Upwork Direct Contracts are designed for freelancer-initiated contracts with clients outside the public marketplace.
+- Clients can fund contracts with credit card, PayPal, or ACH/bank options.
+- Upwork lists project costs in USD, with optional local currency conversion depending on the client.
+- This is not a native checkout API. It is a manual link/workflow rail that can be placed in the admin/payment settings.
+
+Settings needed:
+- `UPWORK_DIRECT_CONTRACT_URL` if added later.
+
+Operational note:
+- Best for prospects who hesitate to pay an unknown overseas provider directly.
+- Downside: more friction than a direct checkout button.
+
+### Contra
+
+Best fit: modern freelance/contractor payment rail for service work.
+
+What matters:
+- Contra is explicitly built around contract work and contractor payments.
+- Clients can pay by major cards and, in some cases, bank account.
+- Contra handles contractor payment workflow and compliance documents.
+- It is less universally recognized than PayPal or Upwork, but it is more aligned with services than most MoRs.
+
+Settings needed:
+- `CONTRA_PAYMENT_URL` if added later.
+
+Operational note:
+- Use as a trust/escrow-style payment option, not as the default one-click checkout.
+
 ### Wise Business
 
 Best fit: larger manual invoices and bank-transfer style payment collection.
@@ -132,7 +223,15 @@ Operational note:
 
 ### Stripe
 
-Stripe is worth monitoring because Stripe has Indonesia-specific support documentation, but for this workflow it is not the first implementation target. Confirm your exact entity type, onboarding eligibility, supported business category, payout currency, and tax setup before using it.
+Stripe is the most familiar checkout UX for US buyers, but it is not the simple path for an Indonesia-based service seller. Stripe has Indonesia-specific support docs, but Stripe Indonesia is limited and not the same as a US Stripe account with USD settlement. A US LLC/Stripe Atlas-style setup can be a long-term route, but only if the entity, bank, tax, and actual operating facts are legitimate.
+
+Settings needed if added later:
+- `STRIPE_SECRET_KEY`
+- `STRIPE_PRICE_ID` or dynamic checkout configuration
+- webhook signing secret
+
+Operational note:
+- Do not use workarounds that misrepresent your country/entity. That is a common path to account closure and held funds.
 
 ## Implementation Decision
 
@@ -150,6 +249,15 @@ The app should support these modes:
 ## Sources
 
 - Lemon Squeezy prohibited products: https://docs.lemonsqueezy.com/help/getting-started/prohibited-products
+- Paddle acceptable use / not fit for primary human services: https://www.paddle.com/help/start/intro-to-paddle/what-am-i-not-allowed-to-sell-on-paddle
+- Polar supported countries and MoR payouts: https://polar.sh/docs/merchant-of-record/supported-countries
+- Polar acceptable use: https://polar.sh/legal/acceptable-use-policy
+- Dodo merchant acceptance policy: https://docs.dodopayments.com/miscellaneous/merchant-acceptance
+- Dodo MoR in Indonesia: https://dodopayments.com/blogs/merchant-of-record-in-indonesia/
+- Stripe Indonesia support: https://support.stripe.com/questions/supported-payment-methods-currencies-and-businesses-for-stripe-accounts-in-indonesia
+- FastSpring MoR docs: https://developer.fastspring.com/docs/getting-started-with-fastspring/
+- FastSpring payment methods: https://developer.fastspring.com/docs/payment-methods-accepted-by-fastspring
+- 2Checkout / Verifone payment methods: https://verifone.cloud/docs/2checkout/Documentation/03Billing-and-payments/Payment-methods
 - Xendit USD/international payments note: https://help.xendit.co/hc/en-us/articles/360035083551-Can-Xendit-help-me-accept-payments-in-USD-or-other-currencies
 - Xendit payment methods/country support: https://www.xendit.co/en/products/all-payment-methods/
 - Midtrans pricing/payment methods: https://midtrans.com/pricing
@@ -160,3 +268,7 @@ The app should support these modes:
 - DOKU signature generation: https://dashboard.doku.com/docs/docs/technical-references/generate-signature/
 - Wise Business receive money: https://wise.com/us/business/receive-money
 - PayPal Business fees: https://www.paypal.com/us/business/paypal-business-fees
+- Payoneer Request a Payment: https://www.payoneer.com/get-paid-by-clients/payment-request/
+- Upwork Direct Contracts: https://support.upwork.com/hc/en-us/articles/360047918314-How-to-accept-and-fund-a-Direct-Contract
+- Upwork payment currency note: https://support.upwork.com/hc/en-us/articles/211068028-How-to-pay-in-your-local-currency
+- Contra global payments: https://contra.com/features/global-payments

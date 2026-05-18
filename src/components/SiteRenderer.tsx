@@ -595,7 +595,18 @@ export default function SiteRenderer({
   );
   const changeTab = (pageId: string) => {
     const nextPageId = pageId || homePageId;
-    if (!pages.some((page: any) => page.pageId === nextPageId)) {
+    const directPageExists = pages.some((page: any) => page.pageId === nextPageId);
+    const sectionOwnerPage = !directPageExists
+      ? pages.find((page: any) => Array.isArray(page.sections) && page.sections.some((section: any) => sectionId(section) === nextPageId))
+      : null;
+    if (!directPageExists && sectionOwnerPage?.pageId) {
+      setActiveTab(sectionOwnerPage.pageId);
+      window.requestAnimationFrame(() => {
+        document.getElementById(nextPageId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      return;
+    }
+    if (!directPageExists) {
       const target = document.getElementById(nextPageId);
       if (target) {
         const ownerPage = target.closest("[data-wv-page]") as HTMLElement | null;
@@ -768,7 +779,10 @@ export default function SiteRenderer({
     .filter((item: any) => item.children.length > 0);
   const tabPageIdForHref = (href: string) => {
     const pageId = String(href || "").startsWith("#") ? String(href).replace("#", "") : "";
-    return pageId && pages.some((page: any) => page.pageId === pageId) ? pageId : "";
+    if (!pageId) return "";
+    if (pages.some((page: any) => page.pageId === pageId)) return pageId;
+    const ownerPage = pages.find((page: any) => Array.isArray(page.sections) && page.sections.some((section: any) => sectionId(section) === pageId));
+    return ownerPage?.pageId || "";
   };
   const tabPropsForHref = (href: string) => {
     const pageId = tabPageIdForHref(href);
@@ -847,7 +861,7 @@ export default function SiteRenderer({
         </nav>
         <a
           href={globalConfig.header.ctaButton.href}
-          data-wv-tab={String(globalConfig.header.ctaButton.href || "").startsWith("#") ? String(globalConfig.header.ctaButton.href).replace("#", "") : undefined}
+          data-wv-tab={tabPageIdForHref(String(globalConfig.header.ctaButton.href || "")) || undefined}
           onClick={(event) => {
             const href = String(globalConfig.header.ctaButton.href || "");
             if (href.startsWith("#")) {
@@ -929,10 +943,11 @@ export default function SiteRenderer({
                         <div className="flex flex-col sm:flex-row gap-3">
                           {(heroContent.buttons || []).map((btn: any, i: number) => {
                             const href = typeof btn.href === "string" ? btn.href : "#";
+                            const tabPageId = tabPageIdForHref(href);
                             return (
                               <button
                                 key={i}
-                                data-wv-tab={href.startsWith("#") ? href.replace("#", "") : undefined}
+                                data-wv-tab={tabPageId || undefined}
                                 style={{
                                   backgroundColor: btn.style === "primary" ? colors.accent : "transparent",
                                   color: btn.style === "primary" ? "#fff" : colors.textMain,
