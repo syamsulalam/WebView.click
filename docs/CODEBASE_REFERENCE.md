@@ -151,6 +151,7 @@ Logic penting:
 - Untuk action AI, status key bisa `Key present`, `Key missing`, atau `Key unknown` saat settings belum selesai dimuat.
 - Untuk action AI, badge juga memanggil `/api/ai/readiness` dan menampilkan `Preflight ok`, `Model invalid`, `Provider invalid`, atau `Preflight failed`.
 - Untuk action AI, badge juga memanggil `/api/ai/provider-failure` dan menampilkan chip kecil `Last fail` bila provider/model itu punya failure 14 hari terakhir, termasuk kind, HTTP status, umur failure, dan tooltip action hint.
+- Badge tidak memakai browser `title` untuk pesan readiness/failure penting. Tombol `Details` membuka popover in-app dengan readiness message, remote validation, last failure, action hint, dan tombol copy agar error provider bisa dikirim ke support/debug tanpa mengetik ulang.
 - Dipakai oleh `/admin/leads`, `/admin/sites`, dan `GenerationJobsTable` supaya tombol generate tidak drift dalam cara menjelaskan kesiapan AI.
 
 ### `src/components/AdminAiReadinessRefreshButton.tsx`
@@ -175,6 +176,7 @@ Logic penting:
 - `useAdminToast().showApiError()` memakai `src/lib/apiErrorInsights.ts` untuk mengubah error provider menjadi judul, arti error, action items, dan raw message.
 - Error generate/regenerate/retry dari `/api/sites/generate` muncul sebagai toast, sehingga pesan seperti Gemini 429 quota tidak tersembunyi di panel/card yang harus discroll.
 - `src/lib/apiResponse.ts` dipakai oleh generate/regenerate/retry supaya body error non-JSON/HTML dari provider atau edge tetap muncul sebagai snippet di toast, bukan hanya fallback `HTTP 502`.
+- Toast raw error punya tombol `Copy warning` agar provider error lengkap, action items, dan raw message bisa disalin dari UI.
 - 429/quota toast juga menulis cooldown provider ke `src/lib/providerCooldown.ts`; batch generate di `/admin/leads`, first generate/regenerate di `/admin/sites`, dan retry job membaca cooldown ini agar tidak langsung menghantam provider yang sedang exhausted.
 - Browser default `alert()` tidak dipakai di admin; dev bypass sign-out memakai toast info.
 
@@ -393,6 +395,7 @@ Fungsi:
 - Chrome/Opera unpacked extension helper untuk mengambil data visible Google Maps saat Places API quota habis.
 - `content.js` membaca link/detail yang sedang visible di DOM Google Maps dan mengirim array `items`.
 - `popup.js` menyalin JSON hasil capture ke clipboard agar bisa dipaste ke panel manual import di `/admin/leads`, atau mengirimnya langsung ke `/api/places/manual-import` lewat tombol `Post to admin`.
+- Jika popup menerima Chrome error `Could not establish connection. Receiving end does not exist`, popup menginject `content.js` ke tab Maps aktif dan retry sekali sebelum menampilkan error. Ini membantu setelah extension baru direload atau tab Maps sudah terbuka sebelum content script aktif.
 
 Risiko debug:
 - DOM Google Maps berubah-ubah; helper ini best-effort dan hanya menangkap listing yang visible atau detail panel yang sedang terbuka.
@@ -661,7 +664,7 @@ Fungsi:
 - Interpreter error API untuk toast admin.
 
 Logic penting:
-- Mengklasifikasi 429/rate limit/quota, 401/402/403 key-permission-billing-credit, 400 payload/model invalid, dan 455/5xx/provider temporary failure.
+- Mengklasifikasi 429/rate limit/quota, IP whitelist/allowlist rejection, 401/402/403 key-permission-billing-credit, 400 payload/model invalid, dan 455/5xx/provider temporary failure.
 - Untuk Gemini 429 `RESOURCE_EXHAUSTED`, message menjelaskan bahwa quota/rate limit diterapkan per project, lalu menyarankan wait/retry, hentikan batch retry, switch model/provider, atau naikkan quota/billing.
 - Provider cooldown memakai strategi konservatif: Gemini/OpenAI/custom default 90 detik untuk rate limit per menit, OpenRouter 75 detik kecuali ada retry hint, KIE.ai 30 detik karena KIE mendokumentasikan burst limit pendek, dan quota/billing/daily cases lebih lama.
 - Dipakai oleh `AdminToast.showApiError()` supaya UI menampilkan meaning/action items, bukan hanya raw provider string.

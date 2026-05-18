@@ -702,11 +702,13 @@ function classifyAiFailure(status: number | undefined, providerStatus: string, m
       actionHint: "Check provider credits/billing, then refresh AI readiness before retrying.",
     };
   }
-  if (status === 401 || status === 403 || /unauthorized|forbidden|permission|invalid key|api key|access denied/i.test(raw)) {
+  if (status === 401 || status === 403 || /unauthorized|forbidden|permission|invalid key|api key|access denied|ip whitelist|ip allowlist|allowlist|server ip/i.test(raw)) {
     return {
       failureKind: "auth_or_permission",
       retryable: false,
-      actionHint: "Verify the saved API key, project permissions, and model access in Settings.",
+      actionHint: /ip whitelist|ip allowlist|allowlist|server ip/i.test(raw)
+        ? "Remove or update the provider IP whitelist for this API key. Cloudflare Pages Functions egress may not match a single fixed server IP."
+        : "Verify the saved API key, project permissions, and model access in Settings.",
     };
   }
   if (status === 400 || status === 404 || status === 422 || /model.*not|not found|unsupported|invalid model|invalid_argument|validation|bad request/i.test(raw)) {

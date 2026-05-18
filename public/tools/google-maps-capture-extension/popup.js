@@ -17,6 +17,22 @@ adminOriginInput.addEventListener("change", () => {
   chrome.storage.local.set({ adminOrigin: adminOriginInput.value.replace(/\/$/, "") || "https://webview.click" });
 });
 
+const captureFromTab = async (tabId) => {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: "WEBVIEW_CAPTURE_MAPS" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || "");
+    if (!/receiving end does not exist|could not establish connection/i.test(message)) {
+      throw error;
+    }
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
+    });
+    return chrome.tabs.sendMessage(tabId, { type: "WEBVIEW_CAPTURE_MAPS" });
+  }
+};
+
 const captureCurrentTab = async () => {
   setStatus("Capturing visible Maps data...");
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -24,7 +40,7 @@ const captureCurrentTab = async () => {
     throw new Error("Open a Google Maps tab before capturing.");
   }
 
-  const data = await chrome.tabs.sendMessage(tab.id, { type: "WEBVIEW_CAPTURE_MAPS" });
+  const data = await captureFromTab(tab.id);
   const text = JSON.stringify(data, null, 2);
   outputNode.value = text;
   await navigator.clipboard.writeText(text);

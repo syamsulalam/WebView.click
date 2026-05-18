@@ -95,6 +95,20 @@ export function interpretApiError(error: unknown, input: ApiErrorInput = {}): Ap
     };
   }
 
+  if (/ip whitelist|ip allowlist|allowlist|server ip/i.test(rawMessage)) {
+    return {
+      title: `${sourcePrefix}${provider} IP whitelist rejected the request`,
+      meaning: `${provider} rejected the configured key because the Cloudflare Pages Function outbound IP is not allowed${modelSuffix}. This is a provider key restriction, not a copy-generation prompt problem.`,
+      actions: [
+        "Open the provider dashboard and remove the IP whitelist for this API key, or add the actual server egress IP if the provider supports a stable one.",
+        "For Cloudflare Pages Functions, avoid single-IP allowlists unless you have a stable egress/proxy strategy.",
+        "After changing the provider setting, click Refresh AI readiness and retry once.",
+      ],
+      severity: "error",
+      rawMessage,
+    };
+  }
+
   if (status === 401 || status === 402 || status === 403 || /api key|permission_denied|unauthorized|forbidden|invalid key|billing|insufficient credits/i.test(rawMessage)) {
     return {
       title: `${sourcePrefix}${provider} key or permission problem`,

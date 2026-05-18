@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Copy, Info, X } from "lucide-react";
 import { interpretApiError, type ApiErrorInsight } from "../lib/apiErrorInsights";
 import { setProviderCooldown } from "../lib/providerCooldown";
 
@@ -45,6 +45,7 @@ function styleForKind(kind: ToastKind) {
 
 export function AdminToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<AdminToast[]>([]);
+  const [copiedToastId, setCopiedToastId] = useState("");
 
   const dismissToast = useCallback((id: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -73,6 +74,22 @@ export function AdminToastProvider({ children }: { children: ReactNode }) {
     });
   }, [showToast]);
 
+  const copyToast = useCallback(async (toast: AdminToast) => {
+    const payload = [
+      toast.title,
+      toast.message || "",
+      ...(toast.actions || []).map((action) => `- ${action}`),
+      toast.rawMessage ? `Raw error:\n${toast.rawMessage}` : "",
+    ].filter(Boolean).join("\n");
+    try {
+      await navigator.clipboard.writeText(payload);
+      setCopiedToastId(toast.id);
+      window.setTimeout(() => setCopiedToastId(""), 1400);
+    } catch {
+      setCopiedToastId("");
+    }
+  }, []);
+
   const value = useMemo(() => ({ showToast, showApiError, dismissToast }), [dismissToast, showApiError, showToast]);
 
   return (
@@ -99,6 +116,14 @@ export function AdminToastProvider({ children }: { children: ReactNode }) {
                 {toast.rawMessage && (
                   <details className="mt-3">
                     <summary className="cursor-pointer text-xs font-semibold opacity-80">Raw error</summary>
+                    <button
+                      type="button"
+                      onClick={() => copyToast(toast)}
+                      className="mt-2 inline-flex items-center gap-1 rounded-lg bg-white/70 px-2 py-1 text-xs font-semibold text-slate-800 hover:bg-white"
+                    >
+                      {copiedToastId === toast.id ? <Check size={12} /> : <Copy size={12} />}
+                      {copiedToastId === toast.id ? "Copied" : "Copy warning"}
+                    </button>
                     <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded-lg bg-white/70 p-2 text-[11px] leading-relaxed text-slate-800">
                       {toast.rawMessage}
                     </pre>
