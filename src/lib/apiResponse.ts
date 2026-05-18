@@ -5,8 +5,7 @@ export async function readApiJson<T = any>(response: Response, fallbackLabel = "
     try {
       data = JSON.parse(text);
     } catch {
-      const snippet = text.replace(/\s+/g, " ").trim().slice(0, 240);
-      throw new Error(`${fallbackLabel} returned a non-JSON response (HTTP ${response.status})${snippet ? `: ${snippet}` : ""}`);
+      throw new Error(describeNonJsonApiResponse(response, text, fallbackLabel));
     }
   }
 
@@ -15,4 +14,14 @@ export async function readApiJson<T = any>(response: Response, fallbackLabel = "
   }
 
   return data as T;
+}
+
+export function describeNonJsonApiResponse(response: Response, text: string, fallbackLabel = "Request") {
+  const snippet = text.replace(/\s+/g, " ").trim().slice(0, 240);
+  const lower = snippet.toLowerCase();
+  const looksLikeCloudflareHtml = lower.includes("cloudflare") || lower.includes("<!doctype html") || lower.includes("<html");
+  if (looksLikeCloudflareHtml && response.status >= 500) {
+    return `${fallbackLabel} returned Cloudflare/HTML instead of JSON (HTTP ${response.status}). This usually means the Pages Function did not return normally, the deployment is failing at the edge, or Cloudflare is temporarily unavailable. Check Cloudflare Pages deployment logs, Functions logs, and Cloudflare Status. Snippet: ${snippet}`;
+  }
+  return `${fallbackLabel} returned a non-JSON response (HTTP ${response.status})${snippet ? `: ${snippet}` : ""}`;
 }

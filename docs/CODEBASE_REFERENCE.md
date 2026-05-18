@@ -186,7 +186,7 @@ Logic penting:
 - `AdminToastProvider` menyimpan maksimal 4 toast dan merender overlay fixed kanan atas dengan z-index tinggi.
 - `useAdminToast().showApiError()` memakai `src/lib/apiErrorInsights.ts` untuk mengubah error provider menjadi judul, arti error, action items, dan raw message.
 - Error generate/regenerate/retry dari `/api/sites/generate` muncul sebagai toast, sehingga pesan seperti Gemini 429 quota tidak tersembunyi di panel/card yang harus discroll.
-- `src/lib/apiResponse.ts` dipakai oleh generate/regenerate/retry supaya body error non-JSON/HTML dari provider atau edge tetap muncul sebagai snippet di toast, bukan hanya fallback `HTTP 502`.
+- `src/lib/apiResponse.ts` dipakai oleh API fetch penting supaya body error non-JSON/HTML dari provider atau Cloudflare edge tetap muncul sebagai pesan actionable, bukan hanya fallback `HTTP 502` atau dump HTML. Jika response HTML Cloudflare 5xx, pesan mengarahkan admin cek Pages deployment logs, Functions logs, dan Cloudflare Status.
 - Toast raw error punya tombol `Copy warning` agar provider error lengkap, action items, dan raw message bisa disalin dari UI.
 - 429/quota toast juga menulis cooldown provider ke `src/lib/providerCooldown.ts`; batch generate di `/admin/leads`, first generate/regenerate di `/admin/sites`, dan retry job membaca cooldown ini agar tidak langsung menghantam provider yang sedang exhausted.
 - Browser default `alert()` tidak dipakai di admin; dev bypass sign-out memakai toast info.
@@ -467,6 +467,7 @@ Logic penting:
 - First generate dan `AI regenerate` memanggil `/api/ai/readiness` sebelum gather/generate berat; mode `Re-gather Google data + resave` tidak membutuhkan preflight AI.
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
+- Initial load `/admin/sites` memakai `readApiJson` untuk `/api/sites` dan `/api/prospects`, sehingga Cloudflare HTML 503 ditampilkan sebagai masalah Pages Functions/edge, bukan pesan mentah `Response bukan JSON`.
 - Tooltip dipasang pada heading Generated Sites, Ready to Generate, table actions, dan Regen dropdown untuk menjelaskan perbedaan Preview/Data/Brief/Regen, first generate, AI regenerate, dan re-gather.
 
 Risiko debug:

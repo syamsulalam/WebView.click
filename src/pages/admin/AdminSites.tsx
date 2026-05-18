@@ -619,29 +619,11 @@ export default function AdminSites() {
     setError("");
     try {
       const response = await fetch("/api/sites");
-      const text = await response.text();
-      let data: unknown = [];
-      try {
-        data = text ? JSON.parse(text) : [];
-      } catch {
-        throw new Error(`Response bukan JSON: ${text.slice(0, 120)}`);
-      }
-      if (!response.ok) {
-        throw new Error((data as { error?: string }).error || `Sites API returned ${response.status}`);
-      }
+      const data = await readApiJson<unknown>(response, "Sites API");
       setSites(Array.isArray(data) ? (data as SiteRow[]) : []);
 
       const prospectResponse = await fetch("/api/prospects?status=details_loaded");
-      const prospectText = await prospectResponse.text();
-      let prospectData: unknown = [];
-      try {
-        prospectData = prospectText ? JSON.parse(prospectText) : [];
-      } catch {
-        throw new Error(`Prospects response bukan JSON: ${prospectText.slice(0, 120)}`);
-      }
-      if (!prospectResponse.ok) {
-        throw new Error((prospectData as { error?: string }).error || `Prospects API returned ${prospectResponse.status}`);
-      }
+      const prospectData = await readApiJson<unknown>(prospectResponse, "Prospects API");
       setGatheredProspects(Array.isArray(prospectData)
         ? (prospectData as ProspectRow[]).filter((item) => item.place_id && !item.generatedBusinessId)
         : []);
