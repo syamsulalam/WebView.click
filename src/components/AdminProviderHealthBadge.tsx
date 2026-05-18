@@ -3,6 +3,7 @@ import { Activity } from "lucide-react";
 import { aiReadinessRefreshEvent } from "../lib/aiReadiness";
 import { getProviderHealth, type ProviderHealthSummary } from "../lib/providerHealth";
 import HelpTooltip from "./HelpTooltip";
+import HoverTooltip from "./HoverTooltip";
 
 type AdminProviderHealthBadgeProps = {
   provider: string;
@@ -53,9 +54,9 @@ export default function AdminProviderHealthBadge({ provider, model, className = 
     : "No provider health data loaded yet.";
 
   return (
+    <HoverTooltip text={title} className="max-w-full">
     <span
       className={`inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${failureRateClass(rate, total)} ${className}`}
-      title={title}
     >
       <Activity size={13} />
       {loading ? "Checking 24h failure rate" : total ? `${percent}% fail · ${failed}/${total} 24h` : "No 24h attempts"}
@@ -65,5 +66,6 @@ export default function AdminProviderHealthBadge({ provider, model, className = 
         text="Uses local generation job history only. It shows failed attempts divided by all attempts for this provider/model in the last 24 hours, so you can avoid flaky models before batch generation."
       />
     </span>
+    </HoverTooltip>
   );
 }

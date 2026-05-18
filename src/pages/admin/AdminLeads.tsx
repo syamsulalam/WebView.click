@@ -9,6 +9,7 @@ import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOption
 import { checkAiReadiness, logAiReadinessBlockedJob } from "../../lib/aiReadiness";
 import { readApiJson } from "../../lib/apiResponse";
 import HelpTooltip from "../../components/HelpTooltip";
+import HoverTooltip from "../../components/HoverTooltip";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
 import AdminWorkspaceTabs from "../../components/AdminWorkspaceTabs";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
@@ -1173,7 +1174,7 @@ export default function AdminLeads() {
               },
               {
                 title: isEnglish ? "Fast next step" : "Langkah berikutnya cepat",
-                description: isEnglish ? "Visitors can call, ask questions, or open maps from this page." : "Pengunjung bisa telepon, bertanya, atau membuka maps dari halaman ini.",
+                description: isEnglish ? "Call, ask questions, or open maps when you are ready for the next step." : "Telepon, bertanya, atau buka maps saat siap mengambil langkah berikutnya.",
                 iconSvg: iconSvgForText("fast contact"),
               },
               {
@@ -1204,7 +1205,7 @@ export default function AdminLeads() {
               },
               {
                 question: isEnglish ? "Can details be customized?" : "Apakah detail bisa disesuaikan?",
-                answer: isEnglish ? "Yes. The business owner can replace this copy with exact packages, prices, and requirements." : "Bisa. Pemilik bisnis dapat mengganti copy ini dengan paket, harga, dan syarat yang lebih tepat.",
+                answer: isEnglish ? "Yes. Call with your exact need, timing, location, and any requirements so the next step is clear." : "Bisa. Hubungi dengan kebutuhan, waktu, lokasi, dan syarat khusus agar langkah berikutnya jelas.",
               },
             ],
           },
@@ -1442,9 +1443,9 @@ export default function AdminLeads() {
               content: {
                 title: isEnglish ? "Why this business stands out" : "Kenapa bisnis ini relevan",
                 items: [
-                  { title: isEnglish ? "Verified Google profile" : "Profil Google aktif", description: businessStatus || (isEnglish ? "Business data is available from Google Places." : "Data bisnis tersedia dari Google Places."), iconSvg: iconSvgForText("local maps") },
-                  { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: phone || (isEnglish ? "Contact details can be completed by admin." : "Kontak bisa dilengkapi oleh admin."), iconSvg: iconSvgForText("contact call") },
-                  { title: isEnglish ? "Website-ready" : "Siap dibuatkan website", description: websiteUrl ? (isEnglish ? "Already has a website, good for redesign." : "Sudah punya website, cocok untuk redesign.") : (isEnglish ? "No website detected yet." : "Belum terdeteksi punya website."), iconSvg: iconSvgForText("website ready") }
+                  { title: isEnglish ? "Local business profile" : "Profil bisnis lokal", description: businessStatus || (isEnglish ? "Find service details, location, and next steps in one place." : "Temukan detail layanan, lokasi, dan langkah berikutnya di satu tempat."), iconSvg: iconSvgForText("local maps") },
+                  { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: phone || (isEnglish ? "Reach out with your questions and preferred timing." : "Hubungi kami dengan pertanyaan dan waktu yang diinginkan."), iconSvg: iconSvgForText("contact call") },
+                  { title: isEnglish ? "Simple next step" : "Langkah berikutnya mudah", description: websiteUrl ? (isEnglish ? "Review the available details, then contact us when you are ready." : "Lihat detail yang tersedia, lalu hubungi kami saat siap.") : (isEnglish ? "Call or send a question to confirm service fit and availability." : "Telepon atau kirim pertanyaan untuk memastikan kecocokan layanan dan ketersediaan."), iconSvg: iconSvgForText("contact next step") }
                 ]
               }
             },
@@ -1467,7 +1468,7 @@ export default function AdminLeads() {
                 title: isEnglish ? "Common questions" : "Pertanyaan umum",
                 items: [
                   { question: isEnglish ? "How do I contact this business?" : "Bagaimana cara menghubungi bisnis ini?", "answer": phone ? (isEnglish ? `Call directly at ${phone}.` : `Hubungi langsung di ${phone}.`) : (isEnglish ? "Phone number is not available yet and can be completed manually." : "Nomor telepon belum tersedia dan bisa dilengkapi manual.") },
-                  { question: isEnglish ? "Can this data be edited?" : "Apakah data ini bisa diedit?", "answer": isEnglish ? "Yes. The generated JSON can be corrected before the final website is used." : "Bisa. JSON hasil generate dapat dikoreksi sebelum dipakai sebagai website final." }
+                  { question: isEnglish ? "What should I prepare before contacting you?" : "Apa yang perlu disiapkan sebelum menghubungi?", "answer": isEnglish ? "Share what you need, your location, preferred timing, and any important details so we can point you to the right next step." : "Sampaikan kebutuhan, lokasi, waktu yang diinginkan, dan detail penting agar kami bisa mengarahkan langkah berikutnya." }
                 ]
               }
             }
@@ -1835,16 +1836,17 @@ export default function AdminLeads() {
                 Listing URLs can create one draft. Search URLs need captured browser JSON because Google Maps renders the business cards inside the page.
               </p>
             </div>
-            <a
-              href="/tools/google-maps-capture-extension/README.md"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
-              title="Open the extension helper instructions for capturing visible Google Maps cards."
-            >
-              <ExternalLink size={14} />
-              Capture helper
-            </a>
+            <HoverTooltip text="Open the extension helper instructions for capturing visible Google Maps cards.">
+              <a
+                href="/tools/google-maps-capture-extension/README.md"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+              >
+                <ExternalLink size={14} />
+                Capture helper
+              </a>
+            </HoverTooltip>
           </div>
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <label className="text-sm">
@@ -1877,16 +1879,17 @@ export default function AdminLeads() {
             <p className={`text-xs ${manualImportMessage.includes("failed") || manualImportMessage.includes("Paste") ? "text-red-700" : "text-slate-600"}`}>
               {manualImportMessage || "Imported drafts appear in the same prospect pipeline below."}
             </p>
-            <button
-              type="button"
-              onClick={handleManualMapsImport}
-              disabled={manualImportLoading}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-              title="Import URL-derived or browser-captured Google Maps data into prospect drafts."
-            >
-              {manualImportLoading ? <Loader2 className="animate-spin" size={16} /> : <ListChecks size={16} />}
-              Import manual prospects
-            </button>
+            <HoverTooltip text="Import URL-derived or browser-captured Google Maps data into prospect drafts.">
+              <button
+                type="button"
+                onClick={handleManualMapsImport}
+                disabled={manualImportLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {manualImportLoading ? <Loader2 className="animate-spin" size={16} /> : <ListChecks size={16} />}
+                Import manual prospects
+              </button>
+            </HoverTooltip>
           </div>
         </div>
         </>
@@ -1917,29 +1920,29 @@ export default function AdminLeads() {
                 const summary = item.summary || {};
                 const active = selectedSearchHistoryKey === item.queryKey;
                 return (
-                  <button
-                    key={item.queryKey || item.query}
-                    type="button"
-                    onClick={() => applySearchHistory(item)}
-                    className={`min-w-[260px] rounded-xl border p-3 text-left transition ${
-                      active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-slate-50 hover:bg-white"
-                    }`}
-                    title="Load this cached search term and show current progress per Google Business listing."
-                  >
-                    <span className="block truncate text-sm font-semibold text-slate-950">{item.query}</span>
-                    <span className="mt-1 block text-xs text-slate-500">
-                      {summary.total || item.resultCount || 0} results
-                      {item.updatedAt ? ` · ${new Date(item.updatedAt).toLocaleDateString()}` : ""}
-                    </span>
-                    <span className="mt-2 flex flex-wrap gap-1.5">
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">{summary.noWebsite || 0} no site</span>
-                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">{summary.detailsLoaded || 0} gathered</span>
-                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">{summary.generated || 0} generated</span>
-                      {(summary.errors || 0) > 0 && (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800">{summary.errors} error</span>
-                      )}
-                    </span>
-                  </button>
+                  <HoverTooltip key={item.queryKey || item.query} text="Load this cached search term and show current progress per Google Business listing.">
+                    <button
+                      type="button"
+                      onClick={() => applySearchHistory(item)}
+                      className={`min-w-[260px] rounded-xl border p-3 text-left transition ${
+                        active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-slate-50 hover:bg-white"
+                      }`}
+                    >
+                      <span className="block truncate text-sm font-semibold text-slate-950">{item.query}</span>
+                      <span className="mt-1 block text-xs text-slate-500">
+                        {summary.total || item.resultCount || 0} results
+                        {item.updatedAt ? ` · ${new Date(item.updatedAt).toLocaleDateString()}` : ""}
+                      </span>
+                      <span className="mt-2 flex flex-wrap gap-1.5">
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">{summary.noWebsite || 0} no site</span>
+                        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">{summary.detailsLoaded || 0} gathered</span>
+                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">{summary.generated || 0} generated</span>
+                        {(summary.errors || 0) > 0 && (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800">{summary.errors} error</span>
+                        )}
+                      </span>
+                    </button>
+                  </HoverTooltip>
                 );
               })}
             </div>
@@ -2232,16 +2235,17 @@ export default function AdminLeads() {
           >
             {isSearching ? <Loader2 className="animate-spin" size={20} /> : "Cari"}
           </button>
-          <button
-            type="button"
-            onClick={() => handleSearch(true)}
-            disabled={isSearching || !searchQuery}
-            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center gap-2 disabled:opacity-50"
-            title="Abaikan cache DB dan ambil ulang dari Google Places"
-          >
-            <RefreshCw size={16} />
-            Refresh
-          </button>
+          <HoverTooltip text="Abaikan cache DB dan ambil ulang dari Google Places">
+            <button
+              type="button"
+              onClick={() => handleSearch(true)}
+              disabled={isSearching || !searchQuery}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+          </HoverTooltip>
         </div>
 
         {searchMessage && (
@@ -2299,22 +2303,23 @@ export default function AdminLeads() {
                   <ListChecks size={14} />
                   {selectedVisibleProspects.length === visibleProspects.length ? "Clear selected" : "Select visible"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = { ...selectedProspects };
-                    visibleProspects.forEach((place) => {
-                      const key = getPlaceKey(place);
-                      if (key) next[key] = prospectScore(place).score >= 70;
-                    });
-                    setSelectedProspects(next);
-                  }}
-                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
-                  title="Select visible prospects with conversion score 70 or higher."
-                >
-                  <ListChecks size={14} />
-                  Select score 70+
-                </button>
+                <HoverTooltip text="Select visible prospects with conversion score 70 or higher.">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = { ...selectedProspects };
+                      visibleProspects.forEach((place) => {
+                        const key = getPlaceKey(place);
+                        if (key) next[key] = prospectScore(place).score >= 70;
+                      });
+                      setSelectedProspects(next);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                  >
+                    <ListChecks size={14} />
+                    Select score 70+
+                  </button>
+                </HoverTooltip>
                 <button
                   type="button"
                   onClick={startBatchGenerate}
@@ -2383,18 +2388,21 @@ export default function AdminLeads() {
                       {displayPlace.name}
                       <ExternalLink size={13} />
                     </a>
-                    <span title={websiteStatus.title} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${websiteStatus.className}`}>
-                      {websiteStatus.label}
-                    </span>
+                    <HoverTooltip text={websiteStatus.title}>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${websiteStatus.className}`}>
+                        {websiteStatus.label}
+                      </span>
+                    </HoverTooltip>
                     <span className="relative inline-flex">
-                      <button
-                        type="button"
-                        onClick={() => setScorePopoverKey(scorePopoverKey === placeKey ? "" : placeKey)}
-                        className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800 hover:bg-indigo-200"
-                        title="Click for score breakdown"
-                      >
-                        Score {score.score}
-                      </button>
+                      <HoverTooltip text="Click for score breakdown" widthClass="w-44">
+                        <button
+                          type="button"
+                          onClick={() => setScorePopoverKey(scorePopoverKey === placeKey ? "" : placeKey)}
+                          className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800 hover:bg-indigo-200"
+                        >
+                          Score {score.score}
+                        </button>
+                      </HoverTooltip>
                       {scorePopoverKey === placeKey && (
                         <span className="absolute left-0 top-full z-[180] mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 text-left text-xs text-slate-700 shadow-2xl">
                           <span className="mb-2 flex items-center justify-between">
@@ -2454,29 +2462,31 @@ export default function AdminLeads() {
                     Skip
                   </button>
                   {!detailsReady ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateProspectStatus(displayPlace, "details_loaded");
-                        loadPlaceDetails(displayPlace);
-                      }}
-                      disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id || mapsQueryPlaceholder}
-                      title={mapsQueryPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : undefined}
-                      className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={18} /> : <ListChecks size={18} />}
-                      Gather data
-                    </button>
+                    <HoverTooltip text={mapsQueryPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : ""}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateProspectStatus(displayPlace, "details_loaded");
+                          loadPlaceDetails(displayPlace);
+                        }}
+                        disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id || mapsQueryPlaceholder}
+                        className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={18} /> : <ListChecks size={18} />}
+                        Gather data
+                      </button>
+                    </HoverTooltip>
                   ) : (
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <button
-                        onClick={() => handleGenerateSite(displayPlace)}
-                        disabled={isGenerating || mapsQueryPlaceholder}
-                        title={mapsQueryPlaceholder ? "This is not a specific business listing yet." : undefined}
-                        className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
-                      </button>
+                      <HoverTooltip text={mapsQueryPlaceholder ? "This is not a specific business listing yet." : ""}>
+                        <button
+                          onClick={() => handleGenerateSite(displayPlace)}
+                          disabled={isGenerating || mapsQueryPlaceholder}
+                          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
+                        </button>
+                      </HoverTooltip>
                       <AdminAiReadinessBadge
                         provider={activeProviderKey}
                         model={activeModel}
@@ -2529,18 +2539,18 @@ export default function AdminLeads() {
                         const selected = logoSelections[placeKey]?.url === imageUrl;
                         const priorityLabel = photoPriorityLabel(photo, displayPlace.name);
                         return (
-                          <button
-                            key={photo.photo_reference || photoIdx}
-                            type="button"
-                            onClick={() => selectLogoPhoto(placeKey, imageUrl, photo, displayPlace.name)}
-                            className={`relative w-24 h-24 rounded-xl overflow-hidden border-2 bg-white shrink-0 ${selected ? "border-indigo-600" : "border-gray-200 hover:border-gray-300"}`}
-                            title={`Gunakan sebagai sumber warna brand. Prioritas: ${priorityLabel}`}
-                          >
-                            <img src={imageUrl} alt="" className="w-full h-full object-cover" crossOrigin="anonymous" />
-                            <span className="absolute left-1 right-1 bottom-1 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
-                              {priorityLabel}
-                            </span>
-                          </button>
+                          <HoverTooltip key={photo.photo_reference || photoIdx} text={`Gunakan sebagai sumber warna brand. Prioritas: ${priorityLabel}`}>
+                            <button
+                              type="button"
+                              onClick={() => selectLogoPhoto(placeKey, imageUrl, photo, displayPlace.name)}
+                              className={`relative w-24 h-24 rounded-xl overflow-hidden border-2 bg-white shrink-0 ${selected ? "border-indigo-600" : "border-gray-200 hover:border-gray-300"}`}
+                            >
+                              <img src={imageUrl} alt="" className="w-full h-full object-cover" crossOrigin="anonymous" />
+                              <span className="absolute left-1 right-1 bottom-1 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                                {priorityLabel}
+                              </span>
+                            </button>
+                          </HoverTooltip>
                         );
                       })}
                     </div>
@@ -2548,7 +2558,9 @@ export default function AdminLeads() {
                       <div className="mt-3 flex items-center gap-2">
                         <span className="text-xs text-gray-500">Palette:</span>
                         {logoSelections[placeKey].palette.map((color) => (
-                          <span key={color} className="w-6 h-6 rounded-full border border-white shadow-sm" style={{ backgroundColor: color }} title={color} />
+                          <HoverTooltip key={color} text={color} widthClass="w-32">
+                            <span className="w-6 h-6 rounded-full border border-white shadow-sm" style={{ backgroundColor: color }} />
+                          </HoverTooltip>
                         ))}
                       </div>
                     )}
@@ -2556,11 +2568,13 @@ export default function AdminLeads() {
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <span className="text-xs text-gray-500">{paletteOptionsByPlace[placeKey].length} palette options:</span>
                         {paletteOptionsByPlace[placeKey].map((option) => (
-                          <span key={option.id} className="inline-flex overflow-hidden rounded-full border border-slate-200" title={option.label}>
-                            {(option.colors || []).slice(0, 5).map((color: string) => (
-                              <span key={color} className="h-4 w-4" style={{ backgroundColor: color }} />
-                            ))}
-                          </span>
+                          <HoverTooltip key={option.id} text={option.label}>
+                            <span className="inline-flex overflow-hidden rounded-full border border-slate-200">
+                              {(option.colors || []).slice(0, 5).map((color: string) => (
+                                <span key={color} className="h-4 w-4" style={{ backgroundColor: color }} />
+                              ))}
+                            </span>
+                          </HoverTooltip>
                         ))}
                       </div>
                     )}
@@ -2719,16 +2733,17 @@ export default function AdminLeads() {
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => loadPlaceDetails(mergedPlace)}
-                      disabled={placeDetailsLoading[placeKey] || !mergedPlace.place_id || mapsQueryPlaceholder}
-                      title={mapsQueryPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : undefined}
-                      className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                    >
-                      {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={15} /> : <Images size={15} />}
-                      Refresh details/photos
-                    </button>
+                    <HoverTooltip text={mapsQueryPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : ""}>
+                      <button
+                        type="button"
+                        onClick={() => loadPlaceDetails(mergedPlace)}
+                        disabled={placeDetailsLoading[placeKey] || !mergedPlace.place_id || mapsQueryPlaceholder}
+                        className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                      >
+                        {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={15} /> : <Images size={15} />}
+                        Refresh details/photos
+                      </button>
+                    </HoverTooltip>
                     {googleBusinessListingUrl(mergedPlace) && (
                       <a href={googleBusinessListingUrl(mergedPlace)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                         Google Maps <ExternalLink size={15} />
@@ -2779,7 +2794,9 @@ export default function AdminLeads() {
                       <div className="mt-4 flex items-center gap-2">
                         <span className="text-xs text-slate-500">Selected palette:</span>
                         {logoSelections[placeKey].palette.map((color) => (
-                          <span key={color} className="h-7 w-7 rounded-full border border-white shadow-sm" style={{ backgroundColor: color }} title={color} />
+                          <HoverTooltip key={color} text={color} widthClass="w-32">
+                            <span className="h-7 w-7 rounded-full border border-white shadow-sm" style={{ backgroundColor: color }} />
+                          </HoverTooltip>
                         ))}
                       </div>
                     )}

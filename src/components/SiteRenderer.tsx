@@ -2,6 +2,7 @@ import { type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useR
 import {
   Briefcase,
   CheckCircle2,
+  ClipboardCheck,
   Clock,
   Facebook,
   Globe,
@@ -17,7 +18,11 @@ import {
   Pencil,
   Phone,
   PhoneCall,
+  ShieldCheck,
   Star,
+  Truck,
+  Users,
+  Wrench,
   X,
 } from "lucide-react";
 import { getShaderPreset, normalizeShaderPreset, normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
@@ -282,6 +287,48 @@ function buttonIcon(label = "", href = "", size = 16, className = "") {
   return <CheckCircle2 {...iconProps} />;
 }
 
+function renderCopyIcon(icon: string, size = 16, className = "") {
+  const iconProps = { size, className: className || undefined };
+  if (icon === "phone") return <PhoneCall {...iconProps} />;
+  if (icon === "mail") return <Mail {...iconProps} />;
+  if (icon === "map") return <MapPin {...iconProps} />;
+  if (icon === "clock") return <Clock {...iconProps} />;
+  if (icon === "star") return <Star {...iconProps} />;
+  if (icon === "users") return <Users {...iconProps} />;
+  if (icon === "truck") return <Truck {...iconProps} />;
+  if (icon === "clipboard") return <ClipboardCheck {...iconProps} />;
+  if (icon === "wrench") return <Wrench {...iconProps} />;
+  if (icon === "shield") return <ShieldCheck {...iconProps} />;
+  if (icon === "briefcase") return <Briefcase {...iconProps} />;
+  return <CheckCircle2 {...iconProps} />;
+}
+
+function copyIconCandidates(label = "", description = "") {
+  const key = `${label} ${description}`.toLowerCase();
+  const candidates: string[] = [];
+  if (/\b(phone|call|quote|estimate|pricing|telepon|hubungi|tanya|estimasi)\b/.test(key)) candidates.push("phone");
+  if (/\b(email|mail)\b/.test(key)) candidates.push("mail");
+  if (/\b(contact|kontak)\b/.test(key)) candidates.push("phone", "mail");
+  if (/\b(map|maps|location|address|directions|local|nearby|area|city|dallas|lokasi|alamat|wilayah)\b/.test(key)) candidates.push("map");
+  if (/\b(24|hour|hours|open|schedule|scheduling|timing|punctual|on time|availability|booking|weekday|weekend|jam|jadwal|tepat waktu)\b/.test(key)) candidates.push("clock");
+  if (/\b(review|rating|recommended|reputation|customers say|testimonial|stars|google rating|ulasan|rating)\b/.test(key)) candidates.push("star", "users");
+  if (/\b(customer|client|team|staff|crew|support|communication|responsive|coordination|koordinasi|pelanggan|tim)\b/.test(key)) candidates.push("users");
+  if (/\b(truck|delivery|deliver|ready mix|concrete|cement|pour|slab|driveway|flatwork|batch|plant|beton|cor|semen)\b/.test(key)) candidates.push("truck");
+  if (/\b(project|scope|planning|plan|site|on-site|inspection|estimate request|intake|timeline|proyek|rencana)\b/.test(key)) candidates.push("clipboard");
+  if (/\b(repair|install|build|contractor|construction|service|maintenance|work|fix|layanan|perbaikan|pasang)\b/.test(key)) candidates.push("wrench");
+  if (/\b(professional|reliable|trusted|dependable|quality|licensed|safe|care|protect|terpercaya|profesional|andal)\b/.test(key)) candidates.push("shield");
+  if (/\b(service|product|offer|menu|package|selection|layanan|produk|paket)\b/.test(key)) candidates.push("briefcase");
+  candidates.push("check");
+  return Array.from(new Set(candidates));
+}
+
+function copyIcon(label = "", description = "", size = 16, className = "", usedIcons?: Set<string>) {
+  const fallback = ["check", "shield", "clipboard", "users", "briefcase", "clock", "map", "phone", "star", "truck", "wrench", "mail"];
+  const icon = [...copyIconCandidates(label, description), ...fallback].find((item) => !usedIcons?.has(item)) || "check";
+  usedIcons?.add(icon);
+  return renderCopyIcon(icon, size, className);
+}
+
 function phoneHref(value = "") {
   if (!value) return "";
   if (isPlaceholderPhone(value)) return "";
@@ -372,6 +419,41 @@ function compactHoursGroups(items: any[]) {
     }
   });
   return groups;
+}
+
+function shortDayLabel(day = "", isIndonesian = false) {
+  const clean = day.trim();
+  const lower = clean.toLowerCase();
+  const en: Record<string, string> = {
+    monday: "Mon",
+    tuesday: "Tue",
+    wednesday: "Wed",
+    thursday: "Thu",
+    friday: "Fri",
+    saturday: "Sat",
+    sunday: "Sun",
+  };
+  const id: Record<string, string> = {
+    senin: "Sen",
+    selasa: "Sel",
+    rabu: "Rab",
+    kamis: "Kam",
+    jumat: "Jum",
+    sabtu: "Sab",
+    minggu: "Min",
+  };
+  return (isIndonesian ? id[lower] : en[lower]) || clean;
+}
+
+function hoursGroupLabel(group: { days: string[]; time: string }, isIndonesian = false) {
+  const days = group.days.filter(Boolean);
+  if (days.length > 1) return `${shortDayLabel(days[0], isIndonesian)}-${shortDayLabel(days[days.length - 1], isIndonesian)}`;
+  if (days.length === 1) return shortDayLabel(days[0], isIndonesian);
+  return isIndonesian ? "Jam" : "Hours";
+}
+
+function footerHoursLines(items: any[], isIndonesian = false) {
+  return compactHoursGroups(items).slice(0, 3).map((group) => `${hoursGroupLabel(group, isIndonesian)}: ${group.time}`);
 }
 
 function ImageFrame({
@@ -568,7 +650,7 @@ export default function SiteRenderer({
         { platform: "Facebook", href: "#" },
         { platform: "LinkedIn", href: "#" },
       ];
-  const footerHours = Array.isArray(hours.regular) ? hours.regular.slice(0, 3) : [];
+  const footerHours = Array.isArray(hours.regular) ? footerHoursLines(hours.regular, isIndonesian) : [];
   const footerOfferings = [...products, ...services];
   const footerHighlights = footerOfferings.length > 0 ? footerOfferings : offers.length > 0 ? offers : capabilities;
   const rawPrimaryPhone = businessProfile.contact?.phoneInternational || businessProfile.contact?.phoneNational || "";
@@ -893,18 +975,15 @@ export default function SiteRenderer({
                   trust.reviewCount ? { label: "Reviews", value: `${trust.reviewCount}+`, icon: "check" } : null,
                   displayPhone ? { label: "Phone", value: displayPhone, icon: "phone" } : null,
                 ].filter(Boolean);
+                const usedTrustIcons = new Set<string>();
                 return (
                   <section key={section.id} className="px-6 py-6 bg-slate-50 border-y border-slate-200">
                     <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {items.map((item: any, i: number) => (
                         <div key={i} className="flex flex-col items-center justify-center gap-2 rounded-lg bg-white border border-slate-200 px-4 py-4 text-center">
-                          {item.icon === "star" ? (
-                            <Star data-wv-qa-icon="trustBar" size={30} className="shrink-0" style={{ color: colors.primary }} />
-                          ) : item.icon === "phone" ? (
-                            <Phone data-wv-qa-icon="trustBar" size={30} className="shrink-0" style={{ color: colors.primary }} />
-                          ) : (
-                            <CheckCircle2 data-wv-qa-icon="trustBar" size={30} className="shrink-0" style={{ color: colors.primary }} />
-                          )}
+                          <span data-wv-qa-icon="trustBar" className="inline-flex" style={{ color: colors.primary }}>
+                            {copyIcon(item.label || item.icon || "", item.value || "", 30, "shrink-0", usedTrustIcons)}
+                          </span>
                           <div>
                             {editableText(`${section.id}.trust.${i}.value`, item.value, "p", "text-xl font-bold text-slate-950")}
                             {editableText(`${section.id}.trust.${i}.label`, item.label, "p", "text-xs uppercase tracking-wide text-slate-500")}
@@ -918,6 +997,7 @@ export default function SiteRenderer({
 
               if (section.type === "features") {
                 const items = section.content?.items || capabilities.filter((item: any) => item.enabled !== false).map((item: any) => ({ title: item.label, description: item.description || labels.capabilityFallback }));
+                const usedFeatureIcons = new Set<string>();
                 return (
                   <section key={section.id} className="py-20 px-6 bg-black/5">
                     <div className="max-w-6xl mx-auto">
@@ -925,13 +1005,9 @@ export default function SiteRenderer({
                       <div className="grid md:grid-cols-3 gap-8">
                         {items.map((item: any, i: number) => (
                           <div key={i} className="bg-white p-7 rounded-xl shadow-sm hover:shadow-md transition border border-slate-100 text-center">
-                            {item.iconSvg ? (
-                              <span data-wv-qa-icon="features" className="mx-auto mb-4 inline-flex h-9 w-9 text-[2.25rem] [&>svg]:h-full [&>svg]:w-full" style={{ color: colors.accent }} dangerouslySetInnerHTML={{ __html: item.iconSvg }} />
-                            ) : (
-                              <span data-wv-qa-icon="features" className="mx-auto mb-4 inline-flex text-[2.25rem]" style={{ color: colors.accent }}>
-                                {buttonIcon(item.title || item.label || "", "", 36, "shrink-0")}
-                              </span>
-                            )}
+                            <span data-wv-qa-icon="features" className="mx-auto mb-4 inline-flex text-[2.25rem]" style={{ color: colors.accent }}>
+                              {copyIcon(item.title || item.label || "", item.description || "", 36, "shrink-0", usedFeatureIcons)}
+                            </span>
                             {editableText(`${section.id}.item.${i}.title`, item.title, "h3", "text-xl font-semibold mb-2")}
                             {editableText(`${section.id}.item.${i}.description`, item.description, "p", "opacity-70", undefined, true)}
                           </div>

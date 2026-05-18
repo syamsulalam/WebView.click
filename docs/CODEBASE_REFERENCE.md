@@ -77,6 +77,7 @@ Logic penting:
 - Footer diberi boundary `data-wv-site-footer` agar tetap memakai palette/font site tetapi terlindung dari efek card/body/image hover yang tidak cocok untuk konteks footer.
 - Footer column labels seperti Pages/Highlights/Contact memakai class `wv-heading` dengan ukuran sedikit lebih besar dari body text agar display/heading font terbaca intentional tanpa mengubah struktur semantik.
 - Footer highlights memprioritaskan `products + services` daripada `offers`, supaya link footer menuju halaman detail `detailPageId` masing-masing. Jika tidak ada produk/layanan, footer fallback ke offers/capabilities.
+- Footer contact column merangkum jam operasional dari `hours.regular` memakai grouping yang sama dengan card homepage, misalnya `Mon-Sat: Open 24 hours` dan `Sun: Closed`, bukan menampilkan weekday mentah dari Google satu per satu.
 - Product/service labels in navbar submenu and footer highlights are title-cased for presentation, while preserving the underlying `detailPageId` target.
 - Nomor telepon dirender sebagai `tel:` link dan email sebagai `mailto:` link.
 - Contact form membuat `mailto:` URL berisi nama, email, pesan, dan semua field form yang diisi.
@@ -118,6 +119,16 @@ Logic penting:
 - Default width `w-72`, bisa dioverride via `widthClass`.
 - Menerima `text` string atau `children` untuk konten custom.
 - Admin pages memakai `HelpTooltip` untuk menjelaskan kontrol yang efeknya tidak langsung terlihat, seperti API keys, scoring, generation jobs, schema repair, R2 migration, search filters, batch generate, dan regenerate.
+
+### `src/components/HoverTooltip.tsx`
+
+Fungsi:
+- Shared wrapper tooltip untuk elemen yang sudah punya bentuk sendiri, seperti badge, button, swatch warna, hash, dan link.
+
+Logic penting:
+- Dipakai untuk mengganti atribut browser `title=` pada UI React agar tooltip konsisten dengan desain admin/public app.
+- Jika `text` kosong, wrapper merender children langsung tanpa tooltip; ini menjaga conditional tooltip seperti disabled placeholder buttons tetap sederhana.
+- Untuk tooltip berbentuk icon/help text gunakan `HelpTooltip`; untuk tooltip pada elemen existing gunakan `HoverTooltip`.
 
 ### `src/components/GenerationJobsTable.tsx`
 
@@ -344,7 +355,8 @@ Logic penting:
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
 - Prompt AI generator dan Function post-process menjaga parity dengan `/demo`: jika ada minimal dua foto bisnis yang usable, JSON final harus punya page `gallery`, nav item `#gallery`, dan section `imageGallery`.
 - Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
-- Prompt AI generator diminta memilih icon/inline `iconSvg` sesuai teks/intent CTA dan feature item; product/service detail page harus punya features section berikon.
+- Prompt AI copy patch ditulis sebagai suara bisnis yang berbicara ke calon pelanggan, bukan sebagai admin/demo/report; prompt melarang frasa meta seperti `the listed address`, `this page`, `owner can replace this copy`, `website-ready`, dan `no website detected` pada copy visitor-facing.
+- Renderer memilih icon `features` dan `trustBar` dari teks final title/description saat render, menjaga icon tidak duplikat dalam satu grid, dan tidak terkunci ke `iconSvg` scaffold lama; product/service detail page tetap punya features section berikon.
 - Mock fallback di `AdminLeads` juga membuat product/service detail pages memakai section `hero`, `offeringDetail`, `features`, `reviews`, `faq`, dan `hoursLocation`.
 - Place Details mengambil field `reviews`; detail page bisa memakai review Google yang relevan via keyword best-effort.
 - Search Google Places menampilkan feedback sukses/kosong/error melalui `searchMessage`, supaya response kosong tidak terlihat seperti tombol tidak bekerja.

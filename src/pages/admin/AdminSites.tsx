@@ -7,6 +7,7 @@ import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from ".
 import { checkAiReadiness, logAiReadinessBlockedJob } from "../../lib/aiReadiness";
 import { readApiJson } from "../../lib/apiResponse";
 import HelpTooltip from "../../components/HelpTooltip";
+import HoverTooltip from "../../components/HoverTooltip";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import { useAdminToast } from "../../components/AdminToast";
@@ -203,15 +204,15 @@ function industryCopyProfile({
 }) {
   const lower = nicheText.toLowerCase();
   const directContact = phone
-    ? (isEnglish ? `Visitors can call ${phone} directly.` : `Pengunjung bisa langsung menelepon ${phone}.`)
-    : (isEnglish ? "Contact details can be completed by admin." : "Detail kontak bisa dilengkapi admin.");
+    ? (isEnglish ? `Call ${phone} directly to ask about availability and next steps.` : `Hubungi ${phone} untuk menanyakan ketersediaan dan langkah berikutnya.`)
+    : (isEnglish ? "Contact us to ask about availability and next steps." : "Hubungi kami untuk menanyakan ketersediaan dan langkah berikutnya.");
   const base = {
     serviceTitle: isEnglish ? `${typeLabel} Services` : `Layanan ${typeLabel}`,
     consultationTitle: isEnglish ? "Fast Consultation" : "Konsultasi Cepat",
     summary: isEnglish ? `Local ${typeLabel} help from ${businessName}.` : `Bantuan ${typeLabel} lokal dari ${businessName}.`,
     description: isEnglish
-      ? `This page turns gathered Google Business Profile data into a clearer service page so visitors understand what ${businessName} can help with before they call, visit, or request details.`
-      : `Halaman ini mengubah data Google Business Profile menjadi halaman layanan yang lebih jelas agar pengunjung memahami bantuan yang ditawarkan ${businessName}.`,
+      ? `${businessName} helps local customers understand their options, ask practical questions, and take the next step with confidence.`
+      : `${businessName} membantu pelanggan lokal memahami pilihan, bertanya dengan mudah, dan mengambil langkah berikutnya dengan percaya diri.`,
     bestFor: isEnglish ? ["Local customers", "Fast inquiry", "Custom needs"] : ["Pelanggan lokal", "Pertanyaan cepat", "Kebutuhan khusus"],
     included: isEnglish ? ["Initial consultation", "Clear next steps", "Local support"] : ["Konsultasi awal", "Langkah berikutnya jelas", "Dukungan lokal"],
     highlights: [
@@ -224,8 +225,8 @@ function industryCopyProfile({
       { title: isEnglish ? "Simple Contact" : "Kontak Sederhana", description: directContact },
     ],
     shortPitch: isEnglish ? `A trusted local business serving customers in the ${serviceArea}.` : `Bisnis lokal terpercaya yang melayani pelanggan di ${serviceArea}.`,
-    homeFeatureTitle: isEnglish ? "Service Positioning" : "Posisi Layanan",
-    homeFeatureDescription: isEnglish ? "The page expands a Google profile into clearer customer-facing service content." : "Halaman ini mengubah profil Google menjadi konten layanan yang lebih jelas.",
+    homeFeatureTitle: isEnglish ? "Clear Service Guidance" : "Arahan Layanan Jelas",
+    homeFeatureDescription: isEnglish ? "Get practical details, hours, contact options, and a simple way to ask for help." : "Dapatkan detail praktis, jam operasional, kontak, dan cara mudah untuk bertanya.",
     consultationSummary: isEnglish ? "Ask questions and get clear next steps." : "Tanyakan kebutuhan dan dapatkan langkah berikutnya.",
     consultationDescription: isEnglish ? "Useful for visitors who need availability, pricing, and timing before booking or visiting." : "Berguna untuk pengunjung yang ingin tahu ketersediaan, harga, dan waktu sebelum datang atau booking.",
     consultationBestFor: isEnglish ? ["Price questions", "Availability", "Planning"] : ["Pertanyaan harga", "Ketersediaan", "Perencanaan"],
@@ -239,7 +240,7 @@ function industryCopyProfile({
       serviceTitle: /concrete|slab|driveway|patio|walkway/i.test(lower) ? "Concrete Repair and Flatwork" : "Project Repair and Construction Services",
       consultationTitle: "Estimate and Project Consultation",
       summary: `${businessName} helps ${serviceArea} property owners understand repair needs, project scope, and practical next steps.`,
-      description: "Use this page to explain the problems customers commonly search for: visible damage, worn surfaces, safety concerns, project timing, estimate questions, and whether the work is right for a home or commercial property. The owner can later replace examples with exact services, but this gives visitors a stronger starting point than a bare business listing.",
+      description: `${businessName} helps property owners discuss visible damage, worn surfaces, safety concerns, timing, estimate questions, and whether the work is right for a home or commercial property.`,
       bestFor: ["Repair needs", "Project estimates", "Home or property improvements"],
       included: ["Issue review", "Scope discussion", "Clear next step for estimate"],
       highlights: [
@@ -252,10 +253,10 @@ function industryCopyProfile({
         { title: "Clear Next Step", description: directContact },
       ],
       shortPitch: `${businessName} gives ${serviceArea} property owners a clearer path for repair questions, project planning, and estimate requests.`,
-      homeFeatureTitle: "Project-Focused Positioning",
-      homeFeatureDescription: "The page turns a generic contractor category into customer intent around repairs, estimates, and next steps.",
+      homeFeatureTitle: "Project-Focused Help",
+      homeFeatureDescription: "Start with practical repair questions, estimate needs, timing, and the clearest next step.",
       consultationSummary: "A focused next step for homeowners or property managers who need project scope before scheduling.",
-      consultationDescription: "This page can be used to turn Google profile visitors into estimate requests by asking about location, surface or project type, approximate size, visible damage, timing, and preferred contact method.",
+      consultationDescription: "Share the project location, surface or project type, approximate size, visible damage, timing, and preferred contact method so the next step is easier.",
       consultationBestFor: ["Repair estimates", "Project timing", "Scope questions"],
       consultationIncluded: ["Project intake", "Photo-ready questions", "Scheduling handoff"],
       consultationHighlightTitle: "Built for Estimate Requests",
@@ -273,7 +274,7 @@ function industryCopyProfile({
       included: ["Initial intake", "Fit review", "Clear follow-up path"],
       shortPitch: `${businessName} supports ${serviceArea} clients with professional guidance and a clear path to contact.`,
       homeFeatureTitle: "Professional Trust",
-      homeFeatureDescription: "Content is structured to reduce uncertainty and guide visitors toward a consultation.",
+      homeFeatureDescription: "Ask a focused question, understand the next step, and request a consultation with less uncertainty.",
     };
   }
 
@@ -283,12 +284,12 @@ function industryCopyProfile({
       serviceTitle: `${typeLabel} Care`,
       consultationTitle: "Appointment and Care Questions",
       summary: `${businessName} helps ${serviceArea} patients understand care options and appointment next steps.`,
-      description: "This page should explain patient-friendly benefits, appointment expectations, contact options, and trust signals from the Google profile without inventing medical claims.",
+      description: `${businessName} helps patients understand care options, appointment expectations, contact options, and trust signals without unsupported medical claims.`,
       bestFor: ["New patients", "Care questions", "Appointment planning"],
       included: ["Care inquiry", "Availability questions", "Contact handoff"],
       shortPitch: `${businessName} gives ${serviceArea} patients a clearer path to ask questions and plan a visit.`,
       homeFeatureTitle: "Patient-Friendly Flow",
-      homeFeatureDescription: "The page organizes contact, reviews, hours, and care questions into a simple visitor path.",
+      homeFeatureDescription: "Find contact options, reviews, hours, and care questions in one simple place.",
     };
   }
 
@@ -298,12 +299,12 @@ function industryCopyProfile({
       serviceTitle: `${typeLabel} Services`,
       consultationTitle: isEnglish ? "Service Questions and Booking" : "Pertanyaan dan Booking Layanan",
       summary: `${businessName} helps ${serviceArea} customers compare options, ask practical questions, and take the next step.`,
-      description: "This page should expand the Google profile into useful customer-facing content: what visitors can ask about, what kind of help is available, what to prepare before contacting the business, and why the listing looks trustworthy.",
+      description: `${businessName} helps customers understand what to ask, what kind of help may be available, and what to prepare before getting in touch.`,
       bestFor: ["Local service needs", "Availability questions", "Planning before booking"],
       included: ["Need review", "Availability questions", "Contact handoff"],
       shortPitch: `${businessName} helps ${serviceArea} customers move from search intent to a practical next step.`,
       homeFeatureTitle: "Local Service Fit",
-      homeFeatureDescription: "The page turns profile data into clear service context, trust signals, and contact paths.",
+      homeFeatureDescription: "Compare service fit, check trust signals, and contact the business without extra searching.",
     };
   }
 
@@ -430,8 +431,8 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
         content: {
           title: isEnglish ? `Questions about ${service.title}` : `Pertanyaan tentang ${service.title}`,
           items: [
-            { question: isEnglish ? "How do I contact this business?" : "Bagaimana cara menghubungi bisnis ini?", answer: phone ? (isEnglish ? `Call ${phone}.` : `Hubungi ${phone}.`) : (isEnglish ? "Contact details can be completed by admin." : "Detail kontak bisa dilengkapi admin.") },
-            { question: isEnglish ? "Can this page be customized?" : "Apakah halaman ini bisa disesuaikan?", answer: isEnglish ? "Yes. The owner can replace this copy with exact packages, prices, and requirements." : "Bisa. Pemilik bisnis dapat mengganti copy dengan paket, harga, dan syarat yang lebih tepat." },
+            { question: isEnglish ? "How do I contact this business?" : "Bagaimana cara menghubungi bisnis ini?", answer: phone ? (isEnglish ? `Call ${phone}.` : `Hubungi ${phone}.`) : (isEnglish ? "Contact us with your question and preferred timing." : "Hubungi kami dengan pertanyaan dan waktu yang diinginkan.") },
+            { question: isEnglish ? "How do I request an estimate?" : "Bagaimana cara meminta estimasi?", answer: phone ? (isEnglish ? `Call ${phone} with your project details, timing, and any questions about availability.` : `Hubungi ${phone} dengan detail kebutuhan, waktu, dan pertanyaan ketersediaan.`) : (isEnglish ? "Contact us with your project details, timing, and any questions about availability." : "Hubungi kami dengan detail kebutuhan, waktu, dan pertanyaan ketersediaan.") },
           ],
         },
       },
@@ -569,12 +570,12 @@ function buildFallbackSiteJson(place: any, businessId: string, imageUrl = "", pa
         sections: [
           { type: "hero", id: "hero", content: { headline: isEnglish ? `${businessName} is ready to help locally` : `${businessName} siap membantu pelanggan lokal`, subheadline: address, image: imageUrl, buttons: [{ text: isEnglish ? "Contact Us" : "Hubungi Kami", href: "#contact", style: "primary" }, { text: isEnglish ? "Open Maps" : "Buka Maps", href: mapsUrl || "#contact", style: "outline" }] } },
           { type: "trustBar", id: "trust", content: { items: [{ label: "Google Rating", value: rating ? rating.toFixed(1) : "-" }, { label: "Reviews", value: reviewCount ? `${reviewCount}+` : "-" }, { label: "Phone", value: phone || (isEnglish ? "Available soon" : "Segera tersedia") }] } },
-          { type: "features", id: "features", content: { title: isEnglish ? "Why this business stands out" : "Keunggulan bisnis ini", items: [{ title: profile.homeFeatureTitle, description: profile.homeFeatureDescription }, { title: isEnglish ? "Easy to Contact" : "Mudah Dihubungi", description: phone || (isEnglish ? "Contact can be completed by admin." : "Kontak bisa dilengkapi admin.") }, { title: isEnglish ? "Website Ready" : "Siap Dibuatkan Website", description: websiteUrl ? "Website detected." : "No website detected yet." }] } },
+          { type: "features", id: "features", content: { title: isEnglish ? "Why customers contact us" : "Kenapa pelanggan menghubungi kami", items: [{ title: profile.homeFeatureTitle, description: profile.homeFeatureDescription }, { title: isEnglish ? "Easy to Contact" : "Mudah Dihubungi", description: phone || (isEnglish ? "Reach out with your questions and preferred timing." : "Hubungi kami dengan pertanyaan dan waktu yang diinginkan.") }, { title: isEnglish ? "Simple Next Step" : "Langkah Berikutnya Mudah", description: websiteUrl ? (isEnglish ? "Explore the available details, then contact us when you are ready." : "Lihat detail yang tersedia, lalu hubungi kami saat siap.") : (isEnglish ? "Call or send a question to confirm service fit and availability." : "Telepon atau kirim pertanyaan untuk memastikan kecocokan layanan dan ketersediaan.") }] } },
           { type: "offers", id: "services", content: { title: isEnglish ? "Services to highlight" : "Layanan utama", items: services } },
           ...(photoUrls.length > 1 ? [{ type: "imageGallery", id: "gallery", content: { title: isEnglish ? "Project and profile photos" : "Foto profil dan pekerjaan", images: photoUrls } }] : []),
           { type: "reviews", id: "reviews", content: { title: isEnglish ? "Google social proof" : "Bukti sosial Google", reviews } },
           { type: "hoursLocation", id: "contact", content: { title: isEnglish ? "Location and contact" : "Lokasi & Kontak", address, phone, directionsUrl: mapsUrl } },
-          { type: "faq", id: "faq", content: { title: isEnglish ? "Common questions" : "Pertanyaan umum", items: [{ question: isEnglish ? "How do I contact this business?" : "Bagaimana menghubungi bisnis ini?", answer: phone ? (isEnglish ? `Call ${phone}.` : `Hubungi ${phone}.`) : (isEnglish ? "Phone number can be completed manually." : "Nomor telepon bisa dilengkapi manual.") }, { question: isEnglish ? "Can this data be edited?" : "Apakah data ini bisa diedit?", answer: isEnglish ? "Yes. The generated JSON can be corrected before the final website is used." : "Bisa. JSON hasil generate dapat dikoreksi sebelum website final dipakai." }] } },
+          { type: "faq", id: "faq", content: { title: isEnglish ? "Common questions" : "Pertanyaan umum", items: [{ question: isEnglish ? "How do I contact this business?" : "Bagaimana menghubungi bisnis ini?", answer: phone ? (isEnglish ? `Call ${phone}.` : `Hubungi ${phone}.`) : (isEnglish ? "Contact us with your question and preferred timing." : "Hubungi kami dengan pertanyaan dan waktu yang diinginkan.") }, { question: isEnglish ? "What should I prepare before contacting you?" : "Apa yang perlu disiapkan sebelum menghubungi?", answer: isEnglish ? "Share what you need, your location, preferred timing, and any important details so we can point you to the right next step." : "Sampaikan kebutuhan, lokasi, waktu yang diinginkan, dan detail penting agar kami bisa mengarahkan langkah berikutnya." }] } },
         ],
       },
       ...detailPages,
@@ -1127,16 +1128,17 @@ export default function AdminSites() {
                   Data
                 </button>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateProspect(prospect)}
-                    disabled={!activeRegenerateModel || mapsQueryPlaceholder || Boolean(generatingProspectId || regeneratingId)}
-                    title={mapsQueryPlaceholder ? "This is not a specific business listing yet." : undefined}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {generatingProspectId === prospect.place_id ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
-                    Generate
-                  </button>
+                  <HoverTooltip text={mapsQueryPlaceholder ? "This is not a specific business listing yet." : ""}>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateProspect(prospect)}
+                      disabled={!activeRegenerateModel || mapsQueryPlaceholder || Boolean(generatingProspectId || regeneratingId)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {generatingProspectId === prospect.place_id ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
+                      Generate
+                    </button>
+                  </HoverTooltip>
                   <AdminAiReadinessBadge
                     provider={activeRegenerateProvider}
                     model={activeRegenerateModel}
@@ -1182,25 +1184,27 @@ export default function AdminSites() {
                 <p className="truncate font-semibold text-gray-900">{site.businessName}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                   <span className="truncate">{site.niche || "No niche"}{site.rating ? ` · ${site.rating.toFixed(1)} rating` : ""}{site.reviewCount ? ` · ${site.reviewCount} reviews` : ""}</span>
-                  <span
-                    title={site.storageMode === "r2" ? site.r2JsonUrl || "Full JSON is stored in R2." : "Full JSON is still stored in D1. Run migration from /admin/schema."}
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      site.storageMode === "r2"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
-                    {site.storageMode === "r2" ? "R2 JSON" : "Legacy D1 JSON"}
-                  </span>
+                  <HoverTooltip text={site.storageMode === "r2" ? site.r2JsonUrl || "Full JSON is stored in R2." : "Full JSON is still stored in D1. Run migration from /admin/schema."}>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        site.storageMode === "r2"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {site.storageMode === "r2" ? "R2 JSON" : "Legacy D1 JSON"}
+                    </span>
+                  </HoverTooltip>
                   {(() => {
                     const badge = generationBadge(site);
                     return (
-                      <span
-                        title={badge.title}
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}
-                      >
-                        {badge.label}
-                      </span>
+                      <HoverTooltip text={badge.title}>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}
+                        >
+                          {badge.label}
+                        </span>
+                      </HoverTooltip>
                     );
                   })()}
                 </div>

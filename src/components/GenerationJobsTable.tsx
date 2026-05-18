@@ -6,6 +6,7 @@ import { checkAiReadiness, logAiReadinessBlockedJob } from "../lib/aiReadiness";
 import { readApiJson } from "../lib/apiResponse";
 import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
+import HoverTooltip from "./HoverTooltip";
 import { useAdminToast } from "./AdminToast";
 import { formatCooldownRemaining, getSharedProviderCooldown, logProviderCooldownBlockedJob } from "../lib/providerCooldown";
 
@@ -448,16 +449,17 @@ export default function GenerationJobsTable({
             <option value="patch">Patch applied first</option>
             <option value="noRewrite">No AI rewrite first</option>
           </select>
-          <button
-            type="button"
-            onClick={exportVisibleJobs}
-            disabled={!visibleJobs.length}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
-            title="Copy compact JSON for the currently visible generation jobs."
-          >
-            {copiedKey === "jobs:compact-export" ? <Check size={12} /> : <Copy size={12} />}
-            Export compact
-          </button>
+          <HoverTooltip text="Copy compact JSON for the currently visible generation jobs.">
+            <button
+              type="button"
+              onClick={exportVisibleJobs}
+              disabled={!visibleJobs.length}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
+            >
+              {copiedKey === "jobs:compact-export" ? <Check size={12} /> : <Copy size={12} />}
+              Export compact
+            </button>
+          </HoverTooltip>
           {showFullPageLink && <Link to="/admin/jobs" className="text-xs font-semibold text-indigo-700 hover:underline">Full jobs page</Link>}
           <button type="button" onClick={() => fetchJobs()} className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline">
             {loading ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}
@@ -499,25 +501,27 @@ export default function GenerationJobsTable({
                       <p className="truncate font-semibold text-slate-950">{job.prospectName || job.metadata?.businessName || job.businessId || job.placeId}</p>
                       <p className={`${compact ? "text-[11px]" : "text-xs"} mt-0.5 truncate text-slate-500`}>{job.businessId || job.placeId || job.id}</p>
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => copyValue(`${job.id}:job`, job.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-200"
-                          title="Copy job ID"
-                        >
-                          {copiedKey === `${job.id}:job` ? <Check size={11} /> : <Copy size={11} />}
-                          Job ID
-                        </button>
-                        {job.businessId && (
+                        <HoverTooltip text="Copy job ID" widthClass="w-28">
                           <button
                             type="button"
-                            onClick={() => copyValue(`${job.id}:business`, job.businessId)}
+                            onClick={() => copyValue(`${job.id}:job`, job.id)}
                             className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-200"
-                            title="Copy business ID"
                           >
-                            {copiedKey === `${job.id}:business` ? <Check size={11} /> : <Copy size={11} />}
-                            Business ID
+                            {copiedKey === `${job.id}:job` ? <Check size={11} /> : <Copy size={11} />}
+                            Job ID
                           </button>
+                        </HoverTooltip>
+                        {job.businessId && (
+                          <HoverTooltip text="Copy business ID" widthClass="w-36">
+                            <button
+                              type="button"
+                              onClick={() => copyValue(`${job.id}:business`, job.businessId)}
+                              className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-200"
+                            >
+                              {copiedKey === `${job.id}:business` ? <Check size={11} /> : <Copy size={11} />}
+                              Business ID
+                            </button>
+                          </HoverTooltip>
                         )}
                       </div>
                       {job.error && <p className={`${compact ? "text-[11px]" : "text-xs"} mt-2 line-clamp-2 font-medium text-red-700`}>{job.error}</p>}
@@ -539,7 +543,9 @@ export default function GenerationJobsTable({
                       </td>
                       <td className={`${compact ? "px-3 py-2" : "px-4 py-3"}`}>
                         {briefHash ? (
-                          <span title={job.metadata?.copyBriefHash} className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs font-semibold text-slate-700">{briefHash}</span>
+                          <HoverTooltip text={job.metadata?.copyBriefHash} widthClass="w-80">
+                            <span className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs font-semibold text-slate-700">{briefHash}</span>
+                          </HoverTooltip>
                         ) : (
                           <span className="text-slate-400">-</span>
                         )}
@@ -547,7 +553,9 @@ export default function GenerationJobsTable({
                       <td className={`${compact ? "px-3 py-2" : "px-4 py-3"}`}>
                         <div className="flex flex-col items-start gap-1.5">
                           {patchHash ? (
-                            <span title={job.metadata?.copyPatchHash} className="rounded-md bg-indigo-100 px-2 py-1 font-mono text-xs font-semibold text-indigo-800">{patchHash}</span>
+                            <HoverTooltip text={job.metadata?.copyPatchHash} widthClass="w-80">
+                              <span className="rounded-md bg-indigo-100 px-2 py-1 font-mono text-xs font-semibold text-indigo-800">{patchHash}</span>
+                            </HoverTooltip>
                           ) : (
                             <span className="text-slate-400">-</span>
                           )}
@@ -565,16 +573,17 @@ export default function GenerationJobsTable({
                           )}
                           {job.businessId && (
                             <div className="flex flex-wrap items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => retryGenerationJob(job)}
-                                disabled={Boolean(retryingJobId)}
-                                className="inline-flex items-center gap-1 font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
-                                title="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms."
-                              >
-                                {retryingJobId === job.id ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
-                                {retryOverrideJobId === job.id ? "Retry anyway" : "Retry"}
-                              </button>
+                              <HoverTooltip text="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms.">
+                                <button
+                                  type="button"
+                                  onClick={() => retryGenerationJob(job)}
+                                  disabled={Boolean(retryingJobId)}
+                                  className="inline-flex items-center gap-1 font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
+                                >
+                                  {retryingJobId === job.id ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
+                                  {retryOverrideJobId === job.id ? "Retry anyway" : "Retry"}
+                                </button>
+                              </HoverTooltip>
                               <AdminAiReadinessBadge
                                 provider={readiness.provider}
                                 model={readiness.model}
@@ -583,15 +592,16 @@ export default function GenerationJobsTable({
                               />
                             </div>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => setSelectedJob(job)}
-                            className="inline-flex items-center gap-1 font-semibold text-slate-700 hover:text-indigo-700"
-                            title="Open raw job details"
-                          >
-                            <FileText size={13} />
-                            Details
-                          </button>
+                          <HoverTooltip text="Open raw job details">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedJob(job)}
+                              className="inline-flex items-center gap-1 font-semibold text-slate-700 hover:text-indigo-700"
+                            >
+                              <FileText size={13} />
+                              Details
+                            </button>
+                          </HoverTooltip>
                         </div>
                       </td>
                     </tr>
@@ -642,16 +652,17 @@ export default function GenerationJobsTable({
               <div className="flex shrink-0 items-center gap-2">
                 {selectedJob.businessId && (
                   <div className="flex flex-wrap items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => retryGenerationJob(selectedJob)}
-                      disabled={Boolean(retryingJobId)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-                      title="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms."
-                    >
-                      {retryingJobId === selectedJob.id ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
-                      {retryOverrideJobId === selectedJob.id ? "Retry anyway" : "Retry"}
-                    </button>
+                    <HoverTooltip text="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms.">
+                      <button
+                        type="button"
+                        onClick={() => retryGenerationJob(selectedJob)}
+                        disabled={Boolean(retryingJobId)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                      >
+                        {retryingJobId === selectedJob.id ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
+                        {retryOverrideJobId === selectedJob.id ? "Retry anyway" : "Retry"}
+                      </button>
+                    </HoverTooltip>
                     {selectedReadiness && (
                       <AdminAiReadinessBadge
                         provider={selectedReadiness.provider}
@@ -780,9 +791,11 @@ export default function GenerationJobsTable({
                     {selectedAiFailure.actionHint || selectedAiFailure.message || selectedJob.error}
                   </p>
                   {selectedAiFailure.endpoint && (
-                    <p className="mt-2 truncate rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] text-slate-600" title={selectedAiFailure.endpoint}>
-                      {selectedAiFailure.endpoint}
-                    </p>
+                    <HoverTooltip text={selectedAiFailure.endpoint} widthClass="w-96">
+                      <span className="mt-2 block truncate rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] text-slate-600">
+                        {selectedAiFailure.endpoint}
+                      </span>
+                    </HoverTooltip>
                   )}
                 </section>
               )}

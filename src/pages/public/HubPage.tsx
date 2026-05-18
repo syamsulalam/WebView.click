@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MessageCircle } from "lucide-react";
+import HoverTooltip from "../../components/HoverTooltip";
 
 type Language = "en" | "id";
 
@@ -32,20 +33,22 @@ export default function HubPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6 flex-col">
       <div className="absolute top-4 right-4 bg-white shadow-sm border border-gray-100 rounded-full p-1 flex items-center gap-1">
-        <button 
-          onClick={() => setLang("en")}
-          className={`flex items-center justify-center w-10 h-10 rounded-full transition ${lang === "en" ? "bg-indigo-50 border border-indigo-100 shadow-inner" : "hover:bg-gray-50 grayscale opacity-60 hover:grayscale-0 hover:opacity-100"}`}
-          title="English"
-        >
-          <span className="text-xl leading-none">🇺🇸</span>
-        </button>
-        <button 
-          onClick={() => setLang("id")}
-          className={`flex items-center justify-center w-10 h-10 rounded-full transition ${lang === "id" ? "bg-indigo-50 border border-indigo-100 shadow-inner" : "hover:bg-gray-50 grayscale opacity-60 hover:grayscale-0 hover:opacity-100"}`}
-          title="Bahasa Indonesia"
-        >
-          <span className="text-xl leading-none">🇮🇩</span>
-        </button>
+        <HoverTooltip text="English" widthClass="w-24">
+          <button
+            onClick={() => setLang("en")}
+            className={`flex items-center justify-center w-10 h-10 rounded-full transition ${lang === "en" ? "bg-indigo-50 border border-indigo-100 shadow-inner" : "hover:bg-gray-50 grayscale opacity-60 hover:grayscale-0 hover:opacity-100"}`}
+          >
+            <span className="text-xl leading-none">🇺🇸</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text="Bahasa Indonesia" widthClass="w-36">
+          <button
+            onClick={() => setLang("id")}
+            className={`flex items-center justify-center w-10 h-10 rounded-full transition ${lang === "id" ? "bg-indigo-50 border border-indigo-100 shadow-inner" : "hover:bg-gray-50 grayscale opacity-60 hover:grayscale-0 hover:opacity-100"}`}
+          >
+            <span className="text-xl leading-none">🇮🇩</span>
+          </button>
+        </HoverTooltip>
       </div>
 
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden p-8 text-center space-y-4">

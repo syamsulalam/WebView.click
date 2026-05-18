@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Clock3 } from "lucide-react";
 import HelpTooltip from "./HelpTooltip";
+import HoverTooltip from "./HoverTooltip";
 import {
   clearSharedProviderCooldown,
   formatCooldownRemaining,
@@ -83,9 +84,9 @@ export default function AdminProviderCooldownBadge({
     : `${provider || "Selected provider"} has no active shared cooldown. Generation can still fail if the remote quota changes after this check.`;
 
   return (
+    <HoverTooltip text={tooltip} className="max-w-full">
     <span
       className={`inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass} ${className}`}
-      title={tooltip}
     >
       <Clock3 size={13} className="shrink-0" />
       <span className="truncate">{label}</span>
@@ -94,14 +95,15 @@ export default function AdminProviderCooldownBadge({
         text="Shows the local and shared provider cooldown set after 429, quota, or rate-limit errors. Batch generation pauses while this is active so the app does not keep hammering the exhausted provider."
       />
       {active && !confirmingClear && (
+        <HoverTooltip text="Clear this provider cooldown only after quota was raised or you intentionally want to retry this provider." widthClass="w-72">
         <button
           type="button"
           onClick={() => setConfirmingClear(true)}
           className="rounded-full border border-amber-300 bg-white/80 px-2 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-white"
-          title="Clear this provider cooldown only after quota was raised or you intentionally want to retry this provider."
         >
           Clear
         </button>
+        </HoverTooltip>
       )}
       {active && confirmingClear && (
         <span className="inline-flex items-center gap-1">
@@ -127,5 +129,6 @@ export default function AdminProviderCooldownBadge({
         </span>
       )}
     </span>
+    </HoverTooltip>
   );
 }

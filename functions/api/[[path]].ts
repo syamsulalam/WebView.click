@@ -3852,6 +3852,9 @@ async function generateAiCopyPatch(
     `${JSON.stringify(copyPatchSchema)}\n\n` +
     "Critical rules: you are not given full website JSON, page IDs, navigation hrefs, image URLs, maps URLs, sourceData, palette, font, visual style, favicon, CSS, or storage fields. Do not mention or create them. " +
     "Use only facts from the provided copy target brief. If a fact is missing, write honest copy like 'contact for availability' instead of inventing. " +
+    "Voice rules: write as the business speaking to its potential customers, not as WebView, an admin, a demo builder, an auditor, Google, or a third-party report about the business. " +
+    "Use customer-facing phrasing like 'Call us', 'we help', 'our team', 'we are based in', and 'ask about availability' when it fits the facts. Avoid meta phrases such as 'the listed address', 'the business status in the brief', 'this page', 'the owner can replace this copy', 'Google profile expanded', 'website-ready', or 'no website detected'. " +
+    "Use review themes as trust-building customer benefits, not as a detached report. Do not repeat rating/review count in every section; use it where it naturally helps trust. " +
     "Make the copy much less templated: mention the actual business name, exact city/area when available, category/type, rating/review count when available, phone if available, operating status, hours if useful, and review themes if reviews exist. " +
     "For US businesses write English. For Indonesian businesses write Indonesian. If meta.language is explicit, follow it. Do not mix languages. " +
     "Every offering needs beefy copy: a specific title, summary, description, 3-5 bestFor items, 3-6 included items, 2-4 highlights, a detailed hero, 3 feature items, and 3-5 FAQ items. " +

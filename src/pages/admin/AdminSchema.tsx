@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import HelpTooltip from "../../components/HelpTooltip";
+import HoverTooltip from "../../components/HoverTooltip";
 
 export default function AdminSchema() {
   const [schemaData, setSchemaData] = useState<string>("");
@@ -107,15 +108,16 @@ export default function AdminSchema() {
             {repairing ? "Repairing..." : "Repair DB now"}
           </button>
           <HelpTooltip text="Runs the D1 self-heal endpoint to create or repair expected admin tables/columns after a production deploy." />
-          <button
-            type="button"
-            onClick={handleMigrateSitesToR2}
-            disabled={migratingR2}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            title="Move old full JSON site rows from D1 into R2 and leave only compact manifests in D1."
-          >
-            {migratingR2 ? "Migrating..." : "Migrate old site JSON to R2"}
-          </button>
+          <HoverTooltip text="Move old full JSON site rows from D1 into R2 and leave only compact manifests in D1.">
+            <button
+              type="button"
+              onClick={handleMigrateSitesToR2}
+              disabled={migratingR2}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {migratingR2 ? "Migrating..." : "Migrate old site JSON to R2"}
+            </button>
+          </HoverTooltip>
           <HelpTooltip text="Moves legacy full site JSON out of D1 into R2 so D1 keeps only compact manifests. This is a maintenance action for older rows." />
         </div>
       </div>
