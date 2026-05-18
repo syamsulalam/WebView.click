@@ -1,4 +1,5 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type HoverTooltipProps = {
   text?: ReactNode;
@@ -15,19 +16,62 @@ export default function HoverTooltip({
   className = "",
   tooltipClassName = "",
 }: HoverTooltipProps) {
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [position, setPosition] = useState({ left: 0, top: 0, placement: "top" as "top" | "bottom" });
+
+  const updatePosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const placement = rect.top > 140 ? "top" : "bottom";
+    setPosition({
+      left: Math.min(Math.max(rect.left + rect.width / 2, 12), window.innerWidth - 12),
+      top: placement === "top" ? rect.top - 8 : rect.bottom + 8,
+      placement,
+    });
+  }, []);
+
+  const show = () => {
+    updatePosition();
+    setVisible(true);
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    updatePosition();
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [visible, updatePosition]);
+
   if (!text) {
     return <>{children}</>;
   }
 
   return (
-    <span className={`group/hover-tooltip relative inline-flex max-w-full align-middle ${className}`}>
+    <span
+      ref={anchorRef}
+      className={`inline-flex max-w-full align-middle ${className}`}
+      onMouseEnter={show}
+      onMouseLeave={() => setVisible(false)}
+      onFocus={show}
+      onBlur={() => setVisible(false)}
+    >
       {children}
-      <span
-        role="tooltip"
-        className={`pointer-events-none absolute bottom-full left-1/2 z-[260] mb-2 -translate-x-1/2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-medium leading-relaxed text-white opacity-0 shadow-xl transition group-hover/hover-tooltip:opacity-100 group-focus-within/hover-tooltip:opacity-100 ${widthClass} ${tooltipClassName}`}
-      >
-        {text}
-      </span>
+      {visible && typeof document !== "undefined" && createPortal(
+        <span
+          role="tooltip"
+          className={`pointer-events-none fixed z-[100001] -translate-x-1/2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-medium leading-relaxed text-white opacity-100 shadow-2xl ${position.placement === "top" ? "-translate-y-full" : ""} ${widthClass} ${tooltipClassName}`}
+          style={{ left: position.left, top: position.top }}
+        >
+          {text}
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }

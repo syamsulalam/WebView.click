@@ -46,7 +46,8 @@ Logic penting:
 - Header memakai grid 3 kolom `brand | centered nav | CTA` di desktop supaya menu tetap center terhadap seluruh navbar. Nama bisnis panjang ditruncate di rail kiri, bukan mendorong menu ke kanan.
 - Header/submenu memakai preset layer berbasis CSS variables di boundary `data-wv-site-header` / `data-wv-site-submenu`: `soft-glass`, `authority-bar`, `industrial-rail`, `warm-translucent`, atau `energy-band`, sehingga navbar cocok dengan niche style tanpa mewarisi efek body/card generated site.
 - Pergantian tab menjalankan scroll-to-top.
-- Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section, sehingga old generated JSON yang tidak punya page `contact` tetap bisa memakai nav/footer/hero CTA Contact.
+- Anchor menu lama seperti `#contact` bisa menuju section di dalam page lain. Renderer mengaktifkan page pemilik section lebih dulu lalu scroll ke section; jika tidak ada exact `id="contact"`, renderer mencari section semantik `contactForm`/`hoursLocation`, id yang berakhir `-contact`, atau marker `data-wv-contact-section`, sehingga old generated JSON yang memakai id seperti `location-1` tetap bisa memakai nav/footer/hero CTA Contact.
+- Hero buttons dari JSON lama yang punya `href` kosong atau `#` diberi fallback di renderer: label call/phone memakai `tel:` bila nomor tersedia, sedangkan estimate/request/schedule/contact diarahkan ke section/page contact. Renderer juga merapikan orphan lowercase letter di akhir hero subheadline lama yang sudah pernah terpotong.
 - Section renderer mendukung `hero`, `trustBar`, `features`, `offers`, `reviews`, `hoursLocation`, `faq`, `textImageBlock`, `teamGrid`, `gridCards`, `imageGallery`, dan `contactForm`.
 - Hero section memberi marker `data-wv-hero-section` dan `data-wv-hero-heading`; renderer memakai ResizeObserver + font-ready check untuk menurunkan ukuran H1 seperlunya agar headline hero maksimal sekitar tiga baris tanpa mengecilkan heading secara permanen.
 - Hero H1 pada halaman detail produk/layanan yang memiliki `offeringDetail` diformat title case dengan stop words tetap lowercase, sehingga individual service page tidak menampilkan heading lower-case dari type/query Google.
@@ -118,6 +119,8 @@ Fungsi:
 Logic penting:
 - Default width `w-72`, bisa dioverride via `widthClass`.
 - Menerima `text` string atau `children` untuk konten custom.
+- Tooltip bubble dirender via `createPortal(document.body)` sebagai fixed layer `z-[100001]`, sehingga tetap berada di foreground walau parent card/modal punya `overflow-hidden` atau stacking context.
+- Posisi tooltip dihitung dari anchor dan ikut update saat scroll/resize; jika ruang atas sempit, tooltip muncul di bawah anchor.
 - Admin pages memakai `HelpTooltip` untuk menjelaskan kontrol yang efeknya tidak langsung terlihat, seperti API keys, scoring, generation jobs, schema repair, R2 migration, search filters, batch generate, dan regenerate.
 
 ### `src/components/HoverTooltip.tsx`
@@ -128,6 +131,7 @@ Fungsi:
 Logic penting:
 - Dipakai untuk mengganti atribut browser `title=` pada UI React agar tooltip konsisten dengan desain admin/public app.
 - Jika `text` kosong, wrapper merender children langsung tanpa tooltip; ini menjaga conditional tooltip seperti disabled placeholder buttons tetap sederhana.
+- Tooltip bubble juga dirender via portal body-level fixed layer `z-[100001]`, supaya tidak tertutup parent, modal, drawer, table overflow, atau card `overflow-hidden`.
 - Untuk tooltip berbentuk icon/help text gunakan `HelpTooltip`; untuk tooltip pada elemen existing gunakan `HoverTooltip`.
 
 ### `src/components/GenerationJobsTable.tsx`
@@ -744,6 +748,7 @@ Logic AI:
 - Jika shared provider cooldown memblokir generate/regenerate/retry di browser, UI memanggil `POST /api/generation-jobs/cooldown-blocked` untuk menyimpan row `generation_jobs` berstatus `failed`; `metadata_json.cooldownBlocked`, `metadata_json.providerCooldown`, dan `failureStage: "provider_cooldown"` membuat attempt yang dipause tetap terlihat di Jobs.
 - Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
 - Full scaffold JSON tidak dikirim ke AI. AI tidak melihat image URL, maps URL, navigation href, sourceData mentah, palette, font, visual style, favicon, CSS, storage, atau field protected lain.
+- Sanitasi copy AI memakai clamp sentence/word-aware, bukan `.slice()` mentah, dan hero subheadline diberi batas lebih longgar agar copy first-person tidak putus di tengah kata/kalimat.
 - Untuk OpenRouter, model value UI yang diawali `~` dikirim apa adanya ke API karena OpenRouter memakai prefix itu untuk latest-model resolution seperti `~anthropic/claude-sonnet-latest`.
 - Copy patch AI di-merge deterministik oleh Function lewat `applyAiCopyPatch()`. AI tidak boleh mengubah `pageId`, `detailPageId`, navigation href, sourceData, photo URL, contact/maps fields, palette, font, visual style, storage, atau favicon.
 - Jika submitted JSON lama belum punya `design.shaderPreset`, Function mengisi shader procedural dari niche/context via `shaderPresetForBusiness()` sebelum menyimpan site.

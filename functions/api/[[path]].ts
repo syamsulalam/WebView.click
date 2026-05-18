@@ -3236,13 +3236,28 @@ function objectValue(value: unknown): Record<string, unknown> {
 
 function safeCopyText(value: unknown, maxLength = 420) {
   if (typeof value !== "string" && typeof value !== "number") return "";
-  return String(value)
+  const clean = String(value)
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, maxLength);
+    .trim();
+  if (clean.length <= maxLength) return clean;
+
+  const clipped = clean.slice(0, maxLength).trim();
+  const sentenceMinimum = Math.min(Math.max(80, Math.floor(maxLength * 0.55)), Math.max(0, maxLength - 1));
+  const sentenceStops = [...clipped.matchAll(/[.!?](?=\s|$)/g)];
+  const lastSentenceStop = sentenceStops[sentenceStops.length - 1];
+  if (lastSentenceStop && lastSentenceStop.index !== undefined && lastSentenceStop.index + 1 >= sentenceMinimum) {
+    return clipped.slice(0, lastSentenceStop.index + 1).trim();
+  }
+
+  const wordMinimum = Math.min(Math.max(32, Math.floor(maxLength * 0.72)), Math.max(0, maxLength - 1));
+  const lastSpace = clipped.lastIndexOf(" ");
+  if (lastSpace >= wordMinimum) {
+    return clipped.slice(0, lastSpace).replace(/[,:;/-]+$/g, "").trim();
+  }
+  return clipped.replace(/[,:;/-]+$/g, "").trim();
 }
 
 function safeCopyArray(value: unknown, maxItems = 6, maxLength = 160) {
@@ -3490,7 +3505,7 @@ function applySectionCopyPatch(section: Record<string, unknown>, patch: Record<s
   const content = objectValue(section.content);
   applyTextIfPresent(content, "title", patch, "title", 140);
   applyTextIfPresent(content, "headline", patch, "headline", 160);
-  applyTextIfPresent(content, "subheadline", patch, "subheadline", 360);
+  applyTextIfPresent(content, "subheadline", patch, "subheadline", 520);
   applyTextIfPresent(content, "description", patch, "description", 420);
   applyTextIfPresent(content, "summary", patch, "summary", 420);
   applyTextIfPresent(content, "kind", patch, "kind", 60);
@@ -3655,7 +3670,7 @@ function sectionCopyTarget(section: Record<string, unknown>) {
     type: asString(section.type),
     title: safeCopyText(content.title, 140),
     headline: safeCopyText(content.headline, 160),
-    subheadline: safeCopyText(content.subheadline, 300),
+    subheadline: safeCopyText(content.subheadline, 520),
     description: safeCopyText(content.description || content.summary, 360),
     items: textItemsFromArray(content.items || content.highlights || content.buttons, 6),
   };
@@ -3836,7 +3851,7 @@ async function generateAiCopyPatch(
     },
     hero: {
       headline: "Strong client-facing headline.",
-      subheadline: "Specific paragraph using business name, category, location, rating/reviews, phone, and verified strengths.",
+      subheadline: "Specific 2-3 complete-sentence paragraph using business name, category, location, rating/reviews, phone, and verified strengths. Do not end mid-sentence.",
       buttons: [{ text: "CTA text only. Do not provide href." }],
     },
     sections: {
@@ -3857,7 +3872,7 @@ async function generateAiCopyPatch(
       included: ["specific deliverable"],
       highlights: [{ title: "Benefit", description: "Why it matters" }],
       relatedReviewKeywords: ["keyword"],
-      hero: { headline: "Detail page headline", subheadline: "Detail page subheadline", buttons: [{ text: "CTA text" }] },
+      hero: { headline: "Detail page headline", subheadline: "Detail page subheadline in complete sentences", buttons: [{ text: "CTA text" }] },
       features: { title: "Feature section title", items: [{ title: "Feature", description: "Feature detail" }] },
       faqTitle: "FAQ title",
       faq: [{ question: "Question", answer: "Answer" }],

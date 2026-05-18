@@ -337,6 +337,10 @@ function phoneHref(value = "") {
   return normalized ? `tel:${normalized}` : "";
 }
 
+function tidyDanglingCopy(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+[a-z]$/g, "").trim();
+}
+
 function isPlaceholderPhone(value = "") {
   const digits = value.replace(/\D/g, "");
   return !digits || /^0+$/.test(digits);
@@ -593,16 +597,49 @@ export default function SiteRenderer({
       {value ?? ""}
     </EditableText>
   );
+  const normalizedAnchorId = (value = "") => String(value || "").replace(/^#/, "").trim().toLowerCase();
+  const sectionMatchesTarget = (section: any, targetId: string) => {
+    const target = normalizedAnchorId(targetId);
+    const sectionIdValue = normalizedAnchorId(sectionId(section));
+    if (!target) return false;
+    if (sectionIdValue === target) return true;
+    if (target === "contact") {
+      const type = String(section?.type || "");
+      const title = `${section?.content?.title || ""} ${section?.content?.hoursTitle || ""} ${section?.content?.openingHoursTitle || ""}`.toLowerCase();
+      return type === "contactForm" || type === "hoursLocation" || sectionIdValue.endsWith("-contact") || title.includes("contact") || title.includes("kontak");
+    }
+    return false;
+  };
+  const pageForTarget = (targetId: string) => {
+    const target = normalizedAnchorId(targetId);
+    if (!target) return null;
+    const directPage = pages.find((page: any) => normalizedAnchorId(page.pageId) === target);
+    if (directPage) return directPage;
+    return pages.find((page: any) => Array.isArray(page.sections) && page.sections.some((section: any) => sectionMatchesTarget(section, target)));
+  };
+  const scrollToTarget = (targetId: string) => {
+    const target = normalizedAnchorId(targetId);
+    if (!target) return;
+    const exactTarget = document.getElementById(target);
+    if (exactTarget) {
+      exactTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (target === "contact") {
+      const fallbackTarget = document.querySelector<HTMLElement>(
+        '[data-wv-section="contact"], [id$="-contact"], [data-wv-section$="-contact"], [data-wv-contact-section="true"]',
+      );
+      fallbackTarget?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
   const changeTab = (pageId: string) => {
-    const nextPageId = pageId || homePageId;
-    const directPageExists = pages.some((page: any) => page.pageId === nextPageId);
-    const sectionOwnerPage = !directPageExists
-      ? pages.find((page: any) => Array.isArray(page.sections) && page.sections.some((section: any) => sectionId(section) === nextPageId))
-      : null;
-    if (!directPageExists && sectionOwnerPage?.pageId) {
-      setActiveTab(sectionOwnerPage.pageId);
+    const nextPageId = normalizedAnchorId(pageId) || homePageId;
+    const targetPage = pageForTarget(nextPageId);
+    const directPageExists = Boolean(targetPage && normalizedAnchorId(targetPage.pageId) === nextPageId);
+    if (targetPage?.pageId && !directPageExists) {
+      setActiveTab(targetPage.pageId);
       window.requestAnimationFrame(() => {
-        document.getElementById(nextPageId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        scrollToTarget(nextPageId);
       });
       return;
     }
@@ -622,7 +659,7 @@ export default function SiteRenderer({
       }
       return;
     }
-    setActiveTab(nextPageId);
+    setActiveTab(targetPage?.pageId || nextPageId);
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
   };
   const sectionId = (section: any, fallback = "") => String(section?.id || fallback || "").trim() || undefined;
@@ -643,8 +680,12 @@ export default function SiteRenderer({
   };
   useEffect(() => {
     const hashPageId = window.location.hash.replace(/^#/, "");
-    if (hashPageId && pages.some((page: any) => page.pageId === hashPageId)) {
-      setActiveTab(hashPageId);
+    if (hashPageId) {
+      const targetPage = pageForTarget(hashPageId);
+      if (targetPage?.pageId) {
+        setActiveTab(targetPage.pageId);
+        window.requestAnimationFrame(() => scrollToTarget(hashPageId));
+      }
     }
   }, [pages.map((page: any) => page.pageId).join("|")]);
 
@@ -778,24 +819,52 @@ export default function SiteRenderer({
     })
     .filter((item: any) => item.children.length > 0);
   const tabPageIdForHref = (href: string) => {
-    const pageId = String(href || "").startsWith("#") ? String(href).replace("#", "") : "";
-    if (!pageId) return "";
-    if (pages.some((page: any) => page.pageId === pageId)) return pageId;
-    const ownerPage = pages.find((page: any) => Array.isArray(page.sections) && page.sections.some((section: any) => sectionId(section) === pageId));
-    return ownerPage?.pageId || "";
+    const pageId = String(href || "").startsWith("#") ? normalizedAnchorId(href) : "";
+    return pageForTarget(pageId)?.pageId || "";
   };
   const tabPropsForHref = (href: string) => {
     const pageId = tabPageIdForHref(href);
     return pageId ? { "data-wv-tab": pageId } : {};
   };
   const handleSiteHrefClick = (href: string, event: ReactMouseEvent<HTMLElement>) => {
-    const targetId = String(href || "").startsWith("#") ? String(href).replace("#", "") : "";
-    if (targetId && (pages.some((page: any) => page.pageId === targetId) || document.getElementById(targetId))) {
+    const targetId = String(href || "").startsWith("#") ? normalizedAnchorId(href) : "";
+    if (targetId && (pageForTarget(targetId) || document.getElementById(targetId))) {
       event.preventDefault();
       changeTab(targetId);
     }
   };
   const contactActionHref = conversion.primaryCta?.href || globalConfig.header.ctaButton.href || (primaryPhone ? phoneHref(primaryPhone) : "") || "#contact";
+  const contactSectionHref = tabPageIdForHref("#contact") ? "#contact" : contactActionHref;
+  const heroButtonHref = (button: any) => {
+    const rawHref = typeof button?.href === "string" ? button.href.trim() : "";
+    if (rawHref && rawHref !== "#") return rawHref;
+
+    const label = String(button?.text || "").toLowerCase();
+    const callablePhone = phoneHref(primaryPhone || displayPhone);
+    if (label.includes("call") || label.includes("phone") || label.includes("telepon") || label.includes("hubungi")) {
+      return callablePhone || contactSectionHref || "#contact";
+    }
+    if (
+      label.includes("estimate") ||
+      label.includes("quote") ||
+      label.includes("request") ||
+      label.includes("schedule") ||
+      label.includes("booking") ||
+      label.includes("contact")
+    ) {
+      return contactSectionHref || callablePhone || "#contact";
+    }
+    return contactSectionHref || callablePhone || "#contact";
+  };
+  const navigateSiteHref = (href: string) => {
+    const targetHref = String(href || "").trim();
+    if (!targetHref) return;
+    if (targetHref.startsWith("#")) {
+      changeTab(targetHref.replace("#", ""));
+      return;
+    }
+    window.location.href = targetHref;
+  };
   const chooseFeedbackRating = (rating: number) => {
     setFeedbackRating(rating);
     if (rating >= 4 && googleReviewHref) {
@@ -927,6 +996,7 @@ export default function SiteRenderer({
                 const heroHeadline = pageHasOfferingDetail
                   ? formatOfferHeading(heroContent.headline || labels.heroFallback)
                   : heroContent.headline || labels.heroFallback;
+                const heroSubheadline = tidyDanglingCopy(heroContent.subheadline || businessProfile.shortPitch);
                 return (
                   <section key={section.id} data-wv-hero-section="true" className="px-6 py-16 md:py-24 bg-white">
                     <div className="max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center">
@@ -938,14 +1008,15 @@ export default function SiteRenderer({
                           {editableText(`${section.id}.headline`, heroHeadline, "span")}
                         </h1>
                         <p className="text-lg md:text-xl mb-8 text-slate-600 max-w-2xl">
-                          {editableText(`${section.id}.subheadline`, heroContent.subheadline || businessProfile.shortPitch, "span", "", undefined, true)}
+                          {editableText(`${section.id}.subheadline`, heroSubheadline, "span", "", undefined, true)}
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3">
                           {(heroContent.buttons || []).map((btn: any, i: number) => {
-                            const href = typeof btn.href === "string" ? btn.href : "#";
+                            const href = heroButtonHref(btn);
                             const tabPageId = tabPageIdForHref(href);
                             return (
                               <button
+                                type="button"
                                 key={i}
                                 data-wv-tab={tabPageId || undefined}
                                 style={{
@@ -954,10 +1025,7 @@ export default function SiteRenderer({
                                   border: `1px solid ${btn.style === "primary" ? colors.accent : "#CBD5E1"}`,
                                 }}
                                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-semibold transition hover:translate-y-[-1px]"
-                                onClick={() => {
-                                  if (href.startsWith("#")) changeTab(href.replace("#", ""));
-                                  else if (href) window.location.href = href;
-                                }}
+                                onClick={() => navigateSiteHref(href)}
                               >
                                 {buttonIcon(btn.text, href)}
                                 {btn.text || labels.learnMore}
@@ -1205,7 +1273,7 @@ export default function SiteRenderer({
                 const todayHours = hoursGroups.find((group) => group.days.some((day) => day.toLowerCase().startsWith(todayLabel.toLowerCase().slice(0, 3)))) || hoursGroups[0];
                 const hoursTitle = section.content?.hoursTitle || section.content?.openingHoursTitle || labels.hoursTitle;
                 return (
-                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} className="py-20 px-6 bg-white">
+                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className="py-20 px-6 bg-white">
                     <div data-wv-hours-location-grid="true" className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
                         <div data-wv-hours-location-heading="true" className="mb-5 flex items-center gap-3 text-2xl">
@@ -1438,7 +1506,7 @@ export default function SiteRenderer({
                 const contactPhone = isPlaceholderPhone(rawContactPhone) ? "" : rawContactPhone;
                 const formFields = Array.isArray(section.content?.formConfig?.fields) ? section.content.formConfig.fields : [];
                 return (
-                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} className="py-20 px-6">
+                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className="py-20 px-6">
                     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row border border-gray-100">
                       <div style={{ backgroundColor: colors.primary, color: "#fff" }} className="p-10 md:w-2/5">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-2xl font-bold mb-6")}
