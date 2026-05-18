@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { aiReadinessRefreshEvent, checkAiReadiness, type AiReadinessResult } from "../lib/aiReadiness";
+import { getLastProviderFailure, type ProviderFailureSummary } from "../lib/providerFailure";
 
 type AdminAiReadinessBadgeProps = {
   provider?: string;
@@ -23,6 +24,7 @@ export default function AdminAiReadinessBadge({
   className = "",
 }: AdminAiReadinessBadgeProps) {
   const [preflight, setPreflight] = useState<AiReadinessResult | null>(null);
+  const [lastFailure, setLastFailure] = useState<ProviderFailureSummary | null>(null);
   const [checking, setChecking] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const modelLabel = compactModelName(model);
@@ -54,6 +56,23 @@ export default function AdminAiReadinessBadge({
       cancelled = true;
     };
   }, [provider, model, requiresAi, remoteValidate, refreshVersion]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLastFailure(null);
+    if (!requiresAi || !provider) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    getLastProviderFailure(provider, model)
+      .then((failure) => {
+        if (!cancelled) setLastFailure(failure);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, model, requiresAi, refreshVersion]);
 
   const modeClass = requiresAi
     ? "border-indigo-200 bg-indigo-50 text-indigo-800"
@@ -96,6 +115,20 @@ export default function AdminAiReadinessBadge({
       ? "border-amber-200 bg-amber-50 text-amber-800"
       : "border-red-200 bg-red-50 text-red-800";
   const titleMessage = preflight?.message || `${requiresAi ? "This click requires an AI copy patch." : "This click only refreshes/resaves gathered data."} Provider: ${provider || "none"}. Model: ${modelLabel}. ${keyLabel}.`;
+  const lastFailureAge = (() => {
+    const createdAt = lastFailure?.createdAt ? new Date(lastFailure.createdAt).getTime() : 0;
+    if (!createdAt) return "";
+    const minutes = Math.max(1, Math.round((Date.now() - createdAt) / 60_000));
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    return `${hours}h ago`;
+  })();
+  const lastFailureLabel = lastFailure
+    ? `${lastFailure.failureKind || "provider error"}${lastFailure.httpStatus ? ` HTTP ${lastFailure.httpStatus}` : ""}${lastFailureAge ? ` · ${lastFailureAge}` : ""}`
+    : "";
+  const lastFailureTitle = lastFailure
+    ? `${lastFailure.message || lastFailure.error || "Last provider failure."}${lastFailure.actionHint ? ` ${lastFailure.actionHint}` : ""}`
+    : "";
 
   return (
     <span
@@ -114,6 +147,18 @@ export default function AdminAiReadinessBadge({
       {requiresAi && (
         <span className={`rounded-full border px-2 py-1 ${preflightClass}`}>
           {preflightLabel}
+        </span>
+      )}
+      {requiresAi && lastFailure && (
+        <span
+          className={`inline-block max-w-[240px] truncate rounded-full border px-2 py-1 ${
+            lastFailure.retryable === true
+              ? "border-amber-200 bg-amber-50 text-amber-800"
+              : "border-red-200 bg-red-50 text-red-800"
+          }`}
+          title={lastFailureTitle}
+        >
+          Last fail: {lastFailureLabel}
         </span>
       )}
     </span>

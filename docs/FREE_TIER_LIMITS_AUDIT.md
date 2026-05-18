@@ -84,10 +84,23 @@ External paid providers:
   - OpenRouter: model list plus endpoint metadata, up to 2 provider calls.
   - OpenAI: model retrieve, 1 provider call.
   - Gemini: model retrieve/list metadata, 1 provider call.
-  - KIE.ai and Opencode: local registry only today.
+  - KIE.ai: account credit check plus local endpoint mapping, 1 provider call.
+  - Opencode: local registry only today.
 - D1 work: reads provider key/settings and caches supported remote validation results in `ai_readiness_cache` for 2 minutes per provider/model/key hash.
 - Risk: repeated badge refreshes across pages/tabs can consume Workers requests and provider metadata calls.
 - Guardrail: keep browser cache at 30 seconds, keep server remote-validation cache at 2 minutes, provide manual refresh with `refresh=1`, avoid per-row readiness checks inside long lists, and watch the dashboard `Remote AI readiness` counter.
+
+`GET /api/ai/provider-failure`
+- External calls: none.
+- D1 work: reads the newest failed `generation_jobs` row for one provider/model from the last 14 days.
+- Risk: repeated badges in large lists can create extra Worker/D1 reads.
+- Guardrail: browser cache is 30 seconds per provider/model, and most rows share the same selected provider/model.
+
+`GET /api/ai/provider-health`
+- External calls: none.
+- D1 work: aggregates `generation_jobs` for one provider/model over the last 24 hours and reads up to 50 failed metadata rows to count failure kinds.
+- Risk: extra Settings refreshes can create D1 reads.
+- Guardrail: browser cache is 30 seconds per provider/model and this badge is only mounted in Settings.
 
 `POST /api/generation-jobs/preflight-failure`
 - External calls: none.

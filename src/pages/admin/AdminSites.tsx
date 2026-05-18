@@ -5,6 +5,7 @@ import { useLocalStorageState } from "../../lib/localStorageState";
 import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStylePresetFromText, inferVisualStyleFromText, siteShaderPresets, siteVisualStyles } from "../../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 import { checkAiReadiness, logAiReadinessBlockedJob } from "../../lib/aiReadiness";
+import { readApiJson } from "../../lib/apiResponse";
 import HelpTooltip from "../../components/HelpTooltip";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
@@ -850,10 +851,7 @@ export default function AdminSites() {
           selectedLogoPriority: selectedPhoto.priorityLabel || "",
         }),
       });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || result.error) {
-        throw new Error(result.error || `Generate failed with HTTP ${response.status}`);
-      }
+      const result = await readApiJson<any>(response, "Generate site");
       const requiredKey = providerApiKeyMap[activeRegenerateProvider];
       const hasProviderKey = requiredKey && String(settings?.[requiredKey] || "").trim();
       setActionMessage(hasProviderKey
@@ -970,10 +968,7 @@ export default function AdminSites() {
           selectedLogoPriority: siteJson?.brand?.selectedPhotoPriority || "",
         }),
       });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || result.error) {
-        throw new Error(result.error || `Regenerate failed with HTTP ${response.status}`);
-      }
+      const result = await readApiJson<any>(response, "Regenerate site");
       setActionMessage(
         mode === "ai"
           ? `AI copy patch regenerated ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`

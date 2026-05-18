@@ -7,6 +7,7 @@ import { getShaderPreset, getStylePreset, inferShaderPresetFromText, inferStyleP
 import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "../../lib/fontPairings";
 import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOptions } from "../../lib/prospectScoring";
 import { checkAiReadiness, logAiReadinessBlockedJob } from "../../lib/aiReadiness";
+import { readApiJson } from "../../lib/apiResponse";
 import HelpTooltip from "../../components/HelpTooltip";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
 import AdminWorkspaceTabs from "../../components/AdminWorkspaceTabs";
@@ -101,10 +102,12 @@ export default function AdminLeads() {
     KIE: {
       label: "KIE.ai API",
       models: [
-        { value: "kie/gpt-5-5", label: "KIE GPT-5.5 (est. $2.50 in / $15 out)" },
-        { value: "kie/gpt-5-2", label: "KIE GPT-5.2 (cek live credit KIE)" },
+        { value: "kie/gemini-2.5-flash", label: "KIE Gemini 2.5 Flash (cheap copy rewrite)" },
+        { value: "kie/gemini-3-flash", label: "KIE Gemini 3 Flash (est. $0.25 in / $1.50 out)" },
+        { value: "kie/gpt-5-4", label: "KIE GPT-5.4 (est. $1.25 in / $7.50 out)" },
         { value: "kie/gemini-3.1-pro", label: "KIE Gemini 3.1 Pro (est. $1 in / $6 out)" },
-        { value: "kie/gemini-3-flash", label: "KIE Gemini 3 Flash (est. $0.25 in / $1.50 out)" }
+        { value: "kie/gpt-5-5", label: "KIE GPT-5.5 (est. $2.50 in / $15 out)" },
+        { value: "kie/gpt-5-2", label: "KIE GPT-5.2 (cek live credit KIE)" }
       ]
     },
     Opencode: {
@@ -1496,17 +1499,7 @@ export default function AdminLeads() {
           selectedLogoPriority: logoSelection?.priorityLabel || ""
         })
       });
-      const text = await response.text();
-      let data: any = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        throw new Error(`Generate response bukan JSON: ${text.substring(0, 160)}`);
-      }
-
-      if (!response.ok || data.error) {
-        throw new Error(data.error || `Generate failed with HTTP ${response.status}`);
-      }
+      const data = await readApiJson<any>(response, "Generate site");
 
       fetchLeads();
       fetchProspectDrafts();

@@ -20,7 +20,9 @@ Harga di bawah adalah harga API publik dalam USD per 1 juta token, kecuali diseb
 | Router Gemini Flash | OpenRouter | `~google/gemini-flash-latest` | $0.50 | $3.00 | Alias Gemini Flash terbaru. |
 | Qwen kuat murah | OpenRouter | `qwen/qwen3.6-max-preview` | $1.04 | $6.24 | Frontier Qwen via OpenRouter. |
 | Qwen cepat murah | OpenRouter | `qwen/qwen3.6-flash` | $0.25 | $1.50 | Opsi murah untuk web copy dan JSON. |
+| Aggregator termurah | KIE.ai | `kie/gemini-2.5-flash` | N/A | N/A | Opsi KIE murah untuk rewrite copy; cek live credit KIE. |
 | Aggregator murah | KIE.ai | `kie/gemini-3-flash` | est. $0.25 | est. $1.50 | Estimasi 50% dari official; cek dashboard KIE untuk credit aktual. |
+| Aggregator GPT hemat | KIE.ai | `kie/gpt-5-4` | est. $1.25 | est. $7.50 | Lebih murah dari GPT-5.5 untuk copy enrichment. |
 | Aggregator murah Pro | KIE.ai | `kie/gemini-3.1-pro` | est. $1.00 | est. $6.00 | Estimasi 50% dari official; cek dashboard KIE untuk credit aktual. |
 
 ## OpenAI
@@ -88,13 +90,17 @@ KIE.ai menyediakan marketplace API untuk model chat, image, video, dan music. Do
 
 | Model UI | Endpoint KIE | Est. input | Est. output | Catatan |
 | --- | --- | ---: | ---: | --- |
+| `kie/gemini-2.5-flash` | `POST https://api.kie.ai/gemini-2.5-flash/v1/chat/completions` | N/A | N/A | Opsi murah untuk copy rewrite; harga final harus dicek di pricing dashboard KIE. |
+| `kie/gemini-3-flash` | `POST https://api.kie.ai/gemini-3-flash/v1/chat/completions` | $0.25 | $1.50 | Estimasi 50% dari Gemini 3 Flash official. |
+| `kie/gpt-5-4` | `POST https://api.kie.ai/codex/v1/responses` | $1.25 | $7.50 | Estimasi 50% dari GPT-5.4 official. Endpoint memakai Responses-style body. |
+| `kie/gemini-3.1-pro` | `POST https://api.kie.ai/gemini-3.1-pro/v1/chat/completions` | $1.00 | $6.00 | Estimasi 50% dari Gemini 3.1 Pro official. |
 | `kie/gpt-5-5` | `POST https://api.kie.ai/codex/v1/responses` | $2.50 | $15.00 | Estimasi 50% dari GPT-5.5 official. Endpoint memakai Responses-style body. |
 | `kie/gpt-5-2` | `POST https://api.kie.ai/gpt-5-2/v1/chat/completions` | N/A | N/A | KIE docs menampilkan endpoint chat completions, tapi harga final harus dicek di pricing dashboard. |
-| `kie/gemini-3.1-pro` | `POST https://api.kie.ai/gemini-3.1-pro/v1/chat/completions` | $1.00 | $6.00 | Estimasi 50% dari Gemini 3.1 Pro official. |
-| `kie/gemini-3-flash` | `POST https://api.kie.ai/gemini-3-flash/v1/chat/completions` | $0.25 | $1.50 | Estimasi 50% dari Gemini 3 Flash official. |
 
 Catatan operasional KIE:
 - API key tetap harus disimpan di server/D1 sebagai `KIE_API_KEY`, jangan pernah di frontend.
+- `/api/ai/readiness?remoteValidate=1` mengecek endpoint credit ringan KIE agar key/credit kosong terlihat sebelum generation. Ini tidak menjamin upstream model tidak 502, tetapi mencegah key/credit kosong terlihat sebagai "ready".
+- Jangan tambahkan ID KIE yang belum ada dokumentasi endpointnya. `gpt-5.4-nano` dan `gemini-3.1-flash-lite` belum ditemukan sebagai endpoint KIE yang terdokumentasi saat audit ini, jadi belum dimasukkan.
 - KIE docs menyebut generated media disimpan 14 hari dan download URL sementara 20 menit; untuk asset penting, simpan ulang ke R2.
 - KIE docs menyebut stabilitas bisa sedikit lebih rendah dari official provider sebagai tradeoff harga.
 
@@ -118,5 +124,7 @@ Rekomendasi konfigurasi:
 - OpenRouter model catalog API: https://openrouter.ai/api/v1/models
 - KIE.ai getting started/pricing notes: https://kie.ai/getting-started
 - KIE.ai API docs: https://docs.kie.ai/
+- KIE.ai Gemini 2.5 Flash endpoint: https://docs.kie.ai/market/gemini/gemini-2-5-flash
+- KIE.ai GPT-5.4 endpoint: https://docs.kie.ai/market/chat/gpt-5-4
 - KIE.ai Gemini 3.1 Pro endpoint: https://docs.kie.ai/market/gemini/gemini-3-1-pro
 - KIE.ai GPT-5.5 endpoint: https://docs.kie.ai/market/chat/gpt-5-5

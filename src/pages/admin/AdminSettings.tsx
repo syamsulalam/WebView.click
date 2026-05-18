@@ -7,6 +7,7 @@ import HelpTooltip from "../../components/HelpTooltip";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
+import AdminProviderHealthBadge from "../../components/AdminProviderHealthBadge";
 import { providerCooldownEvent } from "../../lib/providerCooldown";
 import {
   defaultProspectScoreWeights,
@@ -690,6 +691,7 @@ export default function AdminSettings() {
               remoteValidate
             />
             <AdminProviderCooldownBadge provider={pricingProvider} />
+            <AdminProviderHealthBadge provider={pricingProvider} model={pricingModel} />
           </div>
         </div>
         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">

@@ -95,10 +95,10 @@ export function interpretApiError(error: unknown, input: ApiErrorInput = {}): Ap
     };
   }
 
-  if (status === 401 || status === 403 || /api key|permission_denied|unauthorized|forbidden|invalid key|billing/i.test(rawMessage)) {
+  if (status === 401 || status === 402 || status === 403 || /api key|permission_denied|unauthorized|forbidden|invalid key|billing|insufficient credits/i.test(rawMessage)) {
     return {
       title: `${sourcePrefix}${provider} key or permission problem`,
-      meaning: `${provider} did not accept the configured key, project permission, billing state, or model access${modelSuffix}.`,
+      meaning: `${provider} did not accept the configured key, project permission, billing/credit state, or model access${modelSuffix}.`,
       actions: [
         "Open /admin/settings and verify the provider key is saved in the correct field.",
         "Check provider billing/project access and whether this model is available for that key.",
@@ -123,7 +123,7 @@ export function interpretApiError(error: unknown, input: ApiErrorInput = {}): Ap
     };
   }
 
-  if (status === 500 || status === 502 || status === 503 || /unavailable|overloaded|timeout|timed out|fetch failed/i.test(rawMessage)) {
+  if (status === 455 || status === 500 || status === 502 || status === 503 || /unavailable|overloaded|timeout|timed out|fetch failed/i.test(rawMessage)) {
     return {
       title: `${sourcePrefix}${provider} temporary service failure`,
       meaning: `${provider} or an upstream network call failed temporarily${modelSuffix}. The request may work after capacity recovers.`,

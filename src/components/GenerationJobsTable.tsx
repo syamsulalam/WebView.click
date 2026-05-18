@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Check, Copy, ExternalLink, FileText, Loader2, RefreshCw, RotateCw, Search, X } from "lucide-react";
 import { useLocalStorageState } from "../lib/localStorageState";
 import { checkAiReadiness, logAiReadinessBlockedJob } from "../lib/aiReadiness";
+import { readApiJson } from "../lib/apiResponse";
 import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
 import { useAdminToast } from "./AdminToast";
@@ -157,6 +158,7 @@ export default function GenerationJobsTable({
   const selectedAiReadiness = selectedJob?.metadata?.aiReadiness || null;
   const selectedRemoteValidation = selectedJob?.metadata?.remoteValidation || selectedAiReadiness?.remoteValidation || null;
   const selectedProviderCooldown = selectedJob?.metadata?.providerCooldown || null;
+  const selectedAiFailure = selectedJob?.metadata?.aiFailure || selectedJob?.metadata?.providerFailure || null;
 
   const retryReadiness = (job: any) => {
     const provider = job?.provider || fallbackProvider;
@@ -362,10 +364,7 @@ export default function GenerationJobsTable({
           selectedLogoPriority: brand.selectedPhotoPriority || "",
         }),
       });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || result.error) {
-        throw new Error(result.error || `Retry failed with HTTP ${response.status}`);
-      }
+      await readApiJson(response, "Retry generation job");
       setRetryOverrideJobId("");
       setMessage(`Retried ${job.businessId}. New job created from current brief ${shortHash(currentBriefHash)}.`);
       fetchJobs();
@@ -755,6 +754,36 @@ export default function GenerationJobsTable({
                   <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                     {selectedProviderCooldown.reason || selectedJob.error}
                   </p>
+                </section>
+              )}
+
+              {selectedAiFailure && (
+                <section>
+                  <div className="mb-2">
+                    <h3 className="font-semibold text-slate-950">Provider failure diagnostics</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">Granular reason captured from the provider response or network stage.</p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-4">
+                    {[
+                      ["Kind", selectedAiFailure.failureKind || "-"],
+                      ["HTTP", selectedAiFailure.httpStatus || "-"],
+                      ["Stage", selectedAiFailure.stage || "-"],
+                      ["Retryable", selectedAiFailure.retryable === true ? "Yes" : selectedAiFailure.retryable === false ? "No" : "Unknown"],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{String(label)}</p>
+                        <p className="mt-1 font-semibold text-slate-950">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                    {selectedAiFailure.actionHint || selectedAiFailure.message || selectedJob.error}
+                  </p>
+                  {selectedAiFailure.endpoint && (
+                    <p className="mt-2 truncate rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] text-slate-600" title={selectedAiFailure.endpoint}>
+                      {selectedAiFailure.endpoint}
+                    </p>
+                  )}
                 </section>
               )}
 

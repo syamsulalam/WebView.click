@@ -131,7 +131,7 @@ Logic penting:
 - Dalam `serverBackedSearch` mode, search box mengirim `q` ke server untuk mencari `business_id`, `place_id`, job `id`, nama prospect, dan metadata JSON.
 - Full page mode menampilkan `Load more` jika rows loaded masih lebih sedikit dari count server; tombol ini memanggil endpoint dengan `offset={loadedRows}` lalu append ke tabel.
 - Kolom Job menyediakan tombol copy kecil untuk Job ID dan Business ID; saat sukses icon berubah menjadi check sementara.
-- Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, retry dari drawer, audit copy AI, dan raw `metadata` JSON dengan tombol copy.
+- Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, provider failure diagnostics, retry dari drawer, audit copy AI, dan raw `metadata` JSON dengan tombol copy.
 - Retry mengambil current copy brief dari `GET /api/sites/:businessId/copy-brief`, menghitung hash browser-side, lalu memperingatkan jika hash berbeda dari job lama sebelum membuat job baru.
 - Retry mengirim `requireAi: true`, sehingga error provider/model/API key terlihat sebagai failed job dan pesan UI, bukan diam-diam menyimpan fallback copy.
 - Tombol retry menampilkan readiness badge; provider/model berasal dari job lama jika ada, atau fallback localStorage parent, dan key status dikirim parent dari `/api/settings`.
@@ -150,6 +150,7 @@ Logic penting:
 - Untuk action `requiresAi=false`, badge menampilkan `No AI key needed` agar admin tahu klik tersebut hanya refresh/resave data.
 - Untuk action AI, status key bisa `Key present`, `Key missing`, atau `Key unknown` saat settings belum selesai dimuat.
 - Untuk action AI, badge juga memanggil `/api/ai/readiness` dan menampilkan `Preflight ok`, `Model invalid`, `Provider invalid`, atau `Preflight failed`.
+- Untuk action AI, badge juga memanggil `/api/ai/provider-failure` dan menampilkan chip kecil `Last fail` bila provider/model itu punya failure 14 hari terakhir, termasuk kind, HTTP status, umur failure, dan tooltip action hint.
 - Dipakai oleh `/admin/leads`, `/admin/sites`, dan `GenerationJobsTable` supaya tombol generate tidak drift dalam cara menjelaskan kesiapan AI.
 
 ### `src/components/AdminAiReadinessRefreshButton.tsx`
@@ -160,8 +161,9 @@ Fungsi:
 
 Logic penting:
 - Memanggil `clearAiReadinessCache()` dari `src/lib/aiReadiness.ts`.
+- Juga membersihkan cache `src/lib/providerFailure.ts` supaya chip `Last fail` ikut refresh setelah provider/model diperbaiki.
 - Helper cache mengirim browser event `webview:ai-readiness-refresh`; badge yang sedang mount mendengar event ini dan langsung memanggil ulang `/api/ai/readiness`.
-- Tombol memakai `HelpTooltip` untuk menjelaskan bahwa cache readiness 30 detik akan dibersihkan tanpa menjalankan generate.
+- Tombol memakai `HelpTooltip` untuk menjelaskan bahwa cache readiness dan last-failure 30 detik akan dibersihkan tanpa menjalankan generate.
 
 ### `src/components/AdminToast.tsx`
 
@@ -172,6 +174,7 @@ Logic penting:
 - `AdminToastProvider` menyimpan maksimal 4 toast dan merender overlay fixed kanan atas dengan z-index tinggi.
 - `useAdminToast().showApiError()` memakai `src/lib/apiErrorInsights.ts` untuk mengubah error provider menjadi judul, arti error, action items, dan raw message.
 - Error generate/regenerate/retry dari `/api/sites/generate` muncul sebagai toast, sehingga pesan seperti Gemini 429 quota tidak tersembunyi di panel/card yang harus discroll.
+- `src/lib/apiResponse.ts` dipakai oleh generate/regenerate/retry supaya body error non-JSON/HTML dari provider atau edge tetap muncul sebagai snippet di toast, bukan hanya fallback `HTTP 502`.
 - 429/quota toast juga menulis cooldown provider ke `src/lib/providerCooldown.ts`; batch generate di `/admin/leads`, first generate/regenerate di `/admin/sites`, dan retry job membaca cooldown ini agar tidak langsung menghantam provider yang sedang exhausted.
 - Browser default `alert()` tidak dipakai di admin; dev bypass sign-out memakai toast info.
 
@@ -185,6 +188,16 @@ Logic penting:
 - Saat cooldown aktif, badge menampilkan sisa waktu setiap detik dan tooltip menjelaskan bahwa batch/generate ditahan untuk menghindari repeated 429.
 - Saat cooldown aktif, badge menampilkan aksi `Clear` dengan konfirmasi inline. Ini menghapus cooldown localStorage dan D1 via `DELETE /api/provider-cooldowns`; tidak otomatis terjadi saat switch provider karena cooldown lama tetap melindungi session/admin lain yang masih memakai provider tersebut.
 - Dipakai di `/admin/leads`, `/admin/sites`, dan `/admin/settings` supaya admin melihat cooldown sebelum klik generate/regenerate atau mengecek model.
+
+### `src/components/AdminProviderHealthBadge.tsx`
+
+Fungsi:
+- Badge kecil untuk `/admin/settings` yang menampilkan failure rate provider/model 24 jam terakhir sebelum dipakai batch generation.
+
+Logic penting:
+- Memanggil `src/lib/providerHealth.ts` dan endpoint `/api/ai/provider-health?provider=...&model=...`.
+- Menampilkan `No 24h attempts` bila belum ada job, atau `{percent}% fail · failed/total 24h` dengan warna hijau/kuning/merah berdasarkan rasio gagal.
+- Tooltip menjelaskan bahwa badge hanya memakai riwayat job lokal, bukan provider metadata call baru.
 
 ### `src/components/AdminWorkspaceTabs.tsx`
 
@@ -291,6 +304,8 @@ API yang dipakai:
 - `GET /api/places/details?placeId=...`
 - `GET /api/places/photo?reference=...`
 - `GET /api/ai/readiness?provider=...&model=...`
+- `GET /api/ai/provider-failure?provider=...&model=...`
+- `GET /api/ai/provider-health?provider=...&model=...`
 - `POST /api/sites/generate`
 - `PUT /api/leads/:id/status`
 
@@ -620,6 +635,24 @@ Fungsi:
 - Kategori extension untuk selector searchable/filterable.
 - Helper `normalizeDomainLabel()` dan `buildDomain()`.
 
+### `src/lib/providerFailure.ts`
+
+Fungsi:
+- Browser helper untuk membaca last AI provider failure dari `/api/ai/provider-failure`.
+
+Logic penting:
+- Cache 30 detik per provider/model agar banyak readiness badge dengan pilihan yang sama tidak membuat D1 read berulang.
+- Dipakai oleh `AdminAiReadinessBadge` untuk chip `Last fail` setelah generate/regenerate/retry pernah gagal.
+
+### `src/lib/providerHealth.ts`
+
+Fungsi:
+- Browser helper untuk membaca ringkasan failure rate 24 jam dari `/api/ai/provider-health`.
+
+Logic penting:
+- Cache 30 detik per provider/model.
+- Cache ikut dibersihkan oleh `AdminAiReadinessRefreshButton` supaya Settings bisa refresh readiness, last failure, dan health sekaligus.
+
 ## Cloudflare Pages Functions
 
 ### `src/lib/apiErrorInsights.ts`
@@ -628,7 +661,7 @@ Fungsi:
 - Interpreter error API untuk toast admin.
 
 Logic penting:
-- Mengklasifikasi 429/rate limit/quota, 401/403 key-permission, 400 payload/model invalid, dan 5xx/provider temporary failure.
+- Mengklasifikasi 429/rate limit/quota, 401/402/403 key-permission-billing-credit, 400 payload/model invalid, dan 455/5xx/provider temporary failure.
 - Untuk Gemini 429 `RESOURCE_EXHAUSTED`, message menjelaskan bahwa quota/rate limit diterapkan per project, lalu menyarankan wait/retry, hentikan batch retry, switch model/provider, atau naikkan quota/billing.
 - Provider cooldown memakai strategi konservatif: Gemini/OpenAI/custom default 90 detik untuk rate limit per menit, OpenRouter 75 detik kecuali ada retry hint, KIE.ai 30 detik karena KIE mendokumentasikan burst limit pendek, dan quota/billing/daily cases lebih lama.
 - Dipakai oleh `AdminToast.showApiError()` supaya UI menampilkan meaning/action items, bukan hanya raw provider string.
@@ -673,11 +706,17 @@ Logic AI:
 - OpenRouter/OpenAI/Opencode memakai format Chat Completions.
 - Gemini memakai endpoint Google Generative Language.
 - KIE.ai mendukung:
+  - `kie/gemini-2.5-flash` via `https://api.kie.ai/gemini-2.5-flash/v1/chat/completions`
+  - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
+  - `kie/gpt-5-4` via `https://api.kie.ai/codex/v1/responses`
+  - `kie/gemini-3.1-pro` via `https://api.kie.ai/gemini-3.1-pro/v1/chat/completions`
   - `kie/gpt-5-5` via `https://api.kie.ai/codex/v1/responses`
   - `kie/gpt-5-2` via `https://api.kie.ai/gpt-5-2/v1/chat/completions`
-  - `kie/gemini-3.1-pro` via `https://api.kie.ai/gemini-3.1-pro/v1/chat/completions`
-  - `kie/gemini-3-flash` via `https://api.kie.ai/gemini-3-flash/v1/chat/completions`
-- `/api/ai/readiness` adalah preflight ringan untuk provider/model AI: membaca key dari `system_settings` atau env binding, mengecek provider didukung, dan mengecek model ada di registry internal. Jika query/body membawa `remoteValidate=1`, endpoint juga menjalankan metadata check provider sebelum generate: OpenRouter `GET /api/v1/models` plus `GET /api/v1/models/{author}/{slug}/endpoints`, OpenAI `GET /v1/models/{model}`, dan Gemini `GET /v1beta/models/{model}`. KIE/Opencode tetap memakai registry lokal karena belum ada metadata check ringan yang aman.
+- `/api/ai/readiness` adalah preflight ringan untuk provider/model AI: membaca key dari `system_settings` atau env binding, mengecek provider didukung, dan mengecek model ada di registry internal. Jika query/body membawa `remoteValidate=1`, endpoint juga menjalankan metadata/provider check sebelum generate: OpenRouter `GET /api/v1/models` plus `GET /api/v1/models/{author}/{slug}/endpoints`, OpenAI `GET /v1/models/{model}`, Gemini `GET /v1beta/models/{model}`, dan KIE `GET /api/v1/chat/credit` plus registry endpoint mapping. Opencode tetap memakai registry lokal karena custom endpoint ringan belum aman digeneralisasi.
+- `/api/sites/generate` sekarang menjalankan readiness remote preflight juga saat `requireAi: true`, sehingga server-side generate tidak hanya mengandalkan badge browser. Jika preflight server memblokir, row `generation_jobs.metadata_json` menyimpan `preflightBlocked`, `aiReadiness`, dan `remoteValidation`. KIE generate memakai shared `kieModelConfigs`, tidak silent fallback ke model lain, dan error provider mencantumkan selected model plus endpoint.
+- Provider generation failures untuk OpenRouter, OpenAI, Gemini, KIE.ai, dan Opencode sekarang disimpan sebagai `metadata_json.aiFailure`/`providerFailure` dengan `failureKind`, `stage`, `httpStatus`, provider code/status bila ada, endpoint, retryable flag, raw snippet, dan action hint. Kind mencakup `quota_or_rate_limit`, `credits_or_billing`, `auth_or_permission`, `bad_request_or_model`, `provider_temporary`, `network_error`, `empty_response`, `invalid_json`, `provider_cooldown`, dan `unknown_provider_error`.
+- `/api/ai/provider-failure` membaca failed `generation_jobs` terbaru 14 hari terakhir untuk provider/model tertentu dan mengembalikan ringkasan last failure untuk readiness badge.
+- `/api/ai/provider-health` membaca `generation_jobs` 24 jam terakhir untuk provider/model tertentu dan mengembalikan total/success/failed, preflight/cooldown blocked, failure rate, latest failure, dan top failure kind. Endpoint ini tidak memanggil provider eksternal.
 - Remote readiness validation memakai cache D1 `ai_readiness_cache` dengan TTL pendek 2 menit per provider/model/key hash. Query/body `refresh=1` atau `bypassCache=1` melewati cache server dan menulis hasil baru; tombol `Refresh AI readiness` mengirim bypass ini untuk recheck setelah key/model diubah.
 - Live remote readiness validation yang miss/bypass cache menambah counter harian `ai_readiness_remote`; hit cache server tidak dihitung sebagai provider metadata call baru.
 - `/api/provider-cooldowns` menyimpan cooldown provider di D1 `provider_cooldowns`. Toast 429/quota menulis cooldown ke endpoint ini, badge admin membacanya, dan generate/regenerate/retry memanggil shared cooldown sebelum request mahal agar session admin lain ikut tertahan.

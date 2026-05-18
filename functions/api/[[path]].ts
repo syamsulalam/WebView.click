@@ -600,14 +600,163 @@ const aiProviderModels: Record<string, string[]> = {
     "qwen/qwen3.6-max-preview",
     "qwen/qwen3.6-flash",
   ],
-  KIE: ["kie/gpt-5-5", "kie/gpt-5-2", "kie/gemini-3.1-pro", "kie/gemini-3-flash"],
+  KIE: ["kie/gemini-2.5-flash", "kie/gemini-3-flash", "kie/gpt-5-4", "kie/gemini-3.1-pro", "kie/gpt-5-5", "kie/gpt-5-2"],
   Opencode: ["opencode-default", "qwen/qwen3.6-flash", "qwen/qwen3.6-max-preview", "custom-model"],
+};
+
+const kieModelConfigs: Record<string, { endpoint: string; model?: string; mode: "chat" | "responses" }> = {
+  "kie/gemini-2.5-flash": { endpoint: "https://api.kie.ai/gemini-2.5-flash/v1/chat/completions", mode: "chat" },
+  "kie/gemini-3-flash": { endpoint: "https://api.kie.ai/gemini-3-flash/v1/chat/completions", mode: "chat" },
+  "kie/gpt-5-4": { endpoint: "https://api.kie.ai/codex/v1/responses", model: "gpt-5-4", mode: "responses" },
+  "kie/gemini-3.1-pro": { endpoint: "https://api.kie.ai/gemini-3.1-pro/v1/chat/completions", mode: "chat" },
+  "kie/gpt-5-5": { endpoint: "https://api.kie.ai/codex/v1/responses", model: "gpt-5-5", mode: "responses" },
+  "kie/gpt-5-2": { endpoint: "https://api.kie.ai/gpt-5-2/v1/chat/completions", mode: "chat" },
 };
 
 const remoteAiReadinessCacheTtlMs = 2 * 60 * 1000;
 
+type AiFailureDiagnostics = {
+  provider: string;
+  model: string;
+  endpoint?: string;
+  stage: string;
+  failureKind: string;
+  httpStatus?: number;
+  providerCode?: string;
+  providerStatus?: string;
+  retryable: boolean;
+  message: string;
+  rawSnippet?: string;
+  actionHint: string;
+  checkedAt: string;
+};
+
 function normalizeAiModel(provider: string, model: string) {
   return model;
+}
+
+function extractProviderErrorDetails(text: string) {
+  const snippet = text.replace(/\s+/g, " ").trim().slice(0, 600);
+  if (!text) {
+    return { message: "", rawSnippet: "", providerCode: "", providerStatus: "" };
+  }
+  try {
+    const payload = JSON.parse(text);
+    const error = payload?.error && typeof payload.error === "object" ? payload.error : {};
+    const message = asString(
+      error.message,
+      asString(payload.message, asString(payload.msg, asString(payload.error, snippet))),
+    );
+    return {
+      message,
+      rawSnippet: snippet,
+      providerCode: asString(error.code, asString(payload.code)),
+      providerStatus: asString(error.status, asString(error.type, asString(payload.status))),
+    };
+  } catch {
+    return { message: snippet, rawSnippet: snippet, providerCode: "", providerStatus: "" };
+  }
+}
+
+function classifyAiFailure(status: number | undefined, providerStatus: string, message: string, stage = "provider_http") {
+  const raw = `${providerStatus} ${message}`.toLowerCase();
+  if (stage === "provider_network" || /fetch failed|network|dns|econn|socket|tls/i.test(raw)) {
+    return {
+      failureKind: "network_error",
+      retryable: true,
+      actionHint: "Retry once after a short wait. If it repeats, switch provider or check upstream connectivity.",
+    };
+  }
+  if (stage === "provider_empty_response") {
+    return {
+      failureKind: "empty_response",
+      retryable: true,
+      actionHint: "Retry once. If it repeats, switch model/provider because the provider returned no usable content.",
+    };
+  }
+  if (stage === "provider_invalid_json") {
+    return {
+      failureKind: "invalid_json",
+      retryable: false,
+      actionHint: "Switch to a stronger model or reduce prompt complexity; the provider returned text that could not be parsed as JSON.",
+    };
+  }
+  if (stage === "provider_cooldown" || /cooldown|cooling down/i.test(raw)) {
+    return {
+      failureKind: "provider_cooldown",
+      retryable: true,
+      actionHint: "Wait for the shared provider cooldown to end, or switch provider/model.",
+    };
+  }
+  if (status === 429 || /quota|rate limit|too many requests|resource_exhausted|requests per minute|tokens per minute|rpm|tpm/i.test(raw)) {
+    return {
+      failureKind: "quota_or_rate_limit",
+      retryable: true,
+      actionHint: "Wait for the cooldown, reduce batch size, or switch provider/model before retrying.",
+    };
+  }
+  if (status === 402 || /credit|insufficient|balance|billing/i.test(raw)) {
+    return {
+      failureKind: "credits_or_billing",
+      retryable: false,
+      actionHint: "Check provider credits/billing, then refresh AI readiness before retrying.",
+    };
+  }
+  if (status === 401 || status === 403 || /unauthorized|forbidden|permission|invalid key|api key|access denied/i.test(raw)) {
+    return {
+      failureKind: "auth_or_permission",
+      retryable: false,
+      actionHint: "Verify the saved API key, project permissions, and model access in Settings.",
+    };
+  }
+  if (status === 400 || status === 404 || status === 422 || /model.*not|not found|unsupported|invalid model|invalid_argument|validation|bad request/i.test(raw)) {
+    return {
+      failureKind: "bad_request_or_model",
+      retryable: false,
+      actionHint: "Check the selected provider/model and request format. Refresh AI readiness before trying again.",
+    };
+  }
+  if (status === 455 || status === 500 || status === 502 || status === 503 || status === 504 || /unavailable|overloaded|timeout|timed out|upstream|temporary|maintenance/i.test(raw)) {
+    return {
+      failureKind: "provider_temporary",
+      retryable: true,
+      actionHint: "Wait a minute and retry once, or switch provider/model if this blocks a batch.",
+    };
+  }
+  return {
+    failureKind: "unknown_provider_error",
+    retryable: false,
+    actionHint: "Open the raw error in Jobs, then retry only after changing provider, model, input, or quota state.",
+  };
+}
+
+function buildAiFailureDiagnostics(input: {
+  provider: string;
+  model: string;
+  endpoint?: string;
+  stage: string;
+  httpStatus?: number;
+  message: string;
+  rawSnippet?: string;
+  providerCode?: string;
+  providerStatus?: string;
+}): AiFailureDiagnostics {
+  const classified = classifyAiFailure(input.httpStatus, input.providerStatus || input.providerCode || "", input.message, input.stage);
+  return {
+    provider: input.provider,
+    model: input.model,
+    endpoint: input.endpoint,
+    stage: input.stage,
+    failureKind: classified.failureKind,
+    httpStatus: input.httpStatus,
+    providerCode: input.providerCode,
+    providerStatus: input.providerStatus,
+    retryable: classified.retryable,
+    message: input.message,
+    rawSnippet: input.rawSnippet,
+    actionHint: classified.actionHint,
+    checkedAt: new Date().toISOString(),
+  };
 }
 
 async function aiReadinessCacheKey(provider: string, model: string, key: string) {
@@ -795,6 +944,38 @@ async function validateAiModelRemotely(db: D1Database, env: Env, provider: strin
     };
   }
 
+  if (normalizedProvider === "KIE") {
+    const key = await getSetting(db, env, "KIE_API_KEY");
+    const kieConfig = kieModelConfigs[normalizedModel];
+    if (!kieConfig) {
+      return {
+        ...baseResult,
+        supported: true,
+        valid: false,
+        message: `KIE.ai model is not configured for generation in WebView.click: ${model}.`,
+      };
+    }
+    const response = await fetch("https://api.kie.ai/api/v1/chat/credit", {
+      headers: { authorization: `Bearer ${key}` },
+    });
+    const payload = await response.clone().json().catch(() => null) as { code?: number; msg?: string; data?: number } | null;
+    const remainingCredits = typeof payload?.data === "number" ? payload.data : null;
+    const providerOk = response.ok && payload !== null && (payload.code === 200 || payload.msg === "success");
+    return {
+      ...baseResult,
+      supported: true,
+      valid: providerOk && (remainingCredits === null || remainingCredits > 0),
+      status: response.status,
+      endpoint: kieConfig.endpoint,
+      remainingCredits,
+      message: providerOk
+        ? remainingCredits === 0
+          ? `KIE.ai key is valid, but the account has no remaining credits for ${model}.`
+          : `KIE.ai key/credits check passed and ${model} is mapped to ${kieConfig.endpoint}.`
+        : `KIE.ai key/credit validation failed for ${model}: ${payload?.msg || await errorSnippet(response)}`,
+    };
+  }
+
   return {
     ...baseResult,
     supported: false,
@@ -860,7 +1041,7 @@ async function getAiReadiness(db: D1Database, env: Env, provider: string, model:
       if (cachedValidation) {
         remoteValidation = cachedValidation;
       } else {
-        if (["OpenRouter", "OpenAI", "Gemini"].includes(normalizedProvider)) {
+        if (["OpenRouter", "OpenAI", "Gemini", "KIE"].includes(normalizedProvider)) {
           await incrementDailyUsage(db, "ai_readiness_remote");
         }
         remoteValidation = await validateAiModelRemotely(db, env, normalizedProvider, model.trim());
@@ -941,6 +1122,183 @@ async function handleAiReadiness(request: Request, db: D1Database, env: Env): Pr
   }
   const result = await getAiReadiness(db, env, provider, model, requiresAi, remoteValidate, refreshRemoteValidation);
   return json(result);
+}
+
+async function handleAiProviderFailure(request: Request, db: D1Database): Promise<Response> {
+  if (request.method !== "GET") return errorJson("Method not allowed", 405);
+  const url = new URL(request.url);
+  const provider = String(url.searchParams.get("provider") || "").trim();
+  const model = String(url.searchParams.get("model") || "").trim();
+  if (!provider) return errorJson("provider is required", 400);
+
+  const bindings: unknown[] = [provider];
+  let modelSql = "";
+  if (model) {
+    modelSql = "AND model = ?";
+    bindings.push(model);
+  }
+
+  const row = await db
+    .prepare(
+      `SELECT id, business_id, place_id, provider, model, error, metadata_json, created_at
+       FROM generation_jobs
+       WHERE status = 'failed'
+         AND provider = ?
+         ${modelSql}
+         AND datetime(created_at) >= datetime('now', '-14 days')
+       ORDER BY datetime(created_at) DESC
+       LIMIT 1`,
+    )
+    .bind(...bindings)
+    .first<{
+      id: string;
+      business_id?: string;
+      place_id?: string;
+      provider?: string;
+      model?: string;
+      error?: string;
+      metadata_json?: string;
+      created_at?: string;
+    }>();
+
+  if (!row) return json({ failure: null });
+
+  const metadata = parseJsonObject(row.metadata_json);
+  const storedFailure = metadata.aiFailure && typeof metadata.aiFailure === "object"
+    ? metadata.aiFailure as Record<string, unknown>
+    : metadata.providerFailure && typeof metadata.providerFailure === "object"
+      ? metadata.providerFailure as Record<string, unknown>
+      : null;
+  const message = asString(storedFailure?.message, asString(metadata.failureMessage, row.error || ""));
+  const httpStatus = Number(storedFailure?.httpStatus || message.match(/HTTP\s+(\d{3})/i)?.[1] || 0) || undefined;
+  const fallbackFailure = buildAiFailureDiagnostics({
+    provider: row.provider || provider,
+    model: row.model || model,
+    endpoint: asString(storedFailure?.endpoint),
+    stage: asString(storedFailure?.stage, asString(metadata.failureStage, "site_generate")),
+    httpStatus,
+    message,
+    rawSnippet: asString(storedFailure?.rawSnippet, row.error || ""),
+    providerCode: asString(storedFailure?.providerCode),
+    providerStatus: asString(storedFailure?.providerStatus),
+  });
+  const failure = {
+    ...fallbackFailure,
+    ...(storedFailure || {}),
+    provider: row.provider || provider,
+    model: row.model || model,
+    jobId: row.id,
+    businessId: row.business_id || "",
+    placeId: row.place_id || "",
+    createdAt: row.created_at || "",
+    error: row.error || "",
+  };
+
+  return json({ failure });
+}
+
+async function handleAiProviderHealth(request: Request, db: D1Database): Promise<Response> {
+  if (request.method !== "GET") return errorJson("Method not allowed", 405);
+  const url = new URL(request.url);
+  const provider = String(url.searchParams.get("provider") || "").trim();
+  const model = String(url.searchParams.get("model") || "").trim();
+  if (!provider) return errorJson("provider is required", 400);
+
+  const bindings: unknown[] = [provider];
+  let modelSql = "";
+  if (model) {
+    modelSql = "AND model = ?";
+    bindings.push(model);
+  }
+
+  const aggregate = await db
+    .prepare(
+      `SELECT
+         COUNT(*) AS total_count,
+         SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
+         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+         SUM(CASE WHEN metadata_json LIKE '%"preflightBlocked":true%' THEN 1 ELSE 0 END) AS preflight_count,
+         SUM(CASE WHEN metadata_json LIKE '%"cooldownBlocked":true%' THEN 1 ELSE 0 END) AS cooldown_count
+       FROM generation_jobs
+       WHERE provider = ?
+         ${modelSql}
+         AND datetime(created_at) >= datetime('now', '-24 hours')`,
+    )
+    .bind(...bindings)
+    .first<{
+      total_count?: number;
+      success_count?: number;
+      failed_count?: number;
+      preflight_count?: number;
+      cooldown_count?: number;
+    }>();
+
+  const failureRows = await db
+    .prepare(
+      `SELECT error, metadata_json, created_at
+       FROM generation_jobs
+       WHERE status = 'failed'
+         AND provider = ?
+         ${modelSql}
+         AND datetime(created_at) >= datetime('now', '-24 hours')
+       ORDER BY datetime(created_at) DESC
+       LIMIT 50`,
+    )
+    .bind(...bindings)
+    .all<{ error?: string; metadata_json?: string; created_at?: string }>();
+
+  const failureKinds = new Map<string, number>();
+  let latestFailure: Record<string, unknown> | null = null;
+  for (const row of failureRows.results || []) {
+    const metadata = parseJsonObject(row.metadata_json);
+    const storedFailure = metadata.aiFailure && typeof metadata.aiFailure === "object"
+      ? metadata.aiFailure as Record<string, unknown>
+      : metadata.providerFailure && typeof metadata.providerFailure === "object"
+        ? metadata.providerFailure as Record<string, unknown>
+        : null;
+    const message = asString(storedFailure?.message, asString(metadata.failureMessage, row.error || ""));
+    const httpStatus = Number(storedFailure?.httpStatus || message.match(/HTTP\s+(\d{3})/i)?.[1] || 0) || undefined;
+    const fallbackFailure = buildAiFailureDiagnostics({
+      provider,
+      model,
+      endpoint: asString(storedFailure?.endpoint),
+      stage: asString(storedFailure?.stage, asString(metadata.failureStage, "site_generate")),
+      httpStatus,
+      message,
+      rawSnippet: asString(storedFailure?.rawSnippet, row.error || ""),
+      providerCode: asString(storedFailure?.providerCode),
+      providerStatus: asString(storedFailure?.providerStatus),
+    });
+    const failure = {
+      ...fallbackFailure,
+      ...(storedFailure || {}),
+      createdAt: row.created_at || "",
+      error: row.error || "",
+    };
+    const kind = asString(failure.failureKind, "unknown_provider_error");
+    failureKinds.set(kind, (failureKinds.get(kind) || 0) + 1);
+    if (!latestFailure) latestFailure = failure;
+  }
+
+  const total = Number(aggregate?.total_count || 0);
+  const failed = Number(aggregate?.failed_count || 0);
+  const failureRate = total > 0 ? failed / total : 0;
+  const topFailureKind = [...failureKinds.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+
+  return json({
+    provider,
+    model,
+    windowHours: 24,
+    total,
+    success: Number(aggregate?.success_count || 0),
+    failed,
+    preflightBlocked: Number(aggregate?.preflight_count || 0),
+    cooldownBlocked: Number(aggregate?.cooldown_count || 0),
+    failureRate,
+    topFailureKind: topFailureKind ? { kind: topFailureKind[0], count: topFailureKind[1] } : null,
+    latestFailure,
+    checkedAt: new Date().toISOString(),
+  });
 }
 
 function providerCooldownKey(provider = "") {
@@ -3375,10 +3733,12 @@ async function generateAiCopyPatch(
     return null;
   }
 
-  const readiness = await getAiReadiness(db, env, provider, model, requireAi);
+  const readiness = await getAiReadiness(db, env, provider, model, requireAi, requireAi);
   if (!readiness.ready) {
     if (requireAi) {
-      throw new Error(readiness.message || "AI provider/model is not ready.");
+      const error = new Error(readiness.message || "AI provider/model is not ready.");
+      (error as Error & { aiReadiness?: unknown }).aiReadiness = readiness;
+      throw error;
     }
     return null;
   }
@@ -3390,17 +3750,52 @@ async function generateAiCopyPatch(
     return null;
   };
 
-  const apiError = async (providerName: string, response: Response) => {
-    const text = await response.text().catch(() => "");
-    let message = text.slice(0, 240);
+  const throwWithAiFailure = (message: string, diagnostics: AiFailureDiagnostics) => {
+    const error = new Error(message);
+    (error as Error & { aiFailure?: AiFailureDiagnostics }).aiFailure = diagnostics;
+    throw error;
+  };
+
+  const fetchAiProvider = async (providerName: string, endpoint: string, init: RequestInit) => {
     try {
-      const payload = text ? JSON.parse(text) : {};
-      message = asString(payload.error?.message, asString(payload.message, message));
-    } catch {
-      // Keep raw text snippet.
+      return await fetch(endpoint, init);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throwWithAiFailure(
+        `${providerName} network call failed (${model} via ${endpoint}): ${message}`,
+        buildAiFailureDiagnostics({
+          provider: providerName,
+          model,
+          endpoint,
+          stage: "provider_network",
+          message,
+          rawSnippet: message,
+        }),
+      );
     }
-    const finalMessage = `${providerName} API returned HTTP ${response.status}${message ? `: ${message}` : ""}`;
-    if (requireAi) throw new Error(finalMessage);
+  };
+
+  const apiError = async (providerName: string, response: Response, context = "", endpoint = "") => {
+    const text = await response.text().catch(() => "");
+    const details = extractProviderErrorDetails(text);
+    const message = details.message.slice(0, 600);
+    const finalMessage = `${providerName} API returned HTTP ${response.status}${context ? ` (${context})` : ""}${message ? `: ${message}` : ""}`;
+    if (requireAi) {
+      throwWithAiFailure(
+        finalMessage,
+        buildAiFailureDiagnostics({
+          provider: providerName,
+          model,
+          endpoint: endpoint || (context.startsWith("http") ? context : ""),
+          stage: "provider_http",
+          httpStatus: response.status,
+          message,
+          rawSnippet: details.rawSnippet,
+          providerCode: details.providerCode,
+          providerStatus: details.providerStatus,
+        }),
+      );
+    }
     console.error(finalMessage);
     return null;
   };
@@ -3470,7 +3865,7 @@ Return only the copy patch JSON.`;
   if (provider === "OpenRouter") {
     const key = await getSetting(db, env, "OPENROUTER_API_KEY");
     if (!key) return missingKey("OpenRouter");
-    const apiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const apiRes = await fetchAiProvider("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         authorization: `Bearer ${key}`,
@@ -3485,13 +3880,13 @@ Return only the copy patch JSON.`;
         ],
       }),
     });
-    if (!apiRes.ok) return apiError("OpenRouter", apiRes);
+    if (!apiRes.ok) return apiError("OpenRouter", apiRes, model, "https://openrouter.ai/api/v1/chat/completions");
     const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
     responseContent = aiJson.choices?.[0]?.message?.content || "";
   } else if (provider === "OpenAI") {
     const key = await getSetting(db, env, "OPENAI_API_KEY");
     if (!key) return missingKey("OpenAI");
-    const apiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const apiRes = await fetchAiProvider("OpenAI", "https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         authorization: `Bearer ${key}`,
@@ -3506,13 +3901,14 @@ Return only the copy patch JSON.`;
         ],
       }),
     });
-    if (!apiRes.ok) return apiError("OpenAI", apiRes);
+    if (!apiRes.ok) return apiError("OpenAI", apiRes, model, "https://api.openai.com/v1/chat/completions");
     const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
     responseContent = aiJson.choices?.[0]?.message?.content || "";
   } else if (provider === "Gemini") {
     const key = await getSetting(db, env, "GEMINI_API_KEY");
     if (!key) return missingKey("Gemini");
-    const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+    const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const apiRes = await fetchAiProvider("Gemini", `${geminiEndpoint}?key=${encodeURIComponent(key)}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -3523,23 +3919,21 @@ Return only the copy patch JSON.`;
         generationConfig: { responseMimeType: "application/json" },
       }),
     });
-    if (!apiRes.ok) return apiError("Gemini", apiRes);
+    if (!apiRes.ok) return apiError("Gemini", apiRes, geminiEndpoint, geminiEndpoint);
     const aiJson = await apiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     responseContent = aiJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
   } else if (provider === "KIE") {
     const key = await getSetting(db, env, "KIE_API_KEY");
     if (!key) return missingKey("KIE.ai");
 
-    const kieModelMap: Record<string, { endpoint: string; model?: string; mode: "chat" | "responses" }> = {
-      "kie/gpt-5-5": { endpoint: "https://api.kie.ai/codex/v1/responses", model: "gpt-5-5", mode: "responses" },
-      "kie/gpt-5-2": { endpoint: "https://api.kie.ai/gpt-5-2/v1/chat/completions", mode: "chat" },
-      "kie/gemini-3.1-pro": { endpoint: "https://api.kie.ai/gemini-3.1-pro/v1/chat/completions", mode: "chat" },
-      "kie/gemini-3-flash": { endpoint: "https://api.kie.ai/gemini-3-flash/v1/chat/completions", mode: "chat" },
-    };
-    const kieConfig = kieModelMap[model] || kieModelMap["kie/gemini-3-flash"];
+    const kieConfig = kieModelConfigs[model];
+    if (!kieConfig) {
+      if (requireAi) throw new Error(`KIE.ai model is not configured for generation: ${model}.`);
+      return null;
+    }
 
     if (kieConfig.mode === "responses") {
-      const apiRes = await fetch(kieConfig.endpoint, {
+      const apiRes = await fetchAiProvider("KIE.ai", kieConfig.endpoint, {
         method: "POST",
         headers: {
           authorization: `Bearer ${key}`,
@@ -3556,17 +3950,17 @@ Return only the copy patch JSON.`;
               ],
             },
           ],
-          reasoning: { effort: "high" },
+          reasoning: { effort: "low" },
         }),
       });
-      if (!apiRes.ok) return apiError("KIE.ai", apiRes);
+      if (!apiRes.ok) return apiError("KIE.ai", apiRes, `${model} via ${kieConfig.endpoint}`, kieConfig.endpoint);
       const aiJson = await apiRes.json() as { output?: Array<{ content?: Array<{ text?: string }> }> };
       responseContent = aiJson.output
         ?.flatMap((item) => item.content || [])
         .map((item) => item.text || "")
         .join("\n") || "";
     } else {
-      const apiRes = await fetch(kieConfig.endpoint, {
+      const apiRes = await fetchAiProvider("KIE.ai", kieConfig.endpoint, {
         method: "POST",
         headers: {
           authorization: `Bearer ${key}`,
@@ -3578,10 +3972,10 @@ Return only the copy patch JSON.`;
             { role: "user", content: userMsg },
           ],
           stream: false,
-          reasoning_effort: "high",
+          reasoning_effort: "low",
         }),
       });
-      if (!apiRes.ok) return apiError("KIE.ai", apiRes);
+      if (!apiRes.ok) return apiError("KIE.ai", apiRes, `${model} via ${kieConfig.endpoint}`, kieConfig.endpoint);
       const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
       responseContent = aiJson.choices?.[0]?.message?.content || "";
     }
@@ -3589,7 +3983,7 @@ Return only the copy patch JSON.`;
     const key = await getSetting(db, env, "OPENCODE_API_KEY");
     const endpoint = await getSetting(db, env, "OPENCODE_BASE_URL") || "https://api.opencode.example.com/v1/chat/completions";
     if (!key) return missingKey("Opencode");
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await fetchAiProvider("Opencode", endpoint, {
       method: "POST",
       headers: {
         authorization: `Bearer ${key}`,
@@ -3604,7 +3998,7 @@ Return only the copy patch JSON.`;
         ],
       }),
     });
-    if (!apiRes.ok) return apiError("Opencode", apiRes);
+    if (!apiRes.ok) return apiError("Opencode", apiRes, model, endpoint);
     const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
     responseContent = aiJson.choices?.[0]?.message?.content || "";
   } else if (requireAi) {
@@ -3613,7 +4007,15 @@ Return only the copy patch JSON.`;
 
   if (!responseContent) {
     if (requireAi) {
-      throw new Error(`${provider} did not return JSON content for model ${model}.`);
+      throwWithAiFailure(
+        `${provider} did not return JSON content for model ${model}.`,
+        buildAiFailureDiagnostics({
+          provider,
+          model,
+          stage: "provider_empty_response",
+          message: `${provider} returned an empty response body or no recognized content field for ${model}.`,
+        }),
+      );
     }
     return null;
   }
@@ -3628,7 +4030,17 @@ Return only the copy patch JSON.`;
     };
   } catch (error) {
     if (requireAi) {
-      throw new Error(`${provider} returned invalid JSON for model ${model}: ${error instanceof Error ? error.message : String(error)}`);
+      const message = `${provider} returned invalid JSON for model ${model}: ${error instanceof Error ? error.message : String(error)}`;
+      throwWithAiFailure(
+        message,
+        buildAiFailureDiagnostics({
+          provider,
+          model,
+          stage: "provider_invalid_json",
+          message,
+          rawSnippet: cleaned.slice(0, 600),
+        }),
+      );
     }
     throw error;
   }
@@ -4419,8 +4831,28 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      jobMetadata.failureStage = "site_generate";
+      const readiness = error && typeof error === "object" && "aiReadiness" in error
+        ? (error as { aiReadiness?: unknown }).aiReadiness
+        : null;
+      const aiFailure = error && typeof error === "object" && "aiFailure" in error
+        ? (error as { aiFailure?: unknown }).aiFailure
+        : null;
+      jobMetadata.failureStage = readiness ? "ai_readiness_preflight" : "site_generate";
       jobMetadata.failureMessage = message;
+      if (readiness) {
+        jobMetadata.preflightBlocked = true;
+        jobMetadata.aiReadiness = readiness;
+        jobMetadata.remoteValidation = typeof readiness === "object" && readiness && "remoteValidation" in readiness
+          ? (readiness as { remoteValidation?: unknown }).remoteValidation
+          : null;
+      }
+      if (aiFailure) {
+        jobMetadata.aiFailure = aiFailure;
+        jobMetadata.providerFailure = aiFailure;
+        if (typeof aiFailure === "object" && aiFailure && "failureKind" in aiFailure) {
+          jobMetadata.failureStage = asString((aiFailure as { stage?: unknown }).stage, "site_generate");
+        }
+      }
       await updateGenerationJob(db, jobId, { status: "failed", error: message, metadata_json: JSON.stringify(jobMetadata) });
       await updateProspectRecord(db, originPlaceId, { last_error: message });
       const statusCode = body.requireAi === true
@@ -4757,6 +5189,14 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (segments[0] === "ai" && segments[1] === "readiness") {
       return handleAiReadiness(request, db, env);
+    }
+
+    if (segments[0] === "ai" && segments[1] === "provider-failure") {
+      return handleAiProviderFailure(request, db);
+    }
+
+    if (segments[0] === "ai" && segments[1] === "provider-health") {
+      return handleAiProviderHealth(request, db);
     }
 
     if (segments[0] === "provider-cooldowns") {

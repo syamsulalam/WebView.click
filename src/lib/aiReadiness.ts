@@ -12,8 +12,10 @@ export type AiReadinessResult = {
     supported?: boolean;
     valid?: boolean | null;
     status?: number;
+    endpoint?: string;
     matchedModel?: string;
     endpointCount?: number;
+    remainingCredits?: number | null;
     cacheHit?: boolean;
     cacheStoredAt?: string;
     cacheExpiresAt?: string;
