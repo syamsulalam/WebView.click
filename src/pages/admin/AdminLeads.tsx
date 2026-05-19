@@ -7,11 +7,19 @@ import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOption
 import { placeMapsUrl, placePhone } from "../../lib/generatedSiteScaffold";
 import {
   buildScaffoldGeneratePayload,
+  buildPaletteOptionForPhoto,
+  buildPhotoSelection,
+  buildProspectSelectionPayload,
   ensureAiGenerationReady,
   ensureNoProviderCooldown,
+  googlePlacePhotoUrlForPhoto,
   isAdminGenerationBlockedError,
   mapsQueryPlaceholder,
+  photoPriorityLabel,
   postGenerateSite,
+  resolveLeadGeneratePhotoSelection,
+  saveProspectSelection,
+  sortedPhotosForPlace,
 } from "../../lib/adminSiteGeneration";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
@@ -293,48 +301,6 @@ export default function AdminLeads() {
   const activeScoringPreset = prospectScoringPresets.find((preset) => preset.key === settings?.SCORING_PRESET);
   const activeScoringPresetLabel = activeScoringPreset?.label || (settings?.SCORING_PRESET === "custom" ? "Custom" : "Balanced");
 
-  const getPhotoReference = (photo: any) => photo?.photo_reference || photo?.name || photo?.reference || "";
-
-  const getPhotoUrl = (photo: any, maxWidth = 320) => {
-    const reference = getPhotoReference(photo);
-    if (!reference) return "";
-    return `/api/places/photo?reference=${encodeURIComponent(reference)}&maxwidth=${maxWidth}`;
-  };
-
-  const stripHtml = (value: string) => value.replace(/<[^>]*>/g, "").trim();
-
-  const getPhotoAttributions = (photo: any) => {
-    const legacy = Array.isArray(photo?.html_attributions)
-      ? photo.html_attributions.map((value: string) => stripHtml(String(value)))
-      : [];
-    const newApi = Array.isArray(photo?.authorAttributions)
-      ? photo.authorAttributions
-          .map((item: any) => item?.displayName || item?.uri || item?.photoUri || "")
-          .filter(Boolean)
-      : [];
-    return [...legacy, ...newApi].filter(Boolean);
-  };
-
-  const photoPriority = (photo: any, businessName: string) => {
-    const attributions = getPhotoAttributions(photo).join(" ").toLowerCase();
-    const nameTokens = businessName.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2);
-    if (attributions && nameTokens.some((token) => attributions.includes(token))) return 0;
-    if (!attributions) return 1;
-    return 2;
-  };
-
-  const photoPriorityLabel = (photo: any, businessName: string) => {
-    const priority = photoPriority(photo, businessName);
-    if (priority === 0) return "Owner-like";
-    if (priority === 1) return "No attribution";
-    return "UGC/attributed";
-  };
-
-  const sortedPhotosForPlace = (place: any) =>
-    [...(Array.isArray(place?.photos) ? place.photos : [])].sort((a, b) =>
-      photoPriority(a, place?.name || "") - photoPriority(b, place?.name || ""),
-    );
-
   const estimateGenerateCost = (place?: any) => {
     const source = place ? JSON.stringify(place) : searchQuery;
     const inputTokens = estimateTokensFromText(source, 5000);
@@ -430,34 +396,31 @@ export default function AdminLeads() {
   };
 
   const selectLogoPhoto = async (placeId: string, imageUrl: string, photo: any, businessName: string) => {
-    const attributions = getPhotoAttributions(photo);
-    const priorityLabel = photoPriorityLabel(photo, businessName);
-    const reference = getPhotoReference(photo);
     try {
       const palette = normalizePaletteForContrast(await extractPaletteFromImage(imageUrl));
-      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, reference, palette, attributions, priorityLabel, source: "google_places" } }));
-      await fetch(`/api/prospects/${encodeURIComponent(placeId)}/selection`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          photo: { url: imageUrl, reference, attributions, priorityLabel, source: "google_places" },
+      const selection = buildPhotoSelection({ photo, imageUrl, businessName, palette });
+      setLogoSelections(prev => ({ ...prev, [placeId]: selection }));
+      await saveProspectSelection(
+        placeId,
+        buildProspectSelectionPayload({
+          selection,
           palette,
           paletteOptions: paletteOptionsByPlace[placeId] || [],
         }),
-      }).catch(() => {});
+      );
     } catch (error) {
       console.error(error);
       const palette = ["#111827", "#4F46E5", "#F3F4F6"];
-      setLogoSelections(prev => ({ ...prev, [placeId]: { url: imageUrl, reference, palette, attributions, priorityLabel, source: "google_places" } }));
-      await fetch(`/api/prospects/${encodeURIComponent(placeId)}/selection`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          photo: { url: imageUrl, reference, attributions, priorityLabel, source: "google_places" },
+      const selection = buildPhotoSelection({ photo, imageUrl, businessName, palette });
+      setLogoSelections(prev => ({ ...prev, [placeId]: selection }));
+      await saveProspectSelection(
+        placeId,
+        buildProspectSelectionPayload({
+          selection,
           palette,
           paletteOptions: paletteOptionsByPlace[placeId] || [],
         }),
-      }).catch(() => {});
+      );
     }
   };
 
@@ -468,7 +431,7 @@ export default function AdminLeads() {
     const options: any[] = [];
     for (let index = 0; index < photos.length; index += 1) {
       const photo = photos[index];
-      const sourceImageUrl = getPhotoUrl(photo, 480);
+      const sourceImageUrl = googlePlacePhotoUrlForPhoto(photo, 480);
       if (!sourceImageUrl) continue;
       let colors = ["#111827", "#4F46E5", "#F3F4F6"];
       try {
@@ -476,23 +439,17 @@ export default function AdminLeads() {
       } catch (error) {
         console.error(error);
       }
-      options.push({
-        id: `places-photo-${index + 1}`,
-        label: `${photoPriorityLabel(photo, place.name || "Business")} palette ${index + 1}`,
+      options.push(buildPaletteOptionForPhoto({
+        photo,
+        index,
         colors,
         sourceImageUrl,
-        photoReference: getPhotoReference(photo),
-        attributions: getPhotoAttributions(photo),
-        priorityLabel: photoPriorityLabel(photo, place.name || "Business"),
-      });
+        businessName: place.name || "Business",
+      }));
     }
     if (options.length > 0) {
       setPaletteOptionsByPlace(prev => ({ ...prev, [placeKey]: options }));
-      await fetch(`/api/prospects/${encodeURIComponent(placeKey)}/selection`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paletteOptions: options }),
-      }).catch(() => {});
+      await saveProspectSelection(placeKey, buildProspectSelectionPayload({ paletteOptions: options }));
     }
     return options;
   };
@@ -865,26 +822,25 @@ export default function AdminLeads() {
       setGeneratingPlaceKey(placeKey);
       setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: "Generating site JSON..." } }));
 
-      const logoSelection = logoSelections[fullPlace.place_id || fullPlace.name] || logoSelections[placeKey];
-      const fallbackPhoto = sortedPhotosForPlace(fullPlace)[0];
-      const fallbackImageUrl = fallbackPhoto ? getPhotoUrl(fallbackPhoto, 960) : "";
-      const selectedImageUrl = logoSelection?.url || fallbackImageUrl;
-      const selectedReference = logoSelection?.reference || (fallbackPhoto ? getPhotoReference(fallbackPhoto) : "");
-      const selectedAttributions = logoSelection?.attributions || (fallbackPhoto ? getPhotoAttributions(fallbackPhoto) : []);
-      const paletteOptions = paletteOptionsByPlace[placeKey] || fullPlace.paletteOptions || [];
-      const brandPalette = logoSelection?.palette || paletteOptions[0]?.colors || [];
+      const selection = resolveLeadGeneratePhotoSelection({
+        place: fullPlace,
+        placeKey,
+        logoSelections,
+        paletteOptionsByPlace,
+        photoMaxWidth: 960,
+      });
       const payload = buildScaffoldGeneratePayload({
         place: fullPlace,
         requireAi: true,
         provider: activeProviderKey,
         model: activeModel,
-        imageUrl: selectedImageUrl,
-        palette: brandPalette,
-        paletteOptions,
-        selectedPhotoReference: selectedReference,
-        selectedPhotoSource: selectedImageUrl ? (logoSelection?.source || "google_places") : "",
-        selectedPhotoAttributions: selectedAttributions,
-        selectedPhotoPriority: logoSelection?.priorityLabel || "",
+        imageUrl: selection.selectedImageUrl,
+        palette: selection.brandPalette,
+        paletteOptions: selection.paletteOptions,
+        selectedPhotoReference: selection.selectedReference,
+        selectedPhotoSource: selection.selectedPhotoSource,
+        selectedPhotoAttributions: selection.selectedAttributions,
+        selectedPhotoPriority: selection.selectedPhotoPriority,
         searchQuery,
       });
       const data = await postGenerateSite(payload, "Generate site");
@@ -1940,7 +1896,7 @@ export default function AdminLeads() {
                     </p>
                     <div className="flex gap-3 overflow-x-auto pb-1">
                       {currentPhotos.slice(0, 10).map((photo: any, photoIdx: number) => {
-                        const imageUrl = getPhotoUrl(photo);
+                        const imageUrl = googlePlacePhotoUrlForPhoto(photo);
                         const selected = logoSelections[placeKey]?.url === imageUrl;
                         const priorityLabel = photoPriorityLabel(photo, displayPlace.name);
                         return (
@@ -2176,7 +2132,7 @@ export default function AdminLeads() {
                     {photos.length > 0 ? (
                       <div className="mt-3 grid grid-cols-3 gap-3">
                         {photos.slice(0, 12).map((photo: any, index: number) => {
-                          const imageUrl = getPhotoUrl(photo, 480);
+                          const imageUrl = googlePlacePhotoUrlForPhoto(photo, 480);
                           const selected = logoSelections[placeKey]?.url === imageUrl;
                           const priorityLabel = photoPriorityLabel(photo, mergedPlace.name);
                           return (

@@ -147,61 +147,95 @@ function titleCaseLabel(value = "") {
     .join(" ");
 }
 
+function inferredServiceTitles(place: any, typeLabel: string, isEnglish: boolean, fallbackQuery = "") {
+  const key = [place.name, typeLabel, fallbackQuery, ...(Array.isArray(place.types) ? place.types : [])].join(" ").toLowerCase();
+  if (!isEnglish) return ["Layanan Utama", "Konsultasi Cepat", "Perencanaan Kebutuhan", "Dukungan Lokal"];
+  if (/(concrete|cement|ready mix|paving|driveway|foundation|masonry)/i.test(key)) {
+    return [
+      "Concrete Driveway Repair",
+      "Walkway Concrete Repair",
+      "Patio Concrete Repair",
+      "Garage Floor Concrete Repair",
+      "Retaining Wall Concrete Repair",
+      "Concrete Project Consultation",
+    ];
+  }
+  if (/(roof|roofing|gutter|shingle)/i.test(key)) {
+    return ["Roof Repair", "Roof Replacement", "Leak Inspection", "Storm Damage Support", "Gutter and Flashing Work"];
+  }
+  if (/(plumb|drain|water heater|pipe)/i.test(key)) {
+    return ["Plumbing Repair", "Drain Cleaning", "Water Heater Service", "Pipe Leak Support", "Fixture Installation"];
+  }
+  if (/(hvac|air conditioning|heating|furnace|ac repair)/i.test(key)) {
+    return ["AC Repair", "Heating Service", "HVAC Maintenance", "System Installation", "Emergency Comfort Support"];
+  }
+  if (/(clean|janitorial|maid|pressure washing)/i.test(key)) {
+    return ["Recurring Cleaning", "Deep Cleaning", "Move-In and Move-Out Cleaning", "Commercial Cleaning", "Pressure Washing"];
+  }
+  if (/(landscap|lawn|tree|garden|irrigation)/i.test(key)) {
+    return ["Lawn Care", "Landscape Maintenance", "Seasonal Cleanup", "Tree and Shrub Care", "Irrigation Support"];
+  }
+  if (/(dent|clinic|medical|doctor|health)/i.test(key)) {
+    return ["New Patient Consultation", "Preventive Care", "Treatment Planning", "Follow-Up Care", "Family Appointments"];
+  }
+  const base = titleCaseLabel(typeLabel || "local service");
+  return [`${base} Consultation`, `${base} Planning`, `${base} Support`, `${base} Service`, "Fast Project Questions"];
+}
+
+function inferredProductTitles(place: any, typeLabel: string, isEnglish: boolean, fallbackQuery = "") {
+  const key = [place.name, typeLabel, fallbackQuery, ...(Array.isArray(place.types) ? place.types : [])].join(" ").toLowerCase();
+  if (!isEnglish) return ["Produk Unggulan", "Pilihan Populer", "Rekomendasi Lokal"];
+  if (/(restaurant|cafe|coffee|bakery|food|meal)/i.test(key)) return ["Popular Menu Items", "Fresh Daily Options", "Catering or Group Orders", "Quick Takeout Choices"];
+  if (/(flower|florist|garden|nursery)/i.test(key)) return ["Fresh Arrangements", "Seasonal Plants", "Gift Orders", "Event Florals"];
+  if (/(furniture|home decor|interior)/i.test(key)) return ["Featured Furniture", "Home Decor Pieces", "Room Planning Help", "Delivery Questions"];
+  if (/(auto parts|supply|hardware|store|retail|shop)/i.test(key)) return ["Featured Products", "Popular Local Picks", "Special Orders", "Product Availability Questions"];
+  const base = titleCaseLabel(typeLabel || "product");
+  return [`Featured ${base}`, "Popular Options", "Current Availability", "Ordering Help"];
+}
+
 function buildOfferings(place: any, isEnglish: boolean, mode: string, imageUrl: string, fallbackQuery = "") {
   const typeLabel = titleCaseLabel(meaningfulTypeLabel(place, isEnglish, fallbackQuery));
-  const serviceBase = [
-    {
-      id: "core-service",
+  const serviceBase = inferredServiceTitles(place, typeLabel, isEnglish, fallbackQuery).slice(0, 6).map((title, index) => {
+    const id = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `service-${index + 1}`;
+    return {
+      id,
       type: "service",
-      title: isEnglish ? titleCaseLabel(`${typeLabel} service`) : "Layanan Utama",
-      summary: isEnglish ? `Primary local service from ${place.name}.` : `Layanan utama dari ${place.name} untuk pelanggan lokal.`,
-      description: isEnglish ? `Built around the needs customers usually search for when looking for ${typeLabel}.` : `Dibuat berdasarkan kebutuhan pelanggan yang mencari ${typeLabel}.`,
+      title,
+      summary: isEnglish ? `Practical help for ${title.toLowerCase()} needs.` : `Bantuan praktis untuk kebutuhan ${title.toLowerCase()}.`,
+      description: isEnglish
+        ? `A focused service page for customers comparing options, timing, scope, and next steps for ${title.toLowerCase()}.`
+        : `Halaman layanan untuk pelanggan yang ingin memahami pilihan, jadwal, cakupan, dan langkah berikutnya.`,
       priceHint: isEnglish ? "Contact for estimate" : "Hubungi untuk estimasi",
-      image: imageUrl,
-      detailPageId: "service-core-service",
-      bestFor: isEnglish ? ["Local customers", "Fast inquiry", "Custom needs"] : ["Pelanggan lokal", "Tanya cepat", "Kebutuhan khusus"],
-      included: isEnglish ? ["Initial consultation", "Clear next steps", "Local support"] : ["Konsultasi awal", "Arahan langkah berikutnya", "Dukungan lokal"],
+      image: index === 0 ? imageUrl : "",
+      detailPageId: `service-${id}`,
+      bestFor: isEnglish ? ["Property owners", "Local projects", "Clear next steps"] : ["Pelanggan lokal", "Tanya cepat", "Kebutuhan khusus"],
+      included: isEnglish ? ["Project discussion", "Scope guidance", "Availability check"] : ["Diskusi kebutuhan", "Arahan cakupan", "Cek ketersediaan"],
       highlights: [
-        { title: isEnglish ? "Easy to contact" : "Mudah dihubungi", description: isEnglish ? "CTA connects directly to the business." : "CTA diarahkan langsung ke kontak bisnis." },
-        { title: isEnglish ? "Local relevance" : "Relevan lokal", description: place.formatted_address || place.formattedAddress || "" },
+        { title: isEnglish ? "Built around the job" : "Sesuai kebutuhan", description: isEnglish ? "We help customers clarify the scope, timing, and next step before work begins." : "Kami membantu pelanggan memperjelas cakupan, waktu, dan langkah berikutnya sebelum pekerjaan dimulai." },
+        { title: isEnglish ? "Local next step" : "Langkah lokal", description: place.formatted_address || place.formattedAddress || "" },
       ],
-      relatedReviewKeywords: ["service", "help", "professional", "layanan", "ramah"],
-    },
-    {
-      id: "fast-consultation",
-      type: "service",
-      title: isEnglish ? "Fast Consultation" : "Konsultasi Cepat",
-      summary: isEnglish ? "Ask questions and get clear next steps." : "Tanyakan kebutuhan dan dapatkan arahan yang jelas.",
-      description: isEnglish ? "Useful for customers who need to understand availability, pricing, and timing before visiting or booking." : "Cocok untuk pelanggan yang ingin memahami ketersediaan, harga, dan jadwal sebelum datang atau booking.",
-      priceHint: isEnglish ? "Fast response" : "Respon cepat",
-      image: "",
-      detailPageId: "service-fast-consultation",
-      bestFor: isEnglish ? ["Price questions", "Availability", "Planning"] : ["Tanya harga", "Cek ketersediaan", "Perencanaan"],
-      included: isEnglish ? ["Question intake", "Basic recommendation", "Contact handoff"] : ["Penerimaan pertanyaan", "Rekomendasi awal", "Arahan kontak"],
-      highlights: [
-        { title: isEnglish ? "Low friction" : "Mudah dimulai", description: isEnglish ? "Customers can call or message directly." : "Pelanggan bisa langsung telepon atau kirim pesan." },
-      ],
-      relatedReviewKeywords: ["fast", "quick", "response", "cepat", "ramah"],
-    },
-  ];
-  const productBase = [
-    {
-      id: "featured-product",
+      relatedReviewKeywords: ["service", "help", "professional", "quality", "repair", "project", "layanan", "ramah"],
+    };
+  });
+  const productBase = inferredProductTitles(place, typeLabel, isEnglish, fallbackQuery).slice(0, 5).map((title, index) => {
+    const id = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `product-${index + 1}`;
+    return {
+      id,
       type: "product",
-      title: isEnglish ? "Featured Product" : "Produk Unggulan",
-      summary: isEnglish ? `A highlighted product or menu item from ${place.name}.` : `Produk atau menu unggulan dari ${place.name}.`,
-      description: isEnglish ? "A product-led page for customers who want to understand the item before visiting or ordering." : "Halaman produk untuk pelanggan yang ingin memahami item sebelum datang atau memesan.",
+      title,
+      summary: isEnglish ? `A practical option for customers comparing ${title.toLowerCase()}.` : `Pilihan praktis untuk pelanggan yang membandingkan ${title.toLowerCase()}.`,
+      description: isEnglish ? "A product-led page for customers who want to understand availability, fit, and ordering steps before visiting or buying." : "Halaman produk untuk pelanggan yang ingin memahami ketersediaan, kecocokan, dan cara pesan sebelum membeli.",
       priceHint: isEnglish ? "Ask for current price" : "Tanya harga terbaru",
-      image: imageUrl,
-      detailPageId: "product-featured-product",
+      image: index === 0 ? imageUrl : "",
+      detailPageId: `product-${id}`,
       bestFor: isEnglish ? ["First-time buyers", "Local pickup", "Popular choice"] : ["Pembeli pertama", "Pickup lokal", "Pilihan populer"],
       included: isEnglish ? ["Product overview", "Current availability", "How to order"] : ["Ringkasan produk", "Ketersediaan terbaru", "Cara pesan"],
       highlights: [
-        { title: isEnglish ? "Easy to understand" : "Mudah dipahami", description: isEnglish ? "Clear product benefit and ordering path." : "Benefit produk dan cara pesan dibuat jelas." },
+        { title: isEnglish ? "Easy to compare" : "Mudah dibandingkan", description: isEnglish ? "Customers can ask about fit, timing, and current availability." : "Pelanggan bisa bertanya tentang kecocokan, waktu, dan ketersediaan terbaru." },
       ],
       relatedReviewKeywords: ["product", "menu", "food", "coffee", "produk", "enak"],
-    },
-  ];
+    };
+  });
   if (mode === "products") return productBase;
   if (mode === "both") return [...productBase, ...serviceBase.slice(0, 1)];
   return serviceBase;

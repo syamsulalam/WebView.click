@@ -512,6 +512,9 @@ export default function SiteRenderer({
     reviewsTitle: isIndonesian ? "Dipercaya pelanggan lokal" : "Trusted by local customers",
     hoursTitle: isIndonesian ? "Jam Operasional" : "Business Hours",
     locationTitle: isIndonesian ? "Lokasi & Kontak" : "Location & Contact",
+    address: isIndonesian ? "Alamat" : "Address",
+    phone: isIndonesian ? "Telepon" : "Phone",
+    businessHours: isIndonesian ? "Jam Operasional" : "Business Hours",
     openMaps: isIndonesian ? "Buka Google Maps" : "Open Google Maps",
     feedbackTitle: isIndonesian ? "Bagaimana pengalaman Anda?" : "How was your experience?",
     feedbackDescription: isIndonesian ? "Pilih rating setelah memakai layanan ini." : "Choose a rating after using this service.",
@@ -1471,10 +1474,10 @@ export default function SiteRenderer({
                       <div style={{ backgroundColor: colors.primary, color: "#fff" }} className="p-10 md:w-2/5">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-2xl font-bold mb-6")}
                         <div className="space-y-4 text-sm opacity-90">
-                          <p><strong>Alamat:</strong><br />{editableText(`${section.id}.contactAddress`, section.content.address, "span", "", undefined, true)}</p>
+                          <p><strong>{labels.address}:</strong><br />{editableText(`${section.id}.contactAddress`, section.content.address, "span", "", undefined, true)}</p>
                           {contactPhone && (
                             <p>
-                              <strong>Telepon:</strong><br />
+                              <strong>{labels.phone}:</strong><br />
                               <a href={phoneHref(contactPhone)} className="inline-flex items-center gap-2 hover:underline"><Phone size={15} />{contactPhone}</a>
                             </p>
                           )}
@@ -1485,7 +1488,7 @@ export default function SiteRenderer({
                             </p>
                           )}
                           <div>
-                            <strong>Jam Operasional:</strong>
+                            <strong>{labels.businessHours}:</strong>
                             <ul className="mt-1 space-y-1">
                               {(Array.isArray(section.content.openingHours) ? section.content.openingHours : []).map((h: string, i: number) => <li key={i}>{editableText(`${section.id}.contactHours.${i}`, h, "span")}</li>)}
                             </ul>

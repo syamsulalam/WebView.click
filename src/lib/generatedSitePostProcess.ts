@@ -228,6 +228,73 @@ export function findContactSourceSection(finalJson: GeneratedSiteRecord) {
   return null;
 }
 
+function normalizeHourText(value: unknown) {
+  return safeCopyText(value, 140)
+    .replace(/[\u202f\u2009]/g, " ")
+    .replace(/\s*[–—-]\s*/g, " - ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseHourLine(value: unknown) {
+  const clean = normalizeHourText(value);
+  const match = clean.match(/^([^:]+):\s*(.+)$/);
+  if (!match) return { day: "", time: clean };
+  return { day: match[1].trim(), time: match[2].trim() };
+}
+
+function dayLabel(day = "", isIndonesian = false, short = false) {
+  const lower = day.trim().toLowerCase();
+  const labels: Record<string, { en: string; id: string; enShort: string; idShort: string }> = {
+    monday: { en: "Monday", id: "Senin", enShort: "Mon", idShort: "Sen" },
+    tuesday: { en: "Tuesday", id: "Selasa", enShort: "Tue", idShort: "Sel" },
+    wednesday: { en: "Wednesday", id: "Rabu", enShort: "Wed", idShort: "Rab" },
+    thursday: { en: "Thursday", id: "Kamis", enShort: "Thu", idShort: "Kam" },
+    friday: { en: "Friday", id: "Jumat", enShort: "Fri", idShort: "Jum" },
+    saturday: { en: "Saturday", id: "Sabtu", enShort: "Sat", idShort: "Sab" },
+    sunday: { en: "Sunday", id: "Minggu", enShort: "Sun", idShort: "Min" },
+  };
+  const item = labels[lower] || Object.values(labels).find((entry) => entry.id.toLowerCase() === lower || entry.enShort.toLowerCase() === lower || entry.idShort.toLowerCase() === lower);
+  if (!item) return day.trim();
+  if (isIndonesian) return short ? item.idShort : item.id;
+  return short ? item.enShort : item.en;
+}
+
+function localizedHourTime(time: string, isIndonesian = false) {
+  if (!isIndonesian) return time;
+  return time
+    .replace(/^closed$/i, "Tutup")
+    .replace(/^open 24 hours$/i, "Buka 24 jam");
+}
+
+function summarizeOpeningHours(items: unknown[], isIndonesian = false) {
+  const parsed = items.map(parseHourLine).filter((item) => item.day || item.time);
+  if (parsed.length === 0) return [];
+
+  const groups: Array<{ days: string[]; time: string }> = [];
+  parsed.forEach((item) => {
+    const time = item.time || item.day;
+    const day = item.time ? item.day : "";
+    const last = groups[groups.length - 1];
+    if (last && last.time === time) {
+      if (day) last.days.push(day);
+    } else {
+      groups.push({ days: day ? [day] : [], time });
+    }
+  });
+
+  return groups.map((group) => {
+    const days = group.days.filter(Boolean);
+    const time = localizedHourTime(group.time, isIndonesian);
+    if (days.length >= 7) return `${isIndonesian ? "Setiap hari" : "Daily"}: ${time}`;
+    if (days.length > 1) {
+      return `${dayLabel(days[0], isIndonesian, true)}-${dayLabel(days[days.length - 1], isIndonesian, true)}: ${time}`;
+    }
+    if (days.length === 1) return `${dayLabel(days[0], isIndonesian)}: ${time}`;
+    return time;
+  }).slice(0, 4);
+}
+
 export function ensureContactPage(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord = {}) {
   const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
   const hasContactPage = pages.some((page) => asString(page.pageId).toLowerCase() === "contact");
@@ -276,13 +343,16 @@ export function ensureContactPage(finalJson: GeneratedSiteRecord, originData: Ge
             ),
             email: safeCopyText(sourceContent.email || contact.email || businessProfile.email || footer.email, 120),
             directionsUrl: asString(sourceContent.directionsUrl, asString(contact.directionsUrl, asString(location.directionsUrl, asString(originData.url, asString(sourceData.googleMapsUri))))),
-            openingHours: Array.isArray(sourceContent.openingHours)
-              ? sourceContent.openingHours
-              : Array.isArray(sourceContent.hours)
-                ? sourceContent.hours
-                : Array.isArray(hours.regular)
-                  ? hours.regular
-                  : [],
+            openingHours: summarizeOpeningHours(
+              Array.isArray(sourceContent.openingHours)
+                ? sourceContent.openingHours
+                : Array.isArray(sourceContent.hours)
+                  ? sourceContent.hours
+                  : Array.isArray(hours.regular)
+                    ? hours.regular
+                    : [],
+              isIndonesian,
+            ),
             formConfig: {
               heading: safeCopyText(formConfig.heading, 120) || (isIndonesian ? "Kirim pertanyaan" : "Send an Inquiry"),
               buttonText: safeCopyText(formConfig.buttonText, 80) || (isIndonesian ? "Kirim Pesan" : "Send Message"),
@@ -300,6 +370,27 @@ export function ensureContactPage(finalJson: GeneratedSiteRecord, originData: Ge
     });
     finalJson.pages = pages;
   }
+
+  pages
+    .filter((page) => asString(page.pageId).toLowerCase() === "contact")
+    .forEach((page) => {
+      const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+      sections
+        .filter((section) => asString(section.type) === "contactForm")
+        .forEach((section) => {
+          const content = objectValue(section.content);
+          const openingHoursSource = Array.isArray(content.openingHours)
+            ? content.openingHours
+            : Array.isArray(content.hours)
+              ? content.hours
+              : Array.isArray(hours.regular)
+                ? hours.regular
+                : [];
+          content.openingHours = summarizeOpeningHours(openingHoursSource, isIndonesian);
+          if (!safeCopyText(content.title, 100)) content.title = isIndonesian ? "Hubungi Kami" : "Contact Us";
+          section.content = content;
+        });
+    });
 
   const navigation = objectValue(finalJson.navigation);
   const headerMenu = Array.isArray(navigation.headerMenu) ? navigation.headerMenu as Array<Record<string, unknown>> : [];

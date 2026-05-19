@@ -185,6 +185,141 @@ export function googlePlacePhotoUrl(reference: string, maxWidth = 960) {
   return reference ? `/api/places/photo?reference=${encodeURIComponent(reference)}&maxwidth=${maxWidth}` : "";
 }
 
+export function googlePlacePhotoUrlForPhoto(photo: any, maxWidth = 320) {
+  return googlePlacePhotoUrl(photoReference(photo), maxWidth);
+}
+
+export function photoPriority(photo: any, businessName = "") {
+  const attributions = photoAttributions(photo).join(" ").toLowerCase();
+  const nameTokens = businessName.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2);
+  if (attributions && nameTokens.some((token) => attributions.includes(token))) return 0;
+  if (!attributions) return 1;
+  return 2;
+}
+
+export function photoPriorityLabel(photo: any, businessName = "") {
+  const priority = photoPriority(photo, businessName);
+  if (priority === 0) return "Owner-like";
+  if (priority === 1) return "No attribution";
+  return "UGC/attributed";
+}
+
+export function sortedPhotosForPlace(place: any) {
+  const businessName = placeDisplayName(place);
+  return [...(Array.isArray(place?.photos) ? place.photos : [])].sort((a, b) =>
+    photoPriority(a, businessName) - photoPriority(b, businessName),
+  );
+}
+
+export type AdminPhotoSelection = {
+  url: string;
+  reference: string;
+  palette: string[];
+  attributions: string[];
+  priorityLabel: string;
+  source: string;
+};
+
+export function buildPhotoSelection(input: {
+  photo: any;
+  imageUrl: string;
+  businessName?: string;
+  palette?: string[];
+  source?: string;
+}): AdminPhotoSelection {
+  const businessName = input.businessName || "";
+  return {
+    url: input.imageUrl,
+    reference: photoReference(input.photo),
+    palette: Array.isArray(input.palette) ? input.palette : [],
+    attributions: photoAttributions(input.photo),
+    priorityLabel: photoPriorityLabel(input.photo, businessName),
+    source: input.source || "google_places",
+  };
+}
+
+export function buildPaletteOptionForPhoto(input: {
+  photo: any;
+  index: number;
+  colors: string[];
+  sourceImageUrl: string;
+  businessName?: string;
+}) {
+  const businessName = input.businessName || "";
+  return {
+    id: `places-photo-${input.index + 1}`,
+    label: `${photoPriorityLabel(input.photo, businessName)} palette ${input.index + 1}`,
+    colors: input.colors,
+    sourceImageUrl: input.sourceImageUrl,
+    photoReference: photoReference(input.photo),
+    attributions: photoAttributions(input.photo),
+    priorityLabel: photoPriorityLabel(input.photo, businessName),
+  };
+}
+
+export function buildProspectSelectionPayload(input: {
+  selection?: AdminPhotoSelection;
+  palette?: string[];
+  paletteOptions?: any[];
+}) {
+  return {
+    ...(input.selection ? {
+      photo: {
+        url: input.selection.url,
+        reference: input.selection.reference,
+        attributions: input.selection.attributions,
+        priorityLabel: input.selection.priorityLabel,
+        source: input.selection.source,
+      },
+    } : {}),
+    ...(input.palette ? { palette: input.palette } : {}),
+    ...(input.paletteOptions ? { paletteOptions: input.paletteOptions } : {}),
+  };
+}
+
+export async function saveProspectSelection(placeId: string, payload: Record<string, unknown>) {
+  if (!placeId) return false;
+  try {
+    const response = await fetch(`/api/prospects/${encodeURIComponent(placeId)}/selection`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export function resolveLeadGeneratePhotoSelection(input: {
+  place: any;
+  placeKey: string;
+  logoSelections: Record<string, AdminPhotoSelection | undefined>;
+  paletteOptionsByPlace: Record<string, any[] | undefined>;
+  photoMaxWidth?: number;
+}) {
+  const logoSelection = input.logoSelections[input.place?.place_id || input.place?.name] || input.logoSelections[input.placeKey];
+  const fallbackPhoto = sortedPhotosForPlace(input.place)[0];
+  const fallbackImageUrl = fallbackPhoto ? googlePlacePhotoUrlForPhoto(fallbackPhoto, input.photoMaxWidth || 960) : "";
+  const selectedImageUrl = logoSelection?.url || fallbackImageUrl;
+  const selectedReference = logoSelection?.reference || (fallbackPhoto ? photoReference(fallbackPhoto) : "");
+  const selectedAttributions = logoSelection?.attributions || (fallbackPhoto ? photoAttributions(fallbackPhoto) : []);
+  const paletteOptions = input.paletteOptionsByPlace[input.placeKey] || input.place?.paletteOptions || [];
+  const brandPalette = logoSelection?.palette || paletteOptions[0]?.colors || [];
+
+  return {
+    logoSelection,
+    fallbackPhoto,
+    selectedImageUrl,
+    selectedReference,
+    selectedAttributions,
+    paletteOptions,
+    brandPalette,
+    selectedPhotoSource: selectedImageUrl ? (logoSelection?.source || "google_places") : "",
+    selectedPhotoPriority: logoSelection?.priorityLabel || "",
+  };
+}
+
 export function buildSelectedPhotoGeneratePayload(input: {
   place: any;
   selectedPhoto?: any;

@@ -3851,8 +3851,8 @@ async function generateAiCopyPatch(
       cityLandingPhrase: "Local service phrase.",
     },
     hero: {
-      headline: "Strong client-facing headline.",
-      subheadline: "Specific 2-3 complete-sentence paragraph using business name, category, location, rating/reviews, phone, and verified strengths. Do not end mid-sentence.",
+      headline: "Strong client-facing headline focused on the real service outcome.",
+      subheadline: "Specific 2-3 complete-sentence paragraph using business name, category, location, rating/reviews, phone, verified strengths, and the actual customer problems this industry solves. Do not end mid-sentence.",
       buttons: [{ text: "CTA text only. Do not provide href." }],
     },
     sections: {
@@ -3866,8 +3866,8 @@ async function generateAiCopyPatch(
     offerings: [{
       id: "existing product/service id from scaffold",
       title: "Title Case offering name",
-      summary: "Specific non-thin summary.",
-      description: "Longer service/product copy.",
+      summary: "Specific non-thin summary focused on a real customer need.",
+      description: "Longer service/product copy explaining problem, solution, and result.",
       priceHint: "Contact for estimate",
       bestFor: ["specific use case"],
       included: ["specific deliverable"],
@@ -3892,15 +3892,19 @@ async function generateAiCopyPatch(
     "You only return a small JSON copy patch matching this schema, with no markdown and no extra keys:\n" +
     `${JSON.stringify(copyPatchSchema)}\n\n` +
     "Critical rules: you are not given full website JSON, page IDs, navigation hrefs, image URLs, maps URLs, sourceData, palette, font, visual style, favicon, CSS, or storage fields. Do not mention or create them. " +
-    "Use only facts from the provided copy target brief. If a fact is missing, write honest copy like 'contact for availability' instead of inventing. " +
+    "Use verified facts from the provided copy target brief for business identity, address, phone, rating, reviews, hours, status, and location. You may also use conservative industry knowledge to explain common customer problems and service outcomes for the business category, as long as you do not invent certifications, years in business, warranties, brand partnerships, equipment, staff size, exact prices, or completed projects. If a fact is missing, write honest copy like 'contact for availability' instead of inventing. " +
     "Voice rules: write as the business speaking to its potential customers, not as WebView, an admin, a demo builder, an auditor, Google, or a third-party report about the business. " +
     "Write nearly all public-facing paragraphs in first-person business-owner voice: 'we', 'our team', 'our customers', 'call us', 'we are based in', 'we help', and 'our on-site support'. Do not write detached third-person sentences like '{Business Name} is...', 'customers highlight...', 'reviewers mention...', or 'the team is noted for...' when they can be rewritten as business-owned claims. " +
     "Example rewrite style: instead of 'Customers specifically mention on-site support to direct trucks and manage pour timing', write 'Our customers specifically mention that our on-site support to direct trucks and manage pour timing helps the job stay organized.' " +
     "Use customer-facing phrasing like 'Call us', 'we help', 'our team', 'we are based in', and 'ask about availability' when it fits the facts. Avoid meta phrases such as 'the listed address', 'the business status in the brief', 'this page', 'the owner can replace this copy', 'Google profile expanded', 'website-ready', or 'no website detected'. " +
     "Use review themes as trust-building customer benefits, not as a detached report. Do not repeat rating/review count in every section; use it where it naturally helps trust. " +
+    "Do not merely summarize the Google profile. Expand from the niche/business name into buyer-aware copy: identify the real problems customers are trying to solve, explain how the service helps, mention local conditions only when they are plausible from the city/region, and make the benefit clear. For example, concrete copy should discuss cracks, uneven surfaces, driveways, walkways, patios, garage floors, retaining walls, durability, safety, curb appeal, soil/weather stress, and long-lasting repair or installation outcomes when relevant. Apply this same reasoning to every niche. " +
+    "For offers and offerings, infer likely service/product lines from the industry, business name, category, and existing scaffold titles. Replace generic scaffold names with distinct, high-intent services customers would search for. Keep every offering plausible for the business category and avoid duplicate services. " +
+    "Homepage feature sections should answer why a visitor should choose the business: experience/skill, local fit, materials/process quality, communication, reliability, safety, durability, convenience, and satisfaction. Use only claims that can be stated generally or supported by reviews/facts. " +
+    "About-style or text-image copy should explain what the company helps customers accomplish, why the work matters in the local market, and how the team approaches quality, prevention, communication, and long-term value. " +
     "Make the copy much less templated: mention the actual business name, exact city/area when available, category/type, rating/review count when available, phone if available, operating status, hours if useful, and review themes if reviews exist. " +
     "For US businesses write English. For Indonesian businesses write Indonesian. If meta.language is explicit, follow it. Do not mix languages. " +
-    "Every offering needs beefy copy: a specific title, summary, description, 3-5 bestFor items, 3-6 included items, 2-4 highlights, a detailed hero, 3 feature items, and 3-5 FAQ items. " +
+    "Every offering needs beefy copy: a specific title, summary, description, 3-5 bestFor items, 3-6 included items, 2-4 highlights, a detailed hero, 3 feature items, and 3-5 FAQ items. Make those details industry-specific instead of generic 'fast consultation' language. " +
     "Keep titles in Title Case except small connector words like for, and, of, to, in. Return plain text only; no HTML; no markdown; no SVG.";
   const userMsg = `Business Name: ${businessName}
 Copy target brief. This is not full website JSON and contains only facts plus editable copy targets:

@@ -15,7 +15,17 @@ test("ensureContactPage creates a dedicated contact page from existing contact-l
     meta: { language: "en" },
     businessProfile: { contact: { phoneNational: "+1 555-0100" } },
     location: { formattedAddress: "100 Main St, Dallas, TX" },
-    hours: { regular: ["Monday: 9 AM - 5 PM"] },
+    hours: {
+      regular: [
+        "Monday: 6:00 AM - 11:00 PM",
+        "Tuesday: 6:00 AM - 11:00 PM",
+        "Wednesday: 6:00 AM - 11:00 PM",
+        "Thursday: 6:00 AM - 11:00 PM",
+        "Friday: 6:00 AM - 11:00 PM",
+        "Saturday: 6:00 AM - 11:00 PM",
+        "Sunday: 6:00 AM - 11:00 PM",
+      ],
+    },
     navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
     pages: [
       {
@@ -46,7 +56,34 @@ test("ensureContactPage creates a dedicated contact page from existing contact-l
   assert.equal(content.address, "200 Contact Ave, Dallas, TX");
   assert.equal(content.phone, "+1 555-0123");
   assert.equal(content.directionsUrl, "https://maps.example/listing");
+  assert.deepEqual(content.openingHours, ["Daily: 6:00 AM - 11:00 PM"]);
   assert.deepEqual((site.navigation as any).headerMenu.at(-1), { label: "Contact", href: "#contact" });
+});
+
+test("ensureContactPage localizes and compacts existing contact form hours", () => {
+  const site: Record<string, unknown> = {
+    meta: { language: "id" },
+    hours: {
+      regular: [
+        "Monday: 6:00 AM - 11:00 PM",
+        "Tuesday: 6:00 AM - 11:00 PM",
+        "Wednesday: 6:00 AM - 11:00 PM",
+        "Thursday: 6:00 AM - 11:00 PM",
+        "Friday: 6:00 AM - 11:00 PM",
+        "Saturday: 6:00 AM - 11:00 PM",
+        "Sunday: Closed",
+      ],
+    },
+    pages: [{ pageId: "contact", sections: [{ type: "contactForm", id: "contact", content: {} }] }],
+  };
+
+  ensureContactPage(site, {});
+
+  const contactPage = (site.pages as Array<Record<string, unknown>>).find((page) => page.pageId === "contact");
+  const section = (contactPage?.sections as Array<Record<string, unknown>>)[0];
+  const content = section.content as Record<string, unknown>;
+  assert.equal(content.title, "Hubungi Kami");
+  assert.deepEqual(content.openingHours, ["Sen-Sab: 6:00 AM - 11:00 PM", "Minggu: Tutup"]);
 });
 
 test("ensureContactPage does not duplicate an existing contact page but still adds nav", () => {

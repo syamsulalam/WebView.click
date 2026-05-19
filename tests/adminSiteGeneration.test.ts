@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSelectedPhotoGeneratePayload, mapsQueryPlaceId, mapsQueryPlaceholder } from "../src/lib/adminSiteGeneration";
+import {
+  buildPaletteOptionForPhoto,
+  buildPhotoSelection,
+  buildProspectSelectionPayload,
+  buildSelectedPhotoGeneratePayload,
+  mapsQueryPlaceId,
+  mapsQueryPlaceholder,
+  resolveLeadGeneratePhotoSelection,
+  sortedPhotosForPlace,
+} from "../src/lib/adminSiteGeneration";
 
 test("adminSiteGeneration builds a scaffold generate payload with selected photo metadata", () => {
   const payload = buildSelectedPhotoGeneratePayload({
@@ -41,3 +50,48 @@ test("adminSiteGeneration detects maps query placeholders", () => {
   assert.equal(mapsQueryPlaceholder({ place_id: "maps:concrete+dallas", manualImport: true }), false);
 });
 
+test("adminSiteGeneration normalizes lead photo selection and palette persistence payloads", () => {
+  const ownerLike = { photo_reference: "owner-photo", html_attributions: ["Metro Concrete Repair"] };
+  const ugc = { photo_reference: "ugc-photo", html_attributions: ["A Customer"] };
+  const place = { place_id: "place-123", name: "Metro Concrete Repair", photos: [ugc, ownerLike] };
+  const sorted = sortedPhotosForPlace(place);
+  assert.equal(sorted[0], ownerLike);
+
+  const selection = buildPhotoSelection({
+    photo: ownerLike,
+    imageUrl: "/api/places/photo?reference=owner-photo&maxwidth=320",
+    businessName: place.name,
+    palette: ["#111827", "#2563EB"],
+  });
+  assert.equal(selection.priorityLabel, "Owner-like");
+
+  const paletteOption = buildPaletteOptionForPhoto({
+    photo: ownerLike,
+    index: 0,
+    colors: selection.palette,
+    sourceImageUrl: selection.url,
+    businessName: place.name,
+  });
+  assert.equal(paletteOption.photoReference, "owner-photo");
+
+  assert.deepEqual(buildProspectSelectionPayload({ selection, palette: selection.palette, paletteOptions: [paletteOption] }), {
+    photo: {
+      url: selection.url,
+      reference: "owner-photo",
+      attributions: ["Metro Concrete Repair"],
+      priorityLabel: "Owner-like",
+      source: "google_places",
+    },
+    palette: ["#111827", "#2563EB"],
+    paletteOptions: [paletteOption],
+  });
+
+  const resolved = resolveLeadGeneratePhotoSelection({
+    place,
+    placeKey: "place-123",
+    logoSelections: { "place-123": selection },
+    paletteOptionsByPlace: { "place-123": [paletteOption] },
+  });
+  assert.equal(resolved.selectedReference, "owner-photo");
+  assert.deepEqual(resolved.brandPalette, ["#111827", "#2563EB"]);
+});

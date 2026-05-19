@@ -363,6 +363,7 @@ Logic penting:
 - Prompt AI generator dan Function post-process menjaga parity dengan `/demo`: jika ada minimal dua foto bisnis yang usable, JSON final harus punya page `gallery`, nav item `#gallery`, dan section `imageGallery`.
 - Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
 - Prompt AI copy patch ditulis sebagai suara bisnis yang berbicara ke calon pelanggan, bukan sebagai admin/demo/report; prompt meminta first-person owner voice seperti `we`, `our team`, `our customers`, dan `call us`, serta melarang frasa meta seperti `the listed address`, `this page`, `owner can replace this copy`, `website-ready`, dan `no website detected` pada copy visitor-facing.
+- Prompt AI copy patch juga diminta memperluas copy dari niche/business name ke masalah dan outcome industri yang realistis, bukan hanya merangkum Google Places. Ia boleh memakai conservative industry knowledge untuk menjelaskan kebutuhan pelanggan dan service lines yang masuk akal, tetapi tidak boleh menciptakan sertifikasi, years in business, warranty, brand partnership, harga, ukuran tim, atau proyek spesifik yang tidak ada di data.
 - Renderer memilih icon `features` dan `trustBar` dari teks final title/description saat render, menjaga icon tidak duplikat dalam satu grid, dan tidak terkunci ke `iconSvg` scaffold lama; product/service detail page tetap punya features section berikon.
 - Shared scaffold fallback juga membuat product/service detail pages memakai section `hero`, `offeringDetail`, `features`, `reviews`, `faq`, dan `hoursLocation`.
 - Place Details mengambil field `reviews`; detail page bisa memakai review Google yang relevan via keyword best-effort.
@@ -396,6 +397,7 @@ Logic penting:
 - Quick drawer Jobs punya filter lokal `All`, `Failed`, `Fallback`, dan `Patch`, counter per filter, sort lokal `Newest`, `Failed first`, `Fallback first`, dan `Patch applied first`, serta link ke halaman penuh `/admin/jobs`.
 - Foto/palette yang dipilih admin disimpan via `PUT /api/prospects/:placeId/selection`, lalu dihydrate kembali saat prospect draft dibuka.
 - `PUT /api/prospects/:placeId/selection` juga dapat menyimpan `paletteOptions` tanpa menimpa selected photo/palette.
+- Photo selection normalization untuk `/admin/leads` hidup di `src/lib/adminSiteGeneration.ts`: photo reference/attribution, owner-like priority, sorted photos, palette option payloads, saved selection payloads, dan generate-time selected photo/palette resolution memakai helper yang sama dengan generate payload.
 
 Risiko debug:
 - Jika foto Google tidak muncul, cek Places API key dan apakah Text Search mengembalikan `photos`.
@@ -660,6 +662,7 @@ Fungsi:
 
 Logic penting:
 - `ensureContactPage(site, originData)` menambahkan page `contact` dengan section `contactForm` dari section contact-like lama, `businessProfile`, `location`, `hours`, `sourceData`, footer, dan origin Google Places.
+- Contact page hours are language-aware and compacted; repeated daily hours become lines like `Daily: 6:00 AM - 11:00 PM`, and Indonesian pages use labels such as `Setiap hari`, `Sen-Sab`, and `Tutup`.
 - `ensureServicesPage(site)` menambahkan aggregate page `services` dari `products`, `services`, atau `offers`, termasuk children nav menuju detail pages jika header navigation sudah tersedia.
 - `ensureFeedbackPage(site)` menambahkan page `feedback` tanpa memasukkannya ke header navigation.
 - `ensureGalleryPage(site, originData)` menambahkan page `gallery` jika minimal dua gambar usable tersedia dari brand, products/services/offers, atau Google Places photos.
@@ -676,6 +679,7 @@ Fungsi:
 Logic penting:
 - `buildGeneratedSiteScaffold(place, options)` creates the fallback JSON shape from Google Places data, selected image, palette, and business id.
 - The scaffold includes `meta`, `sourceData`, `design`, `brand`, `businessProfile`, `trust`, `productServiceStrategy`, products/services/offers, capabilities, location, hours, conversion, SEO, navigation, homepage sections, and offering detail pages.
+- The scaffold seeds multiple plausible service/product offerings from business name, category, and search query for common niches such as concrete, roofing, plumbing, HVAC, cleaning, landscaping, medical, restaurants, florists, furniture, and retail. AI copy patch then rewrites those slots with richer industry-specific copy.
 - The builder calls `applyGeneratedSitePageInserts()` so services/contact/feedback/gallery pages are centralized with post-processing.
 - `/admin/leads` and `/admin/sites` both use this builder before calling `/api/sites/generate`, so first generate and regenerate-from-gathered flows no longer maintain separate fallback JSON shapes.
 - Utility helpers include `businessSlug`, `placeDisplayName`, `placePhone`, `placeMapsUrl`, `photoReference`, and `photoAttributions`.
@@ -691,6 +695,7 @@ Logic penting:
 - `ensureNoProviderCooldown()` is reused by the batch queue so batch generation pauses from the same server-side cooldown logic as one-off generate/regenerate.
 - `fetchGooglePlaceDetails()` centralizes Place Details fetch/parsing and non-JSON error handling.
 - `buildScaffoldGeneratePayload()` and `buildSelectedPhotoGeneratePayload()` centralize fallback scaffold creation plus `/api/sites/generate` payload fields (`jsonContent`, `originData`, brand palette, selected logo/photo metadata, provider/model, and phone).
+- Photo helpers in this module centralize Google photo URL creation, attribution cleanup, owner-like/UGC priority scoring, sorted photo lists, prospect selection persistence payloads, palette option payloads, and generate-time selected photo/palette resolution.
 - `postGenerateSite()` is the shared POST wrapper for `/api/sites/generate`, using `readApiJson()` so Cloudflare/provider HTML errors stay actionable.
 - `/admin/leads` and `/admin/sites` should call this helper for new generate/regenerate flows instead of hand-writing readiness, cooldown, scaffold, or generate POST logic.
 - Fixture tests live in `tests/adminSiteGeneration.test.ts`; run `npm run test:admin-generation` when local dependencies are installed.
