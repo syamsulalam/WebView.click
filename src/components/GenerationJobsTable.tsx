@@ -5,6 +5,14 @@ import { useLocalStorageState } from "../lib/localStorageState";
 import { checkAiReadiness, logAiReadinessBlockedJob } from "../lib/aiReadiness";
 import { readApiJson } from "../lib/apiResponse";
 import { postChunkedGenerateSite } from "../lib/adminSiteGeneration";
+import {
+  CHUNKED_GENERATION_STEPS,
+  chunkedGenerationState,
+  chunkedStepBadgeClass,
+  chunkedStepStatus,
+  chunkedStepStatusLabel,
+  type ChunkedGenerationStep,
+} from "../lib/generationJobState";
 import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
 import HoverTooltip from "./HoverTooltip";
@@ -84,61 +92,6 @@ function auditStatusClass(status: string) {
   if (status === "fallback_source") return "bg-amber-100 text-amber-900";
   if (status === "missing_after") return "bg-red-100 text-red-800";
   return "bg-slate-100 text-slate-700";
-}
-
-const CHUNKED_GENERATION_STEPS = [
-  { key: "outline", label: "Outline" },
-  { key: "copy", label: "Copy" },
-  { key: "finalize", label: "Finalize" },
-] as const;
-
-type ChunkedGenerationStep = typeof CHUNKED_GENERATION_STEPS[number]["key"];
-
-function normalizeChunkedStep(value: unknown): ChunkedGenerationStep | "" {
-  const text = String(value || "").replace(/^chunked_/, "");
-  return CHUNKED_GENERATION_STEPS.some((step) => step.key === text) ? text as ChunkedGenerationStep : "";
-}
-
-function chunkedGenerationState(job: any) {
-  const metadata = job?.metadata || {};
-  const chunked = metadata.chunked === true;
-  const step = String(metadata.step || "");
-  const nextStep = normalizeChunkedStep(metadata.nextStep);
-  const failureStep = normalizeChunkedStep(metadata.failureStage);
-  const outlineDone = Boolean(metadata.offeringOutlineHash || step === "outline_complete" || step === "copy_complete" || step === "finalize_complete");
-  const copyDone = Boolean(metadata.copyPatchHash || step === "copy_complete" || step === "finalize_complete");
-  const finalizeDone = Boolean(job?.status === "success" || step === "finalize_complete");
-  const doneByStep: Record<ChunkedGenerationStep, boolean> = {
-    outline: outlineDone,
-    copy: copyDone,
-    finalize: finalizeDone,
-  };
-  const retryStep = job?.status === "failed" ? (failureStep || nextStep) : "";
-  const activeStep = job?.status === "running" ? nextStep : "";
-  return { chunked, doneByStep, nextStep, failureStep, retryStep, activeStep };
-}
-
-function chunkedStepStatus(job: any, step: ChunkedGenerationStep) {
-  const state = chunkedGenerationState(job);
-  if (!state.chunked) return "idle";
-  if (state.doneByStep[step]) return "complete";
-  if (state.retryStep === step) return "failed";
-  if (state.activeStep === step) return "running";
-  return "pending";
-}
-
-function chunkedStepBadgeClass(status: string) {
-  if (status === "complete") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (status === "failed") return "border-red-200 bg-red-50 text-red-800";
-  if (status === "running") return "border-amber-200 bg-amber-50 text-amber-900";
-  return "border-slate-200 bg-slate-50 text-slate-500";
-}
-
-function chunkedStepStatusLabel(status: string) {
-  if (status === "complete") return "Done";
-  if (status === "failed") return "Failed";
-  if (status === "running") return "Running";
-  return "Pending";
 }
 
 function filterJobs(jobs: any[], filter: string) {

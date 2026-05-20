@@ -12,6 +12,8 @@
     "lint": "tsc --noEmit",
     "test:postprocess": "tsx tests/generatedSitePostProcess.test.ts",
     "test:scaffold": "tsx tests/generatedSiteScaffold.test.ts",
+    "test:site-generation": "tsx tests/siteGeneration.test.ts",
+    "test:generation-job-state": "tsx tests/generationJobState.test.ts",
     "test:admin-generation": "tsx tests/adminSiteGeneration.test.ts"
   },
   "dependencies": {

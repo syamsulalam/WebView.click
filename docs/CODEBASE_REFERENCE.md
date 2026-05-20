@@ -1,6 +1,6 @@
 # WebView.click Codebase Reference
 
-Terakhir diperbarui: 18 Mei 2026.
+Terakhir diperbarui: 21 Mei 2026.
 
 Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
 
@@ -149,6 +149,7 @@ Logic penting:
 - Kolom Job menyediakan tombol copy kecil untuk Job ID dan Business ID; saat sukses icon berubah menjadi check sementara.
 - Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, provider failure diagnostics, retry dari drawer, audit copy AI, dan raw `metadata` JSON dengan tombol copy.
 - Untuk job `metadata.chunked=true`, drawer menampilkan progress `Outline`, `Copy`, dan `Finalize` plus tombol `Retry/Run` per step yang memanggil `POST /api/generation-jobs/:jobId/run-step`, supaya admin bisa melanjutkan step gagal tanpa membuat generation job baru.
+- Chunked step derivation lives in `src/lib/generationJobState.ts`, with targeted tests in `tests/generationJobState.test.ts`; run `npm run test:generation-job-state` when local dependencies are installed.
 - Retry mengambil current copy brief dari `GET /api/sites/:businessId/copy-brief`, menghitung hash browser-side, lalu memperingatkan jika hash berbeda dari job lama sebelum membuat job baru.
 - Retry mengirim `requireAi: true`, sehingga error provider/model/API key terlihat sebagai failed job dan pesan UI, bukan diam-diam menyimpan fallback copy.
 - Tombol retry menampilkan readiness badge; provider/model berasal dari job lama jika ada, atau fallback localStorage parent, dan key status dikirim parent dari `/api/settings`.
@@ -765,6 +766,9 @@ Endpoint:
 - `GET /api/places/search`
 - `GET /api/places/history`
 - `GET /api/places/photo`
+- `GET /api/places/details`
+- `POST /api/places/manual-import`
+- `POST /api/places/cache/trim`
 - `GET/POST /api/ai/readiness`
 - `POST /api/sites/generate`
 - `POST /api/sites/migrate-r2`
@@ -784,6 +788,8 @@ Logic D1:
 - `/api/stats` juga mengembalikan `dailyUsage` dari tabel `daily_usage_counters` untuk counter harian quota-sensitive, termasuk `history` 30 hari terakhir.
 
 Logic AI:
+- AI site generation helpers live in `functions/api/ai/siteGeneration.ts`. The router passes dependencies for settings, readiness, provider diagnostics, and KIE model config, while the module owns JSON object provider calls, one-shot JSON repair, offering outline normalization/apply, copy target brief creation, copy patch generation, deterministic merge, and copy audit helpers.
+- Targeted tests for offering outline normalization and copy audit behavior live in `tests/siteGeneration.test.ts`; run `npm run test:site-generation` when local dependencies are installed.
 - OpenRouter/OpenAI/Opencode memakai format Chat Completions.
 - Gemini memakai endpoint Google Generative Language.
 - KIE.ai mendukung:
@@ -821,6 +827,7 @@ Logic AI:
 - Gallery hanya dibuat jika minimal dua gambar tersedia dari foto Places/brand/offers, meskipun model AI lupa membuatnya.
 
 Logic Google Places/logo:
+- Places search/details/manual import/cache trim handlers live in `functions/api/places/handler.ts`; `functions/api/[[path]].ts` wires dependencies and still owns the Places photo proxy, history hydration, and manual duplicate review/merge.
 - `/api/places/search` memakai Google Places Text Search.
 - Live Google Places Text Search menambah counter harian `places_search`; hasil dari `places_search_cache` tidak menambah counter search.
 - `/api/places/photo` mem-proxy Google Places Photo agar frontend bisa membaca pixel untuk palette.
@@ -831,6 +838,7 @@ Logic Google Places/logo:
 - Jika logo dipilih, Function juga menulis `brand.logoImageUrl`, `brand.photoSource`, `brand.googlePhotoReference`, `brand.photoCaption`, `brand.photoAttributions`, dan `brand.selectedPhotoPriority`.
 
 Logic R2:
+- R2/site storage helpers live in `functions/api/sites/storage.ts`; `functions/api/[[path]].ts` wires dependencies and calls this module for image filename normalization, image asset upload, JSON upload/read, compact manifests, public R2 URLs, and `POST /api/sites/migrate-r2`.
 - Binding optional: `R2`.
 - Public URL: `R2_PUBLIC_BASE_URL`, default/fallback production `https://assets.webview.click`.
 - Saat `POST /api/sites/generate`, Function:
@@ -874,6 +882,7 @@ Logic Prospect Drafts:
 - `PUT /api/prospects/:placeId/selection` menyimpan selected Google Places photo metadata, selected palette, dan `paletteOptions`.
 
 Logic Generation Jobs:
+- Generation Jobs API handling lives in `functions/api/generationJobs/handler.ts`; `functions/api/[[path]].ts` now only wires dependencies and dispatches the route.
 - `generation_jobs` mencatat setiap request `/api/sites/generate` dengan status `running`, `success`, atau `failed`.
 - Setiap request `/api/sites/generate` yang membuat generation job menambah counter harian `site_generation`, termasuk request yang akhirnya gagal, supaya admin melihat retry/generate volume sebenarnya.
 - `POST /api/generation-jobs/preflight-failure` mencatat generate/regenerate/retry yang diblokir oleh AI readiness sebelum `/api/sites/generate`, supaya kegagalan key/model/provider routing tetap terlihat di Jobs. Drawer detail `GenerationJobsTable` menampilkan ringkasan `AI readiness block` untuk key, local model registry, dan remote provider route.
