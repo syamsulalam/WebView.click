@@ -5,13 +5,14 @@ import { useLocalStorageState } from "../../lib/localStorageState";
 import { readApiJson } from "../../lib/apiResponse";
 import { isPlaceholderPhone } from "../../lib/generatedSiteScaffold";
 import {
-  buildSelectedPhotoGeneratePayload,
+  buildScaffoldGeneratePayload,
   ensureAiGenerationReady,
   fetchGooglePlaceDetails,
   isAdminGenerationBlockedError,
   mapsQueryPlaceId,
   mapsQueryPlaceholder,
   postGenerateSite,
+  resolveLeadGeneratePhotoSelection,
 } from "../../lib/adminSiteGeneration";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
@@ -307,22 +308,44 @@ export default function AdminSites() {
       let originData: any = { ...prospect };
       originData = { ...originData, ...await fetchGooglePlaceDetails(placeId) };
 
-      const selectedPhoto = prospect.selectedPhoto || {};
       const paletteOptions = Array.isArray(prospect.paletteOptions) ? prospect.paletteOptions : [];
       const selectedPalette = Array.isArray(prospect.selectedPalette) && prospect.selectedPalette.length > 0
         ? prospect.selectedPalette
         : Array.isArray(paletteOptions[0]?.colors) ? paletteOptions[0].colors : [];
-      const payload = buildSelectedPhotoGeneratePayload({
-        place: { ...originData, selectedPhoto, selectedPalette },
+      const selectedPhoto = prospect.selectedPhoto || {};
+      const selectedPhotoSelection = selectedPhoto.url || selectedPhoto.reference
+        ? {
+            url: selectedPhoto.url || "",
+            reference: selectedPhoto.reference || "",
+            palette: selectedPalette,
+            attributions: Array.isArray(selectedPhoto.attributions) ? selectedPhoto.attributions : [],
+            priorityLabel: selectedPhoto.priorityLabel || "",
+            source: selectedPhoto.source || "google_places",
+          }
+        : undefined;
+      const selection = resolveLeadGeneratePhotoSelection({
+        place: { ...originData, paletteOptions },
+        placeKey: placeId,
+        logoSelections: selectedPhotoSelection ? { [placeId]: selectedPhotoSelection } : {},
+        paletteOptionsByPlace: { [placeId]: paletteOptions },
+        selectedPalette,
+        photoMaxWidth: 960,
+      });
+      const payload = buildScaffoldGeneratePayload({
+        place: originData,
         requireAi: true,
         provider: activeRegenerateProvider,
         model: activeRegenerateModel,
         businessName: prospect.name || originData.name || "Untitled Business",
         phone: prospectPhone({ ...prospect, ...originData }),
-        selectedPhoto,
-        palette: selectedPalette,
-        paletteOptions,
-        photoMaxWidth: 320,
+        imageUrl: selection.selectedImageUrl,
+        palette: selection.brandPalette,
+        paletteOptions: selection.paletteOptions,
+        selectedPhotoReference: selection.selectedReference,
+        selectedPhotoSource: selection.selectedPhotoSource,
+        selectedPhotoAttributions: selection.selectedAttributions,
+        selectedPhotoPriority: selection.selectedPhotoPriority,
+        searchQuery: (prospect as ProspectRow & { query?: string }).query || "",
       });
       await postGenerateSite(payload, "Generate site");
       const requiredKey = providerApiKeyMap[activeRegenerateProvider];

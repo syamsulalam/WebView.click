@@ -296,16 +296,21 @@ export function resolveLeadGeneratePhotoSelection(input: {
   placeKey: string;
   logoSelections: Record<string, AdminPhotoSelection | undefined>;
   paletteOptionsByPlace: Record<string, any[] | undefined>;
+  selectedPalette?: string[];
   photoMaxWidth?: number;
 }) {
   const logoSelection = input.logoSelections[input.place?.place_id || input.place?.name] || input.logoSelections[input.placeKey];
   const fallbackPhoto = sortedPhotosForPlace(input.place)[0];
   const fallbackImageUrl = fallbackPhoto ? googlePlacePhotoUrlForPhoto(fallbackPhoto, input.photoMaxWidth || 960) : "";
-  const selectedImageUrl = logoSelection?.url || fallbackImageUrl;
+  const selectedLogoUrl = logoSelection?.url || (logoSelection?.reference ? googlePlacePhotoUrl(logoSelection.reference, input.photoMaxWidth || 960) : "");
+  const selectedImageUrl = selectedLogoUrl || fallbackImageUrl;
   const selectedReference = logoSelection?.reference || (fallbackPhoto ? photoReference(fallbackPhoto) : "");
   const selectedAttributions = logoSelection?.attributions || (fallbackPhoto ? photoAttributions(fallbackPhoto) : []);
   const paletteOptions = input.paletteOptionsByPlace[input.placeKey] || input.place?.paletteOptions || [];
-  const brandPalette = logoSelection?.palette || paletteOptions[0]?.colors || [];
+  const selectedPalette = Array.isArray(input.selectedPalette) && input.selectedPalette.length > 0 ? input.selectedPalette : [];
+  const logoPalette = Array.isArray(logoSelection?.palette) && logoSelection.palette.length > 0 ? logoSelection.palette : [];
+  const firstPaletteOption = Array.isArray(paletteOptions[0]?.colors) && paletteOptions[0].colors.length > 0 ? paletteOptions[0].colors : [];
+  const brandPalette = logoPalette.length > 0 ? logoPalette : selectedPalette.length > 0 ? selectedPalette : firstPaletteOption;
 
   return {
     logoSelection,

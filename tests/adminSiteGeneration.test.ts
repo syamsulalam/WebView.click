@@ -94,4 +94,21 @@ test("adminSiteGeneration normalizes lead photo selection and palette persistenc
   });
   assert.equal(resolved.selectedReference, "owner-photo");
   assert.deepEqual(resolved.brandPalette, ["#111827", "#2563EB"]);
+
+  const resolvedFromSavedReference = resolveLeadGeneratePhotoSelection({
+    place,
+    placeKey: "place-123",
+    logoSelections: {
+      "place-123": {
+        ...selection,
+        url: "",
+        palette: [],
+      },
+    },
+    paletteOptionsByPlace: { "place-123": [paletteOption] },
+    selectedPalette: ["#0F172A", "#2563EB"],
+    photoMaxWidth: 960,
+  });
+  assert.equal(resolvedFromSavedReference.selectedImageUrl, "/api/places/photo?reference=owner-photo&maxwidth=960");
+  assert.deepEqual(resolvedFromSavedReference.brandPalette, ["#0F172A", "#2563EB"]);
 });
