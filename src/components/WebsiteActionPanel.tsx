@@ -7,7 +7,7 @@ type WebsiteActionPanelProps = {
   siteData: any;
   businessId?: string;
   variant: "demo" | "public";
-  onDownloadZip?: () => void;
+  onDownloadZip?: (siteData?: any) => void;
   fontPairings?: FontPairing[];
   selectedFontPairing?: string;
   onFontPairingChange?: (id: string) => void;
@@ -182,7 +182,7 @@ export default function WebsiteActionPanel({
                   </span>
                 </label>
               )}
-              {paletteOptions.length > 1 && onPaletteOptionChange && (
+              {paletteOptions.length > 0 && onPaletteOptionChange && (
                 <label className="block rounded-xl border border-slate-200 bg-white p-3">
                   <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-950">
                     Color palette
@@ -191,6 +191,7 @@ export default function WebsiteActionPanel({
                   <select
                     value={selectedPaletteOption}
                     onChange={(event) => onPaletteOptionChange(event.target.value)}
+                    disabled={paletteOptions.length < 2}
                     className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     {paletteOptions.map((option) => (
@@ -204,12 +205,15 @@ export default function WebsiteActionPanel({
                       <span key={color} className="h-5 flex-1" style={{ backgroundColor: color }} />
                     ))}
                   </span>
+                  {paletteOptions.length < 2 && (
+                    <span className="mt-1 block text-xs text-slate-500">Only one saved palette is available for this site.</span>
+                  )}
                 </label>
               )}
               {onDownloadZip && (
                 <button
                   type="button"
-                  onClick={onDownloadZip}
+                  onClick={() => onDownloadZip(siteData)}
                   className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:bg-slate-100"
                 >
                   <span>

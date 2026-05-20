@@ -374,3 +374,31 @@ export async function postGenerateSite(payload: Record<string, unknown>, label =
   });
   return readApiJson<any>(response, label);
 }
+
+export async function postChunkedGenerateSite(
+  payload: Record<string, unknown>,
+  label = "Generate site",
+  onStep?: (step: string) => void,
+) {
+  const startResponse = await fetch("/api/generation-jobs/chunked-start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const start = await readApiJson<any>(startResponse, `${label} start`);
+  const jobId = start.id;
+  if (!jobId) throw new Error("Chunked generation did not return a job id.");
+
+  let result: any = start;
+  for (const step of ["outline", "copy", "finalize"]) {
+    onStep?.(step);
+    const stepResponse = await fetch(`/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step }),
+    });
+    result = await readApiJson<any>(stepResponse, `${label} ${step}`);
+  }
+
+  return result.result || result;
+}

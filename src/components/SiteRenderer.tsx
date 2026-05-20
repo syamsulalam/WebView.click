@@ -36,7 +36,7 @@ type SiteRendererProps = {
   publicLinks?: { basic: string; premium: string };
   businessId?: string;
   showProspectPanel?: boolean;
-  onDownloadZip?: () => void;
+  onDownloadZip?: (siteData?: any) => void;
 };
 
 function normalizeSiteData(siteData: any) {
@@ -444,6 +444,34 @@ function ImageFrame({
   );
 }
 
+function colorsFromSiteData(siteData: any) {
+  const colors = siteData?.design?.themeVariables?.colors || {};
+  return [colors.primary, colors.accent, colors.secondary].filter((color) => typeof color === "string" && color.trim());
+}
+
+function normalizedPaletteOptionsFromBrand(brand: any, siteData: any) {
+  const options = Array.isArray(brand.paletteOptions)
+    ? brand.paletteOptions.filter((option: any) => Array.isArray(option?.colors) && option.colors.length > 0)
+    : [];
+  if (options.length > 0) return options;
+
+  const fallbackPalettes = [
+    { id: "brand-palette", label: "Saved brand palette", colors: Array.isArray(brand.palette) ? brand.palette : [] },
+    { id: "meta-brand-palette", label: "Generated brand palette", colors: Array.isArray(siteData?.meta?.brandPalette) ? siteData.meta.brandPalette : [] },
+    { id: "theme-colors", label: "Current site colors", colors: colorsFromSiteData(siteData) },
+  ];
+  const seen = new Set<string>();
+  return fallbackPalettes
+    .map((option) => ({ ...option, colors: option.colors.filter((color: unknown) => typeof color === "string" && color.trim()).slice(0, 5) }))
+    .filter((option) => {
+      if (option.colors.length === 0) return false;
+      const key = option.colors.join("|").toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 export default function SiteRenderer({
   siteData,
   publicLinks = { basic: "", premium: "" },
@@ -476,7 +504,7 @@ export default function SiteRenderer({
   }, [fontPairing]);
   const activeFontPairing = getFontPairing(selectedFontPairingId);
   const fontImportUrl = googleFontImportUrl([activeFontPairing, ...availableFontPairings]);
-  const paletteOptions = Array.isArray(brand.paletteOptions) ? brand.paletteOptions.filter((option: any) => Array.isArray(option?.colors) && option.colors.length > 0) : [];
+  const paletteOptions = normalizedPaletteOptionsFromBrand(brand, siteData);
   const paletteOptionKey = paletteOptions.map((option: any) => option.id).join("|");
   const [selectedPaletteOptionId, setSelectedPaletteOptionId] = useState(paletteOptions[0]?.id || "");
   useEffect(() => {
@@ -492,6 +520,21 @@ export default function SiteRenderer({
         secondary: activePalette[2] || baseColors.secondary,
       }
     : baseColors;
+  const actionPanelSiteData = {
+    ...siteData,
+    design: {
+      ...(siteData?.design || {}),
+      themeVariables: {
+        ...(siteData?.design?.themeVariables || {}),
+        colors,
+      },
+    },
+    brand: {
+      ...(siteData?.brand || {}),
+      palette: activePalette.length > 0 ? activePalette : Array.isArray(brand.palette) ? brand.palette : [],
+      paletteOptions,
+    },
+  };
   const brandPhotoAttribution = (src?: string) => attributionText(src, brand.photoAttributions, brand.photoSource, brand.photoCaption);
   const presetClass = `wv-preset-${normalizeStylePreset(stylePreset)}`;
   const visualClass = `wv-visual-${normalizeVisualStyle(visualStyle)}`;
@@ -1667,7 +1710,7 @@ export default function SiteRenderer({
 
       {showProspectPanel && (
         <WebsiteActionPanel
-          siteData={siteData}
+          siteData={actionPanelSiteData}
           businessId={businessId}
           variant="public"
           onDownloadZip={onDownloadZip}

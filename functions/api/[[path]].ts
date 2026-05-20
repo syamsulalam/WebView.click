@@ -2976,7 +2976,165 @@ async function handleProspects(request: Request, db: D1Database, segments: strin
   return errorJson("Not Found", 404);
 }
 
-async function handleGenerationJobs(request: Request, db: D1Database, segments: string[]): Promise<Response> {
+function chunkedGenerationPayload(metadata: Record<string, unknown>) {
+  const payload = metadata.payload && typeof metadata.payload === "object" && !Array.isArray(metadata.payload)
+    ? metadata.payload as Record<string, unknown>
+    : {};
+  return payload;
+}
+
+function chunkedGenerationBaseJson(payload: Record<string, unknown>) {
+  return payload.jsonContent && typeof payload.jsonContent === "object" && !Array.isArray(payload.jsonContent)
+    ? structuredClone(payload.jsonContent as Record<string, unknown>)
+    : structuredClone(templateSchema) as Record<string, unknown>;
+}
+
+function chunkedGenerationJsonWithOutline(metadata: Record<string, unknown>) {
+  const payload = chunkedGenerationPayload(metadata);
+  const finalJson = chunkedGenerationBaseJson(payload);
+  const outline = metadata.offeringOutline && typeof metadata.offeringOutline === "object" && !Array.isArray(metadata.offeringOutline)
+    ? metadata.offeringOutline as Record<string, unknown>
+    : null;
+  if (outline) applyAiOfferingOutline(finalJson, outline);
+  return { payload, finalJson };
+}
+
+async function handleGenerationJobs(request: Request, db: D1Database, env: Env, segments: string[]): Promise<Response> {
+  if (request.method === "POST" && segments[1] === "chunked-start") {
+    const body = await readJsonBody(request);
+    const businessName = asString(body.businessName, "Untitled Business");
+    const businessId = asString(body.businessId, normalizeBusinessId(businessName));
+    const originData = body.originData && typeof body.originData === "object" ? body.originData as Record<string, unknown> : {};
+    const provider = asString(body.provider);
+    const model = asString(body.model);
+    const placeId = placeIdFromPlace(originData);
+    const id = crypto.randomUUID();
+    const metadata = {
+      businessName,
+      generationMode: "chunked_ai_generation",
+      chunked: true,
+      step: "outline_pending",
+      nextStep: "outline",
+      payload: body,
+      copyPatchApplied: false,
+      createdFor: "outline_copy_finalize_retryable_flow",
+      checkedAt: new Date().toISOString(),
+    };
+    await ensureRequiredColumns(db, generateRequiredColumns);
+    await createGenerationJob(db, {
+      id,
+      business_id: businessId,
+      place_id: placeId,
+      provider,
+      model,
+      status: "running",
+      metadata_json: JSON.stringify(metadata),
+    });
+    return json({ success: true, id, nextStep: "outline" });
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "run-step") {
+    const jobId = segments[1];
+    const body = await readJsonBody(request);
+    await ensureRequiredColumns(db, generateRequiredColumns);
+    const row = await db
+      .prepare("SELECT * FROM generation_jobs WHERE id = ?")
+      .bind(jobId)
+      .first<{ id: string; business_id?: string; place_id?: string; provider?: string; model?: string; status?: string; error?: string; metadata_json?: string }>();
+    if (!row) return errorJson("Generation job not found", 404);
+    const metadata = parseJsonObject(row.metadata_json);
+    if (metadata.chunked !== true) return errorJson("Generation job is not a chunked job.", 400);
+    const payload = chunkedGenerationPayload(metadata);
+    if (!Object.keys(payload).length) return errorJson("Chunked generation payload is missing.", 400);
+    const businessName = asString(payload.businessName, asString(metadata.businessName, row.business_id || "Untitled Business"));
+    const requestedStep = asString(body.step, asString(metadata.nextStep, "outline"));
+
+    try {
+      if (requestedStep === "outline") {
+        const finalJson = chunkedGenerationBaseJson(payload);
+        const outlineResult = await generateAiOfferingOutline(db, env, payload, finalJson, payload.originData || {}, businessName);
+        if (outlineResult) {
+          const outlineApplyResult = applyAiOfferingOutline(finalJson, outlineResult.outline);
+          metadata.offeringOutline = outlineResult.outline;
+          metadata.offeringOutlineHash = outlineResult.outlineHash;
+          metadata.offeringOutlineApplied = outlineApplyResult.applied;
+          metadata.offeringOutlineCount = outlineApplyResult.count;
+          metadata.offeringOutlineRepairAttempted = Boolean(outlineResult.repairAttempted);
+          if (outlineResult.repairError) metadata.offeringOutlineInitialParseError = outlineResult.repairError;
+        } else {
+          metadata.offeringOutlineApplied = false;
+          metadata.offeringOutlineError = "AI offering outline returned no usable JSON.";
+        }
+        metadata.step = "outline_complete";
+        metadata.nextStep = "copy";
+        metadata.updatedAt = new Date().toISOString();
+        await updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+        return json({ success: true, id: jobId, completedStep: "outline", nextStep: "copy", metadata });
+      }
+
+      if (requestedStep === "copy") {
+        const { finalJson } = chunkedGenerationJsonWithOutline(metadata);
+        const copyPatchResult = await generateAiCopyPatch(db, env, payload, finalJson);
+        if (!copyPatchResult) {
+          throw new Error("AI copy patch did not return JSON for chunked generation.");
+        }
+        metadata.copyPatch = copyPatchResult.patch;
+        metadata.copyBriefHash = copyPatchResult.copyBriefHash;
+        metadata.copyPatchHash = copyPatchResult.copyPatchHash;
+        metadata.copyPatchApplied = true;
+        metadata.step = "copy_complete";
+        metadata.nextStep = "finalize";
+        metadata.updatedAt = new Date().toISOString();
+        await updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+        return json({ success: true, id: jobId, completedStep: "copy", nextStep: "finalize", metadata });
+      }
+
+      if (requestedStep === "finalize") {
+        const { payload: storedPayload, finalJson } = chunkedGenerationJsonWithOutline(metadata);
+        const copyPatch = metadata.copyPatch && typeof metadata.copyPatch === "object" && !Array.isArray(metadata.copyPatch)
+          ? metadata.copyPatch as Record<string, unknown>
+          : null;
+        if (copyPatch) applyAiCopyPatch(finalJson, copyPatch);
+        const finalizeBody = {
+          ...storedPayload,
+          requireAi: false,
+          provider: asString(storedPayload.provider),
+          model: asString(storedPayload.model),
+          jsonContent: finalJson,
+          skipAiCopyPatch: true,
+          prepatchedWithAi: Boolean(copyPatch),
+          parentGenerationJobId: jobId,
+        };
+        const finalizeRequest = new Request(new URL("/api/sites/generate", request.url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(finalizeBody),
+        });
+        const finalizeResponse = await handleSites(finalizeRequest, db, env, ["sites", "generate"]);
+        const finalizeData = await finalizeResponse.json().catch(() => ({}));
+        if (!finalizeResponse.ok || finalizeData.error) {
+          throw new Error(asString(finalizeData.error, `Finalize failed with HTTP ${finalizeResponse.status}`));
+        }
+        metadata.step = "finalize_complete";
+        metadata.nextStep = "";
+        metadata.finalizeResult = finalizeData;
+        metadata.updatedAt = new Date().toISOString();
+        await updateGenerationJob(db, jobId, { status: "success", error: null, metadata_json: JSON.stringify(metadata) });
+        return json({ success: true, id: jobId, completedStep: "finalize", result: finalizeData, metadata });
+      }
+
+      return errorJson(`Unsupported chunked generation step: ${requestedStep}`, 400);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      metadata.failureStage = `chunked_${requestedStep}`;
+      metadata.failureMessage = message;
+      metadata.nextStep = requestedStep;
+      metadata.updatedAt = new Date().toISOString();
+      await updateGenerationJob(db, jobId, { status: "failed", error: message, metadata_json: JSON.stringify(metadata) });
+      return errorJson(message, 502);
+    }
+  }
+
   if (request.method === "POST" && segments[1] === "cooldown-blocked") {
     const body = await readJsonBody(request);
     const provider = asString(body.provider);
@@ -3677,6 +3835,207 @@ function sectionCopyTarget(section: Record<string, unknown>) {
   };
 }
 
+function offeringSlug(value: unknown, fallback = "offering") {
+  const slug = safeCopyText(value, 90)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return slug || fallback;
+}
+
+function currentOfferingRecords(siteJson: Record<string, unknown>) {
+  return [
+    ...(Array.isArray(siteJson.products) ? siteJson.products as Array<Record<string, unknown>> : []),
+    ...(Array.isArray(siteJson.services) ? siteJson.services as Array<Record<string, unknown>> : []),
+  ];
+}
+
+function normalizeAiOfferingOutline(siteJson: Record<string, unknown>, outline: Record<string, unknown>) {
+  const existing = currentOfferingRecords(siteJson);
+  const proposed = Array.isArray(outline.offerings) ? outline.offerings as Array<Record<string, unknown>> : [];
+  const source = proposed.length ? proposed : existing;
+  const seen = new Set<string>();
+  const normalized = source
+    .map((item, index) => {
+      const existingItem = existing[index] || {};
+      const typeRaw = asString(item.type, asString(existingItem.type, "service")).toLowerCase();
+      const type = typeRaw === "product" ? "product" : "service";
+      const title = safeCopyText(item.title || existingItem.title, 90);
+      if (!title) return null;
+      const idBase = offeringSlug(item.id || title, `${type}-${index + 1}`);
+      let id = idBase;
+      let suffix = 2;
+      while (seen.has(id)) {
+        id = `${idBase}-${suffix}`;
+        suffix += 1;
+      }
+      seen.add(id);
+      const detailPageId = `${type}-${id}`;
+      return {
+        id,
+        type,
+        title,
+        summary: safeCopyText(item.summary || item.customerIntent || existingItem.summary || existingItem.description, 260),
+        description: safeCopyText(item.description || item.customerIntent || existingItem.description || existingItem.summary, 520),
+        priceHint: safeCopyText(item.priceHint || existingItem.priceHint, 80) || "Contact for estimate",
+        image: asString(existingItem.image),
+        detailPageId,
+        bestFor: safeCopyArray(item.bestFor || existingItem.bestFor, 5, 80),
+        included: safeCopyArray(item.included || existingItem.included, 6, 100),
+        highlights: safeCopyPairs(item.highlights || existingItem.highlights, 4),
+        relatedReviewKeywords: safeCopyArray(item.relatedReviewKeywords || item.keywords || existingItem.relatedReviewKeywords, 8, 40),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 12) as Array<Record<string, unknown>>;
+  return normalized.length ? normalized : existing;
+}
+
+function offeringDetailPageFor(item: Record<string, unknown>, siteJson: Record<string, unknown>) {
+  const meta = objectValue(siteJson.meta);
+  const profile = objectValue(siteJson.businessProfile);
+  const contact = objectValue(profile.contact);
+  const location = objectValue(siteJson.location);
+  const isIndonesian = asString(meta.language).toLowerCase().startsWith("id");
+  const businessName = asString(meta.businessName, asString(profile.name, "Business"));
+  const type = asString(item.type) === "product" ? "product" : "service";
+  const title = safeCopyText(item.title, 90);
+  const summary = safeCopyText(item.summary || item.description, 320);
+  const description = safeCopyText(item.description || item.summary, 620);
+  const pageId = asString(item.detailPageId, `${type}-${offeringSlug(title)}`);
+  const address = safeCopyText(location.formattedAddress || objectValue(profile.address).formatted, 220);
+  const phone = safeCopyText(contact.phoneNational || contact.phoneInternational, 80);
+  return {
+    pageId,
+    pageTitle: title,
+    sections: [
+      {
+        type: "hero",
+        id: `${asString(item.id, offeringSlug(title))}-hero`,
+        content: {
+          headline: isIndonesian ? `${title} dari ${businessName}` : `${title} from ${businessName}`,
+          subheadline: summary,
+          buttons: [
+            { text: isIndonesian ? "Tanya penawaran ini" : "Ask about this", href: "#contact", style: "primary" },
+            { text: isIndonesian ? "Lihat pilihan lain" : "Back to services", href: "#services", style: "outline" },
+          ],
+          image: asString(item.image),
+        },
+      },
+      {
+        type: "offeringDetail",
+        id: `${asString(item.id, offeringSlug(title))}-detail`,
+        content: {
+          kind: type === "product" ? (isIndonesian ? "Produk" : "Product") : (isIndonesian ? "Layanan" : "Service"),
+          title,
+          summary,
+          description,
+          priceHint: safeCopyText(item.priceHint, 80),
+          image: asString(item.image),
+          bestFor: safeCopyArray(item.bestFor, 5, 80),
+          included: safeCopyArray(item.included, 6, 100),
+          highlights: safeCopyPairs(item.highlights, 4),
+        },
+      },
+      {
+        type: "features",
+        id: `${asString(item.id, offeringSlug(title))}-features`,
+        content: {
+          title: isIndonesian ? `Kenapa memilih ${title}` : `Why choose ${title}`,
+          items: [
+            { title: isIndonesian ? "Kebutuhan jelas" : "Clear fit", description: summary },
+            { title: isIndonesian ? "Langkah berikutnya" : "Practical next step", description: isIndonesian ? "Hubungi bisnis untuk membahas kebutuhan, jadwal, dan ketersediaan." : "Contact the business to discuss scope, timing, and availability." },
+            { title: isIndonesian ? "Konteks lokal" : "Local context", description: address || (isIndonesian ? "Disusun untuk kebutuhan pelanggan lokal." : "Built around local customer intent.") },
+          ],
+        },
+      },
+      {
+        type: "faq",
+        id: `${asString(item.id, offeringSlug(title))}-faq`,
+        content: {
+          title: isIndonesian ? `Pertanyaan tentang ${title}` : `Questions about ${title}`,
+          items: [
+            {
+              question: isIndonesian ? `Bagaimana cara bertanya tentang ${title}?` : `How do I ask about ${title}?`,
+              answer: isIndonesian ? "Gunakan tombol kontak atau hubungi bisnis langsung untuk ketersediaan dan langkah berikutnya." : "Use the contact button or call directly for availability, fit, and next steps.",
+            },
+            {
+              question: isIndonesian ? "Apakah detail bisa disesuaikan?" : "Can the details be customized?",
+              answer: isIndonesian ? "Bisa. Sampaikan kebutuhan, lokasi, waktu, dan detail penting saat menghubungi." : "Yes. Share your need, location, timing, and important details when you contact the business.",
+            },
+          ],
+        },
+      },
+      { type: "hoursLocation", id: `${asString(item.id, offeringSlug(title))}-contact`, content: { title: isIndonesian ? "Kontak dan lokasi" : "Contact and location", address, phone, directionsUrl: asString(contact.directionsUrl, asString(location.directionsUrl)) } },
+    ],
+  };
+}
+
+function applyAiOfferingOutline(siteJson: Record<string, unknown>, outline: Record<string, unknown>) {
+  const offerings = normalizeAiOfferingOutline(siteJson, outline);
+  if (!offerings.length) return { applied: false, count: 0 };
+
+  const meta = objectValue(siteJson.meta);
+  const isIndonesian = asString(meta.language).toLowerCase().startsWith("id");
+  const oldDetailIds = new Set(currentOfferingRecords(siteJson).map((item) => asString(item.detailPageId)).filter(Boolean));
+  const products = offerings.filter((item) => asString(item.type) === "product");
+  const services = offerings.filter((item) => asString(item.type) !== "product");
+  siteJson.products = products;
+  siteJson.services = services;
+  siteJson.offers = offerings.map((item) => ({
+    title: item.title,
+    description: item.summary || item.description,
+    priceHint: item.priceHint,
+    image: item.image,
+    detailPageId: item.detailPageId,
+    cta: { text: isIndonesian ? "Lihat detail" : "View details", href: `#${item.detailPageId}` },
+  }));
+
+  const strategy = objectValue(siteJson.productServiceStrategy);
+  const hasProducts = products.length > 0;
+  const hasServices = services.length > 0;
+  strategy.mode = hasProducts && hasServices ? "both" : hasProducts ? "products" : "services";
+  strategy.navbarGroupLabel = hasProducts && hasServices
+    ? (isIndonesian ? "Produk & Layanan" : "Products & Services")
+    : hasProducts ? (isIndonesian ? "Produk" : "Products") : (isIndonesian ? "Layanan" : "Services");
+  strategy.detailPageRule = isIndonesian
+    ? "Setiap penawaran punya halaman detail yang dibuat deterministik dari outline AI yang sudah divalidasi."
+    : "Each offering gets a deterministic detail page from the validated AI outline.";
+  siteJson.productServiceStrategy = strategy;
+
+  const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
+  const nextPages = pages.filter((page) => {
+    const pageId = asString(page.pageId);
+    return pageId !== "services" && !oldDetailIds.has(pageId);
+  });
+  nextPages.push(...offerings.map((item) => offeringDetailPageFor(item, siteJson)));
+  nextPages.forEach((page) => {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    sections.forEach((section) => {
+      if (asString(section.type) !== "offers") return;
+      const content = objectValue(section.content);
+      content.items = offerings;
+      section.content = content;
+    });
+  });
+  siteJson.pages = nextPages;
+
+  const navigation = objectValue(siteJson.navigation);
+  const headerMenu = Array.isArray(navigation.headerMenu) ? navigation.headerMenu as Array<Record<string, unknown>> : [];
+  const serviceMenu = {
+    label: strategy.navbarGroupLabel,
+    href: "#services",
+    children: offerings.map((item) => ({ label: item.title, href: `#${item.detailPageId}` })),
+  };
+  const menuIndex = headerMenu.findIndex((item) => asString(item.href) === "#services" || /service|layanan|product|produk/i.test(asString(item.label)));
+  if (menuIndex >= 0) headerMenu[menuIndex] = serviceMenu;
+  else headerMenu.splice(Math.min(1, headerMenu.length), 0, serviceMenu);
+  navigation.headerMenu = headerMenu;
+  siteJson.navigation = navigation;
+
+  return { applied: true, count: offerings.length };
+}
+
 function businessFactsForAiCopy(originData: unknown, siteJson: Record<string, unknown>, businessName: string) {
   const origin = objectValue(originData);
   const meta = objectValue(siteJson.meta);
@@ -3753,10 +4112,249 @@ function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, originData: u
   };
 }
 
+async function callAiJsonObjectProvider(input: {
+  db: D1Database;
+  env: Env;
+  provider: string;
+  model: string;
+  systemMsg: string;
+  userMsg: string;
+  contextLabel: string;
+}): Promise<string> {
+  const { db, env, provider, model, systemMsg, userMsg, contextLabel } = input;
+  const providerName = provider;
+  const modelName = model.trim();
+  const fail = (message: string, diagnostics: AiFailureDiagnostics): never => {
+    const error = new Error(message);
+    (error as Error & { aiFailure?: AiFailureDiagnostics }).aiFailure = diagnostics;
+    throw error;
+  };
+  const fetchProvider = async (endpoint: string, init: RequestInit): Promise<Response> => {
+    try {
+      return await fetch(endpoint, init);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      fail(
+        `${providerName} ${contextLabel} network call failed (${modelName} via ${endpoint}): ${message}`,
+        buildAiFailureDiagnostics({ provider: providerName, model: modelName, endpoint, stage: "provider_network", message, rawSnippet: message }),
+      );
+    }
+  };
+  const readApiError = async (response: Response, endpoint: string): Promise<never> => {
+    const text = await response.text().catch(() => "");
+    const details = extractProviderErrorDetails(text);
+    const message = details.message.slice(0, 600);
+    fail(
+      `${providerName} ${contextLabel} API returned HTTP ${response.status}${message ? `: ${message}` : ""}`,
+      buildAiFailureDiagnostics({ provider: providerName, model: modelName, endpoint, stage: "provider_http", httpStatus: response.status, message, rawSnippet: details.rawSnippet, providerCode: details.providerCode, providerStatus: details.providerStatus }),
+    );
+  };
+
+  if (provider === "OpenRouter") {
+    const key = await getSetting(db, env, "OPENROUTER_API_KEY");
+    if (!key) return "";
+    const endpoint = "https://openrouter.ai/api/v1/chat/completions";
+    const apiRes = await fetchProvider(endpoint, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: modelName, response_format: { type: "json_object" }, messages: [{ role: "system", content: systemMsg }, { role: "user", content: userMsg }] }),
+    });
+    if (!apiRes.ok) await readApiError(apiRes, endpoint);
+    const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+    return aiJson.choices?.[0]?.message?.content || "";
+  }
+
+  if (provider === "OpenAI") {
+    const key = await getSetting(db, env, "OPENAI_API_KEY");
+    if (!key) return "";
+    const endpoint = "https://api.openai.com/v1/chat/completions";
+    const apiRes = await fetchProvider(endpoint, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: modelName, response_format: { type: "json_object" }, messages: [{ role: "system", content: systemMsg }, { role: "user", content: userMsg }] }),
+    });
+    if (!apiRes.ok) await readApiError(apiRes, endpoint);
+    const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+    return aiJson.choices?.[0]?.message?.content || "";
+  }
+
+  if (provider === "Gemini") {
+    const key = await getSetting(db, env, "GEMINI_API_KEY");
+    if (!key) return "";
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
+    const apiRes = await fetchProvider(`${endpoint}?key=${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ system_instruction: { parts: [{ text: systemMsg }] }, contents: [{ parts: [{ text: userMsg }] }], generationConfig: { responseMimeType: "application/json" } }),
+    });
+    if (!apiRes.ok) await readApiError(apiRes, endpoint);
+    const aiJson = await apiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+    return aiJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  }
+
+  if (provider === "KIE") {
+    const key = await getSetting(db, env, "KIE_API_KEY");
+    if (!key) return "";
+    const config = kieModelConfigs[modelName];
+    if (!config) return "";
+    if (config.mode === "responses") {
+      const apiRes = await fetchProvider(config.endpoint, {
+        method: "POST",
+        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify({ model: config.model, stream: false, input: [{ role: "user", content: [{ type: "input_text", text: `${systemMsg}\n\n${userMsg}` }] }], reasoning: { effort: "low" } }),
+      });
+      if (!apiRes.ok) await readApiError(apiRes, config.endpoint);
+      const aiJson = await apiRes.json() as { output?: Array<{ content?: Array<{ text?: string }> }> };
+      return aiJson.output?.flatMap((item) => item.content || []).map((item) => item.text || "").join("\n") || "";
+    }
+    const apiRes = await fetchProvider(config.endpoint, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "system", content: systemMsg }, { role: "user", content: userMsg }], stream: false, reasoning_effort: "low" }),
+    });
+    if (!apiRes.ok) await readApiError(apiRes, config.endpoint);
+    const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+    return aiJson.choices?.[0]?.message?.content || "";
+  }
+
+  if (provider === "Opencode") {
+    const key = await getSetting(db, env, "OPENCODE_API_KEY");
+    const endpoint = await getSetting(db, env, "OPENCODE_BASE_URL") || "https://api.opencode.example.com/v1/chat/completions";
+    if (!key) return "";
+    const apiRes = await fetchProvider(endpoint, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: modelName, response_format: { type: "json_object" }, messages: [{ role: "system", content: systemMsg }, { role: "user", content: userMsg }] }),
+    });
+    if (!apiRes.ok) await readApiError(apiRes, endpoint);
+    const aiJson = await apiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+    return aiJson.choices?.[0]?.message?.content || "";
+  }
+
+  return "";
+}
+
+async function parseAiJsonObjectWithOneRepair(input: {
+  db: D1Database;
+  env: Env;
+  provider: string;
+  model: string;
+  systemMsg: string;
+  userMsg: string;
+  contextLabel: string;
+}) {
+  const firstRaw = await callAiJsonObjectProvider(input);
+  const firstCleaned = firstRaw.replace(/```json/g, "").replace(/```/g, "").trim();
+  try {
+    return {
+      parsed: JSON.parse(firstCleaned) as Record<string, unknown>,
+      raw: firstCleaned,
+      repairAttempted: false,
+      repairError: "",
+    };
+  } catch (error) {
+    const repairError = error instanceof Error ? error.message : String(error);
+    const repairUserMsg =
+      `${input.userMsg}\n\nThe previous response was invalid JSON and could not be parsed.\n` +
+      `Parse error: ${repairError}\n` +
+      `Invalid response snippet: ${firstCleaned.slice(0, 1400)}\n\n` +
+      "Return the corrected JSON object only. Do not explain. Do not use markdown. Do not add keys outside the schema.";
+    const repairedRaw = await callAiJsonObjectProvider({ ...input, userMsg: repairUserMsg, contextLabel: `${input.contextLabel} JSON repair` });
+    const repairedCleaned = repairedRaw.replace(/```json/g, "").replace(/```/g, "").trim();
+    return {
+      parsed: JSON.parse(repairedCleaned) as Record<string, unknown>,
+      raw: repairedCleaned,
+      repairAttempted: true,
+      repairError,
+    };
+  }
+}
+
+async function generateAiOfferingOutline(
+  db: D1Database,
+  env: Env,
+  body: Record<string, unknown>,
+  siteJson: Record<string, unknown>,
+  originData: unknown,
+  businessName: string,
+): Promise<{ outline: Record<string, unknown>; outlineHash: string; repairAttempted?: boolean; repairError?: string } | null> {
+  const provider = asString(body.provider);
+  const model = asString(body.model);
+  const requireAi = body.requireAi === true;
+  if (!provider || !model) return null;
+
+  const readiness = await getAiReadiness(db, env, provider, model, requireAi, requireAi);
+  if (!readiness.ready) {
+    if (requireAi) {
+      const error = new Error(readiness.message || "AI provider/model is not ready.");
+      (error as Error & { aiReadiness?: unknown }).aiReadiness = readiness;
+      throw error;
+    }
+    return null;
+  }
+
+  const facts = businessFactsForAiCopy(originData, siteJson, businessName);
+  const existingOfferings = currentOfferingRecords(siteJson).map((item) => ({
+    id: asString(item.id),
+    type: asString(item.type),
+    title: safeCopyText(item.title, 90),
+    summary: safeCopyText(item.summary || item.description, 220),
+  })).slice(0, 8);
+  const outlineBrief = {
+    facts,
+    existingOfferings,
+    instruction: "Infer the best high-intent services/products for the website from the business name, niche, categories, search query, address, and review themes. Google Business Profile may be incomplete, so infer plausible buyer-intent offerings, but do not invent certifications, years in business, exact prices, warranties, staff size, equipment, brand partnerships, or completed projects.",
+  };
+  const schema = {
+    strategy: {
+      mode: "services | products | both",
+      navbarGroupLabel: "Services, Products, or Products & Services",
+      reasoning: "One sentence explaining why these offerings fit verified facts and the niche.",
+    },
+    offerings: [{
+      type: "service | product",
+      title: "Distinct Title Case high-intent offering customers search for",
+      customerIntent: "The exact customer problem or buying situation this offering addresses.",
+      summary: "One complete sentence, specific and non-thin.",
+      description: "Two complete sentences explaining problem, solution, and result without unsupported claims.",
+      priceHint: "Contact for estimate | Ask for current price | Contact for availability",
+      bestFor: ["3-5 specific customer use cases"],
+      included: ["3-6 plausible steps/deliverables"],
+      highlights: [{ title: "Benefit", description: "Why it matters" }],
+      relatedReviewKeywords: ["short keyword"],
+    }],
+  };
+  const systemMsg =
+    "You create a compact service/product outline for a local business website. Return only valid JSON matching this schema, with no markdown and no extra keys:\n" +
+    `${JSON.stringify(schema)}\n\n` +
+    "Rules: create 4-12 offerings unless the niche clearly needs fewer. Use the customer's likely search intent, not generic labels like Consultation unless it is truly the service. " +
+    "Use verified facts for identity, location, rating, reviews, and phone. Use conservative industry knowledge only for common problems/outcomes in the niche. " +
+    "Every title must be distinct, specific, and plausible for the business category. Do not create pages, hrefs, IDs, images, JSON site sections, CSS, or navigation. " +
+    "For US businesses write English. For Indonesian businesses write Indonesian. Plain text only.";
+  const userMsg = `Business Name: ${businessName}\nOutline brief:\n${JSON.stringify(outlineBrief)}\n\nReturn only the outline JSON.`;
+
+  const parsedOutline = await parseAiJsonObjectWithOneRepair({
+    db,
+    env,
+    provider,
+    model,
+    systemMsg,
+    userMsg,
+    contextLabel: "offering outline",
+  });
+  return {
+    outline: parsedOutline.parsed,
+    outlineHash: await sha256Json(parsedOutline.parsed),
+    repairAttempted: parsedOutline.repairAttempted,
+    repairError: parsedOutline.repairError,
+  };
+}
+
 async function generateAiCopyPatch(
   db: D1Database,
   env: Env,
   body: Record<string, unknown>,
+  siteJsonOverride?: Record<string, unknown>,
 ): Promise<{ patch: Record<string, unknown>; copyBriefHash: string; copyPatchHash: string } | null> {
   const provider = asString(body.provider);
   const model = asString(body.model);
@@ -3764,9 +4362,9 @@ async function generateAiCopyPatch(
   const requireAi = body.requireAi === true;
   const businessName = asString(body.businessName);
   const originData = body.originData || {};
-  const submittedJson = body.jsonContent && typeof body.jsonContent === "object" && !Array.isArray(body.jsonContent)
+  const submittedJson = siteJsonOverride || (body.jsonContent && typeof body.jsonContent === "object" && !Array.isArray(body.jsonContent)
     ? body.jsonContent as Record<string, unknown>
-    : null;
+    : null);
   const copyTargetBrief = buildAiCopyTargetBrief(submittedJson || {}, originData, businessName);
 
   if (!provider || !model) {
@@ -4487,6 +5085,8 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
       : [];
     const selectedLogoPriority = asString(body.selectedLogoPriority);
     const paletteOptions = Array.isArray(body.paletteOptions) ? body.paletteOptions : [];
+    const skipAiCopyPatch = body.skipAiCopyPatch === true;
+    const prepatchedWithAi = body.prepatchedWithAi === true;
     const originPlaceId = placeIdFromPlace(originData);
     const jobId = crypto.randomUUID();
     const jobMetadata: Record<string, unknown> = {
@@ -4517,7 +5117,28 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     let finalJson = body.jsonContent && typeof body.jsonContent === "object"
       ? body.jsonContent as Record<string, unknown>
       : structuredClone(templateSchema) as Record<string, unknown>;
-    let aiGenerated = false;
+    let aiGenerated = prepatchedWithAi;
+    if (skipAiCopyPatch) {
+      jobMetadata.copyPatchApplied = prepatchedWithAi;
+      jobMetadata.copyPatchSkipped = true;
+      jobMetadata.parentGenerationJobId = asString(body.parentGenerationJobId);
+    } else {
+      try {
+        const outlineResult = await generateAiOfferingOutline(db, env, body, finalJson, originData, businessName);
+        if (outlineResult) {
+          const outlineApplyResult = applyAiOfferingOutline(finalJson, outlineResult.outline);
+          jobMetadata.offeringOutlineHash = outlineResult.outlineHash;
+          jobMetadata.offeringOutlineApplied = outlineApplyResult.applied;
+          jobMetadata.offeringOutlineCount = outlineApplyResult.count;
+          jobMetadata.offeringOutlineRepairAttempted = Boolean(outlineResult.repairAttempted);
+          if (outlineResult.repairError) jobMetadata.offeringOutlineInitialParseError = outlineResult.repairError;
+        }
+      } catch (error) {
+        jobMetadata.offeringOutlineApplied = false;
+        jobMetadata.offeringOutlineError = error instanceof Error ? error.message : String(error);
+        console.error("AI offering outline failed, continuing with scaffold offerings:", error);
+      }
+    }
     const copyBrief = buildAiCopyTargetBrief(finalJson, originData, businessName);
     const copyAuditTargets = collectAiCopyAuditTargets(finalJson);
     jobMetadata.copyBriefHash = await sha256Json(copyBrief);
@@ -4533,26 +5154,28 @@ async function handleSites(request: Request, db: D1Database, env: Env, segments:
     };
     await updateGenerationJob(db, jobId, { metadata_json: JSON.stringify(jobMetadata) });
 
-    try {
-      const copyPatchResult = await generateAiCopyPatch(db, env, body);
-      if (copyPatchResult) {
-        applyAiCopyPatch(finalJson, copyPatchResult.patch);
-        const copyAudit = buildAiCopyAudit(copyAuditTargets, finalJson, true);
-        jobMetadata.copyBriefHash = copyPatchResult.copyBriefHash || jobMetadata.copyBriefHash;
-        jobMetadata.copyPatchHash = copyPatchResult.copyPatchHash;
-        jobMetadata.copyPatchApplied = true;
-        jobMetadata.copyAuditSummary = copyAudit.summary;
-        jobMetadata.copyAuditItems = copyAudit.items;
-        aiGenerated = true;
-      } else if (body.requireAi === true) {
-        throw new Error("AI copy patch did not return JSON. Check provider/model/API key settings.");
+    if (!skipAiCopyPatch) {
+      try {
+        const copyPatchResult = await generateAiCopyPatch(db, env, body, finalJson);
+        if (copyPatchResult) {
+          applyAiCopyPatch(finalJson, copyPatchResult.patch);
+          const copyAudit = buildAiCopyAudit(copyAuditTargets, finalJson, true);
+          jobMetadata.copyBriefHash = copyPatchResult.copyBriefHash || jobMetadata.copyBriefHash;
+          jobMetadata.copyPatchHash = copyPatchResult.copyPatchHash;
+          jobMetadata.copyPatchApplied = true;
+          jobMetadata.copyAuditSummary = copyAudit.summary;
+          jobMetadata.copyAuditItems = copyAudit.items;
+          aiGenerated = true;
+        } else if (body.requireAi === true) {
+          throw new Error("AI copy patch did not return JSON. Check provider/model/API key settings.");
+        }
+      } catch (error) {
+        if (body.requireAi === true) {
+          throw error;
+        }
+        jobMetadata.copyPatchError = error instanceof Error ? error.message : String(error);
+        console.error("AI copy patch failed, using submitted JSON:", error);
       }
-    } catch (error) {
-      if (body.requireAi === true) {
-        throw error;
-      }
-      jobMetadata.copyPatchError = error instanceof Error ? error.message : String(error);
-      console.error("AI copy patch failed, using submitted JSON:", error);
     }
     if (!aiGenerated) {
       const fallbackAudit = buildAiCopyAudit(copyAuditTargets, finalJson, false);
@@ -5395,7 +6018,7 @@ async function route(context: PagesContext): Promise<Response> {
     }
 
     if (segments[0] === "generation-jobs") {
-      return handleGenerationJobs(request, db, segments);
+      return handleGenerationJobs(request, db, env, segments);
     }
 
     if (segments[0] === "ai" && segments[1] === "readiness") {

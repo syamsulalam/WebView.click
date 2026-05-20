@@ -148,6 +148,7 @@ Logic penting:
 - Full page mode menampilkan `Load more` jika rows loaded masih lebih sedikit dari count server; tombol ini memanggil endpoint dengan `offset={loadedRows}` lalu append ke tabel.
 - Kolom Job menyediakan tombol copy kecil untuk Job ID dan Business ID; saat sukses icon berubah menjadi check sementara.
 - Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, provider failure diagnostics, retry dari drawer, audit copy AI, dan raw `metadata` JSON dengan tombol copy.
+- Untuk job `metadata.chunked=true`, drawer menampilkan progress `Outline`, `Copy`, dan `Finalize` plus tombol `Retry/Run` per step yang memanggil `POST /api/generation-jobs/:jobId/run-step`, supaya admin bisa melanjutkan step gagal tanpa membuat generation job baru.
 - Retry mengambil current copy brief dari `GET /api/sites/:businessId/copy-brief`, menghitung hash browser-side, lalu memperingatkan jika hash berbeda dari job lama sebelum membuat job baru.
 - Retry mengirim `requireAi: true`, sehingga error provider/model/API key terlihat sebagai failed job dan pesan UI, bukan diam-diam menyimpan fallback copy.
 - Tombol retry menampilkan readiness badge; provider/model berasal dari job lama jika ada, atau fallback localStorage parent, dan key status dikirim parent dari `/api/settings`.
@@ -257,6 +258,7 @@ Props penting:
 - `onDownloadZip`: callback download zip, tersedia di demo dan public preview.
 - `fontPairings`, `selectedFontPairing`, `onFontPairingChange`: opsi font pairing yang cocok dengan industri agar owner bisa memilih style font sebelum download/setup.
 - `paletteOptions`, `selectedPaletteOption`, `onPaletteOptionChange`: opsi palette hasil ekstraksi foto bisnis agar owner bisa memilih warna sebelum download/setup.
+- Panel tetap menampilkan kontrol `Color palette` jika hanya satu palette tersedia, supaya public preview lama/hasil regen yang tidak punya multi-photo options tetap memperlihatkan warna yang akan masuk export.
 
 Logic penting:
 - Domain extension list berasal dari `src/lib/domainExtensions.ts`.
@@ -271,6 +273,7 @@ Logic penting:
 - Mode mock checkout tetap mencatat lead `checkout_pending` jika payment processor aktif belum dikonfigurasi atau dipilih `mock`.
 - Jika font pairing selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti pilihan yang aktif saat download.
 - Jika palette selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti warna yang aktif saat download.
+- `onDownloadZip(siteData)` menerima site data aktif dari panel; ini menjaga public preview `/:businessId` mengekspor palette/font yang sedang dipilih di renderer, bukan JSON awal dari fetch.
 
 Risiko debug:
 - Jika ada perubahan pada flow download/setup, ubah komponen ini agar `/demo` dan `/:businessId` tetap sinkron.
@@ -337,6 +340,7 @@ Logic penting:
 - Foto Places diurutkan best-effort: attribution yang mirip nama bisnis, lalu tanpa attribution, lalu UGC/attributed. Places API tidak menyediakan flag owner photo yang reliable.
 - Palette dikirim ke `/api/sites/generate` sebagai `brandPalette`.
 - Hingga 5 palette foto disimpan sebagai `brand.paletteOptions` dan dikirim ke `/api/sites/generate` sebagai `paletteOptions`.
+- Saat generate, `/admin/leads` menunggu extraction `paletteOptions` dari foto Places sebelum mengirim `/api/sites/generate`, sehingga site baru lebih konsisten menyimpan pilihan warna untuk action panel/download.
 - Logo yang dipilih dikirim sebagai `selectedLogoImageUrl`.
 - Photo reference dan source dikirim sebagai `selectedLogoReference` dan `selectedLogoSource`.
 - Attribution foto yang dipilih dikirim sebagai `selectedLogoAttributions` dan disimpan di JSON sebagai `brand.photoAttributions`.
@@ -384,6 +388,7 @@ Logic penting:
 - Tooltip juga dipasang pada heading search, AI Web Builder, status/rating/reviews/city/state/niche filters, bulk action area, drawer status, dan photo/palette source agar workflow gather/generate lebih jelas.
 - Hasil pencarian tidak dikosongkan setelah generate, termasuk saat `/api/sites/generate` gagal.
 - Generate status ditampilkan per bisnis, dengan link preview jika sukses. Generate dari `/admin/leads` mengirim `requireAi: true`; jika provider/model/API key/JSON patch bermasalah, admin melihat error dan job failed, bukan fallback-only site yang terlihat seperti sukses.
+- Generate AI dari `/admin/leads` memakai D1-backed chunked flow: browser memanggil `chunked-start`, lalu step `outline`, `copy`, dan `finalize` sebagai request terpisah supaya provider latency tidak menahan satu Pages Function invocation terlalu lama.
 - Tombol `Generate selected`, setiap `Generate Site`, dan quick drawer retry jobs menampilkan AI readiness badge berisi status key provider, selected model, dan bahwa klik tersebut membutuhkan AI.
 - Sebelum full generate, handler memakai `src/lib/adminSiteGeneration.ts` untuk cek provider cooldown dan `/api/ai/readiness`; jika key provider hilang, model tidak ada di daftar model yang didukung, atau provider sedang cooldown, generate berhenti dengan pesan UI tanpa membuat request `/api/sites/generate`.
 - Selector AI Web Builder punya tombol `Refresh AI readiness` untuk clear cache readiness setelah key/model berubah.
@@ -450,6 +455,7 @@ Fungsi:
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
 - Tombol `Brief` membuka `GET /api/sites/:businessId/copy-brief`, yaitu `copyTargetBrief` stored-site yang dipakai untuk debugging bahan copy-only yang dikirim ke AI. Saat regenerate, fresh Google Places details masih bisa menambah fakta baru sebelum AI call.
 - Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini memakai `src/lib/adminSiteGeneration.ts` untuk provider cooldown, AI readiness, refresh Place Details, shared scaffold payload, dan photo/palette resolution yang sama dengan `/admin/leads`, lalu memanggil `/api/sites/generate` dengan provider/model pilihan dan `requireAi: true`. Jika AI provider gagal, error ditampilkan dan job ditandai failed agar fallback tidak menyamar sebagai hasil AI.
+- First generate dari `Ready to Generate` juga memakai chunked AI flow untuk step outline/copy/finalize; mode `Re-gather Google data + resave` tetap memakai save langsung tanpa AI.
 - Fallback JSON dari `/admin/sites` dibuat oleh `src/lib/generatedSiteScaffold.ts`, sama seperti `/admin/leads`, lalu di-post-process untuk page services/contact/feedback/gallery.
 - Fallback JSON mengisi `meta.generatedWithAi=false`, `meta.generationMode=google_places_fallback`, `meta.sourcePhotoCount`, title-cased service names, generalized niche copy profiles, service-area copy inferred from address, detail pages, dan gallery section/page jika Places mengembalikan cukup foto.
 - Fallback JSON juga memilih `design.fontPairing` dan `fontPairingConfig` dari registry industri sehingga site tetap punya typography yang sesuai walaupun AI gagal.
@@ -476,6 +482,7 @@ Logic penting:
 - First generate dari `Ready to Generate` memakai selected photo/palette yang tersimpan di prospect jika ada; jika tidak ada, flow memilih foto Places fallback dengan prioritas owner-like yang sama seperti `/admin/leads` dan memakai URL proxy `maxwidth=960` untuk visual generated site.
 - Tombol `Generate` di section `Ready to Generate` menampilkan AI readiness badge agar admin tahu key provider/model sebelum membuat site pertama.
 - First generate dan `AI regenerate` memakai `src/lib/adminSiteGeneration.ts` untuk shared cooldown/readiness preflight sebelum gather/generate berat; mode `Re-gather Google data + resave` tidak membutuhkan preflight AI.
+- `AI regenerate` dan `Re-gather Google data + resave` mengirim ulang `brand.paletteOptions` dari site JSON agar pilihan warna yang sudah ada tidak bergantung pada shape lama atau fallback renderer.
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
 - Generate/regenerate/readiness action notices memakai `AdminToast`, sehingga pesan sukses seperti `AI copy patch regenerated ...` tetap floating di kanan atas meski admin sedang melihat bagian bawah list.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
@@ -594,8 +601,9 @@ API yang dipakai:
 
 Logic penting:
 - Jika JSON site ditemukan, halaman meneruskan data ke `SiteRenderer`.
-- `handleDownloadZip()` membuat zip HTML statis dari DOM saat ini.
+- `handleDownloadZip(siteData?)` membuat zip HTML statis dari site data aktif yang dikirim `WebsiteActionPanel`, sehingga palette pilihan di public renderer ikut masuk export.
 - Panel prospek dari `SiteRenderer` memakai `WebsiteActionPanel` dengan `variant="public"`, sehingga flow download/setup sama dengan `/demo`.
+- Jika site lama tidak punya `brand.paletteOptions`, `SiteRenderer` membuat fallback option dari `brand.palette`, `meta.brandPalette`, atau `design.themeVariables.colors`.
 - Payment checkout memakai `POST /api/payments/checkout`; payment link basic/premium lama masih bisa dibaca tapi bukan flow utama.
 
 Risiko debug:
@@ -799,8 +807,10 @@ Logic AI:
 - Admin generate/regenerate/retry calls memakai `checkAiReadiness(..., remoteValidate=true)` sebelum `/api/sites/generate`, sehingga model remote yang tidak dikenal bisa gagal di preflight tanpa menghabiskan klik generate penuh.
 - Jika preflight AI memblokir generate/regenerate/retry di browser, UI memanggil `POST /api/generation-jobs/preflight-failure` untuk menyimpan row `generation_jobs` berstatus `failed`; `metadata_json.aiReadiness` dan `metadata_json.remoteValidation` menyimpan alasan key/registry/provider routing yang memblokir.
 - Jika shared provider cooldown memblokir generate/regenerate/retry di browser, UI memanggil `POST /api/generation-jobs/cooldown-blocked` untuk menyimpan row `generation_jobs` berstatus `failed`; `metadata_json.cooldownBlocked`, `metadata_json.providerCooldown`, dan `failureStage: "provider_cooldown"` membuat attempt yang dipause tetap terlihat di Jobs.
-- Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
+- Saat `jsonContent` scaffold dikirim ke `/api/sites/generate`, AI tidak lagi diminta mengembalikan full website JSON. Function pertama meminta outline kecil `strategy + offerings` untuk menginfer service/product lines dari business name, niche, kategori, search query, alamat, dan review themes; hasilnya disanitasi lalu dipakai untuk rebuild deterministik `products`, `services`, `offers`, homepage offer cards, nav children, dan individual detail pages.
+- Setelah outline service/product diterapkan, Function membuat `copyTargetBrief` yang hanya berisi fakta bisnis dan target teks yang bisa diperbaiki, lalu meminta AI mengembalikan copy patch kecil berisi `metaCopy`, `hero`, `sections`, `offers`, `offerings`, `faq`, `conversion`, dan `footer`.
 - Full scaffold JSON tidak dikirim ke AI. AI tidak melihat image URL, maps URL, navigation href, sourceData mentah, palette, font, visual style, favicon, CSS, storage, atau field protected lain.
+- Output outline AI tidak dipercaya sebagai site JSON: Function clamp text, membatasi 12 offering, membuat `id`/`detailPageId` sendiri, membuang stale detail pages/services aggregate page, lalu menjalankan `applyGeneratedSitePageInserts()` untuk membuat ulang services/contact/feedback/gallery secara konsisten. Jika outline pertama invalid JSON, Function mengirim parse error dan snippet output rusak kembali ke AI sekali lagi untuk repair; jika tetap gagal, scaffold offerings tetap dipakai dan error dicatat di `generation_jobs.metadata_json.offeringOutlineError`.
 - Sanitasi copy AI memakai clamp sentence/word-aware, bukan `.slice()` mentah, dan hero subheadline diberi batas lebih longgar agar copy first-person tidak putus di tengah kata/kalimat.
 - Untuk OpenRouter, model value UI yang diawali `~` dikirim apa adanya ke API karena OpenRouter memakai prefix itu untuk latest-model resolution seperti `~anthropic/claude-sonnet-latest`.
 - Copy patch AI di-merge deterministik oleh Function lewat `applyAiCopyPatch()`. AI tidak boleh mengubah `pageId`, `detailPageId`, navigation href, sourceData, photo URL, contact/maps fields, palette, font, visual style, storage, atau favicon.
@@ -868,7 +878,10 @@ Logic Generation Jobs:
 - Setiap request `/api/sites/generate` yang membuat generation job menambah counter harian `site_generation`, termasuk request yang akhirnya gagal, supaya admin melihat retry/generate volume sebenarnya.
 - `POST /api/generation-jobs/preflight-failure` mencatat generate/regenerate/retry yang diblokir oleh AI readiness sebelum `/api/sites/generate`, supaya kegagalan key/model/provider routing tetap terlihat di Jobs. Drawer detail `GenerationJobsTable` menampilkan ringkasan `AI readiness block` untuk key, local model registry, dan remote provider route.
 - `POST /api/generation-jobs/cooldown-blocked` mencatat generate/regenerate/retry yang diblokir oleh shared provider cooldown sebelum `/api/sites/generate`. Row ini ikut `Preflight blocked` filter dan drawer menampilkan `Provider cooldown block`.
-- `generation_jobs.metadata_json` menyimpan audit generate: `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, ringkasan/item audit copy AI (`copyAuditSummary`, `copyAuditItems`), provider/model, failure metadata bila generate gagal, dan `aiReadiness`/`remoteValidation` bila preflight memblokir sebelum generate.
+- `POST /api/generation-jobs/chunked-start` membuat D1-backed generation job berstatus `running` dengan payload generate di `metadata_json.payload` dan `nextStep: "outline"`. Dipakai oleh `/admin/leads`, `/admin/sites` AI generate/regenerate, dan job retry.
+- `POST /api/generation-jobs/:jobId/run-step` menjalankan step retryable `outline`, `copy`, atau `finalize`. Step outline menyimpan `offeringOutline`; step copy menyimpan `copyPatch`; step finalize menggabungkan outline+copy patch ke JSON lalu memakai save pipeline `/api/sites/generate` dengan `skipAiCopyPatch=true` agar final save tidak memanggil AI ulang.
+- `generation_jobs.metadata_json` menyimpan audit generate: `offeringOutlineHash`, `offeringOutlineRepairAttempted`, `offeringOutlineInitialParseError`, `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, ringkasan/item audit copy AI (`copyAuditSummary`, `copyAuditItems`), provider/model, failure metadata bila generate gagal, dan `aiReadiness`/`remoteValidation` bila preflight memblokir sebelum generate.
+- Drawer `GenerationJobsTable` membaca `metadata.step`, `metadata.nextStep`, `metadata.failureStage`, dan hash outline/copy untuk menampilkan status per step chunked job; tombol retry step hanya menjalankan step gagal/next step lewat endpoint `run-step`.
 - `GenerationJobsTable` punya tombol `Export compact` yang menyalin JSON ringkas jobs yang sedang visible, termasuk provider/model, failure stage, readiness/cooldown metadata, dan copy audit summary untuk support/debug.
 - Jika generate sukses, prospect draft diupdate ke `site_generated` dan `generated_business_id` diisi.
 - Jika generate gagal, `generation_jobs.error` dan `places_prospects.last_error` diisi agar admin bisa melihat error di UI.

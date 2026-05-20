@@ -42,8 +42,8 @@ export default function PublicViewer() {
     }
   }, [businessId]);
 
-  const handleDownloadZip = async () => {
-    await downloadOwnerSiteZip(siteData, businessId || "website");
+  const handleDownloadZip = async (downloadSiteData = siteData) => {
+    await downloadOwnerSiteZip(downloadSiteData, businessId || "website");
   };
 
   if (loading) {

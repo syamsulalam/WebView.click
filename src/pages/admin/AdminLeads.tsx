@@ -16,7 +16,7 @@ import {
   isAdminGenerationBlockedError,
   mapsQueryPlaceholder,
   photoPriorityLabel,
-  postGenerateSite,
+  postChunkedGenerateSite,
   resolveLeadGeneratePhotoSelection,
   saveProspectSelection,
   sortedPhotosForPlace,
@@ -821,12 +821,16 @@ export default function AdminLeads() {
       setIsGenerating(true);
       setGeneratingPlaceKey(placeKey);
       setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: "Generating site JSON..." } }));
+      const paletteOptions = await buildPaletteOptionsForPlace(placeKey, fullPlace);
 
       const selection = resolveLeadGeneratePhotoSelection({
         place: fullPlace,
         placeKey,
         logoSelections,
-        paletteOptionsByPlace,
+        paletteOptionsByPlace: {
+          ...paletteOptionsByPlace,
+          [placeKey]: paletteOptions,
+        },
         photoMaxWidth: 960,
       });
       const payload = buildScaffoldGeneratePayload({
@@ -843,7 +847,14 @@ export default function AdminLeads() {
         selectedPhotoPriority: selection.selectedPhotoPriority,
         searchQuery,
       });
-      const data = await postGenerateSite(payload, "Generate site");
+      const data = await postChunkedGenerateSite(payload, "Generate site", (step) => {
+        const labels: Record<string, string> = {
+          outline: "Inferring service/product pages...",
+          copy: "Writing AI-enriched copy...",
+          finalize: "Saving generated site...",
+        };
+        setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: labels[step] || "Generating site JSON..." } }));
+      });
 
       fetchLeads();
       fetchProspectDrafts();

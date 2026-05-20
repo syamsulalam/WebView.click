@@ -4,6 +4,7 @@ import { Check, Copy, ExternalLink, FileText, Loader2, RefreshCw, RotateCw, Sear
 import { useLocalStorageState } from "../lib/localStorageState";
 import { checkAiReadiness, logAiReadinessBlockedJob } from "../lib/aiReadiness";
 import { readApiJson } from "../lib/apiResponse";
+import { postChunkedGenerateSite } from "../lib/adminSiteGeneration";
 import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
 import HoverTooltip from "./HoverTooltip";
@@ -85,6 +86,61 @@ function auditStatusClass(status: string) {
   return "bg-slate-100 text-slate-700";
 }
 
+const CHUNKED_GENERATION_STEPS = [
+  { key: "outline", label: "Outline" },
+  { key: "copy", label: "Copy" },
+  { key: "finalize", label: "Finalize" },
+] as const;
+
+type ChunkedGenerationStep = typeof CHUNKED_GENERATION_STEPS[number]["key"];
+
+function normalizeChunkedStep(value: unknown): ChunkedGenerationStep | "" {
+  const text = String(value || "").replace(/^chunked_/, "");
+  return CHUNKED_GENERATION_STEPS.some((step) => step.key === text) ? text as ChunkedGenerationStep : "";
+}
+
+function chunkedGenerationState(job: any) {
+  const metadata = job?.metadata || {};
+  const chunked = metadata.chunked === true;
+  const step = String(metadata.step || "");
+  const nextStep = normalizeChunkedStep(metadata.nextStep);
+  const failureStep = normalizeChunkedStep(metadata.failureStage);
+  const outlineDone = Boolean(metadata.offeringOutlineHash || step === "outline_complete" || step === "copy_complete" || step === "finalize_complete");
+  const copyDone = Boolean(metadata.copyPatchHash || step === "copy_complete" || step === "finalize_complete");
+  const finalizeDone = Boolean(job?.status === "success" || step === "finalize_complete");
+  const doneByStep: Record<ChunkedGenerationStep, boolean> = {
+    outline: outlineDone,
+    copy: copyDone,
+    finalize: finalizeDone,
+  };
+  const retryStep = job?.status === "failed" ? (failureStep || nextStep) : "";
+  const activeStep = job?.status === "running" ? nextStep : "";
+  return { chunked, doneByStep, nextStep, failureStep, retryStep, activeStep };
+}
+
+function chunkedStepStatus(job: any, step: ChunkedGenerationStep) {
+  const state = chunkedGenerationState(job);
+  if (!state.chunked) return "idle";
+  if (state.doneByStep[step]) return "complete";
+  if (state.retryStep === step) return "failed";
+  if (state.activeStep === step) return "running";
+  return "pending";
+}
+
+function chunkedStepBadgeClass(status: string) {
+  if (status === "complete") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === "failed") return "border-red-200 bg-red-50 text-red-800";
+  if (status === "running") return "border-amber-200 bg-amber-50 text-amber-900";
+  return "border-slate-200 bg-slate-50 text-slate-500";
+}
+
+function chunkedStepStatusLabel(status: string) {
+  if (status === "complete") return "Done";
+  if (status === "failed") return "Failed";
+  if (status === "running") return "Running";
+  return "Pending";
+}
+
 function filterJobs(jobs: any[], filter: string) {
   if (filter === "failed") return jobs.filter((job) => job.status === "failed");
   if (filter === "preflight") return jobs.filter((job) => job?.metadata?.preflightBlocked === true);
@@ -129,6 +185,7 @@ export default function GenerationJobsTable({
   const [searchQuery, setSearchQuery] = useLocalStorageState(`${storageKeyPrefix}.search`, "");
   const [searchInput, setSearchInput] = useState(searchQuery);
   const [retryingJobId, setRetryingJobId] = useState("");
+  const [retryingChunkStep, setRetryingChunkStep] = useState("");
   const [retryOverrideJobId, setRetryOverrideJobId] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
   const [selectedJob, setSelectedJob] = useState<any>(null);
@@ -160,6 +217,7 @@ export default function GenerationJobsTable({
   const selectedRemoteValidation = selectedJob?.metadata?.remoteValidation || selectedAiReadiness?.remoteValidation || null;
   const selectedProviderCooldown = selectedJob?.metadata?.providerCooldown || null;
   const selectedAiFailure = selectedJob?.metadata?.aiFailure || selectedJob?.metadata?.providerFailure || null;
+  const selectedChunkedState = selectedJob ? chunkedGenerationState(selectedJob) : null;
 
   const retryReadiness = (job: any) => {
     const provider = job?.provider || fallbackProvider;
@@ -344,28 +402,23 @@ export default function GenerationJobsTable({
       const meta = siteJson.meta || {};
       const brand = siteJson.brand || {};
       const contact = siteJson.businessProfile?.contact || {};
-      const response = await fetch("/api/sites/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requireAi: true,
-          provider: retryProvider,
-          model: retryModel,
-          jsonContent: siteJson,
-          businessId: job.businessId,
-          businessName: meta.businessName || job.metadata?.businessName || job.prospectName || job.businessId,
-          phone: contact.phoneInternational || contact.phoneNational || "",
-          originData: siteJson.sourceData || {},
-          brandPalette: meta.brandPalette || brand.palette || [],
-          paletteOptions: brand.paletteOptions || [],
-          selectedLogoImageUrl: brand.logoImageUrl || "",
-          selectedLogoReference: brand.googlePhotoReference || "",
-          selectedLogoSource: brand.photoSource || "",
-          selectedLogoAttributions: brand.photoAttributions || [],
-          selectedLogoPriority: brand.selectedPhotoPriority || "",
-        }),
-      });
-      await readApiJson(response, "Retry generation job");
+      await postChunkedGenerateSite({
+        requireAi: true,
+        provider: retryProvider,
+        model: retryModel,
+        jsonContent: siteJson,
+        businessId: job.businessId,
+        businessName: meta.businessName || job.metadata?.businessName || job.prospectName || job.businessId,
+        phone: contact.phoneInternational || contact.phoneNational || "",
+        originData: siteJson.sourceData || {},
+        brandPalette: meta.brandPalette || brand.palette || [],
+        paletteOptions: brand.paletteOptions || [],
+        selectedLogoImageUrl: brand.logoImageUrl || "",
+        selectedLogoReference: brand.googlePhotoReference || "",
+        selectedLogoSource: brand.photoSource || "",
+        selectedLogoAttributions: brand.photoAttributions || [],
+        selectedLogoPriority: brand.selectedPhotoPriority || "",
+      }, "Retry generation job");
       setRetryOverrideJobId("");
       setMessage(`Retried ${job.businessId}. New job created from current brief ${shortHash(currentBriefHash)}.`);
       fetchJobs();
@@ -376,6 +429,60 @@ export default function GenerationJobsTable({
       setMessage(error instanceof Error ? error.message : "Retry generation job failed.");
     } finally {
       setRetryingJobId("");
+    }
+  };
+
+  const retryChunkedStep = async (job: any, requestedStep?: ChunkedGenerationStep) => {
+    const state = chunkedGenerationState(job);
+    const step = requestedStep || state.retryStep || state.nextStep;
+    if (!state.chunked || !step) return;
+    const retryKey = `${job.id}:${step}`;
+    setRetryingChunkStep(retryKey);
+    try {
+      const response = await fetch(`/api/generation-jobs/${encodeURIComponent(job.id)}/run-step`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step }),
+      });
+      const data = await readApiJson<any>(response, `Retry ${step} step`);
+      const nextStatus = data.completedStep === "finalize" ? "success" : "running";
+      const nextJob = {
+        ...job,
+        businessId: data.result?.businessId || job.businessId,
+        status: nextStatus,
+        error: "",
+        metadata: data.metadata || job.metadata,
+        updatedAt: new Date().toISOString(),
+      };
+      setJobs((currentJobs) => currentJobs.map((currentJob) => currentJob.id === job.id ? { ...currentJob, ...nextJob } : currentJob));
+      setSelectedJob((currentJob: any) => currentJob?.id === job.id ? { ...currentJob, ...nextJob } : currentJob);
+      setMessage(data.completedStep === "finalize"
+        ? `Finalized ${job.businessId || job.id}. The generated site was saved.`
+        : `${CHUNKED_GENERATION_STEPS.find((item) => item.key === step)?.label || step} step completed. Next step: ${data.nextStep || "done"}.`
+      );
+      fetchJobs();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : `Retry ${step} step failed.`;
+      const failedMetadata = {
+        ...(job.metadata || {}),
+        failureStage: `chunked_${step}`,
+        failureMessage: errorMessage,
+        nextStep: step,
+      };
+      const failedJob = {
+        ...job,
+        status: "failed",
+        error: errorMessage,
+        metadata: failedMetadata,
+        updatedAt: new Date().toISOString(),
+      };
+      setJobs((currentJobs) => currentJobs.map((currentJob) => currentJob.id === job.id ? { ...currentJob, ...failedJob } : currentJob));
+      setSelectedJob((currentJob: any) => currentJob?.id === job.id ? { ...currentJob, ...failedJob } : currentJob);
+      showApiError(error, { source: `Retry ${step} generation step`, provider: job?.provider || fallbackProvider, model: job?.model || fallbackModel });
+      setMessage(errorMessage);
+      fetchJobs();
+    } finally {
+      setRetryingChunkStep("");
     }
   };
 
@@ -495,6 +602,7 @@ export default function GenerationJobsTable({
                   const applied = patchApplied(job);
                   const blockedByCooldown = cooldownBlocked(job);
                   const readiness = retryReadiness(job);
+                  const chunkedState = chunkedGenerationState(job);
                   return (
                     <tr key={job.id} className="align-top hover:bg-slate-50">
                     <td className={`${compact ? "max-w-[260px] px-3 py-2" : "max-w-[320px] px-4 py-3"}`}>
@@ -533,6 +641,11 @@ export default function GenerationJobsTable({
                         {blockedByCooldown && (
                           <span className="mt-1.5 block w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
                             cooldown blocked
+                          </span>
+                        )}
+                        {chunkedState.chunked && (
+                          <span className="mt-1.5 block w-fit rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
+                            {job.status === "success" ? "chunked done" : `chunked ${chunkedState.nextStep || chunkedState.failureStep || "pending"}`}
                           </span>
                         )}
                         <p className={`${compact ? "text-[11px]" : "text-xs"} mt-2 text-slate-500`}>{job.createdAt ? new Date(job.createdAt).toLocaleString() : ""}</p>
@@ -577,7 +690,7 @@ export default function GenerationJobsTable({
                                 <button
                                   type="button"
                                   onClick={() => retryGenerationJob(job)}
-                                  disabled={Boolean(retryingJobId)}
+                                  disabled={Boolean(retryingJobId || retryingChunkStep)}
                                   className="inline-flex items-center gap-1 font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
                                 >
                                   {retryingJobId === job.id ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
@@ -656,7 +769,7 @@ export default function GenerationJobsTable({
                       <button
                         type="button"
                         onClick={() => retryGenerationJob(selectedJob)}
-                        disabled={Boolean(retryingJobId)}
+                        disabled={Boolean(retryingJobId || retryingChunkStep)}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
                       >
                         {retryingJobId === selectedJob.id ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
@@ -719,6 +832,55 @@ export default function GenerationJobsTable({
                   {selectedJob.error || "No error recorded."}
                 </pre>
               </section>
+
+              {selectedChunkedState?.chunked && (
+                <section>
+                  <div className="mb-2">
+                    <h3 className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
+                      Chunked generation
+                      <HelpTooltip text="Shows the D1-backed outline, copy, and finalize steps for this job. Failed steps can be retried without starting a new generation job." />
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Next step: {selectedChunkedState.nextStep || "none"}{selectedChunkedState.failureStep ? ` · Failed step: ${selectedChunkedState.failureStep}` : ""}
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {CHUNKED_GENERATION_STEPS.map((step) => {
+                      const status = chunkedStepStatus(selectedJob, step.key);
+                      const retryKey = `${selectedJob.id}:${step.key}`;
+                      const canRunStep = selectedChunkedState.retryStep === step.key || (selectedJob.status === "running" && selectedChunkedState.nextStep === step.key);
+                      return (
+                        <div key={step.key} className={`rounded-xl border p-3 ${chunkedStepBadgeClass(status)}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-wide opacity-75">{step.label}</p>
+                              <p className="mt-1 font-semibold">{chunkedStepStatusLabel(status)}</p>
+                            </div>
+                            {status === "complete" && <Check size={16} />}
+                            {status === "running" && <Loader2 className="animate-spin" size={16} />}
+                          </div>
+                          {canRunStep && (
+                            <button
+                              type="button"
+                              onClick={() => retryChunkedStep(selectedJob, step.key)}
+                              disabled={Boolean(retryingChunkStep || retryingJobId)}
+                              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-800 ring-1 ring-inset ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              {retryingChunkStep === retryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
+                              {selectedJob.status === "failed" ? `Retry ${step.label}` : `Run ${step.label}`}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {(selectedJob.metadata?.failureMessage || selectedJob.metadata?.offeringOutlineError) && (
+                    <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                      {selectedJob.metadata?.failureMessage || selectedJob.metadata?.offeringOutlineError}
+                    </p>
+                  )}
+                </section>
+              )}
 
               {selectedJob.metadata?.preflightBlocked && selectedAiReadiness && (
                 <section>

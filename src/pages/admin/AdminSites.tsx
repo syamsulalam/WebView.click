@@ -11,6 +11,7 @@ import {
   isAdminGenerationBlockedError,
   mapsQueryPlaceId,
   mapsQueryPlaceholder,
+  postChunkedGenerateSite,
   postGenerateSite,
   resolveLeadGeneratePhotoSelection,
 } from "../../lib/adminSiteGeneration";
@@ -347,7 +348,7 @@ export default function AdminSites() {
         selectedPhotoPriority: selection.selectedPhotoPriority,
         searchQuery: (prospect as ProspectRow & { query?: string }).query || "",
       });
-      await postGenerateSite(payload, "Generate site");
+      await postChunkedGenerateSite(payload, "Generate site");
       const requiredKey = providerApiKeyMap[activeRegenerateProvider];
       const hasProviderKey = requiredKey && String(settings?.[requiredKey] || "").trim();
       notifyAction(
@@ -419,7 +420,7 @@ export default function AdminSites() {
       const contact = siteJson?.businessProfile?.contact || {};
       const provider = mode === "ai" ? activeRegenerateProvider : "";
       const model = mode === "ai" ? activeRegenerateModel : "";
-      await postGenerateSite({
+      const regeneratePayload = {
         requireAi: mode === "ai",
         provider,
         model,
@@ -429,12 +430,18 @@ export default function AdminSites() {
         phone: contact.phoneInternational || contact.phoneNational || "",
         originData,
         brandPalette: siteJson?.meta?.brandPalette || siteJson?.brand?.palette || [],
+        paletteOptions: siteJson?.brand?.paletteOptions || [],
         selectedLogoImageUrl: siteJson?.brand?.logoImageUrl || "",
         selectedLogoReference: siteJson?.brand?.googlePhotoReference || "",
         selectedLogoSource: siteJson?.brand?.photoSource || "",
         selectedLogoAttributions: siteJson?.brand?.photoAttributions || [],
         selectedLogoPriority: siteJson?.brand?.selectedPhotoPriority || "",
-      });
+      };
+      if (mode === "ai") {
+        await postChunkedGenerateSite(regeneratePayload, "AI regenerate");
+      } else {
+        await postGenerateSite(regeneratePayload, "Re-gather Google data");
+      }
       const successMessage =
         mode === "ai"
           ? `AI copy patch regenerated ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`
