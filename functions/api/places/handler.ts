@@ -19,6 +19,7 @@ type D1DatabaseLike = {
 
 type ProspectDbRow = {
   place_id: string;
+  query?: string;
   business_name: string;
   address?: string;
   phone?: string;
@@ -29,8 +30,17 @@ type ProspectDbRow = {
   niche?: string;
   result_json?: string;
   details_json?: string;
+  status?: string;
+  selected_photo_json?: string;
+  selected_palette_json?: string;
+  palette_options_json?: string;
   website_check_status?: string;
   website_checked_at?: string;
+  generated_business_id?: string;
+  last_error?: string;
+  updated_at?: string;
+  details_loaded_at?: string;
+  generated_at?: string;
 };
 
 export type PlacesDeps = {
@@ -39,6 +49,7 @@ export type PlacesDeps = {
   readJsonBody: (request: Request) => Promise<Record<string, unknown>>;
   asString: (value: unknown, fallback?: string) => string;
   parseJsonObject: (value: string | null | undefined) => Record<string, unknown>;
+  parseJsonArray: (value: string | null | undefined) => unknown[];
   tableColumns: (db: D1DatabaseLike, table: string) => Promise<Set<string>>;
   ensureRequiredColumns: (db: D1DatabaseLike, specs: unknown[]) => Promise<void>;
   updateProspectRecord: (db: D1DatabaseLike, placeId: string, values: Record<string, unknown>) => Promise<void>;
@@ -48,6 +59,7 @@ export type PlacesDeps = {
   prospectListRequiredColumns: unknown[];
   prospectWebsiteCheckRequiredColumns: unknown[];
   prospectDetailsRequiredColumns: unknown[];
+  prospectStatusRequiredColumns: unknown[];
 };
 
 export function normalizeSearchQuery(value: string): string {
@@ -99,6 +111,34 @@ function prospectFromPlace(place: Record<string, unknown>, fallbackQuery = "", f
     rating,
     reviews,
     niche: typeof types[0] === "string" ? types[0] : "general",
+  };
+}
+
+export function prospectRowToPlace(deps: PlacesDeps, row: ProspectDbRow, searchQueryOverride = "") {
+  return {
+    ...deps.parseJsonObject(row.result_json),
+    ...deps.parseJsonObject(row.details_json),
+    place_id: row.place_id,
+    name: row.business_name,
+    formatted_address: row.address,
+    formatted_phone_number: row.phone,
+    website: row.website_url,
+    url: row.maps_url,
+    rating: row.rating,
+    user_ratings_total: row.reviews,
+    types: row.niche ? [row.niche] : [],
+    prospectStatus: row.status || "new",
+    generatedBusinessId: row.generated_business_id || "",
+    lastError: row.last_error || "",
+    searchQuery: searchQueryOverride || row.query || "",
+    selectedPhoto: deps.parseJsonObject(row.selected_photo_json),
+    selectedPalette: deps.parseJsonArray(row.selected_palette_json),
+    paletteOptions: deps.parseJsonArray(row.palette_options_json),
+    websiteCheckStatus: row.website_check_status || "",
+    websiteCheckedAt: row.website_checked_at || "",
+    updatedAt: row.updated_at,
+    detailsLoadedAt: row.details_loaded_at,
+    generatedAt: row.generated_at,
   };
 }
 
@@ -748,4 +788,330 @@ export async function handlePlacesCache(deps: PlacesDeps, request: Request, db: 
     .run();
 
   return deps.json({ success: true, olderThanDays, result });
+}
+
+function manualDuplicateNormalize(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\b(llc|inc|corp|corporation|co|company|ltd|limited|services?|service|the)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function manualDuplicateUrlKey(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    const parsed = new URL(text);
+    const placeMatch = parsed.pathname.match(/\/maps\/place\/([^/@]+)/i);
+    if (placeMatch?.[1]) return `url:${manualDuplicateNormalize(decodeURIComponent(placeMatch[1].replace(/\+/g, " ")))}`;
+    return `url:${parsed.hostname}${parsed.pathname}`.toLowerCase();
+  } catch {
+    const match = text.match(/\/maps\/place\/([^/@?#]+)/i);
+    return match?.[1] ? `url:${manualDuplicateNormalize(decodeURIComponent(match[1].replace(/\+/g, " ")))}` : "";
+  }
+}
+
+function manualDuplicateKeys(deps: PlacesDeps, row: ProspectDbRow) {
+  const result = deps.parseJsonObject(row.result_json);
+  const details = deps.parseJsonObject(row.details_json);
+  const keys = new Set<string>();
+  const nameKey = manualDuplicateNormalize(row.business_name || result.name || details.name);
+  const addressKey = manualDuplicateNormalize(row.address || result.formatted_address || result.address || details.formatted_address);
+  const cid = deps.asString(result.googleMapsCid) || deps.asString(result.cid);
+  const urlKey = manualDuplicateUrlKey(row.maps_url || result.url || result.mapsUrl || result.googleMapsUri || result.manualSourceUrl);
+
+  if (cid) keys.add(`cid:${cid}`);
+  if (urlKey && !urlKey.endsWith("manual google maps listing")) keys.add(urlKey);
+  if (nameKey.length >= 5 && !["manual google maps listing", "manual maps prospect"].includes(nameKey)) keys.add(`name:${nameKey}`);
+  if (nameKey.length >= 5 && addressKey.length >= 8) keys.add(`name-address:${nameKey}|${addressKey}`);
+  if (addressKey.length >= 12) keys.add(`address:${addressKey}`);
+  return Array.from(keys);
+}
+
+function isManualProspectRow(deps: PlacesDeps, row: ProspectDbRow) {
+  const result = deps.parseJsonObject(row.result_json);
+  return row.place_id.startsWith("manual:") || Boolean(result.manualImport || result.manualSourceUrl || result.googleMapsCid);
+}
+
+function duplicateGroupReason(key: string) {
+  if (key.startsWith("cid:")) return "Same Google Maps CID from manual capture.";
+  if (key.startsWith("url:")) return "Same Google Maps place URL/name.";
+  if (key.startsWith("name-address:")) return "Same normalized business name and address.";
+  if (key.startsWith("address:")) return "Same normalized address.";
+  return "Same normalized business name.";
+}
+
+function hasMergeValue(value: unknown) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0;
+  return Boolean(value);
+}
+
+function mergeObjectsPreferringPresent(primary: Record<string, unknown>, secondary: Record<string, unknown>) {
+  const merged = { ...secondary };
+  for (const [key, value] of Object.entries(primary)) {
+    if (hasMergeValue(value) || !hasMergeValue(merged[key])) {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+export async function handlePlacesManualDuplicateMerge(deps: PlacesDeps, request: Request, db: D1DatabaseLike): Promise<Response> {
+  if (request.method !== "POST") return deps.errorJson("Not Found", 404);
+  const body = await deps.readJsonBody(request);
+  const keepPlaceId = deps.asString(body.keepPlaceId).trim();
+  const duplicatePlaceId = deps.asString(body.duplicatePlaceId).trim();
+
+  if (!keepPlaceId || !duplicatePlaceId) {
+    return deps.errorJson("Missing keepPlaceId or duplicatePlaceId", 400);
+  }
+  if (keepPlaceId === duplicatePlaceId) {
+    return deps.errorJson("Cannot merge a prospect into itself.", 400);
+  }
+
+  await deps.ensureRequiredColumns(db, [...deps.prospectDetailsRequiredColumns, ...deps.prospectStatusRequiredColumns]);
+  const keepRow = await db.prepare("SELECT * FROM places_prospects WHERE place_id = ?").bind(keepPlaceId).first<ProspectDbRow>();
+  const duplicateRow = await db.prepare("SELECT * FROM places_prospects WHERE place_id = ?").bind(duplicatePlaceId).first<ProspectDbRow>();
+
+  if (!keepRow) return deps.errorJson("Keep prospect was not found.", 404);
+  if (!duplicateRow) return deps.errorJson("Duplicate prospect was not found.", 404);
+
+  const copiedFields: string[] = [];
+  const updates: Record<string, unknown> = {};
+  const copyIfMissing = (column: keyof ProspectDbRow, label = String(column)) => {
+    if (!hasMergeValue(keepRow[column]) && hasMergeValue(duplicateRow[column])) {
+      updates[column] = duplicateRow[column];
+      copiedFields.push(label);
+    }
+  };
+
+  copyIfMissing("address");
+  copyIfMissing("phone");
+  copyIfMissing("website_url", "website");
+  copyIfMissing("maps_url", "maps URL");
+  copyIfMissing("rating");
+  copyIfMissing("reviews");
+  copyIfMissing("niche");
+  copyIfMissing("website_check_status", "website status");
+  copyIfMissing("website_checked_at", "website checked time");
+  copyIfMissing("details_loaded_at", "details loaded time");
+
+  const mergedResultJson = mergeObjectsPreferringPresent(deps.parseJsonObject(keepRow.result_json), deps.parseJsonObject(duplicateRow.result_json));
+  const mergedDetailsJson = mergeObjectsPreferringPresent(deps.parseJsonObject(keepRow.details_json), deps.parseJsonObject(duplicateRow.details_json));
+  if (hasMergeValue(mergedResultJson)) updates.result_json = JSON.stringify(mergedResultJson);
+  if (hasMergeValue(mergedDetailsJson)) updates.details_json = JSON.stringify(mergedDetailsJson);
+
+  if (Object.keys(updates).length > 0) {
+    await deps.updateProspectRecord(db, keepPlaceId, updates);
+  }
+  await deps.updateProspectRecord(db, duplicatePlaceId, { status: "skipped" });
+
+  const mergedRow = await db.prepare("SELECT * FROM places_prospects WHERE place_id = ?").bind(keepPlaceId).first<ProspectDbRow>();
+  return deps.json({
+    success: true,
+    copiedFields,
+    skippedPlaceId: duplicatePlaceId,
+    keepPlaceId,
+    prospect: mergedRow ? prospectRowToPlace(deps, mergedRow) : null,
+  });
+}
+
+export async function handlePlacesManualDuplicates(deps: PlacesDeps, url: URL, db: D1DatabaseLike): Promise<Response> {
+  const limit = Math.max(50, Math.min(1000, Number(url.searchParams.get("limit") || 500)));
+  await deps.ensureRequiredColumns(db, deps.prospectListRequiredColumns);
+  const rows = await db
+    .prepare(
+      `SELECT *
+       FROM places_prospects
+       WHERE COALESCE(status, 'new') <> 'skipped'
+       ORDER BY datetime(updated_at) DESC
+       LIMIT ?`,
+    )
+    .bind(limit)
+    .all<ProspectDbRow>();
+
+  const allRows = rows.results || [];
+  const rowMap = new Map(allRows.map((row) => [row.place_id, row]));
+  const keyMap = new Map<string, Set<string>>();
+  for (const row of allRows) {
+    for (const key of manualDuplicateKeys(deps, row)) {
+      if (!keyMap.has(key)) keyMap.set(key, new Set());
+      keyMap.get(key)?.add(row.place_id);
+    }
+  }
+
+  const seenGroups = new Set<string>();
+  const groups: Array<Record<string, unknown>> = [];
+  for (const [key, ids] of keyMap.entries()) {
+    if (ids.size < 2) continue;
+    const groupRows = Array.from(ids).map((id) => rowMap.get(id)).filter((row): row is ProspectDbRow => Boolean(row));
+    if (!groupRows.some((row) => isManualProspectRow(deps, row))) continue;
+    const signature = groupRows.map((row) => row.place_id).sort().join("|");
+    if (seenGroups.has(signature)) continue;
+    seenGroups.add(signature);
+    groups.push({
+      id: manualShortHash(signature),
+      key,
+      reason: duplicateGroupReason(key),
+      manualCount: groupRows.filter((row) => isManualProspectRow(deps, row)).length,
+      prospects: groupRows
+        .sort((a, b) => {
+          const aScore = (a.generated_business_id ? 4 : 0) + (a.details_loaded_at ? 2 : 0) + (a.website_url || a.phone || a.address ? 1 : 0);
+          const bScore = (b.generated_business_id ? 4 : 0) + (b.details_loaded_at ? 2 : 0) + (b.website_url || b.phone || b.address ? 1 : 0);
+          return bScore - aScore;
+        })
+        .map((row) => ({
+          ...prospectRowToPlace(deps, row),
+          duplicateManualImport: isManualProspectRow(deps, row),
+        })),
+    });
+  }
+
+  return deps.json({
+    success: true,
+    count: groups.length,
+    groups: groups.slice(0, 50),
+  });
+}
+
+function summarizeSearchProspects(deps: PlacesDeps, prospects: Array<Record<string, unknown>>) {
+  return prospects.reduce((summary, prospect) => {
+    const website = deps.asString(prospect.website);
+    const websiteStatus = deps.asString(prospect.websiteCheckStatus);
+    const status = deps.asString(prospect.prospectStatus);
+    summary.total += 1;
+    if (website || websiteStatus === "has_website") summary.hasWebsite += 1;
+    else if (websiteStatus === "no_website") summary.noWebsite += 1;
+    else summary.websiteUnknown += 1;
+    if (deps.asString(prospect.detailsLoadedAt) || status === "details_loaded" || Array.isArray(prospect.reviews)) summary.detailsLoaded += 1;
+    if (deps.asString(prospect.generatedBusinessId) || status === "site_generated") summary.generated += 1;
+    if (status === "skipped") summary.skipped += 1;
+    if (deps.asString(prospect.lastError)) summary.errors += 1;
+    return summary;
+  }, {
+    total: 0,
+    hasWebsite: 0,
+    noWebsite: 0,
+    websiteUnknown: 0,
+    detailsLoaded: 0,
+    generated: 0,
+    skipped: 0,
+    errors: 0,
+  });
+}
+
+export async function handlePlacesHistory(deps: PlacesDeps, url: URL, db: D1DatabaseLike): Promise<Response> {
+  const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 25)));
+  await deps.ensureRequiredColumns(db, deps.prospectListRequiredColumns);
+  const historyRows = await db
+    .prepare(
+      `SELECT query_key, query, results_json, provider_status, result_count, hit_count, updated_at, expires_at
+       FROM places_search_cache
+       ORDER BY datetime(updated_at) DESC
+       LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{
+      query_key: string;
+      query: string;
+      results_json: string;
+      provider_status?: string;
+      result_count?: number;
+      hit_count?: number;
+      updated_at?: string;
+      expires_at?: string;
+    }>();
+
+  const searches = (historyRows.results || []).map((row) => {
+    const rawResults = deps.parseJsonArray(row.results_json).filter((item): item is Record<string, unknown> =>
+      Boolean(item) && typeof item === "object" && !Array.isArray(item),
+    );
+    const placeIds = rawResults.map((place) => placeIdFromPlace(place)).filter(Boolean);
+    return { row, rawResults, placeIds };
+  });
+
+  const uniquePlaceIds = Array.from(new Set(searches.flatMap((item) => item.placeIds)));
+  const prospectMap = new Map<string, ReturnType<typeof prospectRowToPlace>>();
+  for (let index = 0; index < uniquePlaceIds.length; index += 80) {
+    const batch = uniquePlaceIds.slice(index, index + 80);
+    if (batch.length === 0) continue;
+    const prospectRows = await db
+      .prepare(
+        `SELECT p.*,
+                l.business_id AS lead_business_id,
+                l.status AS lead_status
+         FROM places_prospects p
+         LEFT JOIN leads l ON l.business_id = p.generated_business_id
+         WHERE p.place_id IN (${batch.map(() => "?").join(", ")})`,
+      )
+      .bind(...batch)
+      .all<ProspectDbRow>();
+
+    for (const row of prospectRows.results || []) {
+      prospectMap.set(row.place_id, prospectRowToPlace(deps, row));
+    }
+  }
+
+  return deps.json(searches.map(({ row, rawResults }) => {
+    const prospects = rawResults.map((rawPlace) => {
+      const placeId = placeIdFromPlace(rawPlace);
+      const stored = prospectMap.get(placeId);
+      return {
+        ...rawPlace,
+        ...(stored || {}),
+        place_id: placeId,
+        searchQuery: row.query,
+        searchHistoryQueryKey: row.query_key,
+      };
+    });
+    return {
+      queryKey: row.query_key,
+      query: row.query,
+      providerStatus: row.provider_status || "",
+      resultCount: row.result_count ?? rawResults.length,
+      hitCount: row.hit_count || 0,
+      updatedAt: row.updated_at || "",
+      expiresAt: row.expires_at || "",
+      summary: summarizeSearchProspects(deps, prospects),
+      prospects,
+    };
+  }));
+}
+
+export async function handlePlacesPhoto(deps: PlacesDeps, url: URL, db: D1DatabaseLike, env: unknown): Promise<Response> {
+  const reference = url.searchParams.get("reference");
+  const maxWidth = url.searchParams.get("maxwidth") || "320";
+  const placesKey = await deps.getSetting(db, env, "GOOGLE_PLACES_API_KEY");
+
+  if (!reference) {
+    return deps.errorJson("Missing photo reference", 400);
+  }
+
+  if (!placesKey) {
+    return deps.errorJson("Google Places API key is not configured", 400);
+  }
+
+  const photoUrl = new URL("https://maps.googleapis.com/maps/api/place/photo");
+  photoUrl.searchParams.set("maxwidth", maxWidth);
+  photoUrl.searchParams.set("photo_reference", reference);
+  photoUrl.searchParams.set("key", placesKey);
+
+  const response = await fetch(photoUrl.toString(), { redirect: "follow" });
+  if (!response.ok || !response.body) {
+    return deps.errorJson("Could not fetch Google Places photo", response.status || 500);
+  }
+
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", "*");
+  headers.set("cache-control", "public, max-age=86400");
+  return new Response(response.body, {
+    status: response.status,
+    headers,
+  });
 }

@@ -150,6 +150,7 @@ Logic penting:
 - Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, provider failure diagnostics, retry dari drawer, audit copy AI, dan raw `metadata` JSON dengan tombol copy.
 - Untuk job `metadata.chunked=true`, drawer menampilkan progress `Outline`, `Copy`, dan `Finalize` plus tombol `Retry/Run` per step yang memanggil `POST /api/generation-jobs/:jobId/run-step`, supaya admin bisa melanjutkan step gagal tanpa membuat generation job baru.
 - Chunked step derivation lives in `src/lib/generationJobState.ts`, with targeted tests in `tests/generationJobState.test.ts`; run `npm run test:generation-job-state` when local dependencies are installed.
+- Drawer details UI now lives in `src/components/generation-jobs/GenerationJobDetailsDrawer.tsx`, retry orchestration lives in `src/components/generation-jobs/useGenerationJobRetry.ts`, and reusable job badges/filter/sort/copy-audit helpers live in `src/components/generation-jobs/jobUtils.ts`. `GenerationJobsTable` keeps data loading, search/filter state, visible table rendering, and selected-job state.
 - Retry mengambil current copy brief dari `GET /api/sites/:businessId/copy-brief`, menghitung hash browser-side, lalu memperingatkan jika hash berbeda dari job lama sebelum membuat job baru.
 - Retry mengirim `requireAi: true`, sehingga error provider/model/API key terlihat sebagai failed job dan pesan UI, bukan diam-diam menyimpan fallback copy.
 - Tombol retry menampilkan readiness badge; provider/model berasal dari job lama jika ada, atau fallback localStorage parent, dan key status dikirim parent dari `/api/settings`.
@@ -753,6 +754,7 @@ Logic penting:
 Fungsi:
 - Catch-all API production untuk `/api/*` di Cloudflare Pages.
 - Menggantikan Express API saat deploy di Cloudflare Pages.
+- Route handler ini sekarang terutama menyiapkan dependency wiring, menjalankan DB bootstrap, lalu dispatch ke focused modules seperti `functions/api/settings/handler.ts`, `functions/api/stats/handler.ts`, `functions/api/leads/handler.ts`, `functions/api/prospects/handler.ts`, `functions/api/sites/handler.ts`, `functions/api/places/handler.ts`, `functions/api/payments/handler.ts`, dan `functions/api/domains/handler.ts`.
 
 Endpoint:
 - `GET/POST /api/settings`
@@ -763,6 +765,9 @@ Endpoint:
 - `GET /api/leads`
 - `PUT /api/leads/:id/status`
 - `POST /api/leads/:business_id/ping`
+- `GET /api/prospects`
+- `PUT /api/prospects/:placeId/status`
+- `PUT /api/prospects/:placeId/selection`
 - `GET /api/places/search`
 - `GET /api/places/history`
 - `GET /api/places/photo`
@@ -779,6 +784,7 @@ Endpoint:
 
 Logic D1:
 - Binding wajib: `DB`.
+- Shared D1/response/schema helpers live in `functions/api/_shared/*`: `types.ts` untuk binding types, `response.ts` untuk JSON/body/parse/hash helpers, `db.ts` untuk common D1 helpers/settings/daily usage, dan `schema.ts` untuk table setup, repair report, serta required-column lists.
 - `setupTables()` membuat tabel jika belum ada.
 - `addColumnIfMissing()` menjalankan migrasi ringan berbasis `PRAGMA table_info`.
 - `addColumnIfMissing()` menangani duplicate-column race dan retry tanpa `DEFAULT` jika D1 menolak alter tertentu.
@@ -787,8 +793,17 @@ Logic D1:
 - `/api/stats`, `/api/activities`, dan `/api/settings` punya fallback JSON agar admin tidak blank saat DB belum sempurna.
 - `/api/stats` juga mengembalikan `dailyUsage` dari tabel `daily_usage_counters` untuk counter harian quota-sensitive, termasuk `history` 30 hari terakhir.
 
+Logic router modules:
+- Settings endpoints live in `functions/api/settings/handler.ts`: `GET/POST /api/settings` and `GET /api/public-settings`.
+- Dashboard stats/activity endpoints live in `functions/api/stats/handler.ts`: `GET /api/stats` and `GET /api/activities`.
+- Lead endpoints live in `functions/api/leads/handler.ts`: `GET /api/leads`, `PUT /api/leads/:id/status`, and `POST /api/leads/:business_id/ping`.
+- Prospect endpoints live in `functions/api/prospects/handler.ts`: filtered `GET /api/prospects`, `PUT /api/prospects/:placeId/status`, and `PUT /api/prospects/:placeId/selection`.
+- Endpoint-level fixtures for extracted API handlers live in `tests/apiHandlers.test.ts`; run `npm run test:api-handlers` when local dependencies are installed.
+
 Logic AI:
 - AI site generation helpers live in `functions/api/ai/siteGeneration.ts`. The router passes dependencies for settings, readiness, provider diagnostics, and KIE model config, while the module owns JSON object provider calls, one-shot JSON repair, offering outline normalization/apply, copy target brief creation, copy patch generation, deterministic merge, and copy audit helpers.
+- AI readiness, remote model validation cache, provider failure diagnostics, and provider health endpoints live in `functions/api/ai/readiness.ts`.
+- Provider cooldown API handling and cooldown event audit/pruning live in `functions/api/providerCooldowns/handler.ts`.
 - Targeted tests for offering outline normalization and copy audit behavior live in `tests/siteGeneration.test.ts`; run `npm run test:site-generation` when local dependencies are installed.
 - OpenRouter/OpenAI/Opencode memakai format Chat Completions.
 - Gemini memakai endpoint Google Generative Language.
@@ -827,7 +842,7 @@ Logic AI:
 - Gallery hanya dibuat jika minimal dua gambar tersedia dari foto Places/brand/offers, meskipun model AI lupa membuatnya.
 
 Logic Google Places/logo:
-- Places search/details/manual import/cache trim handlers live in `functions/api/places/handler.ts`; `functions/api/[[path]].ts` wires dependencies and still owns the Places photo proxy, history hydration, and manual duplicate review/merge.
+- Places handlers live in `functions/api/places/handler.ts`; `functions/api/[[path]].ts` wires dependencies and dispatches routes. The Places module owns search/details/manual import/cache trim, prospect upsert, website precheck, photo proxy, search history hydration, shared prospect row normalization, and manual duplicate review/merge.
 - `/api/places/search` memakai Google Places Text Search.
 - Live Google Places Text Search menambah counter harian `places_search`; hasil dari `places_search_cache` tidak menambah counter search.
 - `/api/places/photo` mem-proxy Google Places Photo agar frontend bisa membaca pixel untuk palette.
@@ -838,7 +853,8 @@ Logic Google Places/logo:
 - Jika logo dipilih, Function juga menulis `brand.logoImageUrl`, `brand.photoSource`, `brand.googlePhotoReference`, `brand.photoCaption`, `brand.photoAttributions`, dan `brand.selectedPhotoPriority`.
 
 Logic R2:
-- R2/site storage helpers live in `functions/api/sites/storage.ts`; `functions/api/[[path]].ts` wires dependencies and calls this module for image filename normalization, image asset upload, JSON upload/read, compact manifests, public R2 URLs, and `POST /api/sites/migrate-r2`.
+- `/api/sites` route handling lives in `functions/api/sites/handler.ts`: site list/read/copy brief, `POST /api/sites/generate`, final lead/prospect/activity writes, generation job success/failure updates, deterministic visual/font/favicon defaults, and the save path shared by chunked job finalize.
+- R2/site storage helpers live in `functions/api/sites/storage.ts`; `functions/api/sites/handler.ts` calls this module for image filename normalization, image asset upload, JSON upload/read, compact manifests, public R2 URLs, and `POST /api/sites/migrate-r2`.
 - Binding optional: `R2`.
 - Public URL: `R2_PUBLIC_BASE_URL`, default/fallback production `https://assets.webview.click`.
 - Saat `POST /api/sites/generate`, Function:
@@ -921,13 +937,13 @@ Logic Owner HTML Export:
 - Jika gambar gagal di-fetch saat export karena network/CORS/provider error, exporter mencatat warning di console dan mempertahankan URL absolute sebagai fallback terakhir.
 
 Logic Payments:
-- `/api/payments/checkout` membaca `PAYMENT_PROCESSOR` dari Settings. Mode live yang didukung: Xendit hosted invoice, Midtrans Snap Redirect, DOKU Checkout, PayPal Business link, Wise link, Payoneer link, dan legacy Lemon Squeezy.
+- `/api/payments/checkout` lives in `functions/api/payments/handler.ts` and reads `PAYMENT_PROCESSOR` from Settings. Mode live yang didukung: Xendit hosted invoice, Midtrans Snap Redirect, DOKU Checkout, PayPal Business link, Wise link, Payoneer link, dan legacy Lemon Squeezy.
 - Jika processor aktif belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
 - Paket default saat ini: `$197` one-time untuk done-for-you website setup, dengan `PAYMENT_USD_TO_IDR_RATE` untuk mengirim amount IDR ke gateway Indonesia.
 - Request checkout menyimpan `domainMode` (`new` atau `owned`), requested domain, amount, dan processor ke CRM activity; gateway live juga menerima metadata/custom fields jika provider mendukung.
 
 Logic Domains:
-- `/api/domains/check?domain=...` melakukan availability pre-check gratis.
+- `/api/domains/check?domain=...` lives in `functions/api/domains/handler.ts` and melakukan availability pre-check gratis.
 - Primary provider: RDAP via `rdap.net`.
 - Fallback signal: Google Public DNS SOA lookup.
 - Jika RDAP `200`, response menyertakan `registrar`, `nameservers`, dan `rdapUrl` jika registry menyediakan field tersebut.

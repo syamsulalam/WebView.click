@@ -1,7 +1,7 @@
 # Refactor Audit
 
 Date: 2026-05-19
-Last updated: 2026-05-21
+Last updated: 2026-05-25
 
 Scope: source files with high line count, mixed responsibilities, or high change frequency in the WebView.click app. This is an audit only; it does not propose behavior changes in this pass.
 
@@ -9,7 +9,7 @@ Scope: source files with high line count, mixed responsibilities, or high change
 
 The codebase would benefit from targeted refactoring. The main issue is not style preference; it is that several files now combine unrelated responsibilities, which makes small product fixes riskier than they need to be.
 
-The highest-priority refactor target is `functions/api/[[path]].ts`. It is the production API surface for Cloudflare Pages Functions and now contains database setup, Google Places, manual imports, duplicate handling, AI readiness, AI generation, R2 storage, site post-processing, payments, domains, and routing in one file. This is the largest maintenance risk because unrelated edits can conflict and regression-test scope is hard to reason about.
+The highest-priority refactor target remains `functions/api/[[path]].ts`. It is the production API surface for Cloudflare Pages Functions and is now close to a thin router: dependency wiring, schema bootstrap, and route dispatch. The highest-risk conversion/generation handlers, shared response/DB/schema helpers, and remaining settings/stats/leads/prospects handlers are now split into focused modules.
 
 The second priority is shared site generation/normalization logic. We now have generation scaffolding, renderer normalization, export behavior, and admin fallback JSON all evolving together. Contact page creation, service page creation, feedback page creation, icon/copy behavior, and generated site navigation should not drift across those layers.
 
@@ -33,6 +33,8 @@ Completed since this audit was written:
 - [x] Extracted generation job listing, preflight/cooldown failure rows, chunked start, and chunked run-step handling into `functions/api/generationJobs/handler.ts`.
 - [x] Extracted remaining site storage/R2 helpers into `functions/api/sites/storage.ts`.
 - [x] Extracted Places search, details, cache trim, manual import, prospect upsert, and website precheck helpers into `functions/api/places/handler.ts`.
+- [x] Extracted Places photo proxy, search history hydration, and manual duplicate review/merge into `functions/api/places/handler.ts`.
+- [x] Extracted Jobs retry orchestration into `src/components/generation-jobs/useGenerationJobRetry.ts`.
 
 Still to do today if time allows:
 
@@ -40,7 +42,15 @@ Still to do today if time allows:
 - [x] Split AI provider call, JSON repair, offering outline, copy patch, and copy audit helpers out of `functions/api/[[path]].ts`.
 - [x] Extract remaining site storage/R2 helpers out of `functions/api/[[path]].ts`.
 - [x] Extract Places search/details/manual import helpers out of `functions/api/[[path]].ts`.
-- [ ] Extract `GenerationJobsTable` drawer/details into smaller components or a `useGenerationJobRetry` hook.
+- [x] Extract `GenerationJobsTable` drawer/details into smaller components and move job display/filter helpers beside it.
+- [x] Extract `GenerationJobsTable` retry orchestration into `src/components/generation-jobs/useGenerationJobRetry.ts`.
+- [x] Move Places photo proxy, search history hydration, and manual duplicate review/merge into `functions/api/places/handler.ts`.
+- [x] Extract AI readiness, provider failure/health, and provider cooldown handling into focused modules.
+- [x] Extract payment checkout and domain availability handlers into focused modules.
+- [x] Extract site CRUD/generate save orchestration into `functions/api/sites/handler.ts`.
+- [x] Extract shared response, D1 helper, schema setup, repair, and required-column lists into `functions/api/_shared/*`.
+- [x] Extract settings, stats/activity, leads, and prospects route handlers into focused modules.
+- [x] Added lightweight endpoint-level fixtures for prospect filters and site generate-save behavior in `tests/apiHandlers.test.ts`.
 - [x] Add targeted tests for offering outline normalization and copy audit behavior.
 - [x] Add targeted tests for chunked job step state.
 - [ ] After production deploy, manually verify one `/admin/leads` generate and one `/admin/sites` generate against the same gathered record.
@@ -49,17 +59,28 @@ Still to do today if time allows:
 
 | File | Lines | Audit Result |
 | --- | ---: | --- |
-| `functions/api/[[path]].ts` | 3485 | Improved. AI site generation, generation jobs, R2/site storage, and Places search/details/manual import moved out; remaining risk is Places photo/history/duplicates, payments, domains, and router still living together. |
+| `functions/api/[[path]].ts` | 301 | Improved. Now close to a thin router: imports, dependency wiring, DB bootstrap, and route dispatch. |
 | `functions/api/ai/siteGeneration.ts` | 1342 | New focused module. Large but cohesive around AI offering/copy generation; good candidate for continued direct tests. |
 | `src/pages/admin/AdminLeads.tsx` | 2111 | Improved. Scaffold/generation helpers moved out, but CRM, search, import, duplicate review, filters, and UI are still mixed. |
 | `src/components/SiteRenderer.tsx` | 1878 | Needs refactor carefully. Visitor renderer is shared by `/demo`, `/:businessId`, and export preparation, so extraction should preserve behavior. |
-| `src/components/GenerationJobsTable.tsx` | 1006 | Needs split soon. Chunked progress/retry drawer pushed this beyond watchlist size. |
+| `src/components/GenerationJobsTable.tsx` | 497 | Improved. Drawer, retry orchestration, and job helpers moved into focused `generation-jobs/*` modules; remaining responsibility is table data loading/search/filter/rendering. |
 | `src/lib/siteStylePresets.ts` | 1106 | Watchlist. Large but mostly registry/config; split only if editing gets painful. |
 | `src/pages/admin/AdminSites.tsx` | 822 | Improved. Scaffold/generation helpers moved out; generated-site management UI can be split later. |
 | `src/pages/admin/AdminSettings.tsx` | 823 | Watchlist. Could split settings sections after higher-risk files. |
-| `functions/api/places/handler.ts` | 751 | New focused module for Places search/details/cache trim/manual import, including prospect upsert and website precheck. |
+| `functions/api/places/handler.ts` | 1117 | Focused module for Places search/details/cache trim/manual import/photo/history/duplicate handling, including prospect upsert and website precheck. Large but cohesive around Places/prospect ingestion. |
+| `functions/api/sites/handler.ts` | 710 | New focused module for site list/read/copy brief/generate save orchestration, final D1/R2 writes, lead/prospect updates, and generation job status updates. |
+| `functions/api/ai/readiness.ts` | 611 | New focused module for AI readiness, remote model validation cache, provider failure diagnostics, and provider health endpoints. |
 | `functions/api/generationJobs/handler.ts` | 413 | New focused module for Jobs API. Keep behavior stable and test through endpoint-level fixtures later. |
+| `functions/api/_shared/db.ts` | 298 | New shared module for D1 binding access, column checks, common upsert/update helpers, settings lookup, and daily usage counters. |
 | `functions/api/sites/storage.ts` | 322 | New focused module for R2 JSON storage, asset upload, compact manifests, and migration. |
+| `functions/api/_shared/schema.ts` | 197 | New shared module for required column lists, table setup, and database repair reporting. |
+| `functions/api/payments/handler.ts` | 293 | New focused module for checkout creation, payment provider selection, checkout-pending lead/activity writes, and manual/mock fallback links. |
+| `functions/api/domains/handler.ts` | 125 | New focused module for RDAP/DNS domain availability pre-checks and already-owned domain setup signals. |
+| `functions/api/providerCooldowns/handler.ts` | 201 | New focused module for provider cooldown rows, history feed, event insert, and event pruning. |
+| `functions/api/prospects/handler.ts` | 125 | New focused module for prospect list filters, status updates, and selected photo/palette saves. |
+| `functions/api/leads/handler.ts` | 74 | New focused module for lead list/status/ping handling. |
+| `functions/api/settings/handler.ts` | 60 | New focused module for private/public settings endpoints. |
+| `functions/api/stats/handler.ts` | 51 | New focused module for dashboard stats and recent activities. |
 
 ## Priority 1: Cloudflare API Function
 
@@ -67,56 +88,56 @@ File: `functions/api/[[path]].ts`
 
 Current mixed responsibilities:
 
-- D1 schema setup, repair, and column migration.
-- Settings and public settings.
-- Daily usage counters.
-- AI provider readiness, remote validation cache, failure diagnostics, and provider health.
-- Provider cooldowns and cooldown event pruning.
-- Google Places photo/history/manual duplicate review. Search, details, cache trim, manual import, prospect upsert, and website precheck now live in `functions/api/places/handler.ts`.
-- Manual duplicate detection and merge.
-- Prospects, leads, CRM activity.
-- Generation jobs and retry/preflight failure recording.
-- AI offering outline prompt, JSON repair, copy patch prompt, provider calls, response parsing, copy audit, deterministic merge.
-- Chunked generation step orchestration for outline/copy/finalize.
-- Site post-processing such as contact page, gallery page, image filename normalization, color contrast, R2 image upload, R2 JSON upload, compact manifest.
-- Payments and domain checking.
+- D1 schema setup, repair, column migration, common DB writes, and response helpers now live in `functions/api/_shared/*`.
+- Settings and public settings now live in `functions/api/settings/handler.ts`.
+- Daily usage counters now live in `_shared/db.ts` and are surfaced through `functions/api/stats/handler.ts`.
+- AI provider readiness, remote validation cache, failure diagnostics, provider health, provider cooldowns, and cooldown event pruning now live in focused modules.
+- Google Places handlers now live in `functions/api/places/handler.ts`: search, details, cache trim, manual import, prospect upsert, website precheck, photo proxy, search history hydration, and manual duplicate review/merge.
+- Prospects now live in `functions/api/prospects/handler.ts`; leads live in `functions/api/leads/handler.ts`; stats/activity feed live in `functions/api/stats/handler.ts`.
+- Site CRUD/generate save orchestration and final D1/R2 manifest writes now live in `functions/api/sites/handler.ts`.
+- Payments and domain checking now live in focused modules.
 - Top-level route dispatch.
 
 Recommended extraction boundaries:
 
 1. `functions/api/_shared/response.ts`
-   - `json`, `errorJson`, `readJsonBody`, response helpers.
+   - Done: `json`, `errorJson`, `corsHeaders`, `readJsonBody`, parse/string/hash helpers.
 
 2. `functions/api/_shared/db.ts`
-   - D1 setup, `tableColumns`, `ensureColumn`, schema repair, common insert/update helpers.
+   - Done: D1 binding access, `tableColumns`, `ensureColumn`, `ensureRequiredColumns`, common insert/update helpers, settings lookup, and daily usage counters.
 
 3. `functions/api/_shared/settings.ts`
-   - `getSetting`, settings endpoint helpers, public settings.
+   - `getSetting` is done in `_shared/db.ts`; settings endpoint handlers now live in `functions/api/settings/handler.ts`.
 
 4. `functions/api/ai/*`
    - Partially done in `siteGeneration.ts`: JSON provider calls, JSON repair, offering outline, copy patch, copy audit, and deterministic merge now live outside the router.
+   - Done in `readiness.ts`: AI readiness, remote model validation cache, provider failure diagnostics, and provider health endpoints.
    - Future split, if needed: `providers.ts`, `jsonRepair.ts`, `offeringOutline.ts`, `copyPatch.ts`, `copyAudit.ts`.
 
 5. `functions/api/places/*`
-   - Partially done in `places/handler.ts`: search, details, cache trim, manual import, prospect upsert, and website precheck now live outside the router.
-   - Still to do: move photo proxy, search history hydration, and manual duplicate review/merge.
+   - Done in `places/handler.ts`: search, details, cache trim, manual import, prospect upsert, website precheck, photo proxy, search history hydration, and manual duplicate review/merge now live outside the router.
 
 6. `functions/api/sites/*`
-   - Partially done in `sites/storage.ts`: R2 public URL, image filename normalization, image asset upload, JSON upload/read, compact manifest, site summary, and migrate-to-R2 helper.
-   - Still to do: split site CRUD/generate handler itself after Places/manual import is isolated.
+   - Done in `sites/storage.ts`: R2 public URL, image filename normalization, image asset upload, JSON upload/read, compact manifest, site summary, and migrate-to-R2 helper.
+   - Done in `sites/handler.ts`: site list/read/copy brief, generate save orchestration, deterministic visual/font/favicon defaults, final D1/R2 manifest writes, lead/prospect updates, and generation job success/failure updates.
 
 7. `functions/api/generationJobs/*`
    - Done in `generationJobs/handler.ts`: job listing, counts, preflight/cooldown failure recording, chunked start, run-step, and retry metadata updates.
 
-8. `functions/api/payments/*` and `functions/api/domains/*`
-   - payment config/mock provider logic and domain checks.
+8. `functions/api/providerCooldowns/*`
+   - Done in `providerCooldowns/handler.ts`: cooldown reads/writes, history feed, event insert, and pruning.
 
-9. Keep `functions/api/[[path]].ts` as a thin router.
+9. `functions/api/payments/*` and `functions/api/domains/*`
+   - Done in `payments/handler.ts`: payment config, checkout creation, checkout-pending CRM writes, and mock/manual fallback links.
+   - Done in `domains/handler.ts`: RDAP primary check and Google Public DNS fallback signal.
+
+10. Keep `functions/api/[[path]].ts` as a thin router.
+   - Done: the catch-all is now mostly dependency wiring, DB bootstrap, and route dispatch.
 
 Why this matters:
 
-- AI/provider changes currently happen near Places, payments, and domains code.
-- Site generation failures are harder to isolate because prompt, provider call, storage, and DB update are in one control flow.
+- Site generation save changes are now isolated from payments/domains/Places routes.
+- Remaining router risk is concentrated in dependency wiring and endpoint dispatch order.
 - Cloudflare Pages Functions free-tier constraints make it important to reason about expensive operations; usage counters, Places calls, AI readiness, generation, R2, and retries should be easier to review independently.
 
 Suggested order:
@@ -126,8 +147,12 @@ Suggested order:
 3. Done: extract generation job handlers, including chunked `outline`, `copy`, and `finalize`.
 4. Done: extract site storage/R2 modules.
 5. Done: extract Places search/details/manual import module.
-6. Extract AI readiness/provider cooldown modules.
-7. Leave routing extraction for last.
+6. Done: extract remaining Places photo/history/manual duplicate handlers.
+7. Done: extract AI readiness/provider cooldown modules.
+8. Done: extract payments/domains.
+9. Done: split site CRUD/generate save orchestration.
+10. Done: extract shared DB/response/schema helpers.
+11. Done: extract settings, stats/activity, leads, and prospects handlers.
 
 Avoid a big-bang rewrite. Each extraction should keep endpoint behavior and response shapes identical.
 
@@ -300,13 +325,12 @@ This file is large, but much of it appears to be registry/configuration. Refacto
 
 `src/components/GenerationJobsTable.tsx`
 
-This grew past watchlist size after adding chunked job progress and per-step retry. It should be split after the higher-risk API extraction, or sooner if Jobs UI needs more controls.
+This was split after chunked job progress and per-step retry pushed too much behavior into one component.
 
-- filter/sort helpers
-- retry action hook for full-job retry and chunked step retry
-- chunked progress drawer section
-- copy audit drawer/details
-- export button
+- Done: filter/sort/copy-audit helpers live in `src/components/generation-jobs/jobUtils.ts`.
+- Done: chunked progress drawer/details and copy audit drawer/details live in `src/components/generation-jobs/GenerationJobDetailsDrawer.tsx`.
+- Done: retry action hook for full-job retry and chunked step retry lives in `src/components/generation-jobs/useGenerationJobRetry.ts`.
+- Still possible later: export button/helper if export payload grows.
 
 `src/pages/admin/AdminSettings.tsx`
 
@@ -374,5 +398,5 @@ Expected outcome:
 - Done: `functions/api/[[path]].ts` is smaller after moving AI offering/copy/chunked job logic into focused modules.
 - Done: move R2/site storage logic into a focused module.
 - Done: move Places search/details/manual import logic into a focused module.
-- Still needed: move Places photo/history/manual duplicate review into focused modules.
+- Done: move Places photo/history/manual duplicate review into the focused Places handler module.
 - Still needed: renderer can eventually consume the same normalization logic or at least match it intentionally.

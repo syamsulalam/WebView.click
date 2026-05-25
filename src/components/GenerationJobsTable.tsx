@@ -2,22 +2,21 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, ExternalLink, FileText, Loader2, RefreshCw, RotateCw, Search, X } from "lucide-react";
 import { useLocalStorageState } from "../lib/localStorageState";
-import { checkAiReadiness, logAiReadinessBlockedJob } from "../lib/aiReadiness";
-import { readApiJson } from "../lib/apiResponse";
-import { postChunkedGenerateSite } from "../lib/adminSiteGeneration";
-import {
-  CHUNKED_GENERATION_STEPS,
-  chunkedGenerationState,
-  chunkedStepBadgeClass,
-  chunkedStepStatus,
-  chunkedStepStatusLabel,
-  type ChunkedGenerationStep,
-} from "../lib/generationJobState";
+import { chunkedGenerationState } from "../lib/generationJobState";
 import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
 import HoverTooltip from "./HoverTooltip";
-import { useAdminToast } from "./AdminToast";
-import { formatCooldownRemaining, getSharedProviderCooldown, logProviderCooldownBlockedJob } from "../lib/providerCooldown";
+import GenerationJobDetailsDrawer from "./generation-jobs/GenerationJobDetailsDrawer";
+import { useGenerationJobRetry } from "./generation-jobs/useGenerationJobRetry";
+import {
+  cooldownBlocked,
+  filterJobs,
+  noAiRewrite,
+  patchApplied,
+  shortHash,
+  sortJobs,
+  type GenerationJobCounts,
+} from "./generation-jobs/jobUtils";
 
 type GenerationJobsTableProps = {
   storageKeyPrefix: string;
@@ -33,87 +32,6 @@ type GenerationJobsTableProps = {
   onJobsLoaded?: (jobs: any[]) => void;
 };
 
-type GenerationJobCounts = {
-  all: number;
-  failed: number;
-  preflight: number;
-  fallback: number;
-  patch: number;
-  noRewrite: number;
-};
-
-function shortHash(value: unknown) {
-  const text = String(value || "").trim();
-  return text ? text.slice(0, 8) : "";
-}
-
-async function sha256Json(value: unknown) {
-  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
-  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function patchApplied(job: any) {
-  return job?.metadata?.copyPatchApplied === true;
-}
-
-function cooldownBlocked(job: any) {
-  return job?.metadata?.cooldownBlocked === true;
-}
-
-function aiRewriteCount(job: any) {
-  return Number(job?.metadata?.copyAuditSummary?.aiRewritten || 0);
-}
-
-function noAiRewrite(job: any) {
-  return patchApplied(job) && aiRewriteCount(job) === 0;
-}
-
-function copyAuditItems(job: any) {
-  const items = job?.metadata?.copyAuditItems;
-  return Array.isArray(items) ? items : [];
-}
-
-function copyAuditSummary(job: any) {
-  const summary = job?.metadata?.copyAuditSummary;
-  return summary && typeof summary === "object" ? summary : {};
-}
-
-function auditStatusLabel(status: string) {
-  if (status === "ai_rewritten") return "AI rewritten";
-  if (status === "ai_filled_blank") return "AI filled";
-  if (status === "source_kept") return "Source kept";
-  if (status === "fallback_source") return "Fallback source";
-  if (status === "missing_after") return "Missing after";
-  return status || "Unknown";
-}
-
-function auditStatusClass(status: string) {
-  if (status === "ai_rewritten" || status === "ai_filled_blank") return "bg-emerald-100 text-emerald-800";
-  if (status === "fallback_source") return "bg-amber-100 text-amber-900";
-  if (status === "missing_after") return "bg-red-100 text-red-800";
-  return "bg-slate-100 text-slate-700";
-}
-
-function filterJobs(jobs: any[], filter: string) {
-  if (filter === "failed") return jobs.filter((job) => job.status === "failed");
-  if (filter === "preflight") return jobs.filter((job) => job?.metadata?.preflightBlocked === true);
-  if (filter === "fallback") return jobs.filter((job) => !patchApplied(job));
-  if (filter === "patch") return jobs.filter((job) => patchApplied(job));
-  if (filter === "noRewrite") return jobs.filter((job) => noAiRewrite(job));
-  return jobs;
-}
-
-function sortJobs(jobs: any[], sort: string) {
-  return [...jobs].sort((a, b) => {
-    if (sort === "failed") return Number(b.status === "failed") - Number(a.status === "failed");
-    if (sort === "preflight") return Number(b?.metadata?.preflightBlocked === true) - Number(a?.metadata?.preflightBlocked === true);
-    if (sort === "fallback") return Number(!patchApplied(b)) - Number(!patchApplied(a));
-    if (sort === "patch") return Number(patchApplied(b)) - Number(patchApplied(a));
-    if (sort === "noRewrite") return Number(noAiRewrite(b)) - Number(noAiRewrite(a));
-    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-  });
-}
-
 export default function GenerationJobsTable({
   storageKeyPrefix,
   fallbackProvider,
@@ -127,7 +45,6 @@ export default function GenerationJobsTable({
   serverBackedSearch = false,
   onJobsLoaded,
 }: GenerationJobsTableProps) {
-  const { showApiError } = useAdminToast();
   const [jobs, setJobs] = useState<any[]>([]);
   const [remoteCounts, setRemoteCounts] = useState<GenerationJobCounts | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,9 +54,6 @@ export default function GenerationJobsTable({
   const [sort, setSort] = useLocalStorageState(`${storageKeyPrefix}.sort`, "newest");
   const [searchQuery, setSearchQuery] = useLocalStorageState(`${storageKeyPrefix}.search`, "");
   const [searchInput, setSearchInput] = useState(searchQuery);
-  const [retryingJobId, setRetryingJobId] = useState("");
-  const [retryingChunkStep, setRetryingChunkStep] = useState("");
-  const [retryOverrideJobId, setRetryOverrideJobId] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
   const [selectedJob, setSelectedJob] = useState<any>(null);
 
@@ -164,13 +78,6 @@ export default function GenerationJobsTable({
     ? Number(remoteCounts[filter as keyof GenerationJobCounts] ?? remoteCounts.all)
     : jobs.length;
   const canLoadMore = serverBackedFilters && !compact && Boolean(remoteCounts) && jobs.length < activeTotal;
-  const selectedAuditItems = copyAuditItems(selectedJob);
-  const selectedAuditSummary = copyAuditSummary(selectedJob);
-  const selectedAiReadiness = selectedJob?.metadata?.aiReadiness || null;
-  const selectedRemoteValidation = selectedJob?.metadata?.remoteValidation || selectedAiReadiness?.remoteValidation || null;
-  const selectedProviderCooldown = selectedJob?.metadata?.providerCooldown || null;
-  const selectedAiFailure = selectedJob?.metadata?.aiFailure || selectedJob?.metadata?.providerFailure || null;
-  const selectedChunkedState = selectedJob ? chunkedGenerationState(selectedJob) : null;
 
   const retryReadiness = (job: any) => {
     const provider = job?.provider || fallbackProvider;
@@ -180,7 +87,21 @@ export default function GenerationJobsTable({
       hasApiKey: providerKeyStatus[provider] ?? null,
     };
   };
-  const selectedReadiness = selectedJob ? retryReadiness(selectedJob) : null;
+
+  const {
+    retryingJobId,
+    retryingChunkStep,
+    retryOverrideJobId,
+    retryGenerationJob,
+    retryChunkedStep,
+  } = useGenerationJobRetry({
+    fallbackProvider,
+    fallbackModel,
+    setJobs,
+    setSelectedJob,
+    setMessage,
+    refreshJobs: () => fetchJobs(),
+  });
 
   const fetchJobs = async (append = false) => {
     if (append) {
@@ -294,149 +215,6 @@ export default function GenerationJobsTable({
       })),
     };
     await copyValue("jobs:compact-export", JSON.stringify(payload, null, 2));
-  };
-
-  const retryGenerationJob = async (job: any) => {
-    if (!job.businessId) return;
-    setRetryingJobId(job.id);
-    try {
-      const retryProvider = job.provider || fallbackProvider;
-      const retryModel = job.model || fallbackModel;
-      const cooldown = await getSharedProviderCooldown(retryProvider, true);
-      if (cooldown) {
-        const message = `${retryProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error. Retry is paused to avoid another 429.`;
-        await logProviderCooldownBlockedJob({
-          provider: retryProvider,
-          model: retryModel,
-          cooldown,
-          action: "job_retry",
-          businessId: job.businessId,
-          placeId: job.placeId,
-          businessName: job.prospectName || job.metadata?.businessName || job.businessId,
-          message,
-        });
-        throw new Error(message);
-      }
-      const readiness = await checkAiReadiness(retryProvider, retryModel, true, true);
-      if (!readiness.ready) {
-        const message = readiness.message || "AI provider/model is not ready. Check /admin/settings before retrying.";
-        await logAiReadinessBlockedJob({
-          provider: retryProvider,
-          model: retryModel,
-          readiness,
-          action: "job_retry",
-          businessId: job.businessId,
-          placeId: job.placeId,
-          businessName: job.prospectName || job.metadata?.businessName || job.businessId,
-          message,
-        });
-        throw new Error(message);
-      }
-
-      const briefResponse = await fetch(`/api/sites/${encodeURIComponent(job.businessId)}/copy-brief`);
-      const briefData = await briefResponse.json().catch(() => ({}));
-      if (!briefResponse.ok || briefData.error) {
-        throw new Error(briefData.error || `Copy brief returned ${briefResponse.status}`);
-      }
-      const currentBriefHash = await sha256Json(briefData.copyTargetBrief || {});
-      const previousBriefHash = String(job.metadata?.copyBriefHash || "");
-      if (previousBriefHash && previousBriefHash !== currentBriefHash && retryOverrideJobId !== job.id) {
-        setRetryOverrideJobId(job.id);
-        setMessage(`Brief changed for ${job.businessId}. Previous ${shortHash(previousBriefHash)}, current ${shortHash(currentBriefHash)}. Click Retry anyway to use the current brief.`);
-        return;
-      }
-
-      const siteResponse = await fetch(`/api/sites/${encodeURIComponent(job.businessId)}`);
-      const siteJson = await siteResponse.json().catch(() => ({}));
-      if (!siteResponse.ok || siteJson.error) {
-        throw new Error(siteJson.error || `Site JSON returned ${siteResponse.status}`);
-      }
-
-      const meta = siteJson.meta || {};
-      const brand = siteJson.brand || {};
-      const contact = siteJson.businessProfile?.contact || {};
-      await postChunkedGenerateSite({
-        requireAi: true,
-        provider: retryProvider,
-        model: retryModel,
-        jsonContent: siteJson,
-        businessId: job.businessId,
-        businessName: meta.businessName || job.metadata?.businessName || job.prospectName || job.businessId,
-        phone: contact.phoneInternational || contact.phoneNational || "",
-        originData: siteJson.sourceData || {},
-        brandPalette: meta.brandPalette || brand.palette || [],
-        paletteOptions: brand.paletteOptions || [],
-        selectedLogoImageUrl: brand.logoImageUrl || "",
-        selectedLogoReference: brand.googlePhotoReference || "",
-        selectedLogoSource: brand.photoSource || "",
-        selectedLogoAttributions: brand.photoAttributions || [],
-        selectedLogoPriority: brand.selectedPhotoPriority || "",
-      }, "Retry generation job");
-      setRetryOverrideJobId("");
-      setMessage(`Retried ${job.businessId}. New job created from current brief ${shortHash(currentBriefHash)}.`);
-      fetchJobs();
-    } catch (error) {
-      if (!(error instanceof Error && error.message.includes("cooling down"))) {
-        showApiError(error, { source: "Retry generation job", provider: job?.provider || fallbackProvider, model: job?.model || fallbackModel });
-      }
-      setMessage(error instanceof Error ? error.message : "Retry generation job failed.");
-    } finally {
-      setRetryingJobId("");
-    }
-  };
-
-  const retryChunkedStep = async (job: any, requestedStep?: ChunkedGenerationStep) => {
-    const state = chunkedGenerationState(job);
-    const step = requestedStep || state.retryStep || state.nextStep;
-    if (!state.chunked || !step) return;
-    const retryKey = `${job.id}:${step}`;
-    setRetryingChunkStep(retryKey);
-    try {
-      const response = await fetch(`/api/generation-jobs/${encodeURIComponent(job.id)}/run-step`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step }),
-      });
-      const data = await readApiJson<any>(response, `Retry ${step} step`);
-      const nextStatus = data.completedStep === "finalize" ? "success" : "running";
-      const nextJob = {
-        ...job,
-        businessId: data.result?.businessId || job.businessId,
-        status: nextStatus,
-        error: "",
-        metadata: data.metadata || job.metadata,
-        updatedAt: new Date().toISOString(),
-      };
-      setJobs((currentJobs) => currentJobs.map((currentJob) => currentJob.id === job.id ? { ...currentJob, ...nextJob } : currentJob));
-      setSelectedJob((currentJob: any) => currentJob?.id === job.id ? { ...currentJob, ...nextJob } : currentJob);
-      setMessage(data.completedStep === "finalize"
-        ? `Finalized ${job.businessId || job.id}. The generated site was saved.`
-        : `${CHUNKED_GENERATION_STEPS.find((item) => item.key === step)?.label || step} step completed. Next step: ${data.nextStep || "done"}.`
-      );
-      fetchJobs();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : `Retry ${step} step failed.`;
-      const failedMetadata = {
-        ...(job.metadata || {}),
-        failureStage: `chunked_${step}`,
-        failureMessage: errorMessage,
-        nextStep: step,
-      };
-      const failedJob = {
-        ...job,
-        status: "failed",
-        error: errorMessage,
-        metadata: failedMetadata,
-        updatedAt: new Date().toISOString(),
-      };
-      setJobs((currentJobs) => currentJobs.map((currentJob) => currentJob.id === job.id ? { ...currentJob, ...failedJob } : currentJob));
-      setSelectedJob((currentJob: any) => currentJob?.id === job.id ? { ...currentJob, ...failedJob } : currentJob);
-      showApiError(error, { source: `Retry ${step} generation step`, provider: job?.provider || fallbackProvider, model: job?.model || fallbackModel });
-      setMessage(errorMessage);
-      fetchJobs();
-    } finally {
-      setRetryingChunkStep("");
-    }
   };
 
   const filterOptions = [
@@ -699,306 +477,20 @@ export default function GenerationJobsTable({
         )}
       </div>
       {selectedJob && (
-        <div className="fixed inset-0 z-[250] flex justify-end bg-slate-950/30" role="dialog" aria-modal="true">
-          <button
-            type="button"
-            className="absolute inset-0 cursor-default"
-            onClick={() => setSelectedJob(null)}
-            aria-label="Close job details"
-          />
-          <aside className="relative flex h-full w-full max-w-xl flex-col overflow-hidden bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">Generation job</p>
-                <h2 className="mt-1 truncate text-lg font-bold text-slate-950">
-                  {selectedJob.prospectName || selectedJob.metadata?.businessName || selectedJob.businessId || selectedJob.id}
-                </h2>
-                <p className="mt-1 truncate text-xs text-slate-500">{selectedJob.id}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {selectedJob.businessId && (
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <HoverTooltip text="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms.">
-                      <button
-                        type="button"
-                        onClick={() => retryGenerationJob(selectedJob)}
-                        disabled={Boolean(retryingJobId || retryingChunkStep)}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-                      >
-                        {retryingJobId === selectedJob.id ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
-                        {retryOverrideJobId === selectedJob.id ? "Retry anyway" : "Retry"}
-                      </button>
-                    </HoverTooltip>
-                    {selectedReadiness && (
-                      <AdminAiReadinessBadge
-                        provider={selectedReadiness.provider}
-                        model={selectedReadiness.model}
-                        hasApiKey={selectedReadiness.hasApiKey}
-                        requiresAi
-                      />
-                    )}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setSelectedJob(null)}
-                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  aria-label="Close job details"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 space-y-4 overflow-auto p-5 text-sm">
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  ["Status", selectedJob.status || "-"],
-                  ["Provider", selectedJob.provider || "-"],
-                  ["Model", selectedJob.model || "-"],
-                  ["Business ID", selectedJob.businessId || "-"],
-                  ["Place ID", selectedJob.placeId || "-"],
-                  ["Created", selectedJob.createdAt ? new Date(selectedJob.createdAt).toLocaleString() : "-"],
-                  ["Updated", selectedJob.updatedAt ? new Date(selectedJob.updatedAt).toLocaleString() : "-"],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-                    <p className="mt-1 break-words font-medium text-slate-900">{value}</p>
-                  </div>
-                ))}
-              </div>
-
-              <section>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="font-semibold text-slate-950">Error</h3>
-                  {selectedJob.error && (
-                    <button
-                      type="button"
-                      onClick={() => copyValue(`${selectedJob.id}:error`, selectedJob.error)}
-                      className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-                    >
-                      {copiedKey === `${selectedJob.id}:error` ? <Check size={12} /> : <Copy size={12} />}
-                      Copy
-                    </button>
-                  )}
-                </div>
-                <pre className="max-h-40 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-xs text-slate-100">
-                  {selectedJob.error || "No error recorded."}
-                </pre>
-              </section>
-
-              {selectedChunkedState?.chunked && (
-                <section>
-                  <div className="mb-2">
-                    <h3 className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
-                      Chunked generation
-                      <HelpTooltip text="Shows the D1-backed outline, copy, and finalize steps for this job. Failed steps can be retried without starting a new generation job." />
-                    </h3>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Next step: {selectedChunkedState.nextStep || "none"}{selectedChunkedState.failureStep ? ` · Failed step: ${selectedChunkedState.failureStep}` : ""}
-                    </p>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {CHUNKED_GENERATION_STEPS.map((step) => {
-                      const status = chunkedStepStatus(selectedJob, step.key);
-                      const retryKey = `${selectedJob.id}:${step.key}`;
-                      const canRunStep = selectedChunkedState.retryStep === step.key || (selectedJob.status === "running" && selectedChunkedState.nextStep === step.key);
-                      return (
-                        <div key={step.key} className={`rounded-xl border p-3 ${chunkedStepBadgeClass(status)}`}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-wide opacity-75">{step.label}</p>
-                              <p className="mt-1 font-semibold">{chunkedStepStatusLabel(status)}</p>
-                            </div>
-                            {status === "complete" && <Check size={16} />}
-                            {status === "running" && <Loader2 className="animate-spin" size={16} />}
-                          </div>
-                          {canRunStep && (
-                            <button
-                              type="button"
-                              onClick={() => retryChunkedStep(selectedJob, step.key)}
-                              disabled={Boolean(retryingChunkStep || retryingJobId)}
-                              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-800 ring-1 ring-inset ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
-                            >
-                              {retryingChunkStep === retryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
-                              {selectedJob.status === "failed" ? `Retry ${step.label}` : `Run ${step.label}`}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {(selectedJob.metadata?.failureMessage || selectedJob.metadata?.offeringOutlineError) && (
-                    <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                      {selectedJob.metadata?.failureMessage || selectedJob.metadata?.offeringOutlineError}
-                    </p>
-                  )}
-                </section>
-              )}
-
-              {selectedJob.metadata?.preflightBlocked && selectedAiReadiness && (
-                <section>
-                  <div className="mb-2">
-                    <h3 className="font-semibold text-slate-950">AI readiness block</h3>
-                    <p className="mt-0.5 text-xs text-slate-500">Why this attempt stopped before `/api/sites/generate`.</p>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {[
-                      ["Key", selectedAiReadiness.keyPresent === true ? "Present" : selectedAiReadiness.keyPresent === false ? "Missing" : "Unknown", selectedAiReadiness.keyPresent === true],
-                      ["Local model", selectedAiReadiness.modelKnown === true ? "Known" : selectedAiReadiness.modelKnown === false ? "Not in registry" : "Unknown", selectedAiReadiness.modelKnown === true],
-                      ["Remote route", selectedRemoteValidation?.valid === true ? "Valid" : selectedRemoteValidation?.valid === false ? "Failed" : selectedRemoteValidation?.supported === false ? "Not supported" : "Not checked", selectedRemoteValidation?.valid === true || selectedRemoteValidation?.supported === false],
-                    ].map(([label, value, ok]) => (
-                      <div key={String(label)} className={`rounded-xl border p-3 ${ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{String(label)}</p>
-                        <p className={`mt-1 font-semibold ${ok ? "text-emerald-800" : "text-red-800"}`}>{String(value)}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                    {selectedRemoteValidation?.message || selectedAiReadiness.message || selectedJob.error}
-                  </p>
-                </section>
-              )}
-
-              {selectedJob.metadata?.cooldownBlocked && selectedProviderCooldown && (
-                <section>
-                  <div className="mb-2">
-                    <h3 className="font-semibold text-slate-950">Provider cooldown block</h3>
-                    <p className="mt-0.5 text-xs text-slate-500">This attempt stopped before `/api/sites/generate` because the selected provider had an active shared cooldown.</p>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {[
-                      ["Provider", selectedProviderCooldown.provider || selectedJob.provider || "-"],
-                      ["Remaining", Number(selectedProviderCooldown.until || 0) > Date.now() ? formatCooldownRemaining(selectedProviderCooldown) : "Expired"],
-                      ["Action", selectedJob.metadata?.preflightAction || "-"],
-                    ].map(([label, value]) => (
-                      <div key={String(label)} className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{String(label)}</p>
-                        <p className="mt-1 font-semibold text-amber-900">{String(value || "-")}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                    {selectedProviderCooldown.reason || selectedJob.error}
-                  </p>
-                </section>
-              )}
-
-              {selectedAiFailure && (
-                <section>
-                  <div className="mb-2">
-                    <h3 className="font-semibold text-slate-950">Provider failure diagnostics</h3>
-                    <p className="mt-0.5 text-xs text-slate-500">Granular reason captured from the provider response or network stage.</p>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-4">
-                    {[
-                      ["Kind", selectedAiFailure.failureKind || "-"],
-                      ["HTTP", selectedAiFailure.httpStatus || "-"],
-                      ["Stage", selectedAiFailure.stage || "-"],
-                      ["Retryable", selectedAiFailure.retryable === true ? "Yes" : selectedAiFailure.retryable === false ? "No" : "Unknown"],
-                    ].map(([label, value]) => (
-                      <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{String(label)}</p>
-                        <p className="mt-1 font-semibold text-slate-950">{String(value)}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="mt-2 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
-                    {selectedAiFailure.actionHint || selectedAiFailure.message || selectedJob.error}
-                  </p>
-                  {selectedAiFailure.endpoint && (
-                    <HoverTooltip text={selectedAiFailure.endpoint} widthClass="w-96">
-                      <span className="mt-2 block truncate rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] text-slate-600">
-                        {selectedAiFailure.endpoint}
-                      </span>
-                    </HoverTooltip>
-                  )}
-                </section>
-              )}
-
-              <section>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div>
-                    <h3 className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
-                      AI copy audit
-                      <HelpTooltip text="Compares source copy sent to AI with final saved copy. This helps identify whether a job used AI wording or fell back to gathered Google data." />
-                    </h3>
-                    <p className="mt-0.5 text-xs text-slate-500">Source copy sent to AI and final copy saved after patch/fallback.</p>
-                  </div>
-                  {selectedAuditItems.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => copyValue(`${selectedJob.id}:copy-audit`, JSON.stringify({ summary: selectedAuditSummary, items: selectedAuditItems }, null, 2))}
-                      className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-                    >
-                      {copiedKey === `${selectedJob.id}:copy-audit` ? <Check size={12} /> : <Copy size={12} />}
-                      Copy
-                    </button>
-                  )}
-                </div>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {[
-                    ["Sent", selectedAuditSummary.sourceSentencesSentToAi ?? selectedAuditSummary.targetFieldsSentToAi ?? 0],
-                    ["AI changed", Number(selectedAuditSummary.aiRewritten || 0) + Number(selectedAuditSummary.aiFilledBlank || 0)],
-                    ["Fallback/kept", Number(selectedAuditSummary.fallbackSource || 0) + Number(selectedAuditSummary.sourceKept || 0)],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-                      <p className="mt-1 text-lg font-bold text-slate-950">{String(value)}</p>
-                    </div>
-                  ))}
-                </div>
-                {selectedAuditItems.length > 0 ? (
-                  <div className="mt-3 max-h-[42vh] space-y-2 overflow-auto rounded-xl border border-slate-200 bg-white p-2">
-                    {selectedAuditItems.map((item: any, index: number) => (
-                      <article key={`${item.path || index}:${index}`} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-semibold text-slate-950">{item.label || item.path || "copy field"}</p>
-                            <p className="mt-0.5 truncate font-mono text-[10px] text-slate-500">{item.path}</p>
-                          </div>
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${auditStatusClass(String(item.status || ""))}`}>
-                            {auditStatusLabel(String(item.status || ""))}
-                          </span>
-                        </div>
-                        <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
-                          <div>
-                            <p className="mb-1 font-semibold uppercase tracking-wide text-slate-400">Sent/source</p>
-                            <p className="break-words rounded-md bg-white p-2 text-slate-700">{item.before || "Blank target"}</p>
-                          </div>
-                          <div>
-                            <p className="mb-1 font-semibold uppercase tracking-wide text-slate-400">Saved/final</p>
-                            <p className="break-words rounded-md bg-white p-2 text-slate-900">{item.after || "Blank after save"}</p>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
-                    No sentence-level copy audit was recorded for this older job. Retry the job to create granular AI/fallback metadata.
-                  </div>
-                )}
-              </section>
-
-              <section>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="font-semibold text-slate-950">Raw metadata</h3>
-                  <button
-                    type="button"
-                    onClick={() => copyValue(`${selectedJob.id}:metadata`, JSON.stringify(selectedJob.metadata || {}, null, 2))}
-                    className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-                  >
-                    {copiedKey === `${selectedJob.id}:metadata` ? <Check size={12} /> : <Copy size={12} />}
-                    Copy
-                  </button>
-                </div>
-                <pre className="max-h-[45vh] overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-xs text-slate-100">
-                  {JSON.stringify(selectedJob.metadata || {}, null, 2)}
-                </pre>
-              </section>
-            </div>
-          </aside>
-        </div>
+        <GenerationJobDetailsDrawer
+          job={selectedJob}
+          fallbackProvider={fallbackProvider}
+          fallbackModel={fallbackModel}
+          providerKeyStatus={providerKeyStatus}
+          retryingJobId={retryingJobId}
+          retryingChunkStep={retryingChunkStep}
+          retryOverrideJobId={retryOverrideJobId}
+          copiedKey={copiedKey}
+          onClose={() => setSelectedJob(null)}
+          onCopyValue={copyValue}
+          onRetryGenerationJob={retryGenerationJob}
+          onRetryChunkedStep={retryChunkedStep}
+        />
       )}
     </div>
   );

@@ -14,7 +14,8 @@
     "test:scaffold": "tsx tests/generatedSiteScaffold.test.ts",
     "test:site-generation": "tsx tests/siteGeneration.test.ts",
     "test:generation-job-state": "tsx tests/generationJobState.test.ts",
-    "test:admin-generation": "tsx tests/adminSiteGeneration.test.ts"
+    "test:admin-generation": "tsx tests/adminSiteGeneration.test.ts",
+    "test:api-handlers": "tsx tests/apiHandlers.test.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.6",
