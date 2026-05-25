@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Clock3 } from "lucide-react";
+import { Clock3, X } from "lucide-react";
 import HelpTooltip from "./HelpTooltip";
 import HoverTooltip from "./HoverTooltip";
 import {
@@ -99,9 +99,10 @@ export default function AdminProviderCooldownBadge({
         <button
           type="button"
           onClick={() => setConfirmingClear(true)}
-          className="rounded-full border border-amber-300 bg-white/80 px-2 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-white"
+          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-300 bg-white/80 text-amber-900 hover:bg-white"
+          aria-label="Clear provider cooldown"
         >
-          Clear
+          <X size={11} />
         </button>
         </HoverTooltip>
       )}

@@ -2067,23 +2067,27 @@ export default function AdminLeads() {
             <p className="mt-1 text-sm text-slate-500">Use this before marking a checkout-pending lead as paid.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={exportCheckoutPendingCsv}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              <FileDown size={14} />
-              Export checkout pending
-            </button>
-            <button
-              type="button"
-              onClick={fetchPaymentLedger}
-              disabled={paymentLedgerLoading}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              <RefreshCw size={14} className={paymentLedgerLoading ? "animate-spin" : ""} />
-              Refresh ledger
-            </button>
+            <HoverTooltip text="Copy or download a CSV of leads currently waiting for payment confirmation. Use it when matching PayPal/Wise/Payoneer records.">
+              <button
+                type="button"
+                onClick={exportCheckoutPendingCsv}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <FileDown size={14} />
+                Export checkout pending
+              </button>
+            </HoverTooltip>
+            <HoverTooltip text="Reload the payment ledger from D1 after a checkout, manual verification, or PayPal webhook event.">
+              <button
+                type="button"
+                onClick={fetchPaymentLedger}
+                disabled={paymentLedgerLoading}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                <RefreshCw size={14} className={paymentLedgerLoading ? "animate-spin" : ""} />
+                Refresh ledger
+              </button>
+            </HoverTooltip>
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
@@ -2137,19 +2141,21 @@ export default function AdminLeads() {
                   </td>
                   <td className="p-4">
                     <div className="flex flex-col gap-1">
-                      <select 
-                        value={lead.status} 
-                        onChange={(e) => updateStatus(lead.id, e.target.value)}
-                        className="text-sm border border-gray-300 rounded p-1 bg-white text-gray-700 w-32"
-                      >
-                        <option value="scraped">Scraped</option>
-                        <option value="contacted">Contacted</option>
-                        <option value="viewed">Viewed</option>
-                        <option value="checkout_pending">Checkout Pending</option>
-                        <option value="negotiating">Negotiating</option>
-                        <option value="won_paid">Won (Paid)</option>
-                        <option value="lost">Lost</option>
-                      </select>
+                      <HoverTooltip text="Manual CRM status for this lead. Use Verify payment for paid records so payment ledger and revenue are updated too." widthClass="w-64">
+                        <select
+                          value={lead.status}
+                          onChange={(e) => updateStatus(lead.id, e.target.value)}
+                          className="text-sm border border-gray-300 rounded p-1 bg-white text-gray-700 w-32"
+                        >
+                          <option value="scraped">Scraped</option>
+                          <option value="contacted">Contacted</option>
+                          <option value="viewed">Viewed</option>
+                          <option value="checkout_pending">Checkout Pending</option>
+                          <option value="negotiating">Negotiating</option>
+                          <option value="won_paid">Won (Paid)</option>
+                          <option value="lost">Lost</option>
+                        </select>
+                      </HoverTooltip>
                       {lead.view_count > 0 && (
                         <span className="text-xs text-emerald-600 font-medium">
                           Dilihat {lead.view_count}x
@@ -2222,9 +2228,11 @@ export default function AdminLeads() {
                 </p>
                 <p className="mt-1 text-sm text-slate-500">{paymentVerifyLead.business_name}</p>
               </div>
-              <button type="button" onClick={() => setPaymentVerifyLead(null)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100">
-                <X size={18} />
-              </button>
+              <HoverTooltip text="Close payment verification without saving changes.">
+                <button type="button" onClick={() => setPaymentVerifyLead(null)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close payment verification">
+                  <X size={18} />
+                </button>
+              </HoverTooltip>
             </div>
             <div className="space-y-4 p-5">
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
@@ -2307,6 +2315,10 @@ export default function AdminLeads() {
                 {paymentVerifySaving ? <Loader2 size={18} className="animate-spin" /> : <BadgeCheck size={18} />}
                 Save verified payment
               </button>
+              <p className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                Verification effect
+                <HelpTooltip text="Saving creates or updates a paid ledger row, marks the lead won_paid, updates subscriptions revenue, and writes a CRM activity note." widthClass="w-80" />
+              </p>
             </div>
           </div>
         </div>
@@ -2334,9 +2346,11 @@ export default function AdminLeads() {
                       <h2 className="mt-1 text-xl font-semibold text-slate-950">{mergedPlace.name}</h2>
                       <p className="mt-1 text-sm text-slate-500">{mergedPlace.formatted_address || mergedPlace.formattedAddress || "No address"}</p>
                     </div>
-                    <button type="button" onClick={() => setDetailsPanelPlace(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
-                      <X size={18} />
-                    </button>
+                    <HoverTooltip text="Close prospect details drawer.">
+                      <button type="button" onClick={() => setDetailsPanelPlace(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close prospect details">
+                        <X size={18} />
+                      </button>
+                    </HoverTooltip>
                   </div>
 
                   <div className="grid gap-3 text-sm sm:grid-cols-2">

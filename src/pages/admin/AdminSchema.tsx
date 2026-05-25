@@ -99,14 +99,16 @@ export default function AdminSchema() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleRepairDb}
-            disabled={repairing}
-            className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-          >
-            {repairing ? "Repairing..." : "Repair DB now"}
-          </button>
+          <HoverTooltip text="Run the production D1 schema self-heal. Use after deploys that add tables or columns before testing admin workflows.">
+            <button
+              type="button"
+              onClick={handleRepairDb}
+              disabled={repairing}
+              className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {repairing ? "Repairing..." : "Repair DB now"}
+            </button>
+          </HoverTooltip>
           <HelpTooltip text="Runs the D1 self-heal endpoint to create or repair expected admin tables/columns after a production deploy." />
           <HoverTooltip text="Move old full JSON site rows from D1 into R2 and leave only compact manifests in D1.">
             <button

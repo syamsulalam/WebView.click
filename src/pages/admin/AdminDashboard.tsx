@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, CircleDashed } from "lucide-react";
 import HelpTooltip from "../../components/HelpTooltip";
+import HoverTooltip from "../../components/HoverTooltip";
 
 type Stats = {
   totalLeads: number;
@@ -283,17 +284,20 @@ export default function AdminDashboard() {
               <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold">
                   {[7, 30].map((days) => (
-                    <button
-                      key={days}
-                      type="button"
-                      onClick={() => setUsageHistoryDays(days as 7 | 30)}
-                      className={`px-3 py-2 ${usageHistoryDays === days ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-white"}`}
-                    >
-                      {days}d
-                    </button>
+                    <HoverTooltip key={days} text={`Show ${days} days of UTC usage history for quota-sensitive workflows.`} widthClass="w-52">
+                      <button
+                        type="button"
+                        onClick={() => setUsageHistoryDays(days as 7 | 30)}
+                        className={`px-3 py-2 ${usageHistoryDays === days ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-white"}`}
+                      >
+                        {days}d
+                      </button>
+                    </HoverTooltip>
                   ))}
                 </div>
-                <a href="/admin/jobs" className="text-sm font-semibold text-indigo-700 hover:underline">Review Jobs</a>
+                <HoverTooltip text="Open the generation job audit page to inspect failures, retries, preflight blocks, and copy patch status.">
+                  <a href="/admin/jobs" className="text-sm font-semibold text-indigo-700 hover:underline">Review Jobs</a>
+                </HoverTooltip>
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-4">

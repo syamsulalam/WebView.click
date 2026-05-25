@@ -250,9 +250,11 @@ export default function GenerationJobsTable({
                 className="min-w-0 flex-1 bg-transparent text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400"
               />
               {searchQuery && (
-                <button type="button" onClick={clearSearch} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Clear search">
-                  <X size={14} />
-                </button>
+                <HoverTooltip text="Clear the generation jobs search query.">
+                  <button type="button" onClick={clearSearch} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Clear search">
+                    <X size={14} />
+                  </button>
+                </HoverTooltip>
               )}
               <button type="submit" className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-700">
                 Search
@@ -299,10 +301,11 @@ export default function GenerationJobsTable({
             </button>
           </HoverTooltip>
           {showFullPageLink && <Link to="/admin/jobs" className="text-xs font-semibold text-indigo-700 hover:underline">Full jobs page</Link>}
-          <button type="button" onClick={() => fetchJobs()} className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline">
-            {loading ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}
-            Refresh jobs
-          </button>
+          <HoverTooltip text="Reload generation jobs from D1 with the current filters.">
+            <button type="button" onClick={() => fetchJobs()} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-indigo-700 hover:bg-indigo-50" aria-label="Refresh generation jobs">
+              {loading ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}
+            </button>
+          </HoverTooltip>
         </div>
       </div>
 
@@ -457,15 +460,17 @@ export default function GenerationJobsTable({
               <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
                 <span>Showing {jobs.length} of {activeTotal} matching jobs{searchQuery ? ` for "${searchQuery}"` : ""}</span>
                 {canLoadMore && (
-                  <button
-                    type="button"
-                    onClick={() => fetchJobs(true)}
-                    disabled={loadingMore}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    {loadingMore ? <Loader2 className="animate-spin" size={15} /> : <RefreshCw size={15} />}
-                    Load more
-                  </button>
+                  <HoverTooltip text="Load the next page of matching generation jobs from D1.">
+                    <button
+                      type="button"
+                      onClick={() => fetchJobs(true)}
+                      disabled={loadingMore}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      aria-label="Load more generation jobs"
+                    >
+                      {loadingMore ? <Loader2 className="animate-spin" size={15} /> : <RefreshCw size={15} />}
+                    </button>
+                  </HoverTooltip>
                 )}
               </div>
             )}

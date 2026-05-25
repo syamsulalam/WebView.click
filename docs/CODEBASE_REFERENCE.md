@@ -158,6 +158,7 @@ Logic penting:
 - `variant="compact"` dipakai di `/admin/leads`; `variant="full"` dipakai di `/admin/jobs`.
 - `onJobsLoaded` dipakai parent `/admin/leads` untuk memperbarui angka pada tombol `Jobs`.
 - Header, filter group, dan drawer audit copy punya tooltip ringkas yang menjelaskan arti `Fallback`, `Patch`, dan `No rewrite` supaya admin tidak perlu menebak status job.
+- Compact drawer/table actions seperti clear search, refresh jobs, load more, close drawer, copy error/audit/metadata, dan retry chunk step memakai `HoverTooltip` supaya QA production tidak bergantung pada icon-only guessing.
 
 ### `src/components/AdminAiReadinessBadge.tsx`
 
@@ -183,7 +184,7 @@ Logic penting:
 - Memanggil `clearAiReadinessCache()` dari `src/lib/aiReadiness.ts`.
 - Juga membersihkan cache `src/lib/providerFailure.ts` supaya chip `Last fail` ikut refresh setelah provider/model diperbaiki.
 - Helper cache mengirim browser event `webview:ai-readiness-refresh`; badge yang sedang mount mendengar event ini dan langsung memanggil ulang `/api/ai/readiness`.
-- Tombol memakai `HelpTooltip` untuk menjelaskan bahwa cache readiness dan last-failure 30 detik akan dibersihkan tanpa menjalankan generate.
+- Tombol default icon-only dan memakai `HoverTooltip` untuk menjelaskan bahwa cache readiness, last-failure, dan provider health akan dibersihkan tanpa menjalankan generate.
 
 ### `src/components/AdminToast.tsx`
 
@@ -208,7 +209,7 @@ Fungsi:
 Logic penting:
 - Membaca `src/lib/providerCooldown.ts`, refresh ringan ke `/api/provider-cooldowns`, dan mendengar event `webview:provider-cooldown`, `storage`, dan `focus` agar status berubah saat error 429/quota terjadi atau tab kembali aktif.
 - Saat cooldown aktif, badge menampilkan sisa waktu setiap detik dan tooltip menjelaskan bahwa batch/generate ditahan untuk menghindari repeated 429.
-- Saat cooldown aktif, badge menampilkan aksi `Clear` dengan konfirmasi inline. Ini menghapus cooldown localStorage dan D1 via `DELETE /api/provider-cooldowns`; tidak otomatis terjadi saat switch provider karena cooldown lama tetap melindungi session/admin lain yang masih memakai provider tersebut.
+- Saat cooldown aktif, badge menampilkan aksi clear icon-only dengan tooltip dan konfirmasi inline. Ini menghapus cooldown localStorage dan D1 via `DELETE /api/provider-cooldowns`; tidak otomatis terjadi saat switch provider karena cooldown lama tetap melindungi session/admin lain yang masih memakai provider tersebut.
 - Dipakai di `/admin/leads`, `/admin/sites`, dan `/admin/settings` supaya admin melihat cooldown sebelum klik generate/regenerate atau mengecek model.
 
 ### `src/components/AdminProviderHealthBadge.tsx`
@@ -314,6 +315,7 @@ Fungsi:
 - Menghasilkan JSON website untuk lead.
 - Mengelola status lead.
 - CRM Pipeline punya Payment Reconciliation panel untuk recent `lead_payments`, export CSV `checkout_pending`, dan action per-lead `Verify payment`.
+- Payment verification modal and prospect details drawer close actions use shared hover tooltips for compact QA controls.
 
 API yang dipakai:
 - `GET /api/leads`
@@ -489,6 +491,7 @@ Logic penting:
 - First generate dan `AI regenerate` memakai `src/lib/adminSiteGeneration.ts` untuk shared cooldown/readiness preflight sebelum gather/generate berat; mode `Re-gather Google data + resave` tidak membutuhkan preflight AI.
 - `AI regenerate` dan `Re-gather Google data + resave` mengirim ulang `brand.paletteOptions` dari site JSON agar pilihan warna yang sudah ada tidak bergantung pada shape lama atau fallback renderer.
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
+- JSON/data modal close action uses shared hover tooltip so the compact X control is named during production QA.
 - Generate/regenerate/readiness action notices memakai `AdminToast`, sehingga pesan sukses seperti `AI copy patch regenerated ...` tetap floating di kanan atas meski admin sedang melihat bagian bawah list.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
 - Initial load `/admin/sites` memakai `readApiJson` untuk `/api/sites` dan `/api/prospects`, sehingga Cloudflare HTML 503 ditampilkan sebagai masalah Pages Functions/edge, bukan pesan mentah `Response bukan JSON`.
@@ -532,17 +535,18 @@ API yang dipakai:
 Logic penting:
 - Provider selector hanya menampilkan field API key untuk provider aktif.
 - Settings punya anchor sections `settings-ai-provider`, `settings-google-places`, dan `settings-payment` untuk dashboard readiness deep-links.
+- Dense settings sections use collapsed-by-default panels remembered in `localStorage` (`webview.adminSettings.openSections`) so production QA can expand only the area being edited.
 - Provider tab dan estimator provider/model disimpan ke localStorage agar pilihan terakhir tetap dipakai setelah refresh.
 - Setelah settings berhasil tersimpan, cache AI readiness otomatis dibersihkan agar key baru langsung terbaca oleh badge/preflight.
-- Estimator provider/model punya tombol `Refresh AI readiness` untuk clear cache manual tanpa menunggu TTL 30 detik.
+- Estimator provider/model punya tombol refresh AI readiness icon-only dengan hover tooltip untuk clear cache manual tanpa menunggu TTL 30 detik.
 - Estimator juga menampilkan inline `AI readiness` badge untuk provider/model yang sedang dipilih, sehingga key baru bisa diverifikasi dari `/admin/settings` tanpa pindah ke Leads/Sites.
 - Provider cooldown history refresh saat window focus atau event `webview:provider-cooldown`, dan menampilkan event `set`, `blocked`, serta `clear` dengan provider, action, reason, dan expiry.
-- Tombol `Export compact` menyalin JSON ringkas event cooldown yang sedang terlihat untuk support/debug tanpa endpoint export baru.
+- Tombol cooldown history export/refresh dibuat icon-only dengan hover tooltip; export menyalin JSON ringkas event cooldown yang sedang terlihat untuk support/debug tanpa endpoint export baru.
 - Auto-save berjalan 1,2 detik setelah perubahan terakhir.
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - KIE.ai ditampilkan sebagai estimasi diskon karena pricing live berada di dashboard/pricing KIE.
-- Payment settings sekarang mencakup active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), USD amount, USD->IDR rate, package copy, Xendit key, Midtrans keys/mode, DOKU keys/mode, manual fallback links, legacy Lemon fields, dan nomor WhatsApp admin untuk mock/checkout notifications.
+- Payment settings sekarang mencakup active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), USD amount, USD->IDR rate, package copy, Xendit key, Midtrans keys/mode, DOKU keys/mode, PayPal/Wise/Payoneer/manual fields, legacy Lemon fields, dan nomor WhatsApp admin. The UI shows only the active processor form plus shared offer/conversion fields; PayPal risk guardrails appear only when PayPal is active or already configured.
 - Section `Prospect Scoring` menyimpan preset, default threshold, dan bobot scoring ke D1 settings agar prioritas prospek bisa ditune dari UI tanpa edit kode.
 - Bobot scoring memakai angka positif/negatif. Reset weights mengembalikan default dari `src/lib/prospectScoring.ts`.
 - Tooltip dipasang pada Settings heading, manual save, provider tabs, Google Places, Payment Links, AI cost estimator, AI readiness refresh/result, and scoring controls to clarify which settings affect generation, search, checkout, and estimates.

@@ -474,18 +474,21 @@ export default function AdminSites() {
           <h1 className="mt-2 text-3xl font-bold text-gray-900">Situs yang berhasil dibuat</h1>
           <p className="mt-2 text-gray-500">Daftar ini membaca semua JSON website yang tersimpan di D1.</p>
         </div>
-        <button
-          type="button"
-          onClick={fetchSites}
-          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
-        >
-          <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />
-          Refresh
-        </button>
+        <HoverTooltip text="Reload generated sites and ready-to-generate prospects from the API after a generate, regenerate, or schema repair.">
+          <button
+            type="button"
+            onClick={fetchSites}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        </HoverTooltip>
       </div>
 
       <div className="mb-5 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
         <Search size={18} className="text-gray-400" />
+        <HelpTooltip text="Filters generated sites and ready prospects by business name, slug, niche, language, or summary fields already loaded on this page." />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -708,33 +711,39 @@ export default function AdminSites() {
                     Maps
                   </a>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleSeeGatheredData(site)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  <Database size={14} />
-                  Data
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSeeCopyBrief(site)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  <FileText size={14} />
-                  Brief
-                </button>
-                <div className="relative">
+                <HoverTooltip text="Inspect saved source data and generated JSON summary for debugging preview or export issues.">
                   <button
                     type="button"
-                    onClick={() => setOpenRegenerateMenu(openRegenerateMenu === site.businessId ? "" : site.businessId)}
-                    disabled={Boolean(regeneratingId)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    onClick={() => handleSeeGatheredData(site)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                   >
-                    <RotateCw size={14} className={regeneratingId === site.businessId ? "animate-spin" : ""} />
-                    Regen
-                    <ChevronDown size={14} />
+                    <Database size={14} />
+                    Data
                   </button>
+                </HoverTooltip>
+                <HoverTooltip text="Open the compact copy brief used for AI copy patch/regeneration review.">
+                  <button
+                    type="button"
+                    onClick={() => handleSeeCopyBrief(site)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    <FileText size={14} />
+                    Brief
+                  </button>
+                </HoverTooltip>
+                <div className="relative">
+                  <HoverTooltip text="Choose AI copy regeneration or Google re-gather/resave for this generated site.">
+                    <button
+                      type="button"
+                      onClick={() => setOpenRegenerateMenu(openRegenerateMenu === site.businessId ? "" : site.businessId)}
+                      disabled={Boolean(regeneratingId)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      <RotateCw size={14} className={regeneratingId === site.businessId ? "animate-spin" : ""} />
+                      Regen
+                      <ChevronDown size={14} />
+                    </button>
+                  </HoverTooltip>
                   {openRegenerateMenu === site.businessId && (
                     <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl">
                       <div className="mb-3">
@@ -846,9 +855,11 @@ export default function AdminSites() {
                 <p className="text-sm font-semibold text-gray-900">{activeData.title}</p>
                 <p className="text-xs text-gray-500">{activeData.subtitle}</p>
               </div>
-              <button type="button" onClick={() => setActiveData(null)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100">
-                <X size={18} />
-              </button>
+              <HoverTooltip text="Close this JSON/data modal.">
+                <button type="button" onClick={() => setActiveData(null)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close data modal">
+                  <X size={18} />
+                </button>
+              </HoverTooltip>
             </div>
             <pre className="max-h-[70vh] overflow-auto bg-slate-950 p-5 text-xs leading-relaxed text-slate-100">
               {JSON.stringify(activeData.data, null, 2)}

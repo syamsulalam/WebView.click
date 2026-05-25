@@ -100,14 +100,16 @@ export default function GenerationJobDetailsDrawer({
                 />
               </div>
             )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              aria-label="Close job details"
-            >
-              <X size={18} />
-            </button>
+            <HoverTooltip text="Close job details drawer.">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close job details"
+              >
+                <X size={18} />
+              </button>
+            </HoverTooltip>
           </div>
         </div>
         <div className="flex-1 space-y-4 overflow-auto p-5 text-sm">
@@ -132,14 +134,16 @@ export default function GenerationJobDetailsDrawer({
             <div className="mb-2 flex items-center justify-between gap-2">
               <h3 className="font-semibold text-slate-950">Error</h3>
               {job.error && (
-                <button
-                  type="button"
-                  onClick={() => onCopyValue(`${job.id}:error`, job.error)}
-                  className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-                >
-                  {copiedKey === `${job.id}:error` ? <Check size={12} /> : <Copy size={12} />}
-                  Copy
-                </button>
+                <HoverTooltip text="Copy the raw job error for production QA or provider support.">
+                  <button
+                    type="button"
+                    onClick={() => onCopyValue(`${job.id}:error`, job.error)}
+                    className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+                  >
+                    {copiedKey === `${job.id}:error` ? <Check size={12} /> : <Copy size={12} />}
+                    Copy
+                  </button>
+                </HoverTooltip>
               )}
             </div>
             <pre className="max-h-40 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-xs text-slate-100">
@@ -174,15 +178,17 @@ export default function GenerationJobDetailsDrawer({
                         {status === "running" && <Loader2 className="animate-spin" size={16} />}
                       </div>
                       {canRunStep && (
-                        <button
-                          type="button"
-                          onClick={() => onRetryChunkedStep(job, step.key)}
-                          disabled={Boolean(retryingChunkStep || retryingJobId)}
-                          className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-800 ring-1 ring-inset ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
-                        >
-                          {retryingChunkStep === retryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
-                          {job.status === "failed" ? `Retry ${step.label}` : `Run ${step.label}`}
-                        </button>
+                        <HoverTooltip text={`${job.status === "failed" ? "Retry" : "Run"} only the ${step.label} step for this chunked job.`}>
+                          <button
+                            type="button"
+                            onClick={() => onRetryChunkedStep(job, step.key)}
+                            disabled={Boolean(retryingChunkStep || retryingJobId)}
+                            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-800 ring-1 ring-inset ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            {retryingChunkStep === retryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
+                            {job.status === "failed" ? `Retry ${step.label}` : `Run ${step.label}`}
+                          </button>
+                        </HoverTooltip>
                       )}
                     </div>
                   );
@@ -286,14 +292,16 @@ export default function GenerationJobDetailsDrawer({
                 <p className="mt-0.5 text-xs text-slate-500">Source copy sent to AI and final copy saved after patch/fallback.</p>
               </div>
               {auditItems.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => onCopyValue(`${job.id}:copy-audit`, JSON.stringify({ summary: auditSummary, items: auditItems }, null, 2))}
-                  className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-                >
-                  {copiedKey === `${job.id}:copy-audit` ? <Check size={12} /> : <Copy size={12} />}
-                  Copy
-                </button>
+                <HoverTooltip text="Copy source-vs-saved AI copy audit JSON for this job.">
+                  <button
+                    type="button"
+                    onClick={() => onCopyValue(`${job.id}:copy-audit`, JSON.stringify({ summary: auditSummary, items: auditItems }, null, 2))}
+                    className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+                  >
+                    {copiedKey === `${job.id}:copy-audit` ? <Check size={12} /> : <Copy size={12} />}
+                    Copy
+                  </button>
+                </HoverTooltip>
               )}
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
@@ -344,14 +352,16 @@ export default function GenerationJobDetailsDrawer({
           <section>
             <div className="mb-2 flex items-center justify-between gap-2">
               <h3 className="font-semibold text-slate-950">Raw metadata</h3>
-              <button
-                type="button"
-                onClick={() => onCopyValue(`${job.id}:metadata`, JSON.stringify(job.metadata || {}, null, 2))}
-                className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-              >
-                {copiedKey === `${job.id}:metadata` ? <Check size={12} /> : <Copy size={12} />}
-                Copy
-              </button>
+              <HoverTooltip text="Copy raw generation job metadata JSON.">
+                <button
+                  type="button"
+                  onClick={() => onCopyValue(`${job.id}:metadata`, JSON.stringify(job.metadata || {}, null, 2))}
+                  className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+                >
+                  {copiedKey === `${job.id}:metadata` ? <Check size={12} /> : <Copy size={12} />}
+                  Copy
+                </button>
+              </HoverTooltip>
             </div>
             <pre className="max-h-[45vh] overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-xs text-slate-100">
               {JSON.stringify(job.metadata || {}, null, 2)}

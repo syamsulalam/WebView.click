@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, Copy, Loader2, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { aiModelPrices, defaultInputTokens, defaultOutputTokens, estimateCostUsd, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { clearAiReadinessCache } from "../../lib/aiReadiness";
 import HelpTooltip from "../../components/HelpTooltip";
+import HoverTooltip from "../../components/HoverTooltip";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
@@ -149,6 +150,7 @@ const paymentProcessorOptions = [
 const paymentFieldGroups: Array<{
   title: string;
   description: string;
+  processors?: string[];
   fields: Array<{ key: string; label: string; type?: "text" | "password" | "number" | "select"; placeholder?: string; tooltip: string; options?: Array<{ value: string; label: string }> }>;
 }> = [
   {
@@ -164,6 +166,7 @@ const paymentFieldGroups: Array<{
   {
     title: "Xendit",
     description: "Use hosted invoice creation. Keep the key secret; it is only used server-side.",
+    processors: ["xendit"],
     fields: [
       { key: "XENDIT_SECRET_KEY", label: "Secret API key", type: "password", placeholder: "xnd_development_... / xnd_production_...", tooltip: "Xendit secret key for creating hosted invoices from /api/payments/checkout." },
     ],
@@ -171,6 +174,7 @@ const paymentFieldGroups: Array<{
   {
     title: "Midtrans",
     description: "Use Snap Redirect. Sandbox and production keys are different.",
+    processors: ["midtrans"],
     fields: [
       { key: "MIDTRANS_SERVER_KEY", label: "Server key", type: "password", placeholder: "SB-Mid-server-... / Mid-server-...", tooltip: "Server-side key used to create Midtrans Snap transactions. Do not expose it in public pages." },
       { key: "MIDTRANS_CLIENT_KEY", label: "Client key", placeholder: "SB-Mid-client-... / Mid-client-...", tooltip: "Client key for reference/readiness. Current flow uses hosted Snap redirect from the server response." },
@@ -180,6 +184,7 @@ const paymentFieldGroups: Array<{
   {
     title: "DOKU",
     description: "Use DOKU Checkout with signed backend requests.",
+    processors: ["doku"],
     fields: [
       { key: "DOKU_CLIENT_ID", label: "Client ID", placeholder: "BRN-... / MCH-...", tooltip: "DOKU Client ID from Back Office > API Keys / Service." },
       { key: "DOKU_SECRET_KEY", label: "Secret Key", type: "password", placeholder: "DOKU secret key", tooltip: "Secret Key used to sign DOKU Checkout requests with HMAC-SHA256." },
@@ -187,8 +192,9 @@ const paymentFieldGroups: Array<{
     ],
   },
   {
-    title: "Manual fallback links",
-    description: "Use these when hosted gateway keys are missing or a client asks for another rail.",
+    title: "PayPal Business",
+    description: "Use PayPal Business or invoice links for manual checkout. Webhook credentials can stay empty until the Business app is ready.",
+    processors: ["paypal"],
     fields: [
       { key: "PAYPAL_BUSINESS_URL", label: "PayPal Business link", placeholder: "https://www.paypal.com/...", tooltip: "Use a PayPal Business checkout/invoice/payment link. Avoid relying on PayPal Personal for business volume." },
       { key: "PAYPAL_ACCOUNT_MODE", label: "PayPal account mode", type: "select", tooltip: "Business is the target mode. Personal bridge is only for temporary low-volume testing while you upgrade.", options: [{ value: "business", label: "Business / invoice link" }, { value: "personal_bridge", label: "Personal temporary bridge" }] },
@@ -198,14 +204,39 @@ const paymentFieldGroups: Array<{
       { key: "PAYPAL_CLIENT_SECRET", label: "PayPal Client Secret", type: "password", placeholder: "Business REST app secret", tooltip: "Optional until PayPal Business is ready. Keep secret; only Pages Functions use it for webhook verification." },
       { key: "PAYPAL_WEBHOOK_ID", label: "PayPal Webhook ID", placeholder: "Webhook ID from PayPal app", tooltip: "Optional. The webhook endpoint safely acknowledges events while this is empty, and verifies signatures when configured." },
       { key: "PAYPAL_IS_PRODUCTION", label: "PayPal API mode", type: "select", tooltip: "Use sandbox until the PayPal Business app and webhook have been tested.", options: [{ value: "false", label: "Sandbox" }, { value: "true", label: "Production" }] },
+      { key: "ADMIN_WHATSAPP_NUMBER", label: "Admin WhatsApp number", placeholder: "62812...", tooltip: "Fallback contact if the PayPal/manual checkout needs admin follow-up." },
+    ],
+  },
+  {
+    title: "Wise",
+    description: "Use a Wise request/payment link for manual reconciliation.",
+    processors: ["wise"],
+    fields: [
       { key: "WISE_PAYMENT_URL", label: "Wise payment/request link", placeholder: "https://wise.com/...", tooltip: "Wise request/payment link or invoice link for clients who can pay by bank transfer-style rails." },
+      { key: "ADMIN_WHATSAPP_NUMBER", label: "Admin WhatsApp number", placeholder: "62812...", tooltip: "Fallback contact if Wise checkout needs admin follow-up." },
+    ],
+  },
+  {
+    title: "Payoneer",
+    description: "Use a Payoneer payment request link for manual reconciliation.",
+    processors: ["payoneer"],
+    fields: [
       { key: "PAYONEER_PAYMENT_URL", label: "Payoneer payment request link", placeholder: "https://payoneer.com/...", tooltip: "Payoneer payment request link for clients who prefer Payoneer." },
+      { key: "ADMIN_WHATSAPP_NUMBER", label: "Admin WhatsApp number", placeholder: "62812...", tooltip: "Fallback contact if Payoneer checkout needs admin follow-up." },
+    ],
+  },
+  {
+    title: "Manual follow-up",
+    description: "Mock checkout records checkout_pending and routes the buyer to admin follow-up.",
+    processors: ["mock"],
+    fields: [
       { key: "ADMIN_WHATSAPP_NUMBER", label: "Admin WhatsApp number", placeholder: "62812...", tooltip: "Used when checkout is mock or fails, so the admin still receives a follow-up-ready message." },
     ],
   },
   {
     title: "Legacy links",
     description: "Kept for compatibility. Lemon Squeezy is not recommended for web development/service sales.",
+    processors: ["lemon_squeezy_legacy"],
     fields: [
       { key: "PAYMENT_LINK_BASIC", label: "Basic package URL", placeholder: "Legacy/basic payment link", tooltip: "Legacy public setting. Prefer selected processor checkout for the done-for-you flow." },
       { key: "PAYMENT_LINK_PREMIUM", label: "Premium package URL", placeholder: "Legacy/premium payment link", tooltip: "Legacy public setting. Prefer selected processor checkout for the done-for-you flow." },
@@ -243,6 +274,18 @@ export default function AdminSettings() {
   const [outputTokens, setOutputTokens] = useState(defaultOutputTokens);
   const [cooldownEvents, setCooldownEvents] = useState<ProviderCooldownEvent[]>([]);
   const [cooldownEventsLoading, setCooldownEventsLoading] = useState(false);
+  const [openSettingSections, setOpenSettingSections] = useLocalStorageState<Record<string, boolean>>(
+    "webview.adminSettings.openSections",
+    {},
+  );
+
+  const settingsSectionOpen = (sectionKey: string) => Boolean(openSettingSections[sectionKey]);
+  const toggleSettingsSection = (sectionKey: string) => {
+    setOpenSettingSections((prev) => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey],
+    }));
+  };
 
   const selectedProviderConfig = useMemo(
     () => providerOptions.find((provider) => provider.key === selectedProvider) || providerOptions[0],
@@ -431,9 +474,12 @@ export default function AdminSettings() {
   const pricingModels = aiModelPrices.filter((item) => item.provider === pricingProvider);
   const pricingEstimate = estimateCostUsd(pricingProvider, pricingModel, inputTokens, outputTokens);
   const pricingProviderKeyReady = Boolean(String(settings?.[pricingProviderApiKeyMap[pricingProvider]] || "").trim());
-  const paypalSelected = (settings.PAYMENT_PROCESSOR || "mock") === "paypal";
+  const activePaymentProcessor = settings.PAYMENT_PROCESSOR || "mock";
+  const visiblePaymentFieldGroups = paymentFieldGroups.filter((group) => !group.processors || group.processors.includes(activePaymentProcessor));
+  const paypalSelected = activePaymentProcessor === "paypal";
   const paypalLink = String(settings.PAYPAL_BUSINESS_URL || "").trim();
   const paypalLooksPersonal = /paypal\.me\//i.test(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
+  const shouldShowPayPalRisk = paypalSelected || Boolean(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
   const paypalRiskAcknowledged = settings.PAYPAL_RISK_ACKNOWLEDGED === "true";
   const paypalRiskItems = [
     { label: "Use goods/services, invoice, or business checkout. Do not ask buyers to use Friends and Family.", done: paypalRiskAcknowledged },
@@ -496,7 +542,22 @@ export default function AdminSettings() {
       )}
 
       <div id="settings-ai-provider" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="grid md:grid-cols-[240px_1fr]">
+        <button
+          type="button"
+          onClick={() => toggleSettingsSection("aiProvider")}
+          className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left hover:bg-slate-50"
+        >
+          <div>
+            <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+              AI Provider Credentials
+              <HelpTooltip text="Expand only when editing API keys. Generation provider/model selection still happens in Leads and Sites." />
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">{selectedProviderConfig.label} selected for credential editing.</p>
+          </div>
+          <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("aiProvider") ? "rotate-180" : ""}`} />
+        </button>
+        {settingsSectionOpen("aiProvider") && (
+        <div className="grid border-t border-gray-100 md:grid-cols-[240px_1fr]">
           <aside className="border-b md:border-b-0 md:border-r border-gray-100 p-4 bg-gray-50">
             <p className="mb-3 inline-flex items-center gap-1.5 px-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
               AI Provider
@@ -546,31 +607,63 @@ export default function AdminSettings() {
             </div>
           </section>
         </div>
+        )}
       </div>
 
       <div className="grid md:grid-cols-2 gap-6 mt-6">
         <div id="settings-google-places" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-            Google Places
-            <HelpTooltip text="Server-side key used for Places search, details, reviews, and photo proxy calls. It should be API-restricted, not HTTP-referrer restricted." />
-          </h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Dipakai dari Cloudflare Pages Function. Jangan gunakan HTTP referrer restriction untuk key ini; pakai API restriction ke Places API saja.
-          </p>
-          <input
-            type="password"
-            value={settings.GOOGLE_PLACES_API_KEY || ""}
-            onChange={(e) => handleChange("GOOGLE_PLACES_API_KEY", e.target.value)}
-            placeholder="AIzaSy..."
-            className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-          />
+          <button
+            type="button"
+            onClick={() => toggleSettingsSection("googlePlaces")}
+            className="flex w-full items-center justify-between gap-4 text-left"
+          >
+            <div>
+              <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                Google Places
+                <HelpTooltip text="Server-side key used for Places search, details, reviews, and photo proxy calls. It should be API-restricted, not HTTP-referrer restricted." />
+              </h2>
+              <p className="text-xs text-gray-500">
+                Dipakai dari Cloudflare Pages Function. Expand only when rotating the Places key.
+              </p>
+            </div>
+            <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("googlePlaces") ? "rotate-180" : ""}`} />
+          </button>
+          {settingsSectionOpen("googlePlaces") && (
+          <div className="mt-4">
+            <p className="mb-3 text-xs text-gray-500">
+              Jangan gunakan HTTP referrer restriction untuk key ini; pakai API restriction ke Places API saja.
+            </p>
+            <input
+              type="password"
+              value={settings.GOOGLE_PLACES_API_KEY || ""}
+              onChange={(e) => handleChange("GOOGLE_PLACES_API_KEY", e.target.value)}
+              placeholder="AIzaSy..."
+              className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+          )}
         </div>
 
         <div id="settings-payment" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-            Payment Setup
-            <HelpTooltip text="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up." />
-          </h2>
+          <button
+            type="button"
+            onClick={() => toggleSettingsSection("payment")}
+            className="flex w-full items-center justify-between gap-4 text-left"
+          >
+            <div>
+              <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                Payment Setup
+                <HelpTooltip text="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up." />
+              </h2>
+              <p className="text-xs leading-relaxed text-gray-500">
+                Active processor: {paymentProcessorOptions.find((option) => option.value === activePaymentProcessor)?.label || activePaymentProcessor}
+              </p>
+            </div>
+            <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("payment") ? "rotate-180" : ""}`} />
+          </button>
+
+          {settingsSectionOpen("payment") && (
+          <div className="mt-4">
           <p className="mb-4 text-xs leading-relaxed text-gray-500">
             Lemon Squeezy is kept only as legacy because its prohibited-products docs disallow web development/services. Prefer Xendit, Midtrans, or DOKU for Indonesia merchant checkout, with PayPal Business/Wise/Payoneer as fallback links.
           </p>
@@ -594,6 +687,7 @@ export default function AdminSettings() {
             </span>
           </label>
 
+          {shouldShowPayPalRisk && (
           <div className={`mt-4 rounded-xl border p-4 ${paypalSelected ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
             <div className="flex items-start gap-3">
               <ShieldAlert size={20} className={paypalSelected ? "mt-0.5 shrink-0 text-amber-700" : "mt-0.5 shrink-0 text-slate-500"} />
@@ -625,9 +719,10 @@ export default function AdminSettings() {
               </div>
             </div>
           </div>
+          )}
 
           <div className="mt-5 space-y-5">
-            {paymentFieldGroups.map((group) => (
+            {visiblePaymentFieldGroups.map((group) => (
               <section key={group.title} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div className="mb-3">
                   <p className="text-sm font-semibold text-slate-900">{group.title}</p>
@@ -665,29 +760,43 @@ export default function AdminSettings() {
               </section>
             ))}
           </div>
+          </div>
+          )}
         </div>
       </div>
 
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
+        <div className={`${settingsSectionOpen("scoring") ? "mb-5" : ""} flex flex-col gap-3 md:flex-row md:items-start md:justify-between`}>
+          <button
+            type="button"
+            onClick={() => toggleSettingsSection("scoring")}
+            className="flex min-w-0 flex-1 items-start justify-between gap-4 text-left"
+          >
+            <div>
             <div className="flex items-center gap-2">
               <SlidersHorizontal size={19} className="text-indigo-600" />
               <h2 className="text-lg font-semibold text-gray-900">Prospect Scoring</h2>
               <HelpTooltip text="Setting ini dipakai oleh /admin/leads untuk mengurutkan dan menyaring prospek. Angka positif menaikkan prioritas, angka negatif menurunkan prioritas." />
             </div>
             <p className="mt-1 text-sm text-gray-500">Tune prioritas prospek tanpa edit kode.</p>
-          </div>
-          <button
-            type="button"
-            onClick={resetScoringWeights}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            <RotateCcw size={16} />
-            Reset weights
+            </div>
+            <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-500 transition ${settingsSectionOpen("scoring") ? "rotate-180" : ""}`} />
           </button>
+          {settingsSectionOpen("scoring") && (
+          <HoverTooltip text="Restore the Balanced prospect scoring preset and default threshold used by /admin/leads filters.">
+            <button
+              type="button"
+              onClick={resetScoringWeights}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <RotateCcw size={16} />
+              Reset weights
+            </button>
+          </HoverTooltip>
+          )}
         </div>
 
+        {settingsSectionOpen("scoring") && (
         <div className="grid gap-5 md:grid-cols-[260px_1fr]">
           <div className="space-y-4">
             <label className="text-sm">
@@ -751,18 +860,28 @@ export default function AdminSettings() {
             ))}
           </div>
         </div>
+        )}
       </div>
 
       <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col gap-1 mb-5">
-          <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-            Estimator Biaya AI
-            <HelpTooltip text="Local estimate for one generated site JSON using the selected pricing table. Actual provider billing can differ by tokenization and provider-side rounding." />
-          </h2>
-          <p className="text-sm text-gray-500">
-            Perkiraan biaya per generate JSON. KIE.ai ditampilkan sebagai estimasi diskon karena pricing detail live ada di dashboard KIE.
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={() => toggleSettingsSection("aiEstimator")}
+          className={`${settingsSectionOpen("aiEstimator") ? "mb-5" : ""} flex w-full items-center justify-between gap-4 text-left`}
+        >
+          <div className="flex flex-col gap-1">
+            <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+              Estimator Biaya AI
+              <HelpTooltip text="Local estimate for one generated site JSON using the selected pricing table. Actual provider billing can differ by tokenization and provider-side rounding." />
+            </h2>
+            <p className="text-sm text-gray-500">
+              Perkiraan biaya per generate JSON. KIE.ai ditampilkan sebagai estimasi diskon karena pricing detail live ada di dashboard KIE.
+            </p>
+          </div>
+          <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("aiEstimator") ? "rotate-180" : ""}`} />
+        </button>
+        {settingsSectionOpen("aiEstimator") && (
+        <>
         <div className="grid md:grid-cols-5 gap-4">
           <div>
             <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700">
@@ -801,7 +920,7 @@ export default function AdminSettings() {
           </div>
           <div className="flex items-end">
             <AdminAiReadinessRefreshButton
-              className="w-full py-2.5"
+              className="mb-0.5"
               onRefresh={() => {
                 setSaveStatus("idle");
                 setMessage("AI readiness cache cleared. Badges will recheck the selected provider/model.");
@@ -865,23 +984,28 @@ export default function AdminSettings() {
               <p className="mt-0.5 text-xs text-slate-500">Useful when checking whether a provider was cleared, retried, or still causing blocked attempts.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={exportCooldownHistory}
-                disabled={!cooldownEvents.length}
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-              >
-                Export compact
-              </button>
-              <button
-                type="button"
-                onClick={fetchCooldownHistory}
-                disabled={cooldownEventsLoading}
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-              >
-                <RotateCcw size={13} className={cooldownEventsLoading ? "animate-spin" : ""} />
-                Refresh history
-              </button>
+              <HoverTooltip text="Copy compact provider cooldown events for debugging provider blocks across tabs or deploys.">
+                <button
+                  type="button"
+                  onClick={exportCooldownHistory}
+                  disabled={!cooldownEvents.length}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  aria-label="Copy provider cooldown history"
+                >
+                  <Copy size={14} />
+                </button>
+              </HoverTooltip>
+              <HoverTooltip text="Reload recent provider cooldown events from D1 without leaving Settings.">
+                <button
+                  type="button"
+                  onClick={fetchCooldownHistory}
+                  disabled={cooldownEventsLoading}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  aria-label="Refresh provider cooldown history"
+                >
+                  <RotateCcw size={13} className={cooldownEventsLoading ? "animate-spin" : ""} />
+                </button>
+              </HoverTooltip>
             </div>
           </div>
           <div className="space-y-2">
@@ -921,6 +1045,8 @@ export default function AdminSettings() {
           <p className="text-3xl font-semibold text-slate-900 mt-1">{formatUsd(pricingEstimate.total)}</p>
           {pricingEstimate.price?.note && <p className="text-xs text-slate-500 mt-2">{pricingEstimate.price.note}</p>}
         </div>
+        </>
+        )}
       </div>
     </div>
   );
