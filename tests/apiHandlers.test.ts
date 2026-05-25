@@ -547,8 +547,8 @@ test("payments checkout creates PayPal inline order with add-on pricing", async 
     PAYMENT_USD_AMOUNT: "197",
     PAYMENT_ADDON_PAGE_USD: "10",
     PAYMENT_USD_TO_IDR_RATE: "16000",
-    PAYPAL_CLIENT_ID: "sandbox-client",
-    PAYPAL_CLIENT_SECRET: "sandbox-secret",
+    PAYPAL_SANDBOX_CLIENT_ID: "sandbox-client",
+    PAYPAL_SANDBOX_CLIENT_SECRET: "sandbox-secret",
     PAYPAL_IS_PRODUCTION: "false",
     PAYPAL_RISK_ACKNOWLEDGED: "true",
   };
@@ -668,8 +668,8 @@ test("payments checkout falls back to PayPal Business link when order creation f
 
   const settings: Record<string, string> = {
     PAYMENT_PROCESSOR: "paypal",
-    PAYPAL_CLIENT_ID: "sandbox-client",
-    PAYPAL_CLIENT_SECRET: "sandbox-secret",
+    PAYPAL_SANDBOX_CLIENT_ID: "sandbox-client",
+    PAYPAL_SANDBOX_CLIENT_SECRET: "sandbox-secret",
     PAYPAL_IS_PRODUCTION: "false",
     PAYPAL_BUSINESS_URL: "https://www.paypal.com/paypalme/webviewclick",
   };

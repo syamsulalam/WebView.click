@@ -60,6 +60,10 @@ const initialSettings: Record<string, string> = {
   PAYPAL_PAYMENT_NOTE: "Please pay as goods/services or invoice payment, not Friends and Family. Include the business name, requested domain, and WebView.click payment reference in the payment note.",
   PAYPAL_CLIENT_ID: "",
   PAYPAL_CLIENT_SECRET: "",
+  PAYPAL_SANDBOX_CLIENT_ID: "",
+  PAYPAL_SANDBOX_CLIENT_SECRET: "",
+  PAYPAL_LIVE_CLIENT_ID: "",
+  PAYPAL_LIVE_CLIENT_SECRET: "",
   PAYPAL_WEBHOOK_ID: "",
   PAYPAL_IS_PRODUCTION: "false",
   WISE_PAYMENT_URL: "",
@@ -143,7 +147,7 @@ const paymentProcessorOptions = [
   { value: "xendit", label: "Xendit hosted invoice", helper: "Recommended first live option for an Indonesia merchant accepting cards and local methods." },
   { value: "midtrans", label: "Midtrans Snap", helper: "Indonesia-local gateway with broad local methods and card checkout." },
   { value: "doku", label: "DOKU Checkout", helper: "Indonesia-local hosted checkout with Client ID + Secret Key HMAC signing." },
-  { value: "paypal", label: "PayPal Business link", helper: "Fallback link. Use Business, not Personal, for commercial volume." },
+  { value: "paypal", label: "PayPal Business Checkout", helper: "Inline PayPal Checkout when active API keys are filled; fallback link remains available." },
   { value: "wise", label: "Wise payment/request link", helper: "Manual invoice/bank-transfer style fallback for larger B2B clients." },
   { value: "payoneer", label: "Payoneer payment request", helper: "Manual payment request fallback for clients who prefer Payoneer." },
   { value: "lemon_squeezy_legacy", label: "Lemon Squeezy legacy", helper: "Legacy only. Lemon Squeezy prohibits web development/services for this offer." },
@@ -196,17 +200,19 @@ const paymentFieldGroups: Array<{
   },
   {
     title: "PayPal Business",
-    description: "Use PayPal Checkout Orders API when Client ID/Secret are filled. Business link remains a manual fallback.",
+    description: "Use PayPal Checkout Orders API. Store sandbox and live credentials separately, then switch mode with the toggle.",
     processors: ["paypal"],
     fields: [
+      { key: "PAYPAL_IS_PRODUCTION", label: "PayPal API mode", type: "select", tooltip: "Use sandbox credentials while testing. Switch to live only after a complete sandbox order approval and capture succeeds.", options: [{ value: "false", label: "Sandbox" }, { value: "true", label: "Live" }] },
+      { key: "PAYPAL_SANDBOX_CLIENT_ID", label: "Sandbox Client ID", placeholder: "Sandbox REST app client ID", tooltip: "Public sandbox client ID used by the PayPal JavaScript SDK and Orders API when mode is Sandbox." },
+      { key: "PAYPAL_SANDBOX_CLIENT_SECRET", label: "Sandbox Client Secret", type: "password", placeholder: "Sandbox REST app secret", tooltip: "Server-side sandbox secret used to create/capture sandbox PayPal Orders. Never expose it in public pages." },
+      { key: "PAYPAL_LIVE_CLIENT_ID", label: "Live Client ID", placeholder: "Live REST app client ID", tooltip: "Public live client ID used by the PayPal JavaScript SDK and Orders API when mode is Live." },
+      { key: "PAYPAL_LIVE_CLIENT_SECRET", label: "Live Client Secret", type: "password", placeholder: "Live REST app secret", tooltip: "Server-side live secret used to create/capture live PayPal Orders. Never expose it in public pages." },
       { key: "PAYPAL_BUSINESS_URL", label: "PayPal fallback link", placeholder: "https://www.paypal.com/...", tooltip: "Optional fallback PayPal Business checkout/invoice/payment link if API order creation fails or credentials are not ready." },
       { key: "PAYPAL_ACCOUNT_MODE", label: "PayPal account mode", type: "select", tooltip: "Business is the target mode. Personal bridge is only for temporary low-volume testing while you upgrade.", options: [{ value: "business", label: "Business / invoice link" }, { value: "personal_bridge", label: "Personal temporary bridge" }] },
       { key: "PAYPAL_RISK_ACKNOWLEDGED", label: "PayPal risk checklist", type: "select", tooltip: "Set to acknowledged only after reviewing the PayPal risk checklist below and preparing delivery/payment records.", options: [{ value: "false", label: "Not acknowledged" }, { value: "true", label: "Acknowledged" }] },
       { key: "PAYPAL_PAYMENT_NOTE", label: "PayPal payment note instruction", placeholder: "Ask buyer to include business, domain, and reference", tooltip: "Shown before opening PayPal so the buyer sends a trackable business payment and does not use Friends and Family." },
-      { key: "PAYPAL_CLIENT_ID", label: "PayPal Client ID", placeholder: "Business REST app client ID", tooltip: "Public client ID used by the PayPal JavaScript SDK and server-side Orders API. Use sandbox first." },
-      { key: "PAYPAL_CLIENT_SECRET", label: "PayPal Client Secret", type: "password", placeholder: "Business REST app secret", tooltip: "Server-side secret used to create/capture PayPal Orders and verify webhook signatures. Never expose it in public pages." },
       { key: "PAYPAL_WEBHOOK_ID", label: "PayPal Webhook ID", placeholder: "Webhook ID from PayPal app", tooltip: "Optional but recommended. Direct Checkout capture records payment immediately; webhook still protects against missed browser callbacks." },
-      { key: "PAYPAL_IS_PRODUCTION", label: "PayPal API mode", type: "select", tooltip: "Use sandbox credentials while testing. Switch to production only after a complete sandbox order approval and capture succeeds.", options: [{ value: "false", label: "Sandbox" }, { value: "true", label: "Production" }] },
       { key: "ADMIN_WHATSAPP_NUMBER", label: "Admin WhatsApp number", placeholder: "62812...", tooltip: "Fallback contact if the PayPal/manual checkout needs admin follow-up." },
     ],
   },
@@ -484,6 +490,19 @@ export default function AdminSettings() {
   const paypalLooksPersonal = /paypal\.me\//i.test(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
   const shouldShowPayPalRisk = paypalSelected || Boolean(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
   const paypalRiskAcknowledged = settings.PAYPAL_RISK_ACKNOWLEDGED === "true";
+  const paypalLiveMode = settings.PAYPAL_IS_PRODUCTION === "true";
+  const activePaypalModeLabel = paypalLiveMode ? "Live" : "Sandbox";
+  const activePaypalClientId = String(
+    paypalLiveMode
+      ? settings.PAYPAL_LIVE_CLIENT_ID || settings.PAYPAL_CLIENT_ID || ""
+      : settings.PAYPAL_SANDBOX_CLIENT_ID || settings.PAYPAL_CLIENT_ID || "",
+  ).trim();
+  const activePaypalClientSecret = String(
+    paypalLiveMode
+      ? settings.PAYPAL_LIVE_CLIENT_SECRET || settings.PAYPAL_CLIENT_SECRET || ""
+      : settings.PAYPAL_SANDBOX_CLIENT_SECRET || settings.PAYPAL_CLIENT_SECRET || "",
+  ).trim();
+  const paypalActiveCredentialsMissing = paypalSelected && (!activePaypalClientId || !activePaypalClientSecret);
   const paypalRiskItems = [
     { label: "Use goods/services, invoice, or business checkout. Do not ask buyers to use Friends and Family.", done: paypalRiskAcknowledged },
     { label: "Include business name, requested domain, and payment reference in every payment note.", done: Boolean(String(settings.PAYPAL_PAYMENT_NOTE || "").trim()) },
@@ -673,6 +692,12 @@ export default function AdminSettings() {
                 <p className="text-xs leading-relaxed text-gray-500">
                   Active processor: {paymentProcessorOptions.find((option) => option.value === activePaymentProcessor)?.label || activePaymentProcessor}
                 </p>
+                {paypalActiveCredentialsMissing && (
+                  <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                    <AlertCircle size={13} />
+                    PayPal {activePaypalModeLabel} keys missing
+                  </p>
+                )}
               </div>
               <ChevronDown size={18} className={`text-slate-500 transition ${settingsSectionOpen("payment") ? "rotate-180" : ""}`} />
             </button>
@@ -688,13 +713,25 @@ export default function AdminSettings() {
           {settingsSectionOpen("payment") && (
           <div className="mt-4">
           <p className="mb-4 text-xs leading-relaxed text-gray-500">
-            Lemon Squeezy is kept only as legacy because its prohibited-products docs disallow web development/services. Prefer Xendit, Midtrans, or DOKU for Indonesia merchant checkout, with PayPal Business/Wise/Payoneer as fallback links.
+            Lemon Squeezy is kept only as legacy because its prohibited-products docs disallow web development/services. Prefer Xendit, Midtrans, DOKU, or PayPal Business Checkout for live checkout, with Wise/Payoneer as manual fallback links.
           </p>
+
+          {paypalActiveCredentialsMissing && (
+            <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+              <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-700" />
+              <div>
+                <p className="font-semibold">PayPal {activePaypalModeLabel} credentials are incomplete</p>
+                <p className="mt-1 text-xs leading-relaxed">
+                  You selected PayPal checkout, but the active {activePaypalModeLabel.toLowerCase()} Client ID or Client Secret is missing. Add both before leaving Settings, or checkout will fall back to manual/mock follow-up instead of inline PayPal capture.
+                </p>
+              </div>
+            </div>
+          )}
 
           <label className="block text-sm">
             <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
               Active payment processor
-              <HelpTooltip text="This controls /api/payments/checkout. Select mock while keys are missing; switch to Xendit, Midtrans, or DOKU after account approval and sandbox testing." />
+              <HelpTooltip text="This controls /api/payments/checkout. Select mock while keys are missing; switch to Xendit, Midtrans, DOKU, or PayPal after account approval and sandbox testing." />
             </span>
             <select
               value={settings.PAYMENT_PROCESSOR || "mock"}

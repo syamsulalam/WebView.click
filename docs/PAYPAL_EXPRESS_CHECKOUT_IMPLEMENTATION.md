@@ -60,17 +60,24 @@ Settings:
 - `PAYMENT_PROCESSOR=paypal`
 - `PAYMENT_USD_AMOUNT=197`
 - `PAYMENT_ADDON_PAGE_USD=10`
-- `PAYPAL_CLIENT_ID`
-- `PAYPAL_CLIENT_SECRET`
 - `PAYPAL_IS_PRODUCTION=false` for sandbox, `true` for live.
+- `PAYPAL_SANDBOX_CLIENT_ID`
+- `PAYPAL_SANDBOX_CLIENT_SECRET`
+- `PAYPAL_LIVE_CLIENT_ID`
+- `PAYPAL_LIVE_CLIENT_SECRET`
 - `PAYPAL_WEBHOOK_ID` after webhook is configured.
 - `PAYPAL_BUSINESS_URL` optional fallback link.
+
+Legacy fallback:
+
+- Existing `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` are still read as fallback values so older production settings do not break.
+- New setup should fill the sandbox and live fields separately, then switch mode only with `PAYPAL_IS_PRODUCTION`.
 
 ## Sandbox QA
 
 1. In PayPal Developer Dashboard, use sandbox REST app credentials.
 2. In `/admin/settings#settings-payment`, set `PAYMENT_PROCESSOR=paypal`.
-3. Paste sandbox `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`.
+3. Paste sandbox `PAYPAL_SANDBOX_CLIENT_ID` and `PAYPAL_SANDBOX_CLIENT_SECRET`.
 4. Set `PAYPAL_IS_PRODUCTION=false`.
 5. Use `/demo` or a generated public preview.
 6. Select domain mode, optionally add page/edit actions, and continue.
@@ -78,11 +85,12 @@ Settings:
 8. Pay with a sandbox buyer account.
 9. Confirm the modal shows payment captured.
 10. Confirm `/admin/leads` shows a paid ledger row with PayPal transaction ID and payer email.
-11. Only after this succeeds, switch to live credentials and set `PAYPAL_IS_PRODUCTION=true`.
+11. Only after this succeeds, paste live `PAYPAL_LIVE_CLIENT_ID` and `PAYPAL_LIVE_CLIENT_SECRET`, then set `PAYPAL_IS_PRODUCTION=true`.
 
 ## Debug Notes
 
 - If the PayPal button does not load, check browser console for SDK load errors and confirm the client ID matches sandbox/live mode.
+- If PayPal is selected in Settings and the active mode Client ID/Secret is missing, `/admin/settings` shows an amber warning before you leave the page.
 - If order creation fails, `/api/payments/checkout` falls back to `PAYPAL_BUSINESS_URL` when available and keeps the checkout-pending CRM row.
 - If capture succeeds in PayPal but CRM recording fails, use `/admin/leads` manual payment verification with the PayPal capture ID while reviewing Function logs.
 - Keep webhook configured even though direct capture records payments immediately; it protects against browser callback interruptions.

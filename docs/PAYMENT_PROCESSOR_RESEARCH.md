@@ -153,14 +153,17 @@ What matters:
 
 Settings needed:
 - `PAYMENT_PROCESSOR=paypal`
-- `PAYPAL_CLIENT_ID`
-- `PAYPAL_CLIENT_SECRET`
 - `PAYPAL_IS_PRODUCTION=false` for sandbox, `true` for live.
+- `PAYPAL_SANDBOX_CLIENT_ID`
+- `PAYPAL_SANDBOX_CLIENT_SECRET`
+- `PAYPAL_LIVE_CLIENT_ID`
+- `PAYPAL_LIVE_CLIENT_SECRET`
 - `PAYPAL_WEBHOOK_ID` after webhook setup.
 - `PAYPAL_BUSINESS_URL` as optional fallback link.
 
 Operational note:
 - Direct PayPal Checkout should mark ledger/subscription/lead paid immediately after capture.
+- `/admin/settings` warns when PayPal is selected but the active sandbox/live Client ID or Secret is missing.
 - Keep CRM checkout activity because API order creation can still fail and fall back to manual link.
 - WebView.click has PayPal risk controls in `/admin/settings#settings-payment`: account mode, risk acknowledgement, editable payment note, and buyer-facing payment reference review before opening PayPal.
 - See `docs/PAYPAL_RISK_CONTROLS.md` and `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md` for the operating checklist and implementation tracker.

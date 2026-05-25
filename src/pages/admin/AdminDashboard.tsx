@@ -107,8 +107,12 @@ export default function AdminDashboard() {
   const paypalLink = String(settings?.PAYPAL_BUSINESS_URL || "").trim();
   const paypalRiskAcknowledged = String(settings?.PAYPAL_RISK_ACKNOWLEDGED || "") === "true";
   const paypalLooksPersonal = /paypal\.me\//i.test(paypalLink) || String(settings?.PAYPAL_ACCOUNT_MODE || "") === "personal_bridge";
-  const paypalReady = Boolean(paypalLink && paypalRiskAcknowledged && !paypalLooksPersonal);
-  const paypalPartial = Boolean(paypalLink && (!paypalRiskAcknowledged || paypalLooksPersonal));
+  const paypalLiveMode = String(settings?.PAYPAL_IS_PRODUCTION || "") === "true";
+  const paypalActiveClientId = String(paypalLiveMode ? settings?.PAYPAL_LIVE_CLIENT_ID || settings?.PAYPAL_CLIENT_ID || "" : settings?.PAYPAL_SANDBOX_CLIENT_ID || settings?.PAYPAL_CLIENT_ID || "").trim();
+  const paypalActiveClientSecret = String(paypalLiveMode ? settings?.PAYPAL_LIVE_CLIENT_SECRET || settings?.PAYPAL_CLIENT_SECRET || "" : settings?.PAYPAL_SANDBOX_CLIENT_SECRET || settings?.PAYPAL_CLIENT_SECRET || "").trim();
+  const paypalApiReady = Boolean(paypalActiveClientId && paypalActiveClientSecret);
+  const paypalReady = Boolean(paypalApiReady && paypalRiskAcknowledged && !paypalLooksPersonal);
+  const paypalPartial = Boolean((paypalApiReady || paypalLink) && (!paypalRiskAcknowledged || paypalLooksPersonal));
   const processorReady = (
     (activePaymentProcessor === "xendit" && String(settings?.XENDIT_SECRET_KEY || "").trim())
     || (activePaymentProcessor === "midtrans" && String(settings?.MIDTRANS_SERVER_KEY || "").trim())

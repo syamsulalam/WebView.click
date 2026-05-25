@@ -63,6 +63,34 @@ function paypalApiBase(isProduction: boolean) {
   return isProduction ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
 }
 
+async function getPaypalApiCredentials(deps: PaymentsDeps, db: D1DatabaseLike, env: unknown) {
+  const [
+    legacyClientId,
+    legacyClientSecret,
+    sandboxClientId,
+    sandboxClientSecret,
+    liveClientId,
+    liveClientSecret,
+    productionSetting,
+  ] = await Promise.all([
+    deps.getSetting(db, env, "PAYPAL_CLIENT_ID"),
+    deps.getSetting(db, env, "PAYPAL_CLIENT_SECRET"),
+    deps.getSetting(db, env, "PAYPAL_SANDBOX_CLIENT_ID"),
+    deps.getSetting(db, env, "PAYPAL_SANDBOX_CLIENT_SECRET"),
+    deps.getSetting(db, env, "PAYPAL_LIVE_CLIENT_ID"),
+    deps.getSetting(db, env, "PAYPAL_LIVE_CLIENT_SECRET"),
+    deps.getSetting(db, env, "PAYPAL_IS_PRODUCTION"),
+  ]);
+  const isProduction = productionSetting === "true";
+  return {
+    isProduction,
+    mode: isProduction ? "live" : "sandbox",
+    productionSetting,
+    clientId: isProduction ? firstString(liveClientId, legacyClientId) : firstString(sandboxClientId, legacyClientId),
+    clientSecret: isProduction ? firstString(liveClientSecret, legacyClientSecret) : firstString(sandboxClientSecret, legacyClientSecret),
+  };
+}
+
 async function paypalAccessToken(baseUrl: string, clientId: string, clientSecret: string) {
   const response = await fetch(`${baseUrl}/v1/oauth2/token`, {
     method: "POST",
@@ -392,19 +420,12 @@ async function recordPaypalWebhookPayment(deps: PaymentsDeps, db: D1DatabaseLike
 
 async function handlePaypalWebhook(deps: PaymentsDeps, request: Request, db: D1DatabaseLike, env: unknown) {
   const event = await deps.readJsonBody(request);
-  const [
-    clientId,
-    clientSecret,
-    webhookId,
-    productionSetting,
-  ] = await Promise.all([
-    deps.getSetting(db, env, "PAYPAL_CLIENT_ID"),
-    deps.getSetting(db, env, "PAYPAL_CLIENT_SECRET"),
+  const [credentials, webhookId] = await Promise.all([
+    getPaypalApiCredentials(deps, db, env),
     deps.getSetting(db, env, "PAYPAL_WEBHOOK_ID"),
-    deps.getSetting(db, env, "PAYPAL_IS_PRODUCTION"),
   ]);
 
-  if (!clientId || !clientSecret || !webhookId) {
+  if (!credentials.clientId || !credentials.clientSecret || !webhookId) {
     return deps.json({
       success: true,
       configured: false,
@@ -413,8 +434,8 @@ async function handlePaypalWebhook(deps: PaymentsDeps, request: Request, db: D1D
     });
   }
 
-  const baseUrl = paypalApiBase(productionSetting === "true");
-  const accessToken = await paypalAccessToken(baseUrl, clientId, clientSecret);
+  const baseUrl = paypalApiBase(credentials.isProduction);
+  const accessToken = await paypalAccessToken(baseUrl, credentials.clientId, credentials.clientSecret);
   const verified = await verifyPaypalWebhookSignature(baseUrl, accessToken, webhookId, request, event);
   if (!verified) {
     return deps.errorJson("PayPal webhook signature verification failed.", 400);
@@ -550,17 +571,13 @@ async function handlePaypalCaptureOrder(deps: PaymentsDeps, request: Request, db
     return deps.errorJson("Invalid PayPal order ID.", 400);
   }
 
-  const [clientId, clientSecret, productionSetting] = await Promise.all([
-    deps.getSetting(db, env, "PAYPAL_CLIENT_ID"),
-    deps.getSetting(db, env, "PAYPAL_CLIENT_SECRET"),
-    deps.getSetting(db, env, "PAYPAL_IS_PRODUCTION"),
-  ]);
-  if (!clientId || !clientSecret) {
-    return deps.errorJson("PayPal API credentials are not configured.", 400, ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"]);
+  const credentials = await getPaypalApiCredentials(deps, db, env);
+  if (!credentials.clientId || !credentials.clientSecret) {
+    return deps.errorJson(`PayPal ${credentials.mode} API credentials are not configured.`, 400, credentials.isProduction ? ["PAYPAL_LIVE_CLIENT_ID", "PAYPAL_LIVE_CLIENT_SECRET"] : ["PAYPAL_SANDBOX_CLIENT_ID", "PAYPAL_SANDBOX_CLIENT_SECRET"]);
   }
 
-  const baseUrl = paypalApiBase(productionSetting === "true");
-  const accessToken = await paypalAccessToken(baseUrl, clientId, clientSecret);
+  const baseUrl = paypalApiBase(credentials.isProduction);
+  const accessToken = await paypalAccessToken(baseUrl, credentials.clientId, credentials.clientSecret);
   const response = await fetch(`${baseUrl}/v2/checkout/orders/${orderId}/capture`, {
     method: "POST",
     headers: {
@@ -623,6 +640,10 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     paypalPaymentNoteSetting,
     paypalClientId,
     paypalClientSecret,
+    paypalSandboxClientId,
+    paypalSandboxClientSecret,
+    paypalLiveClientId,
+    paypalLiveClientSecret,
     paypalProductionSetting,
     wisePaymentUrl,
     payoneerPaymentUrl,
@@ -649,6 +670,10 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     deps.getSetting(db, env, "PAYPAL_PAYMENT_NOTE"),
     deps.getSetting(db, env, "PAYPAL_CLIENT_ID"),
     deps.getSetting(db, env, "PAYPAL_CLIENT_SECRET"),
+    deps.getSetting(db, env, "PAYPAL_SANDBOX_CLIENT_ID"),
+    deps.getSetting(db, env, "PAYPAL_SANDBOX_CLIENT_SECRET"),
+    deps.getSetting(db, env, "PAYPAL_LIVE_CLIENT_ID"),
+    deps.getSetting(db, env, "PAYPAL_LIVE_CLIENT_SECRET"),
     deps.getSetting(db, env, "PAYPAL_IS_PRODUCTION"),
     deps.getSetting(db, env, "WISE_PAYMENT_URL"),
     deps.getSetting(db, env, "PAYONEER_PAYMENT_URL"),
@@ -681,6 +706,10 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   const paypalRiskWarning = paypalAccountMode === "personal_bridge"
     ? "PayPal Personal is marked as a temporary bridge. Use goods/services or invoice-style payment, keep proof of delivery, avoid sudden volume jumps, and upgrade to PayPal Business before regular commercial use."
     : "PayPal can still hold or review funds for new sellers, unusual volume, disputes, or changed selling patterns. Keep delivery records and match the payment reference in CRM.";
+  const paypalIsProduction = paypalProductionSetting === "true";
+  const activePaypalClientId = paypalIsProduction ? firstString(paypalLiveClientId, paypalClientId) : firstString(paypalSandboxClientId, paypalClientId);
+  const activePaypalClientSecret = paypalIsProduction ? firstString(paypalLiveClientSecret, paypalClientSecret) : firstString(paypalSandboxClientSecret, paypalClientSecret);
+  const activePaypalMode = paypalIsProduction ? "live" : "sandbox";
 
   const notifyText = encodeURIComponent(
     `WebView.click checkout request\nBusiness: ${businessName}\nDomain: ${requestedDomain || "-"}\nDomain mode: ${domainMode === "owned" ? "customer-owned domain" : "new domain registration"}\nProcessor: ${paymentProcessor}\nPackage: $${paymentAmountUsd} done-for-you website setup`,
@@ -838,10 +867,10 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   }
 
   if (paymentProcessor === "paypal") {
-    if (paypalClientId && paypalClientSecret) {
+    if (activePaypalClientId && activePaypalClientSecret) {
       try {
-        const baseUrl = paypalApiBase(paypalProductionSetting === "true");
-        const accessToken = await paypalAccessToken(baseUrl, paypalClientId, paypalClientSecret);
+        const baseUrl = paypalApiBase(paypalIsProduction);
+        const accessToken = await paypalAccessToken(baseUrl, activePaypalClientId, activePaypalClientSecret);
         const paypalOrder = await createPaypalCheckoutOrder({
           baseUrl,
           accessToken,
@@ -872,8 +901,8 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
           requiresManualReview: false,
           manualConfirmationRequired: false,
           paypalInline: true,
-          paypalClientId,
-          paypalMode: paypalProductionSetting === "true" ? "live" : "sandbox",
+          paypalClientId: activePaypalClientId,
+          paypalMode: activePaypalMode,
           paypalOrderId: paypalOrder.id,
           paypalOrderStatus: paypalOrder.status,
         });
@@ -899,7 +928,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
       }
     }
 
-    if (!paypalBusinessUrl) return mockResponse("PayPal API credentials atau PayPal Business link belum dikonfigurasi. Checkout disimpan sebagai mock checkout_pending.", ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"]);
+    if (!paypalBusinessUrl) return mockResponse(`PayPal ${activePaypalMode} API credentials atau PayPal Business link belum dikonfigurasi. Checkout disimpan sebagai mock checkout_pending.`, paypalIsProduction ? ["PAYPAL_LIVE_CLIENT_ID", "PAYPAL_LIVE_CLIENT_SECRET"] : ["PAYPAL_SANDBOX_CLIENT_ID", "PAYPAL_SANDBOX_CLIENT_SECRET"]);
     return deps.json({
       success: true,
       mock: false,

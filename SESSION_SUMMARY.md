@@ -1,6 +1,6 @@
 # Session Summary
 
-Generated at: `2026-05-25 23:52:37 WIB`
+Generated at: `2026-05-26 00:11:13 WIB`
 
 | Time (WIB) | Workstream | Summary | Important files | Verification / notes |
 |---|---|---|---|---|
@@ -14,3 +14,4 @@ Generated at: `2026-05-25 23:52:37 WIB`
 | 2026-05-25 23:52:37 | Repo Instruction Update | Added a standing rule that `SESSION_SUMMARY.md` should be created or updated when the user says the session is closing, usage limit is near, or a workstream is done. | `AGENTS.md`, `SESSION_SUMMARY.md` | Future summaries must use table format and WIB timestamps with date, hour, minute, and second. |
 | 2026-05-25 23:52:37 | Lightweight Verification | Ran `git diff --check` after implementation passes. | Working tree | Checks were clean except expected CRLF line-ending warnings. No local server, lint, build, or npm tests were run. |
 | 2026-05-25 23:52:37 | Recommended Production QA | After deploy, click through every admin docs icon and run PayPal sandbox checkout once before switching live credentials. | `/admin`, `/admin/leads`, `/admin/jobs`, `/admin/sites`, `/admin/schema`, `/admin/settings`, `/demo`, `/:businessId` | Confirm docs modal appears above drawers/dropdowns and PayPal capture records paid ledger/subscription/lead status. |
+| 2026-05-26 00:11:13 | PayPal Sandbox / Live Toggle | Split PayPal API credentials into sandbox and live Client ID/Secret fields, kept legacy keys as fallback, and added a PayPal API mode toggle plus missing active-mode credential warnings in Settings. | `src/pages/admin/AdminSettings.tsx`, `src/pages/admin/AdminDashboard.tsx`, `functions/api/payments/handler.ts`, `functions/api/_shared/types.ts`, `tests/apiHandlers.test.ts`, `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md`, `docs/PAYPAL_RISK_CONTROLS.md`, `docs/PAYMENT_PROCESSOR_RESEARCH.md`, `docs/setup-panduan.md`, `docs/CODEBASE_REFERENCE.md` | Ran `rg` coverage checks and `git diff --check`; no local npm tests were run because local dependencies are intentionally not installed. |
