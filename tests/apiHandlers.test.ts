@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ensureRequiredColumns, tableColumns } from "../functions/api/_shared/db";
 import { asString, errorJson, json, normalizeBusinessId, parseJsonArray, parseJsonObject, readJsonBody, sha256Json } from "../functions/api/_shared/response";
+import { handlePayments } from "../functions/api/payments/handler";
 import { handleProspects } from "../functions/api/prospects/handler";
 import { handleSites, type SitesHandlerDeps } from "../functions/api/sites/handler";
 import type { PlacesDeps } from "../functions/api/places/handler";
@@ -512,4 +513,219 @@ test("sites generate endpoint saves compact D1 manifest when R2 JSON storage is 
   assert.equal(r2Json.storage.r2JsonKey, "sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
   assert.equal(r2Json.storage.r2JsonUrl, "https://assets.example.test/sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
   assert.ok(Array.isArray(r2Json.pages));
+});
+
+test("payments checkout creates PayPal inline order with add-on pricing", async () => {
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ url: string; body: string }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    fetchCalls.push({ url, body: String(init?.body || "") });
+    if (url.endsWith("/v1/oauth2/token")) {
+      return new Response(JSON.stringify({ access_token: "sandbox-token" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.endsWith("/v2/checkout/orders")) {
+      return new Response(JSON.stringify({
+        id: "PAYPAL-ORDER-123",
+        status: "CREATED",
+        links: [{ rel: "payer-action", href: "https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-ORDER-123" }],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ message: "unexpected fetch" }), { status: 500 });
+  }) as typeof fetch;
+
+  const ledgerRows: Array<Record<string, unknown>> = [];
+  const activities: Array<Record<string, unknown>> = [];
+  const settings: Record<string, string> = {
+    PAYMENT_PROCESSOR: "paypal",
+    PAYMENT_USD_AMOUNT: "197",
+    PAYMENT_ADDON_PAGE_USD: "10",
+    PAYMENT_USD_TO_IDR_RATE: "16000",
+    PAYPAL_CLIENT_ID: "sandbox-client",
+    PAYPAL_CLIENT_SECRET: "sandbox-secret",
+    PAYPAL_IS_PRODUCTION: "false",
+    PAYPAL_RISK_ACKNOWLEDGED: "true",
+  };
+
+  const db = {
+    prepare(query: string) {
+      return {
+        values: [] as unknown[],
+        bind(...values: unknown[]) {
+          this.values = values;
+          return this;
+        },
+        async first() {
+          if (query.includes("SELECT id FROM leads")) return { id: "lead-1" };
+          return null;
+        },
+        async all() {
+          return { results: [] };
+        },
+        async run() {
+          if (query.includes("INSERT INTO lead_payments")) {
+            const rawJson = String(this.values[10] || "{}");
+            ledgerRows.push({
+              businessId: this.values[2],
+              processor: this.values[3],
+              amountUsd: this.values[4],
+              amountIdr: this.values[5],
+              payerEmail: this.values[6],
+              paymentReference: this.values[7],
+              rawJson,
+            });
+          }
+          return { success: true };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await handlePayments({
+      json,
+      errorJson,
+      readJsonBody,
+      asString,
+      ensureRequiredColumns: async () => undefined,
+      checkoutRequiredColumns: [],
+      paymentLedgerRequiredColumns: [],
+      getSetting: async (_db, _env, key) => settings[key],
+      upsertLeadRecord: async () => undefined,
+      insertCrmActivitySafe: async (_db, values) => {
+        activities.push(values);
+      },
+    }, new Request("https://webview.click/api/payments/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        businessId: "north-dallas-roof-repair",
+        businessName: "North Dallas Roof Repair",
+        requestedDomain: "northdallasroof.com",
+        domainMode: "new",
+        email: "owner@example.com",
+        addOns: { newPages: 3, editedPages: 2 },
+      }),
+    }), db as never, {}, ["payments", "checkout"]);
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as Record<string, any>;
+    assert.equal(payload.success, true);
+    assert.equal(payload.processor, "paypal");
+    assert.equal(payload.paypalInline, true);
+    assert.equal(payload.paypalClientId, "sandbox-client");
+    assert.equal(payload.paypalMode, "sandbox");
+    assert.equal(payload.paypalOrderId, "PAYPAL-ORDER-123");
+    assert.equal(payload.checkoutUrl, "https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-ORDER-123");
+    assert.equal(payload.amountUsd, 242);
+    assert.equal(payload.pricing.totalPageActions, 5);
+    assert.equal(payload.pricing.discountRate, 0.1);
+    assert.equal(payload.requiresManualReview, false);
+
+    const orderBody = JSON.parse(fetchCalls.find((call) => call.url.endsWith("/v2/checkout/orders"))?.body || "{}");
+    assert.equal(orderBody.intent, "CAPTURE");
+    assert.equal(orderBody.purchase_units[0].amount.value, "242.00");
+    assert.equal(orderBody.purchase_units[0].items.length, 2);
+    assert.equal(orderBody.purchase_units[0].items[1].unit_amount.value, "45.00");
+    assert.equal(orderBody.purchase_units[0].payment_source, undefined);
+    assert.equal(orderBody.payment_source.paypal.experience_context.shipping_preference, "NO_SHIPPING");
+    assert.equal(orderBody.payment_source.paypal.experience_context.user_action, "PAY_NOW");
+
+    assert.equal(ledgerRows.length, 1);
+    assert.equal(ledgerRows[0].processor, "paypal");
+    assert.equal(ledgerRows[0].amountUsd, 242);
+    const raw = JSON.parse(String(ledgerRows[0].rawJson));
+    assert.equal(raw.pricing.totalPageActions, 5);
+    assert.equal(raw.pricing.addOnUsd, 45);
+    assert.equal(activities.length, 1);
+    assert.equal(activities[0].activity_type, "checkout_pending");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("payments checkout falls back to PayPal Business link when order creation fails", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/oauth2/token")) {
+      return new Response(JSON.stringify({ access_token: "sandbox-token" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ message: "sandbox order rejected" }), {
+      status: 422,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  const settings: Record<string, string> = {
+    PAYMENT_PROCESSOR: "paypal",
+    PAYPAL_CLIENT_ID: "sandbox-client",
+    PAYPAL_CLIENT_SECRET: "sandbox-secret",
+    PAYPAL_IS_PRODUCTION: "false",
+    PAYPAL_BUSINESS_URL: "https://www.paypal.com/paypalme/webviewclick",
+  };
+
+  const db = {
+    prepare(query: string) {
+      return {
+        bind() {
+          return this;
+        },
+        async first() {
+          if (query.includes("SELECT id FROM leads")) return { id: "lead-1" };
+          return null;
+        },
+        async all() {
+          return { results: [] };
+        },
+        async run() {
+          return { success: true };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await handlePayments({
+      json,
+      errorJson,
+      readJsonBody,
+      asString,
+      ensureRequiredColumns: async () => undefined,
+      checkoutRequiredColumns: [],
+      paymentLedgerRequiredColumns: [],
+      getSetting: async (_db, _env, key) => settings[key],
+      upsertLeadRecord: async () => undefined,
+      insertCrmActivitySafe: async () => undefined,
+    }, new Request("https://webview.click/api/payments/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        businessId: "north-dallas-roof-repair",
+        businessName: "North Dallas Roof Repair",
+        requestedDomain: "northdallasroof.com",
+        domainMode: "new",
+        email: "owner@example.com",
+      }),
+    }), db as never, {}, ["payments", "checkout"]);
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as Record<string, unknown>;
+    assert.equal(payload.success, true);
+    assert.equal(payload.mock, false);
+    assert.equal(payload.checkoutUrl, "https://www.paypal.com/paypalme/webviewclick");
+    assert.equal(payload.requiresManualReview, true);
+    assert.equal(payload.manualConfirmationRequired, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

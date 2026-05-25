@@ -40,7 +40,7 @@ For a future productized self-serve offer, such as “downloadable website templ
 
 | Option | USD-first? | Familiar to US buyers? | Fit for web dev service? | Notes |
 | --- | --- | --- | --- | --- |
-| PayPal Business | Yes | High | Good fallback | Use Business, not Personal. Good for US buyers, but account holds/disputes are still a risk. |
+| PayPal Business | Yes | High | Strong first USD checkout | Use Business Checkout Orders API. Good for US buyers, but account holds/disputes are still a risk. |
 | Payoneer Request a Payment | Yes | Medium | Good B2B fallback | Supports requesting payment from global clients with card/bank/ACH-style options. Approval/feature availability can vary. |
 | Upwork Direct Contracts | Yes | High for freelance/web work | Strong | Designed for freelance service contracts, escrow, credit card/PayPal/ACH. Not your own checkout API, but very trustable for US clients. |
 | Contra | USD-centric | Medium | Strong | Designed for contractor/freelance work; clients can pay by major cards and bank account. Less familiar than Upwork/PayPal. |
@@ -143,22 +143,27 @@ Operational note:
 
 ### PayPal Business
 
-Best fit: fallback for international buyers who already trust PayPal.
+Best fit: first USD-friendly checkout for international buyers who already trust PayPal.
 
 What matters:
 - Use Business, not Personal, for commercial volume.
 - Fees and currency conversion spread can be expensive.
 - PayPal can hold/review funds, especially with sudden international volume, so it should not be the only rail.
+- The current implementation uses PayPal JavaScript SDK + Orders v2: server creates the order, buyer approves inside the checkout modal, then server captures and records payment.
 
 Settings needed:
 - `PAYMENT_PROCESSOR=paypal`
-- `PAYPAL_BUSINESS_URL`, preferably a PayPal Business checkout/invoice/payment link, not only a casual PayPal.me personal link.
+- `PAYPAL_CLIENT_ID`
+- `PAYPAL_CLIENT_SECRET`
+- `PAYPAL_IS_PRODUCTION=false` for sandbox, `true` for live.
+- `PAYPAL_WEBHOOK_ID` after webhook setup.
+- `PAYPAL_BUSINESS_URL` as optional fallback link.
 
 Operational note:
-- Ask buyers to include business name/domain in the payment note.
-- Keep CRM checkout activity because PayPal link payments may not auto-update without webhooks.
+- Direct PayPal Checkout should mark ledger/subscription/lead paid immediately after capture.
+- Keep CRM checkout activity because API order creation can still fail and fall back to manual link.
 - WebView.click has PayPal risk controls in `/admin/settings#settings-payment`: account mode, risk acknowledgement, editable payment note, and buyer-facing payment reference review before opening PayPal.
-- See `docs/PAYPAL_RISK_CONTROLS.md` for the operating checklist and implementation tracker.
+- See `docs/PAYPAL_RISK_CONTROLS.md` and `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md` for the operating checklist and implementation tracker.
 
 ### Upwork Direct Contracts
 
@@ -243,7 +248,7 @@ The app should support these modes:
 - `xendit`: create hosted invoice and redirect to invoice URL.
 - `midtrans`: create Snap transaction and redirect to Snap URL.
 - `doku`: create DOKU Checkout payment and redirect to payment URL.
-- `paypal`: redirect to configured PayPal Business link.
+- `paypal`: create/capture a PayPal Orders v2 checkout when API credentials are configured; otherwise redirect to configured PayPal Business fallback link.
 - `wise`: redirect to configured Wise request/payment link.
 - `payoneer`: redirect to configured Payoneer payment request link.
 - `lemon_squeezy_legacy`: keep old Lemon integration only as legacy and show warning in Settings.

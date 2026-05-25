@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Copy, Download, ExternalLink, Globe2, Loader2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Copy, Download, ExternalLink, Globe2, Loader2, Minus, Plus, X } from "lucide-react";
 import { buildDomain, domainExtensions, normalizeDomainLabel } from "../lib/domainExtensions";
 import type { FontPairing } from "../lib/fontPairings";
 
@@ -18,6 +18,14 @@ type WebsiteActionPanelProps = {
 
 type DomainMode = "new" | "owned";
 type SetupStep = "choice" | "domain" | "payment";
+
+declare global {
+  interface Window {
+    paypal?: {
+      Buttons: (options: Record<string, unknown>) => { render: (selectorOrElement: string | HTMLElement) => Promise<void> };
+    };
+  }
+}
 
 function InfoTooltip({ text, light = false }: { text: string; light?: boolean }) {
   return (
@@ -38,6 +46,48 @@ function normalizeFullDomain(value: string) {
     .split("/")[0]
     .replace(/[^a-z0-9.-]+/g, "")
     .replace(/^\.+|\.+$/g, "");
+}
+
+function addOnDiscountRate(totalPageActions: number) {
+  if (totalPageActions >= 10) return 0.2;
+  if (totalPageActions >= 5) return 0.1;
+  return 0;
+}
+
+function checkoutEstimate(newPages: number, editedPages: number) {
+  const base = 197;
+  const unit = 10;
+  const totalPageActions = Math.max(0, newPages) + Math.max(0, editedPages);
+  const discountRate = addOnDiscountRate(totalPageActions);
+  const addOnGross = totalPageActions * unit;
+  const addOnDiscount = Math.round(addOnGross * discountRate * 100) / 100;
+  const addOnTotal = addOnGross - addOnDiscount;
+  return {
+    base,
+    unit,
+    totalPageActions,
+    discountRate,
+    addOnTotal,
+    addOnDiscount,
+    total: base + addOnTotal,
+  };
+}
+
+function PageCountStepper({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+      <span className="text-sm font-semibold text-slate-800">{label}</span>
+      <div className="inline-flex items-center gap-2">
+        <button type="button" onClick={() => onChange(Math.max(0, value - 1))} className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Decrease ${label}`}>
+          <Minus size={14} />
+        </button>
+        <span className="w-8 text-center text-sm font-semibold text-slate-950">{value}</span>
+        <button type="button" onClick={() => onChange(Math.min(50, value + 1))} className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Increase ${label}`}>
+          <Plus size={14} />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function WebsiteActionPanel({
@@ -64,8 +114,13 @@ export default function WebsiteActionPanel({
   const [checkoutStatus, setCheckoutStatus] = useState("");
   const [checkoutDetails, setCheckoutDetails] = useState<any>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [paypalLoading, setPaypalLoading] = useState(false);
+  const [paypalRenderedKey, setPaypalRenderedKey] = useState("");
   const [domainCheckLoading, setDomainCheckLoading] = useState(false);
   const [domainCheck, setDomainCheck] = useState<any>(null);
+  const [newPages, setNewPages] = useState(0);
+  const [editedPages, setEditedPages] = useState(0);
+  const paypalButtonsRef = useRef<HTMLDivElement | null>(null);
 
   const selectedDomain = domainMode === "owned" ? normalizeFullDomain(ownedDomain) : buildDomain(domainLabel, selectedTld);
   const filteredExtensions = domainExtensions.filter((extension) => {
@@ -88,6 +143,7 @@ export default function WebsiteActionPanel({
   const canContinue = domainMode === "owned"
     ? Boolean(selectedDomain && ownedDomainLooksUsable)
     : newDomainLooksAvailable;
+  const estimate = useMemo(() => checkoutEstimate(newPages, editedPages), [newPages, editedPages]);
 
   const resetCheck = () => {
     setDomainCheck(null);
@@ -115,6 +171,10 @@ export default function WebsiteActionPanel({
           domainMode,
           domainCheck,
           email,
+          addOns: {
+            newPages,
+            editedPages,
+          },
         }),
       });
       const data = await response.json();
@@ -137,6 +197,77 @@ export default function WebsiteActionPanel({
       setCheckoutLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (setupStep !== "payment" || !checkoutDetails?.paypalInline || !checkoutDetails?.paypalClientId || !checkoutDetails?.paypalOrderId) return;
+    const renderKey = `${checkoutDetails.paypalClientId}:${checkoutDetails.paypalOrderId}`;
+    if (paypalRenderedKey === renderKey) return;
+    let cancelled = false;
+    const loadPayPal = async () => {
+      setPaypalLoading(true);
+      setCheckoutStatus("Loading secure PayPal checkout...");
+      const sdkUrl = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(checkoutDetails.paypalClientId)}&currency=USD&intent=capture&components=buttons`;
+      if (!document.querySelector(`script[src="${sdkUrl}"]`)) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = sdkUrl;
+          script.async = true;
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error("PayPal SDK failed to load."));
+          document.head.appendChild(script);
+        });
+      }
+      if (cancelled || !paypalButtonsRef.current || !window.paypal?.Buttons) return;
+      paypalButtonsRef.current.innerHTML = "";
+      await window.paypal.Buttons({
+        style: { layout: "vertical", shape: "rect", label: "paypal" },
+        createOrder: () => checkoutDetails.paypalOrderId,
+        onApprove: async (data: any) => {
+          setPaypalLoading(true);
+          setCheckoutStatus("Capturing PayPal payment...");
+          try {
+            const response = await fetch("/api/payments/paypal-capture-order", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                orderId: data.orderID || checkoutDetails.paypalOrderId,
+                paymentReference: checkoutDetails.paymentReference,
+                businessId: siteData?.meta?.businessId || businessId,
+              }),
+            });
+            const capture = await response.json().catch(() => ({}));
+            if (!response.ok || !capture.success) {
+              throw new Error(capture.error || capture.message || "PayPal capture failed.");
+            }
+            setCheckoutDetails((current: any) => ({ ...current, captured: true, capture }));
+            setCheckoutStatus("Payment captured. We will start the domain, hosting, DNS, and launch setup.");
+          } finally {
+            setPaypalLoading(false);
+          }
+        },
+        onCancel: () => setCheckoutStatus("PayPal checkout was cancelled. You can try again or contact us for help."),
+        onError: (error: unknown) => {
+          console.error(error);
+          setCheckoutStatus(error instanceof Error ? error.message : "PayPal checkout failed. Please try again.");
+        },
+      }).render(paypalButtonsRef.current);
+      if (!cancelled) {
+        setPaypalRenderedKey(renderKey);
+        setCheckoutStatus("");
+      }
+    };
+    loadPayPal()
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) setCheckoutStatus(error instanceof Error ? error.message : "PayPal checkout could not load.");
+      })
+      .finally(() => {
+        if (!cancelled) setPaypalLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setupStep, checkoutDetails?.paypalInline, checkoutDetails?.paypalClientId, checkoutDetails?.paypalOrderId, checkoutDetails?.paymentReference, paypalRenderedKey, siteData?.meta?.businessId, businessId]);
 
   const copyPaymentReference = async () => {
     const reference = String(checkoutDetails?.paymentReference || "");
@@ -251,6 +382,7 @@ export default function WebsiteActionPanel({
                   setCheckoutOpen(true);
                   setSetupStep("choice");
                   setCheckoutDetails(null);
+                  setPaypalRenderedKey("");
                   setCheckoutStatus("");
                 }}
                 className="flex w-full items-center justify-between rounded-xl bg-indigo-600 px-4 py-3 text-left text-white hover:bg-indigo-700"
@@ -297,10 +429,32 @@ export default function WebsiteActionPanel({
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                     <p><strong>$17/year domain allowance</strong> if we register a new domain.</p>
                     <p><strong>$180/year hosting</strong> ($15/month x 12 months).</p>
-                    <p><strong>Free setup</strong>: upload site, connect DNS, and point hosting.</p>
+                    <p><strong>Free setup</strong>: upload site, connect DNS, SSL, and point hosting.</p>
                     <a href="/terms-refund" target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-indigo-700 hover:underline">
                       Terms and refund policy
                     </a>
+                  </div>
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                          Need extra changes?
+                          <InfoTooltip text="$10 per additional generated page or page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
+                        </p>
+                        <p className="mt-1 text-xs text-slate-600">Add only what you need before checkout.</p>
+                      </div>
+                      <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-indigo-700">${estimate.total}</span>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <PageCountStepper label="New pages" value={newPages} onChange={setNewPages} />
+                      <PageCountStepper label="Edit pages" value={editedPages} onChange={setEditedPages} />
+                    </div>
+                    {estimate.totalPageActions > 0 && (
+                      <p className="mt-2 text-xs text-slate-600">
+                        Add-ons: ${estimate.addOnTotal.toFixed(2)}
+                        {estimate.addOnDiscount > 0 ? ` after $${estimate.addOnDiscount.toFixed(2)} bulk discount` : ""}.
+                      </p>
+                    )}
                   </div>
                   <button type="button" onClick={() => openSetup("new")} className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-left hover:bg-slate-50">
                     <span>
@@ -435,7 +589,7 @@ export default function WebsiteActionPanel({
                         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                        Secure checkout opens when the selected payment processor is configured. Until then this records a mock checkout request for follow-up.
+                        Total today: <strong>${estimate.total}</strong>. Secure checkout opens when the selected payment processor is configured. Until then this records a mock checkout request for follow-up.
                       </div>
                       {checkoutStatus && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{checkoutStatus}</div>}
                       <button
@@ -458,12 +612,30 @@ export default function WebsiteActionPanel({
                     <ArrowLeft size={16} />
                     Back
                   </button>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    <p className="font-semibold">{checkoutDetails.processor === "paypal" ? "PayPal payment note" : "Manual payment note"}</p>
-                    <p className="mt-1 text-xs leading-relaxed">
-                      {checkoutDetails.paymentInstructions || "Include the business name, requested domain, and payment reference so we can match the payment quickly."}
-                    </p>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-950">Order total</p>
+                        <p className="mt-1 text-xs leading-relaxed">
+                          $197/year includes domain allowance, annual hosting, SSL, DNS/upload, generated site launch, and setup.
+                        </p>
+                        {checkoutDetails.pricing?.totalPageActions > 0 && (
+                          <p className="mt-1 text-xs leading-relaxed">
+                            Additional page/edit work: {checkoutDetails.pricing.totalPageActions} action{checkoutDetails.pricing.totalPageActions === 1 ? "" : "s"} for ${Number(checkoutDetails.pricing.addOnUsd || 0).toFixed(2)}.
+                          </p>
+                        )}
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-sm font-bold text-indigo-700">${Number(checkoutDetails.amountUsd || estimate.total).toFixed(2)}</span>
+                    </div>
                   </div>
+                  {!checkoutDetails.paypalInline && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      <p className="font-semibold">{checkoutDetails.processor === "paypal" ? "PayPal payment note" : "Manual payment note"}</p>
+                      <p className="mt-1 text-xs leading-relaxed">
+                        {checkoutDetails.paymentInstructions || "Include the business name, requested domain, and payment reference so we can match the payment quickly."}
+                      </p>
+                    </div>
+                  )}
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment reference</p>
                     <div className="mt-1 flex items-center gap-2">
@@ -479,15 +651,47 @@ export default function WebsiteActionPanel({
                     </div>
                   )}
                   {checkoutStatus && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{checkoutStatus}</div>}
-                  <a
-                    href={checkoutDetails.checkoutUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
-                  >
-                    <ExternalLink size={18} />
-                    Open payment link
-                  </a>
+                  {checkoutDetails.paypalInline ? (
+                    <div className="space-y-3">
+                      {checkoutDetails.captured ? (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                          <p className="font-semibold">Payment received</p>
+                          <p className="mt-1 text-xs">We will start setup and contact you for any DNS/domain access needed.</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div ref={paypalButtonsRef} className="min-h-[48px]" />
+                          {paypalLoading && (
+                            <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                              <Loader2 className="animate-spin" size={16} />
+                              PayPal checkout loading...
+                            </div>
+                          )}
+                          {checkoutDetails.checkoutUrl && (
+                            <a
+                              href={checkoutDetails.checkoutUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              <ExternalLink size={16} />
+                              Open PayPal fallback
+                            </a>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <a
+                      href={checkoutDetails.checkoutUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
+                    >
+                      <ExternalLink size={18} />
+                      Open payment link
+                    </a>
+                  )}
                 </>
               )}
             </div>

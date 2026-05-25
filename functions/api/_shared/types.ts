@@ -37,6 +37,10 @@ export type Env = {
   LEMON_SQUEEZY_API_KEY?: string;
   LEMON_SQUEEZY_STORE_ID?: string;
   LEMON_SQUEEZY_VARIANT_ID?: string;
+  PAYPAL_CLIENT_ID?: string;
+  PAYPAL_CLIENT_SECRET?: string;
+  PAYPAL_WEBHOOK_ID?: string;
+  PAYPAL_IS_PRODUCTION?: string;
   ADMIN_WHATSAPP_NUMBER?: string;
 };
 

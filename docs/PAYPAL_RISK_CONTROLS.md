@@ -6,13 +6,13 @@ Purpose: keep WebView.click able to accept early PayPal payments without pretend
 
 ## Recommendation
 
-Use PayPal only as a fallback/manual rail for the current website setup offer.
+Use PayPal Business Checkout as the primary USD-friendly rail once sandbox and live API credentials are ready. Keep a PayPal Business payment/invoice link only as a fallback.
 
 Preferred order:
 
-1. PayPal Business invoice/payment link for commercial payments.
-2. PayPal Personal only as a temporary, low-volume bridge while upgrading.
-3. Xendit/Midtrans/DOKU as the more serious Indonesia merchant checkout rails.
+1. PayPal Business Checkout using Orders v2 API.
+2. PayPal Business invoice/payment link as fallback if API order creation fails.
+3. Xendit/Midtrans/DOKU as Indonesia-local checkout rails.
 4. Wise/Payoneer/Upwork/Contra for larger B2B clients who want invoice, bank-transfer, or contract-style payment.
 
 Do not ask buyers to send payment as Friends and Family. Use goods/services, invoice-style payment, or a PayPal Business checkout/payment link so the transaction matches the commercial nature of the offer.
@@ -49,9 +49,9 @@ Default note shown by WebView.click:
 
 > Please pay as goods/services or invoice payment, not Friends and Family. Include the business name, requested domain, and WebView.click payment reference in the payment note.
 
-The checkout endpoint appends a generated reference:
+For API checkout, the reference is stored in the PayPal order `invoice_id`. For manual fallback links, the checkout endpoint appends the generated reference:
 
-`{businessId} | {requestedDomain} | {orderId}`
+`{businessId} | {orderId}`
 
 This makes PayPal payments easier to match against CRM activity and reduces unclear-payment disputes.
 
@@ -59,7 +59,11 @@ This makes PayPal payments easier to match against CRM activity and reduces uncl
 
 - [x] `/api/payments/checkout` records a `checkout_pending` lead/activity before returning a PayPal/manual payment link.
 - [x] `/api/payments/checkout` generates a payment reference for PayPal, Wise, and Payoneer manual rails.
-- [x] PayPal checkout returns `requiresManualReview=true`, so the public setup panel shows instructions before opening PayPal.
+- [x] `/api/payments/checkout` creates a PayPal Orders v2 order when Business API credentials are configured.
+- [x] Public `/demo` and `/:businessId` render the PayPal JavaScript SDK button inside the checkout modal for API-backed PayPal checkout.
+- [x] `/api/payments/paypal-capture-order` captures approved PayPal orders and records paid ledger/subscription/lead status.
+- [x] Checkout supports optional `$10` page/edit add-ons with 10% bulk discount at 5-9 actions and 20% at 10+ actions.
+- [x] PayPal API checkout returns `requiresManualReview=false` and captures in-place; manual fallback links still return `requiresManualReview=true`.
 - [x] Public `/demo` and `/:businessId` checkout modal shows payment note instructions and copyable payment reference for PayPal/manual rails.
 - [x] Admin Settings includes `PAYPAL_ACCOUNT_MODE` with `business` and `personal_bridge`.
 - [x] Admin Settings includes `PAYPAL_RISK_ACKNOWLEDGED`.
@@ -71,7 +75,7 @@ This makes PayPal payments easier to match against CRM activity and reduces uncl
 - [x] Added `/admin/leads` payment reconciliation UI with recent ledger cards and checkout-pending CSV export.
 - [x] Added per-lead "Verify payment" action with processor, transaction ID, payer email, amount, payment reference, and proof notes.
 - [x] Added `/terms-refund` public terms/refund page for generated digital packages and managed launch support.
-- [x] Added inert `/api/payments/paypal-webhook` endpoint that safely acknowledges events until PayPal Business credentials/webhook ID are configured, then verifies signatures and records matched completed payments.
+- [x] Added `/api/payments/paypal-webhook` endpoint that safely acknowledges events until PayPal Business credentials/webhook ID are configured, then verifies signatures and records matched completed payments as a backup to direct capture.
 
 ## In Progress / Future Controls
 
@@ -82,15 +86,18 @@ This makes PayPal payments easier to match against CRM activity and reduces uncl
 ## Production Smoke Test
 
 1. In `/admin/settings#settings-payment`, set `PAYMENT_PROCESSOR=paypal`.
-2. Set `PAYPAL_ACCOUNT_MODE=personal_bridge` only if temporarily using Personal; otherwise use `business`.
-3. Set `PAYPAL_RISK_ACKNOWLEDGED=true` after reviewing this document.
-4. Set `PAYPAL_PAYMENT_NOTE`.
-5. Save settings.
-6. Open `/demo` or a public generated preview.
-7. Continue through Download / Setup until payment.
-8. Confirm the modal shows PayPal instructions and a copyable payment reference before opening the payment link.
-9. Confirm `/admin/leads` has a `checkout_pending` lead/activity with the same reference.
-10. After checking PayPal, open `/admin/leads`, click the lead's verify-payment action, enter transaction ID, payer email, amount, payment reference, and proof notes, then confirm the lead becomes `won_paid`.
+2. Set `PAYPAL_ACCOUNT_MODE=business`.
+3. Paste sandbox `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`.
+4. Set `PAYPAL_IS_PRODUCTION=false`.
+5. Set `PAYPAL_RISK_ACKNOWLEDGED=true` after reviewing this document.
+6. Optionally set `PAYPAL_BUSINESS_URL` as fallback.
+7. Save settings.
+8. Open `/demo` or a public generated preview.
+9. Continue through Download / Setup until payment.
+10. Confirm the modal shows the PayPal button in-place.
+11. Pay with a sandbox buyer account.
+12. Confirm `/admin/leads` has a paid PayPal ledger row with capture ID, payer email, amount, and matching reference.
+13. Switch to live credentials and `PAYPAL_IS_PRODUCTION=true` only after sandbox capture works.
 
 ## PayPal Business Webhook Setup Later
 

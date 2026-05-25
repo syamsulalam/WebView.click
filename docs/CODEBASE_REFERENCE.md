@@ -253,6 +253,8 @@ Fungsi:
 - Shared visitor action panel untuk `/demo` dan public preview `/:businessId`.
 - Menangani download free, domain selection, domain availability/ownership pre-check, dan checkout setup `$197/year`.
 - Floating trigger text is `Download / Setup` for both demo and public preview; pricing is shown inside the opened panel/checkout flow, not on the collapsed button.
+- Checkout offer shows the `$197/year` value stack: `$17/year` domain allowance, `$180/year` hosting allocation, SSL/DNS/upload/launch, and free setup.
+- Optional add-ons are selected before checkout: `$10` per additional generated page or existing-page edit action, with 10% discount for 5-9 actions and 20% for 10+ actions.
 
 Props penting:
 - `siteData`: dipakai untuk business name/business ID default.
@@ -267,6 +269,8 @@ Logic penting:
 - Domain extension list berasal dari `src/lib/domainExtensions.ts`.
 - Domain availability memakai `GET /api/domains/check?domain=...`.
 - Checkout memakai `POST /api/payments/checkout`.
+- If PayPal is active and API credentials are configured, checkout returns PayPal JS SDK data (`paypalInline`, `paypalClientId`, `paypalOrderId`), renders PayPal's button in-place, and approval calls `POST /api/payments/paypal-capture-order`.
+- Payment payload mengirim `businessId`, `businessName`, `domain`, `domainMode`, domain pre-check result, email, dan add-on counts `{ newPages, editedPages }`; server recomputes pricing so client-side totals are display-only.
 - Checkout modal memakai flow bertahap: pilih domain baru atau domain milik sendiri, cek domain, lalu baru munculkan email untuk setup updates.
 - Domain baru memakai compact inline input: label domain, extension selector berkategori, dan tombol check dalam satu baris. Filter extension berada di panel collapsible supaya form tidak terlalu tinggi.
 - Domain milik sendiri memakai input domain penuh, lalu endpoint menampilkan sinyal registrar/nameserver dari RDAP jika tersedia.
@@ -550,7 +554,7 @@ Logic penting:
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - KIE.ai ditampilkan sebagai estimasi diskon karena pricing live berada di dashboard/pricing KIE.
-- Payment settings sekarang mencakup active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), USD amount, USD->IDR rate, package copy, Xendit key, Midtrans keys/mode, DOKU keys/mode, PayPal/Wise/Payoneer/manual fields, legacy Lemon fields, dan nomor WhatsApp admin. The UI shows only the active processor form plus shared offer/conversion fields; PayPal risk guardrails appear only when PayPal is active or already configured.
+- Payment settings sekarang mencakup active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), base USD amount, page/edit add-on USD fee, USD->IDR rate, package copy, Xendit key, Midtrans keys/mode, DOKU keys/mode, PayPal/Wise/Payoneer/manual fields, legacy Lemon fields, dan nomor WhatsApp admin. The UI shows only the active processor form plus shared offer/conversion fields; PayPal risk guardrails appear only when PayPal is active or already configured.
 - Section `Prospect Scoring` menyimpan preset, default threshold, dan bobot scoring ke D1 settings agar prioritas prospek bisa ditune dari UI tanpa edit kode.
 - Bobot scoring memakai angka positif/negatif. Reset weights mengembalikan default dari `src/lib/prospectScoring.ts`.
 - Tooltip dipasang pada Settings heading, manual save, provider tabs, Google Places, Payment Links, AI cost estimator, AI readiness refresh/result, and scoring controls to clarify which settings affect generation, search, checkout, and estimates.
@@ -952,15 +956,16 @@ Logic Owner HTML Export:
 - Jika gambar gagal di-fetch saat export karena network/CORS/provider error, exporter mencatat warning di console dan mempertahankan URL absolute sebagai fallback terakhir.
 
 Logic Payments:
-- `/api/payments/checkout` lives in `functions/api/payments/handler.ts` and reads `PAYMENT_PROCESSOR` from Settings. Mode live yang didukung: Xendit hosted invoice, Midtrans Snap Redirect, DOKU Checkout, PayPal Business link, Wise link, Payoneer link, dan legacy Lemon Squeezy.
+- `/api/payments/checkout` lives in `functions/api/payments/handler.ts` and reads `PAYMENT_PROCESSOR` from Settings. Mode live yang didukung: Xendit hosted invoice, Midtrans Snap Redirect, DOKU Checkout, PayPal Orders v2 Checkout, Wise link, Payoneer link, dan legacy Lemon Squeezy.
 - Jika processor aktif belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
-- Paket default saat ini: `$197` one-time untuk done-for-you website setup, dengan `PAYMENT_USD_TO_IDR_RATE` untuk mengirim amount IDR ke gateway Indonesia.
-- Request checkout menyimpan `domainMode` (`new` atau `owned`), requested domain, amount, dan processor ke CRM activity; gateway live juga menerima metadata/custom fields jika provider mendukung.
-- PayPal/Wise/Payoneer manual rails mengembalikan `requiresManualReview=true`, `paymentReference`, dan `paymentInstructions`; `WebsiteActionPanel` menampilkan review step sebelum membuka payment link agar buyer menyertakan business/domain/reference.
+- Paket default saat ini: `$197/year` untuk domain allowance + hosting + free setup, dengan `PAYMENT_ADDON_PAGE_USD` untuk page/edit add-ons dan `PAYMENT_USD_TO_IDR_RATE` untuk mengirim amount IDR ke gateway Indonesia.
+- Request checkout menyimpan `domainMode` (`new` atau `owned`), requested domain, amount, add-on pricing, dan processor ke CRM activity; gateway live juga menerima metadata/custom fields jika provider mendukung.
+- PayPal API checkout membuat order dengan `intent=CAPTURE`, `NO_SHIPPING`, `PAY_NOW`, `invoice_id=paymentReference`, dan item breakdown base package/add-ons. Jika order approve berhasil, `/api/payments/paypal-capture-order` capture order lalu update `lead_payments`, `subscriptions`, lead status, dan CRM activity.
+- PayPal/Wise/Payoneer manual fallback rails mengembalikan `requiresManualReview=true`, `paymentReference`, dan `paymentInstructions`; `WebsiteActionPanel` menampilkan review step sebelum membuka payment link agar buyer menyertakan business/domain/reference.
 - PayPal risk controls live in `/admin/settings#settings-payment`: `PAYPAL_ACCOUNT_MODE`, `PAYPAL_RISK_ACKNOWLEDGED`, `PAYPAL_PAYMENT_NOTE`, and a guardrails panel. `/admin/dashboard` marks PayPal partial if link exists but risk checklist is not acknowledged or mode/link looks personal.
-- `/api/payments/paypal-webhook` aman sebelum PayPal Business siap: tanpa `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, dan `PAYPAL_WEBHOOK_ID`, endpoint acknowledge dan ignore event. Jika lengkap, endpoint verify signature PayPal lalu mencatat completed payment yang match ke `lead_payments`, `subscriptions`, status lead, dan CRM activity.
+- `/api/payments/paypal-webhook` aman sebelum PayPal Business siap: tanpa `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, dan `PAYPAL_WEBHOOK_ID`, endpoint acknowledge dan ignore event. Jika lengkap, endpoint verify signature PayPal lalu mencatat completed payment yang match ke `lead_payments`, `subscriptions`, status lead, dan CRM activity sebagai backup bila browser capture callback terputus.
 - `lead_payments` menyimpan ledger manual/webhook: processor, status, amount, transaction ID, payer email, payment reference, proof notes, raw webhook JSON, waktu verified, dan verifier.
-- PayPal operating guidance and implementation tracker live in `docs/PAYPAL_RISK_CONTROLS.md`.
+- PayPal operating guidance and implementation tracker live in `docs/PAYPAL_RISK_CONTROLS.md` and `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md`.
 
 Logic Domains:
 - `/api/domains/check?domain=...` lives in `functions/api/domains/handler.ts` and melakukan availability pre-check gratis.
@@ -1013,6 +1018,7 @@ Jika menambah laman atau komponen baru:
 - `docs/FREE_TIER_LIMITS_AUDIT.md`: baseline batas Cloudflare Pages/Workers/D1/R2, Google Maps, Clerk, dan audit endpoint yang berisiko quota/cost.
 - `docs/NICHE_STYLE_PRESETS.md`: brainstorm dan kontrak `design.stylePreset`.
 - `docs/LEMON_SQUEEZY_INTEGRATION.md`: catatan integrasi checkout Lemon Squeezy.
-- `docs/PAYPAL_RISK_CONTROLS.md`: PayPal Personal/Business risk notes, checkout/payment-reference controls, and future reconciliation checklist.
+- `docs/PAYPAL_RISK_CONTROLS.md`: PayPal Business risk notes, checkout/payment-reference controls, and reconciliation checklist.
+- `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md`: PayPal JS SDK + Orders v2 implementation notes, sandbox QA, and `$197/year` plus add-on pricing structure.
 - `docs/DOMAIN_AVAILABILITY_RESEARCH.md`: riset provider gratis/murah untuk cek availability domain.
 - `docs/SITE_BUILDER_UPGRADE_PLAN.md`: rencana upgrade JSON schema dan renderer agar demo/site output lebih modern dan personalized.

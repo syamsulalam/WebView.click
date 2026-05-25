@@ -123,6 +123,151 @@ function firstNumber(...values: unknown[]) {
   return 0;
 }
 
+function money(value: number) {
+  return (Math.round(value * 100) / 100).toFixed(2);
+}
+
+function clampCount(value: unknown) {
+  const number = Math.floor(Number(value) || 0);
+  if (!Number.isFinite(number) || number < 0) return 0;
+  return Math.min(number, 50);
+}
+
+function checkoutPricing(baseAmountUsd: number, addOnPageUsd: number, addOnsRaw: unknown) {
+  const addOns = objectValue(addOnsRaw);
+  const newPages = clampCount(addOns.newPages);
+  const editedPages = clampCount(addOns.editedPages);
+  const totalPageActions = newPages + editedPages;
+  const discountRate = totalPageActions >= 10 ? 0.2 : totalPageActions >= 5 ? 0.1 : 0;
+  const baseCents = Math.max(100, Math.round(baseAmountUsd * 100));
+  const addOnUnitCents = Math.max(0, Math.round(addOnPageUsd * 100));
+  const grossAddOnCents = totalPageActions * addOnUnitCents;
+  const discountCents = Math.round(grossAddOnCents * discountRate);
+  const addOnCents = Math.max(0, grossAddOnCents - discountCents);
+  const totalCents = baseCents + addOnCents;
+  return {
+    baseUsd: baseCents / 100,
+    addOnUnitUsd: addOnUnitCents / 100,
+    newPages,
+    editedPages,
+    totalPageActions,
+    discountRate,
+    discountUsd: discountCents / 100,
+    addOnUsd: addOnCents / 100,
+    totalUsd: totalCents / 100,
+    totalCents,
+  };
+}
+
+function paypalCheckoutDescription(pricing: ReturnType<typeof checkoutPricing>, requestedDomain: string, domainMode: string) {
+  const includedDomain = domainMode === "owned"
+    ? "customer-owned domain connection"
+    : `$17/year domain allowance for ${requestedDomain || "selected domain"}`;
+  const addOns = pricing.totalPageActions > 0
+    ? ` Includes ${pricing.totalPageActions} additional page/edit action${pricing.totalPageActions === 1 ? "" : "s"}${pricing.discountRate ? ` with ${Math.round(pricing.discountRate * 100)}% bulk discount` : ""}.`
+    : "";
+  return `$197/year includes ${includedDomain}, $180/year static hosting, SSL, DNS/upload, generated site launch, and free setup.${addOns}`;
+}
+
+async function createPaypalCheckoutOrder(options: {
+  baseUrl: string;
+  accessToken: string;
+  requestId: string;
+  packageName: string;
+  businessName: string;
+  businessId: string;
+  requestedDomain: string;
+  domainMode: string;
+  customerEmail: string;
+  paymentReference: string;
+  origin: string;
+  pricing: ReturnType<typeof checkoutPricing>;
+}) {
+  const addOnName = `Additional page/edit actions (${options.pricing.totalPageActions})`;
+  const items = [
+    {
+      name: options.packageName.slice(0, 127),
+      description: paypalCheckoutDescription(options.pricing, options.requestedDomain, options.domainMode).slice(0, 127),
+      sku: "webview-annual-launch",
+      unit_amount: { currency_code: "USD", value: money(options.pricing.baseUsd) },
+      quantity: "1",
+      category: "DIGITAL_GOODS",
+    },
+    ...(options.pricing.addOnUsd > 0 ? [{
+      name: addOnName.slice(0, 127),
+      description: `Flat-fee additional generated page or edit work. ${Math.round(options.pricing.discountRate * 100)}% bulk discount applied.`.slice(0, 127),
+      sku: "webview-page-edit-addon",
+      unit_amount: { currency_code: "USD", value: money(options.pricing.addOnUsd) },
+      quantity: "1",
+      category: "DIGITAL_GOODS",
+    }] : []),
+  ];
+  const response = await fetch(`${options.baseUrl}/v2/checkout/orders`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${options.accessToken}`,
+      "content-type": "application/json",
+      "paypal-request-id": options.requestId,
+      prefer: "return=representation",
+    },
+    body: JSON.stringify({
+      intent: "CAPTURE",
+      purchase_units: [{
+        reference_id: "default",
+        custom_id: options.businessId,
+        invoice_id: options.paymentReference.slice(0, 127),
+        description: `${options.packageName} for ${options.businessName}`.slice(0, 127),
+        amount: {
+          currency_code: "USD",
+          value: money(options.pricing.totalUsd),
+          breakdown: {
+            item_total: { currency_code: "USD", value: money(options.pricing.totalUsd) },
+          },
+        },
+        items,
+      }],
+      payment_source: {
+        paypal: {
+          experience_context: {
+            payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
+            landing_page: "LOGIN",
+            shipping_preference: "NO_SHIPPING",
+            user_action: "PAY_NOW",
+            return_url: `${options.origin}/terms-refund`,
+            cancel_url: `${options.origin}/terms-refund`,
+          },
+        },
+      },
+    }),
+  });
+  const data = await response.json().catch(() => ({})) as { id?: string; status?: string; links?: Array<{ href?: string; rel?: string; method?: string }>; message?: string; details?: unknown };
+  if (!response.ok || !data.id) {
+    throw new Error(data.message || JSON.stringify(data.details || data) || `PayPal create order failed with HTTP ${response.status}`);
+  }
+  return data;
+}
+
+function extractPaypalPaymentFromOrder(order: Record<string, unknown>, fallbackReference = "") {
+  const purchaseUnits = Array.isArray(order.purchase_units) ? order.purchase_units : [];
+  const firstPurchaseUnit = objectValue(purchaseUnits[0]);
+  const payments = objectValue(firstPurchaseUnit.payments);
+  const captures = Array.isArray(payments.captures) ? payments.captures : [];
+  const capture = objectValue(captures[0]);
+  const captureAmount = objectValue(capture.amount);
+  const payer = objectValue(order.payer);
+  const paymentSource = objectValue(order.payment_source);
+  const paypalSource = objectValue(paymentSource.paypal);
+  const reference = firstString(firstPurchaseUnit.invoice_id, fallbackReference);
+  return {
+    transactionId: firstString(capture.id, order.id),
+    captureStatus: firstString(capture.status, order.status),
+    payerEmail: firstString(paypalSource.email_address, payer.email_address),
+    amountUsd: firstNumber(captureAmount.value),
+    paymentReference: reference,
+    businessId: firstString(firstPurchaseUnit.custom_id, reference.includes("|") ? reference.split("|")[0].trim() : ""),
+  };
+}
+
 function extractPaypalPayment(event: Record<string, unknown>) {
   const resource = objectValue(event.resource);
   const purchaseUnits = Array.isArray(resource.purchase_units) ? resource.purchase_units : [];
@@ -134,7 +279,7 @@ function extractPaypalPayment(event: Record<string, unknown>) {
   const captureAmount = objectValue(capture.amount);
   const payer = objectValue(resource.payer);
   const payerName = objectValue(payer.name);
-  const reference = firstString(resource.custom_id, resource.invoice_id, firstPurchaseUnit.custom_id, firstPurchaseUnit.invoice_id);
+  const reference = firstString(resource.invoice_id, firstPurchaseUnit.invoice_id, resource.custom_id, firstPurchaseUnit.custom_id);
   return {
     eventType: firstString(event.event_type),
     transactionId: firstString(capture.id, resource.id),
@@ -285,9 +430,166 @@ async function handlePaypalWebhook(deps: PaymentsDeps, request: Request, db: D1D
   return deps.json({ success: true, configured: true, verified: true, eventType, ...result });
 }
 
+async function recordPaypalCapturedOrder(
+  deps: PaymentsDeps,
+  db: D1DatabaseLike,
+  order: Record<string, unknown>,
+  paymentReference: string,
+  verifiedBy: string,
+) {
+  await deps.ensureRequiredColumns(db, deps.paymentLedgerRequiredColumns);
+  const payment = extractPaypalPaymentFromOrder(order, paymentReference);
+  if (!payment.transactionId || !payment.amountUsd) {
+    return { recorded: false, reason: "missing_transaction_or_amount", payment };
+  }
+  if (payment.captureStatus && payment.captureStatus !== "COMPLETED") {
+    return { recorded: false, reason: "capture_not_completed", payment };
+  }
+  if (paymentReference && payment.paymentReference && payment.paymentReference !== paymentReference) {
+    return { recorded: false, reason: "payment_reference_mismatch", payment };
+  }
+
+  const existing = await db.prepare("SELECT id FROM lead_payments WHERE transaction_id = ? LIMIT 1").bind(payment.transactionId).first<{ id: string }>();
+  if (existing?.id) {
+    return { recorded: false, duplicate: true, paymentId: existing.id, payment };
+  }
+
+  const lead = payment.businessId
+    ? await db.prepare("SELECT id, business_id, business_name FROM leads WHERE business_id = ?").bind(payment.businessId).first<{ id: string; business_id: string; business_name: string }>()
+    : null;
+  if (!lead?.id) {
+    return { recorded: false, reason: "lead_not_matched", payment };
+  }
+
+  const now = new Date().toISOString();
+  const pendingPayment = payment.paymentReference
+    ? await db
+      .prepare(
+        `SELECT id FROM lead_payments
+         WHERE lead_id = ? AND payment_status = 'pending' AND payment_reference = ?
+         ORDER BY datetime(created_at) DESC
+         LIMIT 1`,
+      )
+      .bind(lead.id, payment.paymentReference)
+      .first<{ id: string }>()
+    : null;
+  const paymentId = pendingPayment?.id || crypto.randomUUID();
+  const rawJson = JSON.stringify({ source: "paypal_checkout_capture", order });
+  if (pendingPayment?.id) {
+    await db
+      .prepare(
+        `UPDATE lead_payments
+         SET processor = 'paypal', payment_status = 'paid', amount_usd = ?, amount_idr = 0, transaction_id = ?, payer_email = ?,
+             proof_notes = ?, raw_json = ?, verified_at = ?, verified_by = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(payment.amountUsd, payment.transactionId, payment.payerEmail, "Captured by PayPal Checkout Orders API.", rawJson, now, verifiedBy, now, paymentId)
+      .run();
+  } else {
+    await db
+      .prepare(
+        `INSERT INTO lead_payments (
+          id, lead_id, business_id, processor, payment_status, amount_usd, amount_idr,
+          transaction_id, payer_email, payment_reference, proof_notes, raw_json, verified_at, verified_by, updated_at
+        ) VALUES (?, ?, ?, 'paypal', 'paid', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        paymentId,
+        lead.id,
+        lead.business_id,
+        payment.amountUsd,
+        payment.transactionId,
+        payment.payerEmail,
+        payment.paymentReference,
+        "Captured by PayPal Checkout Orders API.",
+        rawJson,
+        now,
+        verifiedBy,
+        now,
+      )
+      .run();
+  }
+
+  const subscription = await db.prepare("SELECT id FROM subscriptions WHERE lead_id = ? ORDER BY datetime(created_at) DESC LIMIT 1").bind(lead.id).first<{ id: string }>();
+  if (subscription?.id) {
+    await db
+      .prepare(
+        `UPDATE subscriptions
+         SET package_type = ?, amount_paid = ?, payment_status = 'paid', payment_method = 'paypal', payment_reference = ?, subscription_start_date = COALESCE(subscription_start_date, ?), updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind("managed_launch_support", payment.amountUsd, payment.transactionId, now, now, subscription.id)
+      .run();
+  } else {
+    await db
+      .prepare(
+        `INSERT INTO subscriptions (id, lead_id, package_type, amount_paid, payment_status, payment_method, payment_reference, subscription_start_date, created_at, updated_at)
+         VALUES (?, ?, 'managed_launch_support', ?, 'paid', 'paypal', ?, ?, ?, ?)`,
+      )
+      .bind(crypto.randomUUID(), lead.id, payment.amountUsd, payment.transactionId, now, now, now)
+      .run();
+  }
+
+  await db.prepare("UPDATE leads SET status = 'won_paid', email = COALESCE(NULLIF(?, ''), email), updated_at = ? WHERE id = ?").bind(payment.payerEmail, now, lead.id).run();
+  await deps.insertCrmActivitySafe(db, {
+    id: crypto.randomUUID(),
+    lead_id: lead.id,
+    staff_id: verifiedBy,
+    activity_type: "payment_verified",
+    description: `PayPal Checkout captured payment. Amount: $${payment.amountUsd}. Transaction: ${payment.transactionId}. Payer: ${payment.payerEmail || "not recorded"}. Reference: ${payment.paymentReference || "not recorded"}.`,
+  });
+
+  return { recorded: true, paymentId, payment };
+}
+
+async function handlePaypalCaptureOrder(deps: PaymentsDeps, request: Request, db: D1DatabaseLike, env: unknown) {
+  const body = await deps.readJsonBody(request);
+  const orderId = deps.asString(body.orderId || body.orderID).trim();
+  const paymentReference = deps.asString(body.paymentReference).trim();
+  if (!/^[A-Z0-9]{1,36}$/.test(orderId)) {
+    return deps.errorJson("Invalid PayPal order ID.", 400);
+  }
+
+  const [clientId, clientSecret, productionSetting] = await Promise.all([
+    deps.getSetting(db, env, "PAYPAL_CLIENT_ID"),
+    deps.getSetting(db, env, "PAYPAL_CLIENT_SECRET"),
+    deps.getSetting(db, env, "PAYPAL_IS_PRODUCTION"),
+  ]);
+  if (!clientId || !clientSecret) {
+    return deps.errorJson("PayPal API credentials are not configured.", 400, ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"]);
+  }
+
+  const baseUrl = paypalApiBase(productionSetting === "true");
+  const accessToken = await paypalAccessToken(baseUrl, clientId, clientSecret);
+  const response = await fetch(`${baseUrl}/v2/checkout/orders/${orderId}/capture`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      "paypal-request-id": `${orderId}-capture`,
+      prefer: "return=representation",
+    },
+    body: "{}",
+  });
+  const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) {
+    return deps.errorJson(firstString(data.message, `PayPal capture failed with HTTP ${response.status}`), 502, data);
+  }
+
+  const result = await recordPaypalCapturedOrder(deps, db, data, paymentReference, "paypal_checkout");
+  if (!result.recorded && result.reason) {
+    return deps.errorJson(`PayPal captured, but CRM recording failed: ${result.reason}`, 409, result);
+  }
+  return deps.json({ success: true, processor: "paypal", order: data, ...result });
+}
+
 export async function handlePayments(deps: PaymentsDeps, request: Request, db: D1DatabaseLike, env: unknown, segments: string[]): Promise<Response> {
   if (request.method === "POST" && segments[1] === "paypal-webhook") {
     return handlePaypalWebhook(deps, request, db, env);
+  }
+
+  if (request.method === "POST" && segments[1] === "paypal-capture-order") {
+    return handlePaypalCaptureOrder(deps, request, db, env);
   }
 
   if (request.method !== "POST" || segments[1] !== "checkout") {
@@ -305,6 +607,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     selectedProcessorRaw,
     adminWhatsAppSetting,
     paymentAmountUsdSetting,
+    paymentAddOnPageUsdSetting,
     usdToIdrRateSetting,
     packageNameSetting,
     packageDescriptionSetting,
@@ -318,6 +621,9 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     paypalAccountModeSetting,
     paypalRiskAcknowledgedSetting,
     paypalPaymentNoteSetting,
+    paypalClientId,
+    paypalClientSecret,
+    paypalProductionSetting,
     wisePaymentUrl,
     payoneerPaymentUrl,
     lemonApiKey,
@@ -327,6 +633,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     deps.getSetting(db, env, "PAYMENT_PROCESSOR"),
     deps.getSetting(db, env, "ADMIN_WHATSAPP_NUMBER"),
     deps.getSetting(db, env, "PAYMENT_USD_AMOUNT"),
+    deps.getSetting(db, env, "PAYMENT_ADDON_PAGE_USD"),
     deps.getSetting(db, env, "PAYMENT_USD_TO_IDR_RATE"),
     deps.getSetting(db, env, "PAYMENT_PACKAGE_NAME"),
     deps.getSetting(db, env, "PAYMENT_PACKAGE_DESCRIPTION"),
@@ -340,6 +647,9 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     deps.getSetting(db, env, "PAYPAL_ACCOUNT_MODE"),
     deps.getSetting(db, env, "PAYPAL_RISK_ACKNOWLEDGED"),
     deps.getSetting(db, env, "PAYPAL_PAYMENT_NOTE"),
+    deps.getSetting(db, env, "PAYPAL_CLIENT_ID"),
+    deps.getSetting(db, env, "PAYPAL_CLIENT_SECRET"),
+    deps.getSetting(db, env, "PAYPAL_IS_PRODUCTION"),
     deps.getSetting(db, env, "WISE_PAYMENT_URL"),
     deps.getSetting(db, env, "PAYONEER_PAYMENT_URL"),
     deps.getSetting(db, env, "LEMON_SQUEEZY_API_KEY"),
@@ -350,15 +660,18 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   const paymentProcessor = ["xendit", "midtrans", "doku", "paypal", "wise", "payoneer", "lemon_squeezy_legacy"].includes(selectedProcessor)
     ? selectedProcessor
     : "mock";
-  const paymentAmountUsd = Math.max(1, Number(paymentAmountUsdSetting || 197) || 197);
+  const basePaymentAmountUsd = Math.max(1, Number(paymentAmountUsdSetting || 197) || 197);
+  const addOnPageUsd = Math.max(0, Number(paymentAddOnPageUsdSetting || 10) || 10);
+  const pricing = checkoutPricing(basePaymentAmountUsd, addOnPageUsd, body.addOns);
+  const paymentAmountUsd = pricing.totalUsd;
   const usdToIdrRate = Math.max(1, Number(usdToIdrRateSetting || 16000) || 16000);
   const amountIdr = Math.max(1000, Math.round(paymentAmountUsd * usdToIdrRate));
   const amountCents = Math.round(paymentAmountUsd * 100);
   const packageName = packageNameSetting || "WebView.click Done-for-you Website Setup";
-  const packageDescription = packageDescriptionSetting || `$${paymentAmountUsd} total: domain/hosting coordination and done-for-you website setup.`;
+  const packageDescription = packageDescriptionSetting || `$${basePaymentAmountUsd}/year: domain/hosting coordination and done-for-you website setup.`;
   const adminWhatsApp = adminWhatsAppSetting || "081233838173";
   const orderId = `wv-${Date.now()}-${businessId}`.replace(/[^a-zA-Z0-9._~-]+/g, "-").slice(0, 50);
-  const paymentReference = `${businessId} | ${requestedDomain || "domain pending"} | ${orderId}`;
+  const paymentReference = `${businessId} | ${orderId}`.slice(0, 127);
   const paypalAccountMode = deps.asString(paypalAccountModeSetting, "business");
   const paypalRiskAcknowledged = deps.asString(paypalRiskAcknowledgedSetting) === "true";
   const paypalPaymentNote = deps.asString(
@@ -411,7 +724,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
           customerEmail,
           paymentReference,
           "Checkout requested; waiting for manual payment verification.",
-          JSON.stringify({ source: "checkout_request", businessId, businessName, requestedDomain, domainMode, paymentProcessor, paymentReference }),
+          JSON.stringify({ source: "checkout_request", businessId, businessName, requestedDomain, domainMode, paymentProcessor, paymentReference, pricing }),
           new Date().toISOString(),
         )
         .run();
@@ -433,6 +746,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     adminNotifyUrl,
     amountUsd: paymentAmountUsd,
     amountIdr,
+    pricing,
     paymentReference,
     missing,
     message,
@@ -460,7 +774,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     if (!response.ok || !data.invoice_url) {
       return deps.json({ success: false, mock: true, processor: paymentProcessor, checkoutUrl: "", adminNotifyUrl, error: data.message || data.error_code || `Xendit returned HTTP ${response.status}`, message: "Xendit checkout belum berhasil dibuat. Request tetap dicatat sebagai checkout_pending." }, 502);
     }
-    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: data.invoice_url, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr });
+    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: data.invoice_url, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr, pricing });
   }
 
   if (paymentProcessor === "midtrans") {
@@ -483,7 +797,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     if (!response.ok || !data.redirect_url) {
       return deps.json({ success: false, mock: true, processor: paymentProcessor, checkoutUrl: "", adminNotifyUrl, error: data.error_messages || `Midtrans returned HTTP ${response.status}`, message: "Midtrans checkout belum berhasil dibuat. Request tetap dicatat sebagai checkout_pending." }, 502);
     }
-    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: data.redirect_url, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr });
+    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: data.redirect_url, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr, pricing });
   }
 
   if (paymentProcessor === "doku") {
@@ -520,11 +834,72 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     if (!response.ok || !checkoutUrl) {
       return deps.json({ success: false, mock: true, processor: paymentProcessor, checkoutUrl: "", adminNotifyUrl, error: data.error_messages || data.message || `DOKU returned HTTP ${response.status}`, message: "DOKU checkout belum berhasil dibuat. Request tetap dicatat sebagai checkout_pending." }, 502);
     }
-    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr });
+    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr, pricing });
   }
 
   if (paymentProcessor === "paypal") {
-    if (!paypalBusinessUrl) return mockResponse("PayPal Business link belum dikonfigurasi. Checkout disimpan sebagai mock checkout_pending.", ["PAYPAL_BUSINESS_URL"]);
+    if (paypalClientId && paypalClientSecret) {
+      try {
+        const baseUrl = paypalApiBase(paypalProductionSetting === "true");
+        const accessToken = await paypalAccessToken(baseUrl, paypalClientId, paypalClientSecret);
+        const paypalOrder = await createPaypalCheckoutOrder({
+          baseUrl,
+          accessToken,
+          requestId: orderId,
+          packageName,
+          businessName,
+          businessId,
+          requestedDomain,
+          domainMode,
+          customerEmail,
+          paymentReference,
+          origin,
+          pricing,
+        });
+        const approvalUrl = (paypalOrder.links || []).find((link) => link.rel === "payer-action" || link.rel === "approve")?.href || "";
+        return deps.json({
+          success: true,
+          mock: false,
+          processor: paymentProcessor,
+          checkoutUrl: approvalUrl,
+          adminNotifyUrl,
+          amountUsd: paymentAmountUsd,
+          amountIdr,
+          pricing,
+          paymentReference,
+          paymentInstructions: "Review the package and approve payment in the PayPal window. The order is captured automatically after approval.",
+          riskWarning: paypalRiskAcknowledged ? paypalRiskWarning : `${paypalRiskWarning} Admin has not acknowledged the PayPal risk checklist in Settings yet.`,
+          requiresManualReview: false,
+          manualConfirmationRequired: false,
+          paypalInline: true,
+          paypalClientId,
+          paypalMode: paypalProductionSetting === "true" ? "live" : "sandbox",
+          paypalOrderId: paypalOrder.id,
+          paypalOrderStatus: paypalOrder.status,
+        });
+      } catch (error) {
+        return deps.json({
+          success: Boolean(paypalBusinessUrl),
+          mock: false,
+          processor: paymentProcessor,
+          checkoutUrl: paypalBusinessUrl || "",
+          adminNotifyUrl,
+          error: error instanceof Error ? error.message : String(error),
+          message: paypalBusinessUrl
+            ? "PayPal API checkout failed. Falling back to the configured PayPal Business link for manual review."
+            : "PayPal API checkout failed and no fallback PayPal Business link is configured. Request tetap dicatat sebagai checkout_pending.",
+          amountUsd: paymentAmountUsd,
+          amountIdr,
+          pricing,
+          paymentReference,
+          paymentInstructions: `${paypalPaymentNote} Reference: ${paymentReference}`,
+          requiresManualReview: Boolean(paypalBusinessUrl),
+          manualConfirmationRequired: Boolean(paypalBusinessUrl),
+        }, paypalBusinessUrl ? 200 : 502);
+      }
+    }
+
+    if (!paypalBusinessUrl) return mockResponse("PayPal API credentials atau PayPal Business link belum dikonfigurasi. Checkout disimpan sebagai mock checkout_pending.", ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"]);
     return deps.json({
       success: true,
       mock: false,
@@ -533,6 +908,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
       adminNotifyUrl,
       amountUsd: paymentAmountUsd,
       amountIdr,
+      pricing,
       paymentReference,
       paymentInstructions: `${paypalPaymentNote} Reference: ${paymentReference}`,
       riskWarning: paypalRiskAcknowledged ? paypalRiskWarning : `${paypalRiskWarning} Admin has not acknowledged the PayPal risk checklist in Settings yet.`,
@@ -543,12 +919,12 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
 
   if (paymentProcessor === "wise") {
     if (!wisePaymentUrl) return mockResponse("Wise payment/request link belum dikonfigurasi. Checkout disimpan sebagai mock checkout_pending.", ["WISE_PAYMENT_URL"]);
-    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: wisePaymentUrl, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr, paymentReference, paymentInstructions: `Include this WebView.click payment reference in the payment memo: ${paymentReference}`, requiresManualReview: true, manualConfirmationRequired: true });
+    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: wisePaymentUrl, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr, pricing, paymentReference, paymentInstructions: `Include this WebView.click payment reference in the payment memo: ${paymentReference}`, requiresManualReview: true, manualConfirmationRequired: true });
   }
 
   if (paymentProcessor === "payoneer") {
     if (!payoneerPaymentUrl) return mockResponse("Payoneer payment request link belum dikonfigurasi. Checkout disimpan sebagai mock checkout_pending.", ["PAYONEER_PAYMENT_URL"]);
-    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: payoneerPaymentUrl, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr, paymentReference, paymentInstructions: `Include this WebView.click payment reference in the payment memo: ${paymentReference}`, requiresManualReview: true, manualConfirmationRequired: true });
+    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: payoneerPaymentUrl, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr, pricing, paymentReference, paymentInstructions: `Include this WebView.click payment reference in the payment memo: ${paymentReference}`, requiresManualReview: true, manualConfirmationRequired: true });
   }
 
   if (paymentProcessor === "lemon_squeezy_legacy") {
@@ -574,7 +950,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     if (!checkoutResponse.ok || !checkoutData.data?.attributes?.url) {
       return deps.json({ success: false, mock: true, processor: paymentProcessor, checkoutUrl: "", adminNotifyUrl, error: checkoutData.errors || `Lemon Squeezy returned HTTP ${checkoutResponse.status}`, message: "Legacy Lemon checkout belum berhasil dibuat. Request tetap dicatat sebagai checkout_pending." }, 502);
     }
-    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: checkoutData.data.attributes.url, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr });
+    return deps.json({ success: true, mock: false, processor: paymentProcessor, checkoutUrl: checkoutData.data.attributes.url, adminNotifyUrl, amountUsd: paymentAmountUsd, amountIdr, pricing });
   }
 
   return mockResponse("Payment processor belum dipilih atau masih mock. Checkout disimpan sebagai checkout_pending.");
