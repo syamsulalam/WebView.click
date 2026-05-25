@@ -38,8 +38,10 @@
 - Do not run `npm run lint` for this repo anymore. The workspace intentionally may not have local TypeScript dependencies installed, and the user wants to avoid dependency/storage churn. Prefer lightweight checks such as `git diff --check`, JSON parsing, and targeted static inspection.
 
 ## Session Summary Rule
-- When the user says the session is closing, usage limit is almost reached, or a particular workstream is done (for example refactor completion, adding a feature, payment setup, admin workflow changes, or docs work), create or update `SESSION_SUMMARY.md`.
+- Do not update `SESSION_SUMMARY.md` during normal task iteration, review/fix cycles, follow-up revisions, or because a single implementation step appears complete.
+- Create or update `SESSION_SUMMARY.md` only when the user explicitly asks for a session summary, says the session is ending/closing, says usage limit is almost reached, or asks to wrap up/checkpoint the work.
 - The session summary must be in table format and include WIB timestamps with date, hour, minute, and second.
+- Insert new summary rows directly below the table header so the newest context is at the top.
 - Summaries should capture what changed, important files, verification performed, tests intentionally not run, and the next production-testing step.
 - Keep the summary factual and concise enough to resume work without rereading the whole conversation.
 

@@ -110,8 +110,8 @@ Rekomendasi praktis:
    - Midtrans: `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`
    - DOKU: `DOKU_CLIENT_ID`, `DOKU_SECRET_KEY`, `DOKU_IS_PRODUCTION`
 5. Tambahkan fallback manual: `PAYPAL_BUSINESS_URL`, `WISE_PAYMENT_URL`, atau `PAYONEER_PAYMENT_URL`.
-6. Jika memakai PayPal Business Checkout, set `PAYPAL_ACCOUNT_MODE=business`, isi `PAYPAL_SANDBOX_CLIENT_ID` dan `PAYPAL_SANDBOX_CLIENT_SECRET`, lalu set `PAYPAL_IS_PRODUCTION=false` untuk testing.
+6. Jika memakai PayPal Business Checkout, set `PAYPAL_ACCOUNT_MODE=business`, isi sandbox API key / Client ID ke `PAYPAL_SANDBOX_CLIENT_ID` dan sandbox secret ke `PAYPAL_SANDBOX_CLIENT_SECRET`, lalu pilih mode Sandbox (`PAYPAL_IS_PRODUCTION=false`) untuk testing.
 7. Review `docs/PAYPAL_RISK_CONTROLS.md` dan `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md`, lalu set `PAYPAL_RISK_ACKNOWLEDGED=true` setelah siap.
-8. Setelah sandbox capture berhasil, isi `PAYPAL_LIVE_CLIENT_ID`/`PAYPAL_LIVE_CLIENT_SECRET`, set `PAYPAL_IS_PRODUCTION=true`, dan tambahkan `PAYPAL_WEBHOOK_ID` setelah webhook dibuat. Endpoint webhook tersedia di `/api/payments/paypal-webhook` sebagai backup reconciliation.
+8. Setelah sandbox capture berhasil, isi live API key / Client ID ke `PAYPAL_LIVE_CLIENT_ID` dan live secret ke `PAYPAL_LIVE_CLIENT_SECRET`, pilih mode Live (`PAYPAL_IS_PRODUCTION=true`), dan tambahkan `PAYPAL_WEBHOOK_ID` setelah webhook dibuat. Endpoint webhook tersedia di `/api/payments/paypal-webhook` sebagai backup reconciliation.
 
 Gunakan PayPal Business, bukan PayPal Personal, untuk volume bisnis. Legacy Lemon Squeezy fields tetap ada hanya untuk kompatibilitas lama.

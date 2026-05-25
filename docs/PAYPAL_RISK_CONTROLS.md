@@ -87,8 +87,8 @@ This makes PayPal payments easier to match against CRM activity and reduces uncl
 
 1. In `/admin/settings#settings-payment`, set `PAYMENT_PROCESSOR=paypal`.
 2. Set `PAYPAL_ACCOUNT_MODE=business`.
-3. Paste sandbox `PAYPAL_SANDBOX_CLIENT_ID` and `PAYPAL_SANDBOX_CLIENT_SECRET`.
-4. Set `PAYPAL_IS_PRODUCTION=false`.
+3. Paste the sandbox API key / Client ID into `PAYPAL_SANDBOX_CLIENT_ID` and the sandbox secret into `PAYPAL_SANDBOX_CLIENT_SECRET`.
+4. Set the PayPal mode toggle to Sandbox (`PAYPAL_IS_PRODUCTION=false`).
 5. Set `PAYPAL_RISK_ACKNOWLEDGED=true` after reviewing this document.
 6. Optionally set `PAYPAL_BUSINESS_URL` as fallback.
 7. Save settings.
@@ -97,7 +97,7 @@ This makes PayPal payments easier to match against CRM activity and reduces uncl
 10. Confirm the modal shows the PayPal button in-place.
 11. Pay with a sandbox buyer account.
 12. Confirm `/admin/leads` has a paid PayPal ledger row with capture ID, payer email, amount, and matching reference.
-13. Paste live `PAYPAL_LIVE_CLIENT_ID` and `PAYPAL_LIVE_CLIENT_SECRET`, then switch `PAYPAL_IS_PRODUCTION=true` only after sandbox capture works.
+13. Paste the live API key / Client ID into `PAYPAL_LIVE_CLIENT_ID` and the live secret into `PAYPAL_LIVE_CLIENT_SECRET`, then switch the PayPal mode toggle to Live (`PAYPAL_IS_PRODUCTION=true`) only after sandbox capture works.
 
 ## PayPal Business Webhook Setup Later
 
@@ -107,7 +107,7 @@ When PayPal Business is ready:
 2. Add webhook URL: `https://webview.click/api/payments/paypal-webhook`.
 3. Subscribe to completed payment events such as `PAYMENT.CAPTURE.COMPLETED`.
 4. Copy the PayPal webhook ID into `PAYPAL_WEBHOOK_ID`.
-5. Add the active mode credential pair (`PAYPAL_SANDBOX_CLIENT_ID`/`PAYPAL_SANDBOX_CLIENT_SECRET` or `PAYPAL_LIVE_CLIENT_ID`/`PAYPAL_LIVE_CLIENT_SECRET`) and set `PAYPAL_IS_PRODUCTION`.
+5. Add the active mode credential pair (`PAYPAL_SANDBOX_CLIENT_ID`/`PAYPAL_SANDBOX_CLIENT_SECRET` or `PAYPAL_LIVE_CLIENT_ID`/`PAYPAL_LIVE_CLIENT_SECRET`) and set the matching Sandbox/Live toggle.
 6. Test in sandbox first.
 
 Until those settings are filled, the endpoint safely returns success and ignores events.

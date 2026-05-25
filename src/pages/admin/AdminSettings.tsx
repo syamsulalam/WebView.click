@@ -203,11 +203,10 @@ const paymentFieldGroups: Array<{
     description: "Use PayPal Checkout Orders API. Store sandbox and live credentials separately, then switch mode with the toggle.",
     processors: ["paypal"],
     fields: [
-      { key: "PAYPAL_IS_PRODUCTION", label: "PayPal API mode", type: "select", tooltip: "Use sandbox credentials while testing. Switch to live only after a complete sandbox order approval and capture succeeds.", options: [{ value: "false", label: "Sandbox" }, { value: "true", label: "Live" }] },
-      { key: "PAYPAL_SANDBOX_CLIENT_ID", label: "Sandbox Client ID", placeholder: "Sandbox REST app client ID", tooltip: "Public sandbox client ID used by the PayPal JavaScript SDK and Orders API when mode is Sandbox." },
-      { key: "PAYPAL_SANDBOX_CLIENT_SECRET", label: "Sandbox Client Secret", type: "password", placeholder: "Sandbox REST app secret", tooltip: "Server-side sandbox secret used to create/capture sandbox PayPal Orders. Never expose it in public pages." },
-      { key: "PAYPAL_LIVE_CLIENT_ID", label: "Live Client ID", placeholder: "Live REST app client ID", tooltip: "Public live client ID used by the PayPal JavaScript SDK and Orders API when mode is Live." },
-      { key: "PAYPAL_LIVE_CLIENT_SECRET", label: "Live Client Secret", type: "password", placeholder: "Live REST app secret", tooltip: "Server-side live secret used to create/capture live PayPal Orders. Never expose it in public pages." },
+      { key: "PAYPAL_SANDBOX_CLIENT_ID", label: "Sandbox API key / Client ID", placeholder: "Sandbox REST app API key / client ID", tooltip: "PayPal may label this API key or Client ID. It is the public sandbox ID used by the PayPal JavaScript SDK and Orders API when mode is Sandbox." },
+      { key: "PAYPAL_SANDBOX_CLIENT_SECRET", label: "Sandbox API secret", type: "password", placeholder: "Sandbox REST app secret", tooltip: "Server-side sandbox secret used to create/capture sandbox PayPal Orders. Never expose it in public pages." },
+      { key: "PAYPAL_LIVE_CLIENT_ID", label: "Live API key / Client ID", placeholder: "Live REST app API key / client ID", tooltip: "PayPal may label this API key or Client ID. It is the public live ID used by the PayPal JavaScript SDK and Orders API when mode is Live." },
+      { key: "PAYPAL_LIVE_CLIENT_SECRET", label: "Live API secret", type: "password", placeholder: "Live REST app secret", tooltip: "Server-side live secret used to create/capture live PayPal Orders. Never expose it in public pages." },
       { key: "PAYPAL_BUSINESS_URL", label: "PayPal fallback link", placeholder: "https://www.paypal.com/...", tooltip: "Optional fallback PayPal Business checkout/invoice/payment link if API order creation fails or credentials are not ready." },
       { key: "PAYPAL_ACCOUNT_MODE", label: "PayPal account mode", type: "select", tooltip: "Business is the target mode. Personal bridge is only for temporary low-volume testing while you upgrade.", options: [{ value: "business", label: "Business / invoice link" }, { value: "personal_bridge", label: "Personal temporary bridge" }] },
       { key: "PAYPAL_RISK_ACKNOWLEDGED", label: "PayPal risk checklist", type: "select", tooltip: "Set to acknowledged only after reviewing the PayPal risk checklist below and preparing delivery/payment records.", options: [{ value: "false", label: "Not acknowledged" }, { value: "true", label: "Acknowledged" }] },
@@ -490,7 +489,8 @@ export default function AdminSettings() {
   const paypalLooksPersonal = /paypal\.me\//i.test(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
   const shouldShowPayPalRisk = paypalSelected || Boolean(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
   const paypalRiskAcknowledged = settings.PAYPAL_RISK_ACKNOWLEDGED === "true";
-  const paypalLiveMode = settings.PAYPAL_IS_PRODUCTION === "true";
+  const paypalProductionSetting = settings.PAYPAL_IS_PRODUCTION || "false";
+  const paypalLiveMode = paypalProductionSetting === "true";
   const activePaypalModeLabel = paypalLiveMode ? "Live" : "Sandbox";
   const activePaypalClientId = String(
     paypalLiveMode
@@ -788,8 +788,49 @@ export default function AdminSettings() {
                   <p className="text-sm font-semibold text-slate-900">{group.title}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{group.description}</p>
                 </div>
+                {group.title === "PayPal Business" && (
+                  <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                      PayPal mode
+                      <HelpTooltip text="Sandbox uses your PayPal sandbox REST app credentials for test orders. Live uses your live REST app credentials for real buyer payments." widthClass="w-72" />
+                    </div>
+                    <div className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-1">
+                      {[
+                        { value: "false", label: "Sandbox" },
+                        { value: "true", label: "Live" },
+                      ].map((option) => {
+                        const active = paypalProductionSetting === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => handleChange("PAYPAL_IS_PRODUCTION", option.value)}
+                            className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                              active
+                                ? "bg-white text-indigo-700 shadow-sm"
+                                : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
+                            }`}
+                            aria-pressed={active}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                      Showing {activePaypalModeLabel.toLowerCase()} credentials only. The other mode stays saved and is used after you toggle back.
+                    </p>
+                  </div>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {group.fields.map((field) => (
+                  {group.fields
+                    .filter((field) => {
+                      if (group.title !== "PayPal Business") return true;
+                      if (field.key.startsWith("PAYPAL_SANDBOX_")) return !paypalLiveMode;
+                      if (field.key.startsWith("PAYPAL_LIVE_")) return paypalLiveMode;
+                      return true;
+                    })
+                    .map((field) => (
                     <label key={field.key} className="text-sm">
                       <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
                         {field.label}
