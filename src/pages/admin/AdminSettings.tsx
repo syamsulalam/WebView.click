@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, RotateCcw, Save, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { aiModelPrices, defaultInputTokens, defaultOutputTokens, estimateCostUsd, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { clearAiReadinessCache } from "../../lib/aiReadiness";
@@ -52,6 +52,13 @@ const initialSettings: Record<string, string> = {
   DOKU_SECRET_KEY: "",
   DOKU_IS_PRODUCTION: "false",
   PAYPAL_BUSINESS_URL: "",
+  PAYPAL_ACCOUNT_MODE: "business",
+  PAYPAL_RISK_ACKNOWLEDGED: "false",
+  PAYPAL_PAYMENT_NOTE: "Please pay as goods/services or invoice payment, not Friends and Family. Include the business name, requested domain, and WebView.click payment reference in the payment note.",
+  PAYPAL_CLIENT_ID: "",
+  PAYPAL_CLIENT_SECRET: "",
+  PAYPAL_WEBHOOK_ID: "",
+  PAYPAL_IS_PRODUCTION: "false",
   WISE_PAYMENT_URL: "",
   PAYONEER_PAYMENT_URL: "",
   PAYMENT_LINK_BASIC: "",
@@ -184,6 +191,13 @@ const paymentFieldGroups: Array<{
     description: "Use these when hosted gateway keys are missing or a client asks for another rail.",
     fields: [
       { key: "PAYPAL_BUSINESS_URL", label: "PayPal Business link", placeholder: "https://www.paypal.com/...", tooltip: "Use a PayPal Business checkout/invoice/payment link. Avoid relying on PayPal Personal for business volume." },
+      { key: "PAYPAL_ACCOUNT_MODE", label: "PayPal account mode", type: "select", tooltip: "Business is the target mode. Personal bridge is only for temporary low-volume testing while you upgrade.", options: [{ value: "business", label: "Business / invoice link" }, { value: "personal_bridge", label: "Personal temporary bridge" }] },
+      { key: "PAYPAL_RISK_ACKNOWLEDGED", label: "PayPal risk checklist", type: "select", tooltip: "Set to acknowledged only after reviewing the PayPal risk checklist below and preparing delivery/payment records.", options: [{ value: "false", label: "Not acknowledged" }, { value: "true", label: "Acknowledged" }] },
+      { key: "PAYPAL_PAYMENT_NOTE", label: "PayPal payment note instruction", placeholder: "Ask buyer to include business, domain, and reference", tooltip: "Shown before opening PayPal so the buyer sends a trackable business payment and does not use Friends and Family." },
+      { key: "PAYPAL_CLIENT_ID", label: "PayPal Client ID", placeholder: "Business REST app client ID", tooltip: "Optional until you upgrade to PayPal Business. Used by /api/payments/paypal-webhook to verify webhook signatures." },
+      { key: "PAYPAL_CLIENT_SECRET", label: "PayPal Client Secret", type: "password", placeholder: "Business REST app secret", tooltip: "Optional until PayPal Business is ready. Keep secret; only Pages Functions use it for webhook verification." },
+      { key: "PAYPAL_WEBHOOK_ID", label: "PayPal Webhook ID", placeholder: "Webhook ID from PayPal app", tooltip: "Optional. The webhook endpoint safely acknowledges events while this is empty, and verifies signatures when configured." },
+      { key: "PAYPAL_IS_PRODUCTION", label: "PayPal API mode", type: "select", tooltip: "Use sandbox until the PayPal Business app and webhook have been tested.", options: [{ value: "false", label: "Sandbox" }, { value: "true", label: "Production" }] },
       { key: "WISE_PAYMENT_URL", label: "Wise payment/request link", placeholder: "https://wise.com/...", tooltip: "Wise request/payment link or invoice link for clients who can pay by bank transfer-style rails." },
       { key: "PAYONEER_PAYMENT_URL", label: "Payoneer payment request link", placeholder: "https://payoneer.com/...", tooltip: "Payoneer payment request link for clients who prefer Payoneer." },
       { key: "ADMIN_WHATSAPP_NUMBER", label: "Admin WhatsApp number", placeholder: "62812...", tooltip: "Used when checkout is mock or fails, so the admin still receives a follow-up-ready message." },
@@ -417,6 +431,16 @@ export default function AdminSettings() {
   const pricingModels = aiModelPrices.filter((item) => item.provider === pricingProvider);
   const pricingEstimate = estimateCostUsd(pricingProvider, pricingModel, inputTokens, outputTokens);
   const pricingProviderKeyReady = Boolean(String(settings?.[pricingProviderApiKeyMap[pricingProvider]] || "").trim());
+  const paypalSelected = (settings.PAYMENT_PROCESSOR || "mock") === "paypal";
+  const paypalLink = String(settings.PAYPAL_BUSINESS_URL || "").trim();
+  const paypalLooksPersonal = /paypal\.me\//i.test(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
+  const paypalRiskAcknowledged = settings.PAYPAL_RISK_ACKNOWLEDGED === "true";
+  const paypalRiskItems = [
+    { label: "Use goods/services, invoice, or business checkout. Do not ask buyers to use Friends and Family.", done: paypalRiskAcknowledged },
+    { label: "Include business name, requested domain, and payment reference in every payment note.", done: Boolean(String(settings.PAYPAL_PAYMENT_NOTE || "").trim()) },
+    { label: "Keep proof of delivery: demo URL, payment reference, setup messages, DNS notes, and handover confirmation.", done: paypalRiskAcknowledged },
+    { label: "Use Personal only as a short bridge; upgrade to Business before regular commercial volume.", done: !paypalLooksPersonal || paypalRiskAcknowledged },
+  ];
 
   if (loading) {
     return <div className="p-8 flex items-center justify-center">Loading settings...</div>;
@@ -569,6 +593,38 @@ export default function AdminSettings() {
               {paymentProcessorOptions.find((option) => option.value === (settings.PAYMENT_PROCESSOR || "mock"))?.helper}
             </span>
           </label>
+
+          <div className={`mt-4 rounded-xl border p-4 ${paypalSelected ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
+            <div className="flex items-start gap-3">
+              <ShieldAlert size={20} className={paypalSelected ? "mt-0.5 shrink-0 text-amber-700" : "mt-0.5 shrink-0 text-slate-500"} />
+              <div className="min-w-0 flex-1">
+                <p className={`inline-flex items-center gap-1.5 text-sm font-semibold ${paypalSelected ? "text-amber-950" : "text-slate-900"}`}>
+                  PayPal account-risk guardrails
+                  <HelpTooltip text="PayPal Personal is risky for recurring commercial sales. The checkout adds a payment reference and note step for PayPal/manual rails, but account risk still depends on your PayPal account history, dispute rate, volume pattern, and compliance." widthClass="w-80" />
+                </p>
+                <p className={`mt-1 text-xs leading-relaxed ${paypalSelected ? "text-amber-900" : "text-slate-600"}`}>
+                  {paypalSelected
+                    ? paypalLooksPersonal
+                      ? "PayPal is active and appears to be a Personal/PayPal.me bridge. Keep volume low, use goods/services, and upgrade to Business as soon as repeat sales start."
+                      : "PayPal is active. Use this as a recognizable fallback rail, keep delivery records, and expect possible holds on new or unusual seller activity."
+                    : "These controls are ready if you switch the active processor to PayPal."}
+                </p>
+                <div className="mt-3 grid gap-2">
+                  {paypalRiskItems.map((item) => (
+                    <div key={item.label} className="flex items-start gap-2 text-xs">
+                      <CheckCircle2 size={14} className={`mt-0.5 shrink-0 ${item.done ? "text-emerald-600" : "text-slate-400"}`} />
+                      <span className={paypalSelected && !item.done ? "text-amber-950" : "text-slate-600"}>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+                {paypalSelected && !paypalRiskAcknowledged && (
+                  <p className="mt-3 rounded-lg border border-amber-300 bg-white/70 p-2 text-xs font-medium text-amber-950">
+                    Set PayPal risk checklist to Acknowledged after you review the docs and prepare records. Checkout still works, but the buyer-facing payment step will include an admin-not-acknowledged warning.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
 
           <div className="mt-5 space-y-5">
             {paymentFieldGroups.map((group) => (

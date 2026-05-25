@@ -13,12 +13,14 @@ import AdminLayout from './components/AdminLayout';
 import PublicViewer from './pages/public/PublicViewer';
 import HubPage from './pages/public/HubPage';
 import DemoSite from './pages/public/DemoSite';
+import TermsRefund from './pages/public/TermsRefund';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<HubPage />} />
       <Route path="/demo" element={<DemoSite />} />
+      <Route path="/terms-refund" element={<TermsRefund />} />
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<AdminDashboard />} />
         <Route path="leads" element={<AdminLeads />} />

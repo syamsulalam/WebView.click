@@ -157,6 +157,8 @@ Settings needed:
 Operational note:
 - Ask buyers to include business name/domain in the payment note.
 - Keep CRM checkout activity because PayPal link payments may not auto-update without webhooks.
+- WebView.click has PayPal risk controls in `/admin/settings#settings-payment`: account mode, risk acknowledgement, editable payment note, and buyer-facing payment reference review before opening PayPal.
+- See `docs/PAYPAL_RISK_CONTROLS.md` for the operating checklist and implementation tracker.
 
 ### Upwork Direct Contracts
 

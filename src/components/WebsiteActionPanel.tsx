@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Download, Globe2, Loader2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Copy, Download, ExternalLink, Globe2, Loader2, X } from "lucide-react";
 import { buildDomain, domainExtensions, normalizeDomainLabel } from "../lib/domainExtensions";
 import type { FontPairing } from "../lib/fontPairings";
 
@@ -17,7 +17,7 @@ type WebsiteActionPanelProps = {
 };
 
 type DomainMode = "new" | "owned";
-type SetupStep = "choice" | "domain";
+type SetupStep = "choice" | "domain" | "payment";
 
 function InfoTooltip({ text, light = false }: { text: string; light?: boolean }) {
   return (
@@ -62,6 +62,7 @@ export default function WebsiteActionPanel({
   const [extensionQuery, setExtensionQuery] = useState("");
   const [email, setEmail] = useState("");
   const [checkoutStatus, setCheckoutStatus] = useState("");
+  const [checkoutDetails, setCheckoutDetails] = useState<any>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [domainCheckLoading, setDomainCheckLoading] = useState(false);
   const [domainCheck, setDomainCheck] = useState<any>(null);
@@ -91,6 +92,7 @@ export default function WebsiteActionPanel({
   const resetCheck = () => {
     setDomainCheck(null);
     setCheckoutStatus("");
+    setCheckoutDetails(null);
   };
 
   const openSetup = (mode: DomainMode) => {
@@ -116,8 +118,14 @@ export default function WebsiteActionPanel({
         }),
       });
       const data = await response.json();
-      if (data.checkoutUrl) {
+      if (data.checkoutUrl && !data.requiresManualReview) {
         window.location.href = data.checkoutUrl;
+        return;
+      }
+      if (data.checkoutUrl) {
+        setCheckoutDetails(data);
+        setSetupStep("payment");
+        setCheckoutStatus("");
         return;
       }
       setCheckoutStatus(data.message || "Checkout request saved. We will follow up for setup.");
@@ -127,6 +135,17 @@ export default function WebsiteActionPanel({
       setCheckoutStatus("Checkout request failed. Please try again.");
     } finally {
       setCheckoutLoading(false);
+    }
+  };
+
+  const copyPaymentReference = async () => {
+    const reference = String(checkoutDetails?.paymentReference || "");
+    if (!reference) return;
+    try {
+      await navigator.clipboard.writeText(reference);
+      setCheckoutStatus("Payment reference copied.");
+    } catch {
+      setCheckoutStatus("Could not copy automatically. Select and copy the reference manually.");
     }
   };
 
@@ -231,6 +250,8 @@ export default function WebsiteActionPanel({
                 onClick={() => {
                   setCheckoutOpen(true);
                   setSetupStep("choice");
+                  setCheckoutDetails(null);
+                  setCheckoutStatus("");
                 }}
                 className="flex w-full items-center justify-between rounded-xl bg-indigo-600 px-4 py-3 text-left text-white hover:bg-indigo-700"
               >
@@ -277,6 +298,9 @@ export default function WebsiteActionPanel({
                     <p><strong>$17/year domain allowance</strong> if we register a new domain.</p>
                     <p><strong>$180/year hosting</strong> ($15/month x 12 months).</p>
                     <p><strong>Free setup</strong>: upload site, connect DNS, and point hosting.</p>
+                    <a href="/terms-refund" target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-indigo-700 hover:underline">
+                      Terms and refund policy
+                    </a>
                   </div>
                   <button type="button" onClick={() => openSetup("new")} className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-left hover:bg-slate-50">
                     <span>
@@ -425,6 +449,45 @@ export default function WebsiteActionPanel({
                       </button>
                     </>
                   )}
+                </>
+              )}
+
+              {setupStep === "payment" && checkoutDetails && (
+                <>
+                  <button type="button" onClick={() => setSetupStep("domain")} className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-900">
+                    <ArrowLeft size={16} />
+                    Back
+                  </button>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    <p className="font-semibold">{checkoutDetails.processor === "paypal" ? "PayPal payment note" : "Manual payment note"}</p>
+                    <p className="mt-1 text-xs leading-relaxed">
+                      {checkoutDetails.paymentInstructions || "Include the business name, requested domain, and payment reference so we can match the payment quickly."}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment reference</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <code className="min-w-0 flex-1 break-all rounded-lg bg-white px-2 py-1 text-xs text-slate-900">{checkoutDetails.paymentReference || selectedDomain}</code>
+                      <button type="button" onClick={copyPaymentReference} className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-100" aria-label="Copy payment reference">
+                        <Copy size={15} />
+                      </button>
+                    </div>
+                  </div>
+                  {checkoutDetails.riskWarning && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-600">
+                      {checkoutDetails.riskWarning}
+                    </div>
+                  )}
+                  {checkoutStatus && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{checkoutStatus}</div>}
+                  <a
+                    href={checkoutDetails.checkoutUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
+                  >
+                    <ExternalLink size={18} />
+                    Open payment link
+                  </a>
                 </>
               )}
             </div>

@@ -102,11 +102,16 @@ export default function AdminDashboard() {
     && String(settings?.LEMON_SQUEEZY_VARIANT_ID || "").trim(),
   );
   const activePaymentProcessor = String(settings?.PAYMENT_PROCESSOR || "mock").trim();
+  const paypalLink = String(settings?.PAYPAL_BUSINESS_URL || "").trim();
+  const paypalRiskAcknowledged = String(settings?.PAYPAL_RISK_ACKNOWLEDGED || "") === "true";
+  const paypalLooksPersonal = /paypal\.me\//i.test(paypalLink) || String(settings?.PAYPAL_ACCOUNT_MODE || "") === "personal_bridge";
+  const paypalReady = Boolean(paypalLink && paypalRiskAcknowledged && !paypalLooksPersonal);
+  const paypalPartial = Boolean(paypalLink && (!paypalRiskAcknowledged || paypalLooksPersonal));
   const processorReady = (
     (activePaymentProcessor === "xendit" && String(settings?.XENDIT_SECRET_KEY || "").trim())
     || (activePaymentProcessor === "midtrans" && String(settings?.MIDTRANS_SERVER_KEY || "").trim())
     || (activePaymentProcessor === "doku" && String(settings?.DOKU_CLIENT_ID || "").trim() && String(settings?.DOKU_SECRET_KEY || "").trim())
-    || (activePaymentProcessor === "paypal" && String(settings?.PAYPAL_BUSINESS_URL || "").trim())
+    || (activePaymentProcessor === "paypal" && paypalReady)
     || (activePaymentProcessor === "wise" && String(settings?.WISE_PAYMENT_URL || "").trim())
     || (activePaymentProcessor === "payoneer" && String(settings?.PAYONEER_PAYMENT_URL || "").trim())
     || (activePaymentProcessor === "lemon_squeezy_legacy" && lemonReady)
@@ -119,6 +124,7 @@ export default function AdminDashboard() {
     || String(settings?.PAYONEER_PAYMENT_URL || "").trim()
     || String(settings?.ADMIN_WHATSAPP_NUMBER || "").trim(),
   );
+  const paymentPartial = manualPaymentFallback || (activePaymentProcessor === "paypal" && paypalPartial);
   const readinessItems: ReadinessItem[] = [
     {
       key: "places",
@@ -143,11 +149,13 @@ export default function AdminDashboard() {
     {
       key: "payment",
       label: "Payment Setup",
-      level: processorReady ? "ready" : manualPaymentFallback ? "partial" : "missing",
+      level: processorReady ? "ready" : paymentPartial ? "partial" : "missing",
       detail: processorReady
         ? `${activePaymentProcessor || "Selected"} checkout is configured.`
-        : manualPaymentFallback
-          ? "Manual/mock checkout fallback is available."
+        : paymentPartial
+          ? activePaymentProcessor === "paypal" && paypalPartial
+            ? "PayPal link exists, but account-risk checklist is not fully ready."
+            : "Manual/mock checkout fallback is available."
           : "Missing checkout and manual fallback settings.",
       href: "/admin/settings#settings-payment",
       tooltip: "Payment processor readiness checks the selected rail: Xendit, Midtrans, DOKU, PayPal Business, Wise, Payoneer, or legacy Lemon. Missing keys fall back to mock checkout.",

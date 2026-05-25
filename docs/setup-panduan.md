@@ -110,5 +110,7 @@ Rekomendasi praktis:
    - Midtrans: `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`
    - DOKU: `DOKU_CLIENT_ID`, `DOKU_SECRET_KEY`, `DOKU_IS_PRODUCTION`
 5. Tambahkan fallback manual: `PAYPAL_BUSINESS_URL`, `WISE_PAYMENT_URL`, atau `PAYONEER_PAYMENT_URL`.
+6. Jika memakai PayPal, set `PAYPAL_ACCOUNT_MODE`, review `docs/PAYPAL_RISK_CONTROLS.md`, lalu set `PAYPAL_RISK_ACKNOWLEDGED=true` setelah siap. Buyer akan melihat payment note/reference sebelum link PayPal dibuka.
+7. Setelah upgrade ke PayPal Business, isi `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, dan `PAYPAL_IS_PRODUCTION`. Endpoint webhook sudah tersedia di `/api/payments/paypal-webhook`; selama field kosong endpoint hanya acknowledge/ignore event.
 
 Gunakan PayPal Business, bukan PayPal Personal, untuk volume bisnis. Legacy Lemon Squeezy fields tetap ada hanya untuk kompatibilitas lama.

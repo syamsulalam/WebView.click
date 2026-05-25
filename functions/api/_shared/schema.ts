@@ -43,6 +43,23 @@ export const checkoutRequiredColumns: ColumnSpec[] = [
   { table: "crm_activities", column: "description", definition: "TEXT" },
 ];
 
+export const paymentLedgerRequiredColumns: ColumnSpec[] = [
+  { table: "lead_payments", column: "lead_id", definition: "TEXT" },
+  { table: "lead_payments", column: "business_id", definition: "TEXT" },
+  { table: "lead_payments", column: "processor", definition: "TEXT" },
+  { table: "lead_payments", column: "payment_status", definition: "TEXT DEFAULT 'pending'" },
+  { table: "lead_payments", column: "amount_usd", definition: "REAL DEFAULT 0" },
+  { table: "lead_payments", column: "amount_idr", definition: "INTEGER DEFAULT 0" },
+  { table: "lead_payments", column: "transaction_id", definition: "TEXT" },
+  { table: "lead_payments", column: "payer_email", definition: "TEXT" },
+  { table: "lead_payments", column: "payment_reference", definition: "TEXT" },
+  { table: "lead_payments", column: "proof_notes", definition: "TEXT" },
+  { table: "lead_payments", column: "raw_json", definition: "TEXT" },
+  { table: "lead_payments", column: "verified_at", definition: "DATETIME" },
+  { table: "lead_payments", column: "verified_by", definition: "TEXT" },
+  { table: "lead_payments", column: "updated_at", definition: "DATETIME" },
+];
+
 export const selectionRequiredColumns: ColumnSpec[] = [
   { table: "places_prospects", column: "selected_photo_json", definition: "TEXT" },
   { table: "places_prospects", column: "selected_palette_json", definition: "TEXT" },
@@ -88,6 +105,7 @@ export async function setupTables(db: D1Database) {
   const createStatements = [
     "CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, business_id TEXT UNIQUE NOT NULL, business_name TEXT NOT NULL, niche TEXT, email TEXT, phone TEXT, gmb_url TEXT, website_url TEXT, rating REAL, reviews INTEGER, address TEXT, status TEXT DEFAULT 'scraped', view_count INTEGER DEFAULT 0, last_viewed_at DATETIME, last_contacted DATETIME, staff_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, package_type TEXT NOT NULL, amount_paid REAL DEFAULT 0.00, payment_status TEXT DEFAULT 'unpaid', payment_method TEXT, payment_reference TEXT, subscription_start_date DATETIME, subscription_end_date DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
+    "CREATE TABLE IF NOT EXISTS lead_payments (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, business_id TEXT, processor TEXT, payment_status TEXT DEFAULT 'pending', amount_usd REAL DEFAULT 0, amount_idr INTEGER DEFAULT 0, transaction_id TEXT, payer_email TEXT, payment_reference TEXT, proof_notes TEXT, raw_json TEXT, verified_at DATETIME, verified_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
     "CREATE TABLE IF NOT EXISTS crm_activities (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, staff_id TEXT, activity_type TEXT NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
     "CREATE TABLE IF NOT EXISTS json_sites (id TEXT PRIMARY KEY, business_id TEXT UNIQUE NOT NULL, json_content TEXT NOT NULL, r2_json_key TEXT, r2_json_url TEXT, json_summary TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -115,6 +133,19 @@ export async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "leads", "last_viewed_at", "DATETIME");
   await addColumnIfMissing(db, "leads", "staff_id", "TEXT");
   await addColumnIfMissing(db, "leads", "updated_at", "DATETIME");
+  await addColumnIfMissing(db, "lead_payments", "business_id", "TEXT");
+  await addColumnIfMissing(db, "lead_payments", "processor", "TEXT");
+  await addColumnIfMissing(db, "lead_payments", "payment_status", "TEXT DEFAULT 'pending'");
+  await addColumnIfMissing(db, "lead_payments", "amount_usd", "REAL DEFAULT 0");
+  await addColumnIfMissing(db, "lead_payments", "amount_idr", "INTEGER DEFAULT 0");
+  await addColumnIfMissing(db, "lead_payments", "transaction_id", "TEXT");
+  await addColumnIfMissing(db, "lead_payments", "payer_email", "TEXT");
+  await addColumnIfMissing(db, "lead_payments", "payment_reference", "TEXT");
+  await addColumnIfMissing(db, "lead_payments", "proof_notes", "TEXT");
+  await addColumnIfMissing(db, "lead_payments", "raw_json", "TEXT");
+  await addColumnIfMissing(db, "lead_payments", "verified_at", "DATETIME");
+  await addColumnIfMissing(db, "lead_payments", "verified_by", "TEXT");
+  await addColumnIfMissing(db, "lead_payments", "updated_at", "DATETIME");
   await addColumnIfMissing(db, "json_sites", "updated_at", "DATETIME");
   await addColumnIfMissing(db, "json_sites", "r2_json_key", "TEXT");
   await addColumnIfMissing(db, "json_sites", "r2_json_url", "TEXT");
@@ -183,7 +214,7 @@ export async function setupTables(db: D1Database) {
 export async function databaseRepairReport(db: D1Database) {
   const startedAt = new Date().toISOString();
   await setupTables(db);
-  const tables = ["leads", "subscriptions", "crm_activities", "json_sites", "system_settings", "ai_readiness_cache", "daily_usage_counters", "provider_cooldowns", "provider_cooldown_events", "places_search_cache", "places_prospects", "generation_jobs"];
+  const tables = ["leads", "subscriptions", "lead_payments", "crm_activities", "json_sites", "system_settings", "ai_readiness_cache", "daily_usage_counters", "provider_cooldowns", "provider_cooldown_events", "places_search_cache", "places_prospects", "generation_jobs"];
   const summary: Record<string, string[]> = {};
   for (const table of tables) {
     summary[table] = Array.from(await tableColumns(db, table)).sort();

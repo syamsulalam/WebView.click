@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, Images, PanelRightOpen, X, Play, ListChecks, History, SlidersHorizontal } from "lucide-react";
+import { Search, Loader2, Camera, ExternalLink, Mail, MessageSquare, RefreshCw, Images, PanelRightOpen, X, Play, ListChecks, History, SlidersHorizontal, BadgeCheck, FileDown, DollarSign } from "lucide-react";
 import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
@@ -82,6 +82,20 @@ export default function AdminLeads() {
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [logoSelections, setLogoSelections] = useState<Record<string, { url: string; reference: string; palette: string[]; attributions: string[]; priorityLabel: string; source: string }>>({});
   const [paletteOptionsByPlace, setPaletteOptionsByPlace] = useState<Record<string, any[]>>({});
+  const [paymentLedger, setPaymentLedger] = useState<any[]>([]);
+  const [paymentLedgerLoading, setPaymentLedgerLoading] = useState(false);
+  const [paymentVerifyLead, setPaymentVerifyLead] = useState<any>(null);
+  const [paymentVerifySaving, setPaymentVerifySaving] = useState(false);
+  const [paymentVerifyMessage, setPaymentVerifyMessage] = useState("");
+  const [paymentVerifyForm, setPaymentVerifyForm] = useState({
+    processor: "paypal",
+    transactionId: "",
+    payerEmail: "",
+    amountUsd: "197",
+    amountIdr: "",
+    paymentReference: "",
+    proofNotes: "",
+  });
 
   const providers: Record<string, { label: string; models: { value: string; label: string }[] }> = {
     OpenAI: {
@@ -197,6 +211,37 @@ export default function AdminLeads() {
       .then(r => r.ok ? r.json() : [])
       .then((data) => setLeads(Array.isArray(data) ? data : []))
       .catch(e => console.error(e));
+  };
+
+  const fetchPaymentLedger = () => {
+    setPaymentLedgerLoading(true);
+    fetch("/api/leads/payments")
+      .then(r => r.ok ? r.json() : [])
+      .then((data) => setPaymentLedger(Array.isArray(data) ? data : []))
+      .catch(e => console.error(e))
+      .finally(() => setPaymentLedgerLoading(false));
+  };
+
+  const exportCheckoutPendingCsv = async () => {
+    const headers = ["business_name", "business_id", "email", "status", "payment_status", "payment_processor", "payment_amount_usd", "payment_transaction_id", "payment_payer_email", "payment_reference", "payment_proof_notes"];
+    const rows = leads.filter((lead) => lead.status === "checkout_pending");
+    const csvValue = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csv = [
+      headers.join(","),
+      ...rows.map((lead) => headers.map((header) => csvValue(lead[header])).join(",")),
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(csv);
+      showToast({ kind: "success", title: "Checkout pending CSV copied", message: `${rows.length} checkout_pending lead rows copied for reconciliation.` });
+    } catch {
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `webview-checkout-pending-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   const fetchProspectDrafts = () => {
@@ -456,6 +501,7 @@ export default function AdminLeads() {
 
   useEffect(() => {
     fetchLeads();
+    fetchPaymentLedger();
     fetchProspectDrafts();
     fetchGenerationJobs();
     fetchSearchHistory();
@@ -899,6 +945,53 @@ export default function AdminLeads() {
     fetchLeads();
   };
 
+  const openPaymentVerification = (lead: any) => {
+    setPaymentVerifyLead(lead);
+    setPaymentVerifyMessage("");
+    setPaymentVerifyForm({
+      processor: String(lead.payment_processor || "paypal"),
+      transactionId: String(lead.payment_transaction_id || ""),
+      payerEmail: String(lead.payment_payer_email || lead.email || ""),
+      amountUsd: String(lead.payment_amount_usd || settings?.PAYMENT_USD_AMOUNT || "197"),
+      amountIdr: "",
+      paymentReference: String(lead.payment_reference || `${lead.business_id} | ${lead.business_name}`),
+      proofNotes: String(lead.payment_proof_notes || ""),
+    });
+  };
+
+  const submitPaymentVerification = async () => {
+    if (!paymentVerifyLead?.id) return;
+    setPaymentVerifySaving(true);
+    setPaymentVerifyMessage("Saving payment verification...");
+    try {
+      const response = await fetch(`/api/leads/${encodeURIComponent(paymentVerifyLead.id)}/payment-verified`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...paymentVerifyForm,
+          amountUsd: Number(paymentVerifyForm.amountUsd || 0),
+          amountIdr: Number(paymentVerifyForm.amountIdr || 0),
+          verifiedBy: "admin",
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) throw new Error(data.error || `Payment verification failed with HTTP ${response.status}`);
+      setPaymentVerifyMessage("Payment verified and lead marked won_paid.");
+      showToast({ kind: "success", title: "Payment verified", message: `${paymentVerifyLead.business_name} marked as paid.` });
+      fetchLeads();
+      fetchPaymentLedger();
+      window.setTimeout(() => {
+        setPaymentVerifyLead(null);
+        setPaymentVerifyMessage("");
+      }, 900);
+    } catch (error) {
+      console.error(error);
+      setPaymentVerifyMessage(error instanceof Error ? error.message : "Payment verification failed.");
+    } finally {
+      setPaymentVerifySaving(false);
+    }
+  };
+
   const hasWebsite = (place: any) => Boolean(place.website || place.websiteUri);
   const websiteBadge = (place: any) => {
     if (hasWebsite(place)) {
@@ -1096,6 +1189,8 @@ export default function AdminLeads() {
             setLeadWorkspaceTab(tabKey);
             if (tabKey === "crm") {
               setSearchActive(false);
+              fetchLeads();
+              fetchPaymentLedger();
               fetchProspectDrafts();
             }
             if (tabKey === "history") fetchSearchHistory();
@@ -1961,6 +2056,56 @@ export default function AdminLeads() {
 
       {/* LEADS TABLE */}
       {activeWorkspaceTab === "crm" && (
+      <>
+      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-slate-950">
+              Payment Reconciliation
+              <HelpTooltip text="Manual ledger for PayPal/Wise/Payoneer payments. Verify the payment after checking the provider account, then record transaction ID, payer email, amount, and proof notes." />
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">Use this before marking a checkout-pending lead as paid.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={exportCheckoutPendingCsv}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <FileDown size={14} />
+              Export checkout pending
+            </button>
+            <button
+              type="button"
+              onClick={fetchPaymentLedger}
+              disabled={paymentLedgerLoading}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              <RefreshCw size={14} className={paymentLedgerLoading ? "animate-spin" : ""} />
+              Refresh ledger
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {paymentLedger.slice(0, 6).map((payment) => (
+            <div key={payment.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <p className="truncate font-semibold text-slate-900">{payment.business_name || payment.business_id}</p>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${payment.payment_status === "paid" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                  {payment.payment_status || "pending"}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">{payment.processor || "payment"} · ${Number(payment.amount_usd || 0).toFixed(2)}</p>
+              <p className="mt-1 truncate text-xs text-slate-500">{payment.transaction_id || payment.payment_reference || "No transaction recorded"}</p>
+            </div>
+          ))}
+          {!paymentLedger.length && (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500 md:col-span-3">
+              No payment ledger entries yet.
+            </div>
+          )}
+        </div>
+      </div>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -1969,6 +2114,7 @@ export default function AdminLeads() {
                 <th className="p-4">Bisnis</th>
                 <th className="p-4">Preview URL</th>
                 <th className="p-4">Status & Views</th>
+                <th className="p-4">Payment</th>
                 <th className="p-4 text-right">Aksi</th>
               </tr>
             </thead>
@@ -2011,7 +2157,26 @@ export default function AdminLeads() {
                       )}
                     </div>
                   </td>
+                  <td className="p-4">
+                    <div className="space-y-1 text-sm">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${lead.payment_status === "paid" || lead.status === "won_paid" ? "bg-emerald-100 text-emerald-800" : lead.status === "checkout_pending" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700"}`}>
+                        {lead.payment_status || (lead.status === "checkout_pending" ? "pending" : "not recorded")}
+                      </span>
+                      {lead.payment_amount_usd ? <p className="text-xs text-slate-500">${Number(lead.payment_amount_usd || 0).toFixed(2)} via {lead.payment_processor || "payment"}</p> : null}
+                      {lead.payment_transaction_id ? <p className="max-w-[180px] truncate text-xs text-slate-500">{lead.payment_transaction_id}</p> : null}
+                    </div>
+                  </td>
                   <td className="p-4 text-right flex items-center justify-end gap-2">
+                    <HoverTooltip text="Record a verified PayPal/manual payment after checking the provider account." widthClass="w-56">
+                      <button
+                        type="button"
+                        onClick={() => openPaymentVerification(lead)}
+                        className="p-2 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                        aria-label={`Verify payment for ${lead.business_name}`}
+                      >
+                        <BadgeCheck size={18} />
+                      </button>
+                    </HoverTooltip>
                     {/* Instant screenshot feature (mock logic for demo) */}
                     <button className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded group relative">
                       <Camera size={18} />
@@ -2036,13 +2201,115 @@ export default function AdminLeads() {
               ))}
               {leads.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-gray-500">Belum ada prospek. Gunakan fitur pencarian di atas.</td>
+                  <td colSpan={5} className="p-8 text-center text-gray-500">Belum ada prospek. Gunakan fitur pencarian di atas.</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
+      </>
+      )}
+
+      {paymentVerifyLead && (
+        <div className="fixed inset-0 z-[280] flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="inline-flex items-center gap-2 font-semibold text-slate-950">
+                  <DollarSign size={18} className="text-emerald-600" />
+                  Verify payment
+                </p>
+                <p className="mt-1 text-sm text-slate-500">{paymentVerifyLead.business_name}</p>
+              </div>
+              <button type="button" onClick={() => setPaymentVerifyLead(null)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-4 p-5">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                Check PayPal/provider first, then record the exact transaction ID, payer email, amount, and proof notes. This marks the lead `won_paid` and updates revenue.
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-slate-700">Processor</span>
+                  <select
+                    value={paymentVerifyForm.processor}
+                    onChange={(event) => setPaymentVerifyForm((prev) => ({ ...prev, processor: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="paypal">PayPal</option>
+                    <option value="wise">Wise</option>
+                    <option value="payoneer">Payoneer</option>
+                    <option value="xendit">Xendit</option>
+                    <option value="midtrans">Midtrans</option>
+                    <option value="doku">DOKU</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-slate-700">Amount USD</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={paymentVerifyForm.amountUsd}
+                    onChange={(event) => setPaymentVerifyForm((prev) => ({ ...prev, amountUsd: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="text-sm sm:col-span-2">
+                  <span className="mb-1 block font-medium text-slate-700">Transaction ID</span>
+                  <input
+                    value={paymentVerifyForm.transactionId}
+                    onChange={(event) => setPaymentVerifyForm((prev) => ({ ...prev, transactionId: event.target.value }))}
+                    placeholder="PayPal transaction ID / provider reference"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="text-sm sm:col-span-2">
+                  <span className="mb-1 block font-medium text-slate-700">Payer email</span>
+                  <input
+                    value={paymentVerifyForm.payerEmail}
+                    onChange={(event) => setPaymentVerifyForm((prev) => ({ ...prev, payerEmail: event.target.value }))}
+                    placeholder="customer@example.com"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="text-sm sm:col-span-2">
+                  <span className="mb-1 block font-medium text-slate-700">Payment reference</span>
+                  <input
+                    value={paymentVerifyForm.paymentReference}
+                    onChange={(event) => setPaymentVerifyForm((prev) => ({ ...prev, paymentReference: event.target.value }))}
+                    placeholder="business-id | domain | checkout order"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="text-sm sm:col-span-2">
+                  <span className="mb-1 block font-medium text-slate-700">Proof notes</span>
+                  <textarea
+                    value={paymentVerifyForm.proofNotes}
+                    onChange={(event) => setPaymentVerifyForm((prev) => ({ ...prev, proofNotes: event.target.value }))}
+                    placeholder="Checked PayPal receipt, payer email matched, setup scope confirmed..."
+                    rows={3}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+              </div>
+              {paymentVerifyMessage && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{paymentVerifyMessage}</div>
+              )}
+              <button
+                type="button"
+                onClick={submitPaymentVerification}
+                disabled={paymentVerifySaving}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {paymentVerifySaving ? <Loader2 size={18} className="animate-spin" /> : <BadgeCheck size={18} />}
+                Save verified payment
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {detailsPanelPlace && (

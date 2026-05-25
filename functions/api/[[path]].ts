@@ -1,7 +1,7 @@
 import templateSchema from "../../JSON/template-schema.json";
 import { createGenerationJob, ensureColumn, ensureRequiredColumns, getDailyUsage, getDb, getSetting, incrementDailyUsage, insertCrmActivitySafe, isMissingColumnError, saveJsonSiteRecord, tableColumns, updateGenerationJob, updateProspectRecord, upsertLeadRecord } from "./_shared/db";
 import { asString, corsHeaders, errorJson, json, normalizeBusinessId, parseJsonArray, parseJsonObject, readJsonBody, sha256Json } from "./_shared/response";
-import { checkoutRequiredColumns, databaseRepairReport, generateRequiredColumns, prospectDetailsRequiredColumns, prospectListRequiredColumns, prospectStatusRequiredColumns, prospectWebsiteCheckRequiredColumns, selectionRequiredColumns, setupTables } from "./_shared/schema";
+import { checkoutRequiredColumns, databaseRepairReport, generateRequiredColumns, paymentLedgerRequiredColumns, prospectDetailsRequiredColumns, prospectListRequiredColumns, prospectStatusRequiredColumns, prospectWebsiteCheckRequiredColumns, selectionRequiredColumns, setupTables } from "./_shared/schema";
 import type { D1Database, Env, PagesContext } from "./_shared/types";
 import { buildAiFailureDiagnostics, extractProviderErrorDetails, getAiReadiness, handleAiProviderFailure, handleAiProviderHealth, handleAiReadiness, kieModelConfigs, type AiReadinessDeps } from "./ai/readiness";
 import { applyAiCopyPatch, applyAiOfferingOutline, generateAiCopyPatch, generateAiOfferingOutline, type AiSiteGenerationDeps } from "./ai/siteGeneration";
@@ -35,6 +35,8 @@ const leadsDeps: LeadsDeps = {
   readJsonBody,
   asString,
   tableColumns,
+  ensureRequiredColumns: ensureRequiredColumns as LeadsDeps["ensureRequiredColumns"],
+  paymentLedgerRequiredColumns,
   insertCrmActivitySafe,
   isMissingColumnError,
   ensureColumn,
@@ -70,6 +72,7 @@ const paymentsDeps: PaymentsDeps = {
   asString,
   ensureRequiredColumns: ensureRequiredColumns as PaymentsDeps["ensureRequiredColumns"],
   checkoutRequiredColumns,
+  paymentLedgerRequiredColumns,
   getSetting: getSetting as PaymentsDeps["getSetting"],
   upsertLeadRecord: upsertLeadRecord as PaymentsDeps["upsertLeadRecord"],
   insertCrmActivitySafe: insertCrmActivitySafe as PaymentsDeps["insertCrmActivitySafe"],

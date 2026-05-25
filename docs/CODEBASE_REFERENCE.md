@@ -313,6 +313,7 @@ Fungsi:
 - Memilih provider/model AI.
 - Menghasilkan JSON website untuk lead.
 - Mengelola status lead.
+- CRM Pipeline punya Payment Reconciliation panel untuk recent `lead_payments`, export CSV `checkout_pending`, dan action per-lead `Verify payment`.
 
 API yang dipakai:
 - `GET /api/leads`
@@ -332,6 +333,8 @@ API yang dipakai:
 - `GET /api/ai/provider-health?provider=...&model=...`
 - `POST /api/sites/generate`
 - `PUT /api/leads/:id/status`
+- `GET /api/leads/payments`
+- `POST /api/leads/:id/payment-verified`
 
 Logic penting:
 - Provider AI tersedia: OpenRouter, OpenAI, Gemini, KIE.ai, dan Opencode.
@@ -595,6 +598,7 @@ Fungsi:
 - Render website preview berdasarkan JSON site.
 - Tracking view lead.
 - Menampilkan CTA download HTML dan payment link.
+- `/terms-refund` menampilkan terms/refund policy untuk generated digital packages dan managed launch support; checkout modal menautkan halaman ini sebelum payment.
 
 API yang dipakai:
 - `POST /api/leads/:businessId/ping`
@@ -764,6 +768,8 @@ Endpoint:
 - `GET /api/activities`
 - `GET /api/leads`
 - `PUT /api/leads/:id/status`
+- `GET /api/leads/payments`
+- `POST /api/leads/:id/payment-verified`
 - `POST /api/leads/:business_id/ping`
 - `GET /api/prospects`
 - `PUT /api/prospects/:placeId/status`
@@ -780,6 +786,7 @@ Endpoint:
 - `GET /api/sites`
 - `GET /api/sites/:business_id`
 - `POST /api/payments/checkout`
+- `POST /api/payments/paypal-webhook`
 - `GET /api/domains/check`
 
 Logic D1:
@@ -796,7 +803,7 @@ Logic D1:
 Logic router modules:
 - Settings endpoints live in `functions/api/settings/handler.ts`: `GET/POST /api/settings` and `GET /api/public-settings`.
 - Dashboard stats/activity endpoints live in `functions/api/stats/handler.ts`: `GET /api/stats` and `GET /api/activities`.
-- Lead endpoints live in `functions/api/leads/handler.ts`: `GET /api/leads`, `PUT /api/leads/:id/status`, and `POST /api/leads/:business_id/ping`.
+- Lead endpoints live in `functions/api/leads/handler.ts`: `GET /api/leads`, `PUT /api/leads/:id/status`, `GET /api/leads/payments`, `POST /api/leads/:id/payment-verified`, and `POST /api/leads/:business_id/ping`.
 - Prospect endpoints live in `functions/api/prospects/handler.ts`: filtered `GET /api/prospects`, `PUT /api/prospects/:placeId/status`, and `PUT /api/prospects/:placeId/selection`.
 - Endpoint-level fixtures for extracted API handlers live in `tests/apiHandlers.test.ts`; run `npm run test:api-handlers` when local dependencies are installed, or trigger the manual GitHub Actions workflow `API Handler Tests` to run `npm ci` and the fixture suite remotely without installing dependencies locally.
 
@@ -941,6 +948,11 @@ Logic Payments:
 - Jika processor aktif belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
 - Paket default saat ini: `$197` one-time untuk done-for-you website setup, dengan `PAYMENT_USD_TO_IDR_RATE` untuk mengirim amount IDR ke gateway Indonesia.
 - Request checkout menyimpan `domainMode` (`new` atau `owned`), requested domain, amount, dan processor ke CRM activity; gateway live juga menerima metadata/custom fields jika provider mendukung.
+- PayPal/Wise/Payoneer manual rails mengembalikan `requiresManualReview=true`, `paymentReference`, dan `paymentInstructions`; `WebsiteActionPanel` menampilkan review step sebelum membuka payment link agar buyer menyertakan business/domain/reference.
+- PayPal risk controls live in `/admin/settings#settings-payment`: `PAYPAL_ACCOUNT_MODE`, `PAYPAL_RISK_ACKNOWLEDGED`, `PAYPAL_PAYMENT_NOTE`, and a guardrails panel. `/admin/dashboard` marks PayPal partial if link exists but risk checklist is not acknowledged or mode/link looks personal.
+- `/api/payments/paypal-webhook` aman sebelum PayPal Business siap: tanpa `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, dan `PAYPAL_WEBHOOK_ID`, endpoint acknowledge dan ignore event. Jika lengkap, endpoint verify signature PayPal lalu mencatat completed payment yang match ke `lead_payments`, `subscriptions`, status lead, dan CRM activity.
+- `lead_payments` menyimpan ledger manual/webhook: processor, status, amount, transaction ID, payer email, payment reference, proof notes, raw webhook JSON, waktu verified, dan verifier.
+- PayPal operating guidance and implementation tracker live in `docs/PAYPAL_RISK_CONTROLS.md`.
 
 Logic Domains:
 - `/api/domains/check?domain=...` lives in `functions/api/domains/handler.ts` and melakukan availability pre-check gratis.
@@ -993,5 +1005,6 @@ Jika menambah laman atau komponen baru:
 - `docs/FREE_TIER_LIMITS_AUDIT.md`: baseline batas Cloudflare Pages/Workers/D1/R2, Google Maps, Clerk, dan audit endpoint yang berisiko quota/cost.
 - `docs/NICHE_STYLE_PRESETS.md`: brainstorm dan kontrak `design.stylePreset`.
 - `docs/LEMON_SQUEEZY_INTEGRATION.md`: catatan integrasi checkout Lemon Squeezy.
+- `docs/PAYPAL_RISK_CONTROLS.md`: PayPal Personal/Business risk notes, checkout/payment-reference controls, and future reconciliation checklist.
 - `docs/DOMAIN_AVAILABILITY_RESEARCH.md`: riset provider gratis/murah untuk cek availability domain.
 - `docs/SITE_BUILDER_UPGRADE_PLAN.md`: rencana upgrade JSON schema dan renderer agar demo/site output lebih modern dan personalized.

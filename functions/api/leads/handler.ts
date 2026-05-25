@@ -6,15 +6,102 @@ export type LeadsDeps = {
   readJsonBody: (request: Request) => Promise<Record<string, unknown>>;
   asString: (value: unknown, fallback?: string) => string;
   tableColumns: (db: D1Database, table: string) => Promise<Set<string>>;
+  ensureRequiredColumns: (db: D1Database, specs: unknown[]) => Promise<void>;
+  paymentLedgerRequiredColumns: unknown[];
   insertCrmActivitySafe: (db: D1Database, values: Record<string, unknown>) => Promise<void>;
   isMissingColumnError: (error: unknown, column?: string) => boolean;
   ensureColumn: (db: D1Database, table: string, column: string, definition: string) => Promise<void>;
 };
 
+function paymentRowsQuery(whereClause = "") {
+  return `
+    SELECT
+      p.*,
+      l.business_name,
+      l.email AS lead_email,
+      l.status AS lead_status,
+      l.created_at AS lead_created_at
+    FROM lead_payments p
+    LEFT JOIN leads l ON l.id = p.lead_id
+    ${whereClause}
+    ORDER BY datetime(COALESCE(p.verified_at, p.updated_at, p.created_at)) DESC
+  `;
+}
+
+function csvValue(value: unknown) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function paymentRowsCsv(rows: Array<Record<string, unknown>>) {
+  const headers = [
+    "business_name",
+    "business_id",
+    "lead_status",
+    "processor",
+    "payment_status",
+    "amount_usd",
+    "transaction_id",
+    "payer_email",
+    "payment_reference",
+    "proof_notes",
+    "verified_at",
+  ];
+  return [
+    headers.join(","),
+    ...rows.map((row) => headers.map((header) => csvValue(row[header])).join(",")),
+  ].join("\n");
+}
+
 export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Database, segments: string[]): Promise<Response> {
   if (request.method === "GET" && segments.length === 1) {
-    const leads = await db.prepare("SELECT * FROM leads ORDER BY created_at DESC").all<LeadRow>();
+    let leads;
+    try {
+      leads = await db.prepare(`
+        SELECT
+          l.*,
+          p.payment_status,
+          p.processor AS payment_processor,
+          p.amount_usd AS payment_amount_usd,
+          p.transaction_id AS payment_transaction_id,
+          p.payer_email AS payment_payer_email,
+          p.payment_reference,
+          p.proof_notes AS payment_proof_notes,
+          p.verified_at AS payment_verified_at
+        FROM leads l
+        LEFT JOIN lead_payments p ON p.id = (
+          SELECT latest.id
+          FROM lead_payments latest
+          WHERE latest.lead_id = l.id
+          ORDER BY datetime(COALESCE(latest.verified_at, latest.updated_at, latest.created_at)) DESC
+          LIMIT 1
+        )
+        ORDER BY datetime(l.created_at) DESC
+      `).all<LeadRow>();
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+      if (!deps.isMissingColumnError(error) && !message.includes("no such table: lead_payments")) throw error;
+      leads = await db.prepare("SELECT * FROM leads ORDER BY created_at DESC").all<LeadRow>();
+    }
     return deps.json(leads.results || []);
+  }
+
+  if (request.method === "GET" && segments.length === 2 && segments[1] === "payments") {
+    await deps.ensureRequiredColumns(db, deps.paymentLedgerRequiredColumns);
+    const url = new URL(request.url);
+    const status = deps.asString(url.searchParams.get("status"));
+    const rows = status
+      ? await db.prepare(paymentRowsQuery("WHERE p.payment_status = ?")).bind(status).all<Record<string, unknown>>()
+      : await db.prepare(paymentRowsQuery()).all<Record<string, unknown>>();
+    if (url.searchParams.get("format") === "csv") {
+      return new Response(paymentRowsCsv(rows.results || []), {
+        headers: {
+          "content-type": "text/csv; charset=utf-8",
+          "content-disposition": `attachment; filename="webview-payment-ledger-${new Date().toISOString().slice(0, 10)}.csv"`,
+        },
+      });
+    }
+    return deps.json(rows.results || []);
   }
 
   if (request.method === "PUT" && segments.length === 3 && segments[2] === "status") {
@@ -43,6 +130,147 @@ export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Datab
     });
 
     return deps.json({ success: true });
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "payment-verified") {
+    await deps.ensureRequiredColumns(db, deps.paymentLedgerRequiredColumns);
+    const id = segments[1];
+    const body = await deps.readJsonBody(request);
+    const processor = deps.asString(body.processor, "paypal");
+    const transactionId = deps.asString(body.transactionId).trim();
+    const payerEmail = deps.asString(body.payerEmail).trim();
+    const paymentReference = deps.asString(body.paymentReference).trim();
+    const proofNotes = deps.asString(body.proofNotes).trim();
+    const verifiedBy = deps.asString(body.verifiedBy, "admin");
+    const amountUsd = Math.max(0, Number(body.amountUsd || 0) || 0);
+    const amountIdr = Math.max(0, Math.round(Number(body.amountIdr || 0) || 0));
+
+    if (!transactionId) return deps.errorJson("Transaction ID is required.", 400);
+    if (!amountUsd) return deps.errorJson("Amount USD must be greater than 0.", 400);
+
+    const lead = await db.prepare("SELECT id, business_id, business_name, email FROM leads WHERE id = ?").bind(id).first<{
+      id: string;
+      business_id: string;
+      business_name: string;
+      email?: string;
+    }>();
+    if (!lead?.id) return deps.errorJson("Lead not found.", 404);
+
+    const verifiedAt = new Date().toISOString();
+    const existingTransaction = await db.prepare("SELECT id, payment_status FROM lead_payments WHERE transaction_id = ? AND transaction_id <> '' LIMIT 1").bind(transactionId).first<{ id: string; payment_status?: string }>();
+    if (existingTransaction?.id && existingTransaction.payment_status === "paid") {
+      return deps.errorJson("This transaction ID is already recorded as paid.", 409);
+    }
+    const pendingPayment = await db
+      .prepare(
+        `SELECT id FROM lead_payments
+         WHERE lead_id = ? AND payment_status = 'pending' AND (? = '' OR payment_reference = ?)
+         ORDER BY datetime(created_at) DESC
+         LIMIT 1`,
+      )
+      .bind(lead.id, paymentReference, paymentReference)
+      .first<{ id: string }>();
+    const paymentId = pendingPayment?.id || crypto.randomUUID();
+    if (pendingPayment?.id) {
+      await db
+        .prepare(
+          `UPDATE lead_payments
+           SET processor = ?, payment_status = 'paid', amount_usd = ?, amount_idr = ?, transaction_id = ?, payer_email = ?,
+               payment_reference = COALESCE(NULLIF(?, ''), payment_reference), proof_notes = ?, raw_json = ?, verified_at = ?, verified_by = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(
+          processor,
+          amountUsd,
+          amountIdr,
+          transactionId,
+          payerEmail,
+          paymentReference,
+          proofNotes,
+          JSON.stringify({ source: "admin_manual_verification", processor, transactionId, payerEmail, paymentReference, proofNotes }),
+          verifiedAt,
+          verifiedBy,
+          verifiedAt,
+          paymentId,
+        )
+        .run();
+    } else {
+      await db
+        .prepare(
+          `INSERT INTO lead_payments (
+            id, lead_id, business_id, processor, payment_status, amount_usd, amount_idr,
+            transaction_id, payer_email, payment_reference, proof_notes, raw_json, verified_at, verified_by, updated_at
+          ) VALUES (?, ?, ?, ?, 'paid', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          paymentId,
+          lead.id,
+          lead.business_id,
+          processor,
+          amountUsd,
+          amountIdr,
+          transactionId,
+          payerEmail,
+          paymentReference,
+          proofNotes,
+          JSON.stringify({ source: "admin_manual_verification", processor, transactionId, payerEmail, paymentReference, proofNotes }),
+          verifiedAt,
+          verifiedBy,
+          verifiedAt,
+        )
+        .run();
+    }
+
+    const subscription = await db.prepare("SELECT id FROM subscriptions WHERE lead_id = ? ORDER BY datetime(created_at) DESC LIMIT 1").bind(lead.id).first<{ id: string }>();
+    if (subscription?.id) {
+      await db
+        .prepare(
+          `UPDATE subscriptions
+           SET package_type = ?, amount_paid = ?, payment_status = 'paid', payment_method = ?, payment_reference = ?, subscription_start_date = COALESCE(subscription_start_date, ?), updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind("managed_launch_support", amountUsd, processor, transactionId, verifiedAt, verifiedAt, subscription.id)
+        .run();
+    } else {
+      await db
+        .prepare(
+          `INSERT INTO subscriptions (id, lead_id, package_type, amount_paid, payment_status, payment_method, payment_reference, subscription_start_date, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'paid', ?, ?, ?, ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), lead.id, "managed_launch_support", amountUsd, processor, transactionId, verifiedAt, verifiedAt, verifiedAt)
+        .run();
+    }
+
+    await db
+      .prepare("UPDATE leads SET status = 'won_paid', email = COALESCE(NULLIF(?, ''), email), updated_at = ? WHERE id = ?")
+      .bind(payerEmail, verifiedAt, lead.id)
+      .run();
+
+    await deps.insertCrmActivitySafe(db, {
+      id: crypto.randomUUID(),
+      lead_id: lead.id,
+      staff_id: verifiedBy,
+      activity_type: "payment_verified",
+      description: `Payment verified via ${processor}. Amount: $${amountUsd}. Transaction: ${transactionId}. Payer: ${payerEmail || "not recorded"}. Reference: ${paymentReference || "not recorded"}. Notes: ${proofNotes || "-"}`,
+    });
+
+    return deps.json({
+      success: true,
+      payment: {
+        id: paymentId,
+        leadId: lead.id,
+        businessId: lead.business_id,
+        processor,
+        paymentStatus: "paid",
+        amountUsd,
+        amountIdr,
+        transactionId,
+        payerEmail,
+        paymentReference,
+        proofNotes,
+        verifiedAt,
+      },
+    });
   }
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "ping") {
