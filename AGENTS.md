@@ -37,6 +37,12 @@
 - The user intends to test changes directly in production at https://webview.click.
 - Do not run `npm run lint` for this repo anymore. The workspace intentionally may not have local TypeScript dependencies installed, and the user wants to avoid dependency/storage churn. Prefer lightweight checks such as `git diff --check`, JSON parsing, and targeted static inspection.
 
+## Session Summary Rule
+- When the user says the session is closing, usage limit is almost reached, or a particular workstream is done (for example refactor completion, adding a feature, payment setup, admin workflow changes, or docs work), create or update `SESSION_SUMMARY.md`.
+- The session summary must be in table format and include WIB timestamps with date, hour, minute, and second.
+- Summaries should capture what changed, important files, verification performed, tests intentionally not run, and the next production-testing step.
+- Keep the summary factual and concise enough to resume work without rereading the whole conversation.
+
 ## Editing Guidelines
 - Keep changes narrowly scoped to the requested behavior.
 - Preserve existing user changes in the worktree.
