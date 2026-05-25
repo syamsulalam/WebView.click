@@ -478,10 +478,10 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={fetchSites}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+            aria-label="Refresh generated sites"
           >
             <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />
-            Refresh
           </button>
         </HoverTooltip>
       </div>
@@ -587,34 +587,38 @@ export default function AdminSites() {
               <span className="text-xs text-gray-500">{prospect.detailsLoadedAt ? new Date(prospect.detailsLoadedAt).toLocaleString() : "-"}</span>
               <div className="flex justify-end gap-2">
                 {(prospect.url || prospect.googleMapsUri) && (
-                  <a
-                    href={prospect.url || prospect.googleMapsUri}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                  >
-                    <MapPin size={14} />
-                    Maps
-                  </a>
+                  <HoverTooltip text="Open the source Google Maps listing.">
+                    <a
+                      href={prospect.url || prospect.googleMapsUri}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                      aria-label="Open Google Maps listing"
+                    >
+                      <MapPin size={14} />
+                    </a>
+                  </HoverTooltip>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleSeeProspectData(prospect)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  <Database size={14} />
-                  Data
-                </button>
+                <HoverTooltip text="Inspect gathered Google data for this ready prospect.">
+                  <button
+                    type="button"
+                    onClick={() => handleSeeProspectData(prospect)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                    aria-label="Inspect prospect data"
+                  >
+                    <Database size={14} />
+                  </button>
+                </HoverTooltip>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  <HoverTooltip text={mapsQueryPlaceholder ? "This is not a specific business listing yet." : ""}>
+                  <HoverTooltip text={mapsQueryPlaceholder ? "This is not a specific business listing yet." : "Generate the first site for this gathered prospect."}>
                     <button
                       type="button"
                       onClick={() => handleGenerateProspect(prospect)}
                       disabled={!activeRegenerateModel || mapsQueryPlaceholder || Boolean(generatingProspectId || regeneratingId)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                      aria-label="Generate site for prospect"
                     >
                       {generatingProspectId === prospect.place_id ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
-                      Generate
                     </button>
                   </HoverTooltip>
                   <AdminAiReadinessBadge
@@ -691,44 +695,48 @@ export default function AdminSites() {
               <span className="text-gray-600">{[site.language, site.region].filter(Boolean).join("-") || "-"}</span>
               <span className="text-xs text-gray-500">{site.updatedAt ? new Date(site.updatedAt).toLocaleString() : "-"}</span>
               <div className="flex justify-end gap-2">
-                <a
-                  href={site.previewUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-                >
-                  <Globe2 size={14} />
-                  Preview
-                </a>
-                {site.googleMapsUrl && (
+                <HoverTooltip text="Open the generated public preview in a new tab.">
                   <a
-                    href={site.googleMapsUrl}
+                    href={site.previewUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                    aria-label="Open site preview"
                   >
-                    <MapPin size={14} />
-                    Maps
+                    <Globe2 size={14} />
                   </a>
+                </HoverTooltip>
+                {site.googleMapsUrl && (
+                  <HoverTooltip text="Open the source Google Maps listing.">
+                    <a
+                      href={site.googleMapsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                      aria-label="Open Google Maps listing"
+                    >
+                      <MapPin size={14} />
+                    </a>
+                  </HoverTooltip>
                 )}
                 <HoverTooltip text="Inspect saved source data and generated JSON summary for debugging preview or export issues.">
                   <button
                     type="button"
                     onClick={() => handleSeeGatheredData(site)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                    aria-label="Inspect gathered data"
                   >
                     <Database size={14} />
-                    Data
                   </button>
                 </HoverTooltip>
                 <HoverTooltip text="Open the compact copy brief used for AI copy patch/regeneration review.">
                   <button
                     type="button"
                     onClick={() => handleSeeCopyBrief(site)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                    aria-label="Open AI copy brief"
                   >
                     <FileText size={14} />
-                    Brief
                   </button>
                 </HoverTooltip>
                 <div className="relative">
@@ -737,11 +745,10 @@ export default function AdminSites() {
                       type="button"
                       onClick={() => setOpenRegenerateMenu(openRegenerateMenu === site.businessId ? "" : site.businessId)}
                       disabled={Boolean(regeneratingId)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      aria-label="Open regenerate menu"
                     >
                       <RotateCw size={14} className={regeneratingId === site.businessId ? "animate-spin" : ""} />
-                      Regen
-                      <ChevronDown size={14} />
                     </button>
                   </HoverTooltip>
                   {openRegenerateMenu === site.businessId && (

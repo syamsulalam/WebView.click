@@ -1282,15 +1282,17 @@ export default function AdminLeads() {
             </p>
             {cacheTrimMessage && <p className="mt-1 text-xs text-indigo-700">{cacheTrimMessage}</p>}
           </div>
-          <button
-            type="button"
-            onClick={trimPlacesCache}
-            disabled={isTrimmingCache}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            {isTrimmingCache ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-            Trim cache 30d
-          </button>
+          <HoverTooltip text="Trim cached Google Places searches older than 30 days.">
+            <button
+              type="button"
+              onClick={trimPlacesCache}
+              disabled={isTrimmingCache}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              aria-label="Trim Places cache older than 30 days"
+            >
+              {isTrimmingCache ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+            </button>
+          </HoverTooltip>
         </div>
         <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
           <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
@@ -1308,10 +1310,10 @@ export default function AdminLeads() {
                 href="/tools/google-maps-capture-extension/README.md"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50"
+                aria-label="Open Google Maps capture helper"
               >
                 <ExternalLink size={14} />
-                Capture helper
               </a>
             </HoverTooltip>
           </div>
@@ -1351,10 +1353,10 @@ export default function AdminLeads() {
                 type="button"
                 onClick={handleManualMapsImport}
                 disabled={manualImportLoading}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                aria-label="Import manual prospects"
               >
                 {manualImportLoading ? <Loader2 className="animate-spin" size={16} /> : <ListChecks size={16} />}
-                Import manual prospects
               </button>
             </HoverTooltip>
           </div>
@@ -1371,15 +1373,17 @@ export default function AdminLeads() {
                 <HelpTooltip text="Each search term keeps its cached result list, while every business card is hydrated from the current Google place_id prospect record. This lets the same business keep one shared progress history across searches." />
               </p>
             </div>
-            <button
-              type="button"
-              onClick={fetchSearchHistory}
-              disabled={loadingSearchHistory}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              {loadingSearchHistory ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-              Refresh history
-            </button>
+            <HoverTooltip text="Reload cached Google Places search history from D1.">
+              <button
+                type="button"
+                onClick={fetchSearchHistory}
+                disabled={loadingSearchHistory}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                aria-label="Refresh search history"
+              >
+                {loadingSearchHistory ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+              </button>
+            </HoverTooltip>
           </div>
           {searchHistory.length > 0 ? (
             <div className="flex gap-3 overflow-x-auto pb-1">
@@ -1435,15 +1439,17 @@ export default function AdminLeads() {
               </p>
               {manualDuplicateMessage && <p className="mt-1 text-xs font-medium text-amber-900">{manualDuplicateMessage}</p>}
             </div>
-            <button
-              type="button"
-              onClick={fetchManualDuplicateQueue}
-              disabled={manualDuplicateLoading}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-            >
-              {manualDuplicateLoading ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-              Refresh duplicates
-            </button>
+            <HoverTooltip text="Reload likely manual duplicate groups for review.">
+              <button
+                type="button"
+                onClick={fetchManualDuplicateQueue}
+                disabled={manualDuplicateLoading}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-300 bg-white text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                aria-label="Refresh duplicate review"
+              >
+                {manualDuplicateLoading ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+              </button>
+            </HoverTooltip>
           </div>
           {manualDuplicateQueue.length > 0 && (
             <div className="grid gap-3">
@@ -1548,25 +1554,29 @@ export default function AdminLeads() {
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={resetLeadFilters}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-              >
-                <X size={14} />
-                Reset
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchActive(false);
-                  fetchProspectDrafts();
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-              >
-                <RefreshCw size={14} />
-                Reload drafts
-              </button>
+              <HoverTooltip text="Reset all prospect filters back to defaults.">
+                <button
+                  type="button"
+                  onClick={resetLeadFilters}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                  aria-label="Reset prospect filters"
+                >
+                  <X size={14} />
+                </button>
+              </HoverTooltip>
+              <HoverTooltip text="Reload saved prospect drafts from D1.">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchActive(false);
+                    fetchProspectDrafts();
+                  }}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                  aria-label="Reload prospect drafts"
+                >
+                  <RefreshCw size={14} />
+                </button>
+              </HoverTooltip>
             </div>
           </div>
 
@@ -1707,10 +1717,10 @@ export default function AdminLeads() {
               type="button"
               onClick={() => handleSearch(true)}
               disabled={isSearching || !searchQuery}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+              aria-label="Refresh Google Places search"
             >
               <RefreshCw size={16} />
-              Refresh
             </button>
           </HoverTooltip>
         </div>
@@ -1754,22 +1764,24 @@ export default function AdminLeads() {
                 {batchMessage && <p className="mt-1 text-xs text-indigo-700">{batchMessage}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allSelected = selectedVisibleProspects.length === visibleProspects.length;
-                    const next = { ...selectedProspects };
-                    visibleProspects.forEach((place) => {
-                      const key = getPlaceKey(place);
-                      if (key) next[key] = !allSelected;
-                    });
-                    setSelectedProspects(next);
-                  }}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  <ListChecks size={14} />
-                  {selectedVisibleProspects.length === visibleProspects.length ? "Clear selected" : "Select visible"}
-                </button>
+                <HoverTooltip text={selectedVisibleProspects.length === visibleProspects.length ? "Clear all visible prospect selections." : "Select all currently visible prospects."}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allSelected = selectedVisibleProspects.length === visibleProspects.length;
+                      const next = { ...selectedProspects };
+                      visibleProspects.forEach((place) => {
+                        const key = getPlaceKey(place);
+                        if (key) next[key] = !allSelected;
+                      });
+                      setSelectedProspects(next);
+                    }}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                    aria-label={selectedVisibleProspects.length === visibleProspects.length ? "Clear selected prospects" : "Select visible prospects"}
+                  >
+                    <ListChecks size={14} />
+                  </button>
+                </HoverTooltip>
                 <HoverTooltip text="Select visible prospects with conversion score 70 or higher.">
                   <button
                     type="button"
@@ -1781,21 +1793,23 @@ export default function AdminLeads() {
                       });
                       setSelectedProspects(next);
                     }}
-                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                    aria-label="Select prospects score 70 plus"
                   >
-                    <ListChecks size={14} />
-                    Select score 70+
+                    <BadgeCheck size={14} />
                   </button>
                 </HoverTooltip>
-                <button
-                  type="button"
-                  onClick={startBatchGenerate}
-                  disabled={batchQueueRunning || selectedVisibleProspects.length === 0}
-                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {batchQueueRunning ? <Loader2 className="animate-spin" size={14} /> : <Play size={14} />}
-                  Generate selected
-                </button>
+                <HoverTooltip text="Generate websites for selected visible prospects sequentially.">
+                  <button
+                    type="button"
+                    onClick={startBatchGenerate}
+                    disabled={batchQueueRunning || selectedVisibleProspects.length === 0}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                    aria-label="Generate selected prospects"
+                  >
+                    {batchQueueRunning ? <Loader2 className="animate-spin" size={14} /> : <Play size={14} />}
+                  </button>
+                </HoverTooltip>
                 <AdminAiReadinessBadge
                   provider={activeProviderKey}
                   model={activeModel}
@@ -1804,16 +1818,22 @@ export default function AdminLeads() {
                   remoteValidate
                 />
                 <AdminProviderCooldownBadge provider={activeProviderKey} compact />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setJobsOpen((value) => !value);
-                    fetchGenerationJobs();
-                  }}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Jobs ({generationJobCount})
-                </button>
+                <HoverTooltip text="Open generation jobs for the current prospect workflow.">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJobsOpen((value) => !value);
+                      fetchGenerationJobs();
+                    }}
+                    className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                    aria-label="Open generation jobs"
+                  >
+                    <PanelRightOpen size={14} />
+                    {generationJobCount > 0 && (
+                      <span className="absolute -right-1 -top-1 rounded-full bg-slate-900 px-1 text-[10px] font-semibold text-white">{generationJobCount}</span>
+                    )}
+                  </button>
+                </HoverTooltip>
               </div>
             </div>
             {jobsOpen && (
@@ -1913,23 +1933,28 @@ export default function AdminLeads() {
                 </div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDetailsPanelPlace(displayPlace)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    <PanelRightOpen size={16} />
-                    Details
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updateProspectStatus(displayPlace, "skipped")}
-                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50"
-                  >
-                    Skip
-                  </button>
+                  <HoverTooltip text="Open prospect details drawer.">
+                    <button
+                      type="button"
+                      onClick={() => setDetailsPanelPlace(displayPlace)}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                      aria-label="Open prospect details"
+                    >
+                      <PanelRightOpen size={16} />
+                    </button>
+                  </HoverTooltip>
+                  <HoverTooltip text="Skip this prospect in the workflow.">
+                    <button
+                      type="button"
+                      onClick={() => updateProspectStatus(displayPlace, "skipped")}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
+                      aria-label="Skip prospect"
+                    >
+                      <X size={16} />
+                    </button>
+                  </HoverTooltip>
                   {!detailsReady ? (
-                    <HoverTooltip text={isMapsPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : ""}>
+                    <HoverTooltip text={isMapsPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : "Gather Places details, reviews, exact Maps URL, and photos for this prospect."}>
                       <button
                         type="button"
                         onClick={() => {
@@ -1937,21 +1962,22 @@ export default function AdminLeads() {
                           loadPlaceDetails(displayPlace);
                         }}
                         disabled={placeDetailsLoading[placeKey] || !displayPlace.place_id || isMapsPlaceholder}
-                        className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                        aria-label="Gather prospect data"
                       >
                         {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={18} /> : <ListChecks size={18} />}
-                        Gather data
                       </button>
                     </HoverTooltip>
                   ) : (
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <HoverTooltip text={isMapsPlaceholder ? "This is not a specific business listing yet." : ""}>
+                      <HoverTooltip text={isMapsPlaceholder ? "This is not a specific business listing yet." : "Generate a website for this gathered prospect."}>
                         <button
                           onClick={() => handleGenerateSite(displayPlace)}
                           disabled={isGenerating || isMapsPlaceholder}
-                          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                          aria-label="Generate prospect website"
                         >
-                          {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : "Generate Site"}
+                          {generatingPlaceKey === placeKey ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} />}
                         </button>
                       </HoverTooltip>
                       <AdminAiReadinessBadge
@@ -2071,10 +2097,10 @@ export default function AdminLeads() {
               <button
                 type="button"
                 onClick={exportCheckoutPendingCsv}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                aria-label="Export checkout pending leads"
               >
                 <FileDown size={14} />
-                Export checkout pending
               </button>
             </HoverTooltip>
             <HoverTooltip text="Reload the payment ledger from D1 after a checkout, manual verification, or PayPal webhook event.">
@@ -2082,10 +2108,10 @@ export default function AdminLeads() {
                 type="button"
                 onClick={fetchPaymentLedger}
                 disabled={paymentLedgerLoading}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                aria-label="Refresh payment ledger"
               >
                 <RefreshCw size={14} className={paymentLedgerLoading ? "animate-spin" : ""} />
-                Refresh ledger
               </button>
             </HoverTooltip>
           </div>
@@ -2386,21 +2412,23 @@ export default function AdminLeads() {
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-2">
-                    <HoverTooltip text={isMapsPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : ""}>
+                    <HoverTooltip text={isMapsPlaceholder ? "This is a Maps search/query placeholder, not a business listing. Import captured listing JSON first." : "Refresh this prospect's Google details and photos."}>
                       <button
                         type="button"
                         onClick={() => loadPlaceDetails(mergedPlace)}
                         disabled={placeDetailsLoading[placeKey] || !mergedPlace.place_id || isMapsPlaceholder}
-                        className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white disabled:opacity-50"
+                        aria-label="Refresh prospect details and photos"
                       >
                         {placeDetailsLoading[placeKey] ? <Loader2 className="animate-spin" size={15} /> : <Images size={15} />}
-                        Refresh details/photos
                       </button>
                     </HoverTooltip>
                     {googleBusinessListingUrl(mergedPlace) && (
-                      <a href={googleBusinessListingUrl(mergedPlace)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                        Google Maps <ExternalLink size={15} />
-                      </a>
+                      <HoverTooltip text="Open the original Google Maps listing in a new tab.">
+                        <a href={googleBusinessListingUrl(mergedPlace)} target="_blank" rel="noreferrer" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50" aria-label="Open Google Maps listing">
+                          <ExternalLink size={15} />
+                        </a>
+                      </HoverTooltip>
                     )}
                   </div>
                   {isMapsPlaceholder && (

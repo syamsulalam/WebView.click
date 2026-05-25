@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CloudUpload, Loader2, Wrench } from "lucide-react";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
 
@@ -104,9 +105,10 @@ export default function AdminSchema() {
               type="button"
               onClick={handleRepairDb}
               disabled={repairing}
-              className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white hover:bg-slate-800 disabled:opacity-60"
+              aria-label="Repair production database schema"
             >
-              {repairing ? "Repairing..." : "Repair DB now"}
+              {repairing ? <Loader2 className="animate-spin" size={16} /> : <Wrench size={16} />}
             </button>
           </HoverTooltip>
           <HelpTooltip text="Runs the D1 self-heal endpoint to create or repair expected admin tables/columns after a production deploy." />
@@ -115,9 +117,10 @@ export default function AdminSchema() {
               type="button"
               onClick={handleMigrateSitesToR2}
               disabled={migratingR2}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              aria-label="Migrate old site JSON to R2"
             >
-              {migratingR2 ? "Migrating..." : "Migrate old site JSON to R2"}
+              {migratingR2 ? <Loader2 className="animate-spin" size={16} /> : <CloudUpload size={16} />}
             </button>
           </HoverTooltip>
           <HelpTooltip text="Moves legacy full site JSON out of D1 into R2 so D1 keeps only compact manifests. This is a maintenance action for older rows." />

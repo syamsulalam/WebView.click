@@ -9,10 +9,18 @@ Purpose: keep production QA faster by making compact admin actions self-explanat
 - [x] `src/components/AdminAiReadinessRefreshButton.tsx` - support icon-only refresh with hover explanation.
 - [x] `src/components/AdminProviderCooldownBadge.tsx` - make provider cooldown clear action compact/icon-first with hover explanation.
 - [x] `src/components/generation-jobs/GenerationJobDetailsDrawer.tsx` - add hover tooltips to close, retry, copy error, copy audit, copy metadata, and chunk step retry actions.
-- [x] `src/components/GenerationJobsTable.tsx` - add hover tooltips to clear search, refresh jobs, and load more controls.
-- [x] `src/pages/admin/AdminLeads.tsx` - add hover tooltips to payment verification modal close and prospect details drawer close.
-- [x] `src/pages/admin/AdminSites.tsx` - add hover tooltip to JSON/data modal close.
-- [ ] Continue scanning row-level compact actions in `/admin/leads` for older icon buttons that still rely only on visible labels or browser title behavior.
+- [x] `src/components/GenerationJobsTable.tsx` - make search submit, compact export, refresh jobs, retry, details, and load more icon-only with hover tooltips.
+- [x] `src/pages/admin/AdminLeads.tsx` - make repeated utility buttons icon-only: trim cache, capture helper, manual import, search history refresh, duplicate refresh, filter reset/reload, search refresh, bulk select/generate/jobs, payment export/refresh, row details/skip/gather/generate, payment modal close, and prospect details drawer close.
+- [x] `src/pages/admin/AdminSites.tsx` - make repeated utility buttons icon-only: page refresh, ready-prospect maps/data/generate, generated-site preview/maps/data/brief/regen, and JSON/data modal close.
+- [x] `src/pages/admin/AdminSchema.tsx` - make schema repair and D1-to-R2 migration actions icon-only with hover tooltips.
+- [x] `src/pages/admin/AdminDashboard.tsx` - make generation-job review link icon-only with hover tooltip.
+- [ ] Continue scanning high-risk destructive or irreversible actions before converting them; keep text when the label is needed to avoid accidental operation.
+
+## Button Density Rule
+
+- Utility/repeated actions should be icon-only with `HoverTooltip` and `aria-label`: refresh, export, copy, close, retry, details/data/brief, open external, reset, reload, inspect, and row-level workflow actions.
+- Primary form-submit actions may keep text if the user is choosing between meaningfully different outcomes or the action is high-risk.
+- Bulk and row actions should prefer stable square dimensions (`h-9 w-9` or `h-10 w-10`) so tables do not become visually noisy.
 
 ## Settings Collapse Targets
 

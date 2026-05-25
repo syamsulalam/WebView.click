@@ -256,9 +256,11 @@ export default function GenerationJobsTable({
                   </button>
                 </HoverTooltip>
               )}
-              <button type="submit" className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-700">
-                Search
-              </button>
+              <HoverTooltip text="Search generation jobs by business, job ID, place ID, or metadata.">
+                <button type="submit" className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-white hover:bg-slate-700" aria-label="Search generation jobs">
+                  <Search size={13} />
+                </button>
+              </HoverTooltip>
             </form>
           )}
           <div className="inline-flex items-center gap-1.5">
@@ -294,10 +296,10 @@ export default function GenerationJobsTable({
               type="button"
               onClick={exportVisibleJobs}
               disabled={!visibleJobs.length}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50"
+              aria-label="Export visible generation jobs"
             >
               {copiedKey === "jobs:compact-export" ? <Check size={12} /> : <Copy size={12} />}
-              Export compact
             </button>
           </HoverTooltip>
           {showFullPageLink && <Link to="/admin/jobs" className="text-xs font-semibold text-indigo-700 hover:underline">Full jobs page</Link>}
@@ -425,10 +427,10 @@ export default function GenerationJobsTable({
                                   type="button"
                                   onClick={() => retryGenerationJob(job)}
                                   disabled={Boolean(retryingJobId || retryingChunkStep)}
-                                  className="inline-flex items-center gap-1 font-semibold text-slate-700 hover:text-indigo-700 disabled:opacity-50"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50"
+                                  aria-label={retryOverrideJobId === job.id ? "Retry generation job anyway" : "Retry generation job"}
                                 >
                                   {retryingJobId === job.id ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
-                                  {retryOverrideJobId === job.id ? "Retry anyway" : "Retry"}
                                 </button>
                               </HoverTooltip>
                               <AdminAiReadinessBadge
@@ -443,10 +445,10 @@ export default function GenerationJobsTable({
                             <button
                               type="button"
                               onClick={() => setSelectedJob(job)}
-                              className="inline-flex items-center gap-1 font-semibold text-slate-700 hover:text-indigo-700"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+                              aria-label="Open generation job details"
                             >
                               <FileText size={13} />
-                              Details
                             </button>
                           </HoverTooltip>
                         </div>

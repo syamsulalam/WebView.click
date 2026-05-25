@@ -787,10 +787,10 @@ export default function AdminSettings() {
             <button
               type="button"
               onClick={resetScoringWeights}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              aria-label="Reset prospect scoring weights"
             >
               <RotateCcw size={16} />
-              Reset weights
             </button>
           </HoverTooltip>
           )}

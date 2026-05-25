@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, CircleDashed } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleDashed, ListChecks } from "lucide-react";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
 
@@ -296,7 +296,9 @@ export default function AdminDashboard() {
                   ))}
                 </div>
                 <HoverTooltip text="Open the generation job audit page to inspect failures, retries, preflight blocks, and copy patch status.">
-                  <a href="/admin/jobs" className="text-sm font-semibold text-indigo-700 hover:underline">Review Jobs</a>
+                  <a href="/admin/jobs" className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-indigo-700 hover:bg-indigo-50" aria-label="Review generation jobs">
+                    <ListChecks size={16} />
+                  </a>
                 </HoverTooltip>
               </div>
             </div>

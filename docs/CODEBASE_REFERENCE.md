@@ -158,7 +158,7 @@ Logic penting:
 - `variant="compact"` dipakai di `/admin/leads`; `variant="full"` dipakai di `/admin/jobs`.
 - `onJobsLoaded` dipakai parent `/admin/leads` untuk memperbarui angka pada tombol `Jobs`.
 - Header, filter group, dan drawer audit copy punya tooltip ringkas yang menjelaskan arti `Fallback`, `Patch`, dan `No rewrite` supaya admin tidak perlu menebak status job.
-- Compact drawer/table actions seperti clear search, refresh jobs, load more, close drawer, copy error/audit/metadata, dan retry chunk step memakai `HoverTooltip` supaya QA production tidak bergantung pada icon-only guessing.
+- Compact drawer/table actions seperti search submit, export, clear search, refresh jobs, load more, close drawer, copy error/audit/metadata, retry job, details, dan retry chunk step memakai icon-only controls plus `HoverTooltip` supaya QA production tidak bergantung pada label panjang.
 
 ### `src/components/AdminAiReadinessBadge.tsx`
 
@@ -306,6 +306,7 @@ Logic penting:
 - Usage history menampilkan bar kecil 7 hari atau 30 hari dari `stats.dailyUsage.history`, sehingga spike setelah deploy, batch generation, atau perubahan workflow bisa dibandingkan langsung dari dashboard.
 - Metric cards dan aktivitas terbaru punya tooltip untuk membedakan angka dashboard dari source-of-truth workflow per prospek.
 - Readiness card memakai `HelpTooltip` pada heading dan setiap item agar admin tahu setup mana yang memblokir search, generation, atau checkout.
+- Utility links in dense dashboard controls, such as generation-job review, use icon-only buttons with hover tooltips to reduce admin panel text noise.
 
 ### `src/pages/admin/AdminLeads.tsx`
 
@@ -316,6 +317,7 @@ Fungsi:
 - Mengelola status lead.
 - CRM Pipeline punya Payment Reconciliation panel untuk recent `lead_payments`, export CSV `checkout_pending`, dan action per-lead `Verify payment`.
 - Payment verification modal and prospect details drawer close actions use shared hover tooltips for compact QA controls.
+- Repeated admin utility actions are intentionally icon-only with hover tooltips and `aria-label`, including cache trim, capture helper, manual import, search-history refresh, duplicate refresh, filter reset/reload, Google refresh search, bulk select/generate/jobs, payment export/refresh, row details/skip/gather/generate, and drawer refresh/maps actions.
 
 API yang dipakai:
 - `GET /api/leads`
@@ -492,6 +494,7 @@ Logic penting:
 - `AI regenerate` dan `Re-gather Google data + resave` mengirim ulang `brand.paletteOptions` dari site JSON agar pilihan warna yang sudah ada tidak bergantung pada shape lama atau fallback renderer.
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
 - JSON/data modal close action uses shared hover tooltip so the compact X control is named during production QA.
+- Repeated site list actions are intentionally icon-only with hover tooltips and `aria-label`, including page refresh, ready-prospect Maps/Data/Generate, generated-site Preview/Maps/Data/Brief/Regen, and modal close.
 - Generate/regenerate/readiness action notices memakai `AdminToast`, sehingga pesan sukses seperti `AI copy patch regenerated ...` tetap floating di kanan atas meski admin sedang melihat bagian bawah list.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
 - Initial load `/admin/sites` memakai `readApiJson` untuk `/api/sites` dan `/api/prospects`, sehingga Cloudflare HTML 503 ditampilkan sebagai masalah Pages Functions/edge, bukan pesan mentah `Response bukan JSON`.
@@ -514,11 +517,11 @@ API yang dipakai:
 
 Logic penting:
 - Jika API error, halaman menampilkan pesan error sebagai text di area schema.
-- Tombol `Repair DB now` memanggil `/api/schema/repair`, menjalankan self-heal tabel/kolom D1, lalu menampilkan ringkasan jumlah kolom per tabel.
+- Tombol schema repair icon-only memanggil `/api/schema/repair`, menjalankan self-heal tabel/kolom D1, lalu menampilkan ringkasan jumlah kolom per tabel.
 - Gunakan tombol ini setelah deploy ketika halaman admin berat mulai error karena kolom D1 production belum termigrasi.
 - Setelah repair sukses, halaman menyimpan timestamp ke localStorage agar badge `DB repaired ... ago` muncul di admin sidebar.
-- Tombol `Migrate old site JSON to R2` memanggil `POST /api/sites/migrate-r2` batch 25 row, memindahkan row lama `json_sites.json_content` yang masih full JSON ke R2, lalu mengganti D1 dengan manifest kecil.
-- Schema heading dan maintenance buttons punya tooltip karena kedua actions memengaruhi production D1/R2 compatibility.
+- Tombol D1-to-R2 migration icon-only memanggil `POST /api/sites/migrate-r2` batch 25 row, memindahkan row lama `json_sites.json_content` yang masih full JSON ke R2, lalu mengganti D1 dengan manifest kecil.
+- Schema heading dan maintenance buttons punya tooltip dan `aria-label` karena kedua actions memengaruhi production D1/R2 compatibility.
 
 ### `src/pages/admin/AdminSettings.tsx`
 
@@ -542,6 +545,7 @@ Logic penting:
 - Estimator juga menampilkan inline `AI readiness` badge untuk provider/model yang sedang dipilih, sehingga key baru bisa diverifikasi dari `/admin/settings` tanpa pindah ke Leads/Sites.
 - Provider cooldown history refresh saat window focus atau event `webview:provider-cooldown`, dan menampilkan event `set`, `blocked`, serta `clear` dengan provider, action, reason, dan expiry.
 - Tombol cooldown history export/refresh dibuat icon-only dengan hover tooltip; export menyalin JSON ringkas event cooldown yang sedang terlihat untuk support/debug tanpa endpoint export baru.
+- Settings utility actions such as prospect scoring reset are icon-only with hover tooltip; primary manual save keeps a visible label because it is the page-level commit action.
 - Auto-save berjalan 1,2 detik setelah perubahan terakhir.
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
