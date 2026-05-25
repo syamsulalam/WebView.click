@@ -348,6 +348,26 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       ? body.prepatchedCopyAuditSummary as Record<string, unknown>
       : null;
     const prepatchedCopyAuditItems = Array.isArray(body.prepatchedCopyAuditItems) ? body.prepatchedCopyAuditItems : [];
+    const prepatchedSiteCopyPatch = body.prepatchedSiteCopyPatch && typeof body.prepatchedSiteCopyPatch === "object" && !Array.isArray(body.prepatchedSiteCopyPatch)
+      ? body.prepatchedSiteCopyPatch as Record<string, unknown>
+      : null;
+    const prepatchedSiteCopyAuditSummary = body.prepatchedSiteCopyAuditSummary && typeof body.prepatchedSiteCopyAuditSummary === "object" && !Array.isArray(body.prepatchedSiteCopyAuditSummary)
+      ? body.prepatchedSiteCopyAuditSummary as Record<string, unknown>
+      : null;
+    const prepatchedSiteCopyAuditItems = Array.isArray(body.prepatchedSiteCopyAuditItems) ? body.prepatchedSiteCopyAuditItems : [];
+    const prepatchedOfferingCopyPatch = body.prepatchedOfferingCopyPatch && typeof body.prepatchedOfferingCopyPatch === "object" && !Array.isArray(body.prepatchedOfferingCopyPatch)
+      ? body.prepatchedOfferingCopyPatch as Record<string, unknown>
+      : null;
+    const prepatchedOfferingCopyAuditSummary = body.prepatchedOfferingCopyAuditSummary && typeof body.prepatchedOfferingCopyAuditSummary === "object" && !Array.isArray(body.prepatchedOfferingCopyAuditSummary)
+      ? body.prepatchedOfferingCopyAuditSummary as Record<string, unknown>
+      : null;
+    const prepatchedOfferingCopyAuditItems = Array.isArray(body.prepatchedOfferingCopyAuditItems) ? body.prepatchedOfferingCopyAuditItems : [];
+    const prepatchedOfferingCopyCoverage = body.prepatchedOfferingCopyCoverage && typeof body.prepatchedOfferingCopyCoverage === "object" && !Array.isArray(body.prepatchedOfferingCopyCoverage)
+      ? body.prepatchedOfferingCopyCoverage as Record<string, unknown>
+      : null;
+    const prepatchedCopyOnlyRetryCoverageDelta = body.prepatchedCopyOnlyRetryCoverageDelta && typeof body.prepatchedCopyOnlyRetryCoverageDelta === "object" && !Array.isArray(body.prepatchedCopyOnlyRetryCoverageDelta)
+      ? body.prepatchedCopyOnlyRetryCoverageDelta as Record<string, unknown>
+      : null;
     const originPlaceId = placeIdFromPlace(originData);
     const jobId = crypto.randomUUID();
     const jobMetadata: Record<string, unknown> = {
@@ -385,8 +405,20 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       jobMetadata.parentGenerationJobId = asString(body.parentGenerationJobId);
       if (prepatchedOfferingOutline) jobMetadata.offeringOutline = prepatchedOfferingOutline;
       if (prepatchedCopyPatch) jobMetadata.copyPatch = prepatchedCopyPatch;
+      if (prepatchedSiteCopyPatch) jobMetadata.siteCopyPatch = prepatchedSiteCopyPatch;
+      if (prepatchedOfferingCopyPatch) jobMetadata.offeringCopyPatch = prepatchedOfferingCopyPatch;
       if (asString(body.prepatchedCopyBriefHash)) jobMetadata.copyBriefHash = asString(body.prepatchedCopyBriefHash);
       if (asString(body.prepatchedCopyPatchHash)) jobMetadata.copyPatchHash = asString(body.prepatchedCopyPatchHash);
+      if (asString(body.prepatchedSiteCopyBriefHash)) jobMetadata.siteCopyBriefHash = asString(body.prepatchedSiteCopyBriefHash);
+      if (asString(body.prepatchedSiteCopyPatchHash)) jobMetadata.siteCopyPatchHash = asString(body.prepatchedSiteCopyPatchHash);
+      if (prepatchedSiteCopyAuditSummary) jobMetadata.siteCopyAuditSummary = prepatchedSiteCopyAuditSummary;
+      if (prepatchedSiteCopyAuditItems.length) jobMetadata.siteCopyAuditItems = prepatchedSiteCopyAuditItems;
+      if (asString(body.prepatchedOfferingCopyBriefHash)) jobMetadata.offeringCopyBriefHash = asString(body.prepatchedOfferingCopyBriefHash);
+      if (asString(body.prepatchedOfferingCopyPatchHash)) jobMetadata.offeringCopyPatchHash = asString(body.prepatchedOfferingCopyPatchHash);
+      if (prepatchedOfferingCopyAuditSummary) jobMetadata.offeringCopyAuditSummary = prepatchedOfferingCopyAuditSummary;
+      if (prepatchedOfferingCopyAuditItems.length) jobMetadata.offeringCopyAuditItems = prepatchedOfferingCopyAuditItems;
+      if (prepatchedOfferingCopyCoverage) jobMetadata.offeringCopyCoverage = prepatchedOfferingCopyCoverage;
+      if (prepatchedCopyOnlyRetryCoverageDelta) jobMetadata.copyOnlyRetryCoverageDelta = prepatchedCopyOnlyRetryCoverageDelta;
     } else {
       try {
         const outlineResult = await generateAiOfferingOutline(aiSiteGenerationDeps, db, env, body, finalJson, originData, businessName);
@@ -691,6 +723,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     return json({
       success: true,
       businessId,
+      generationJobId: jobId,
       generatedWithAi: aiGenerated,
       generationMode: metaConfig.generationMode,
       copyPatchApplied: Boolean(jobMetadata.copyPatchApplied),

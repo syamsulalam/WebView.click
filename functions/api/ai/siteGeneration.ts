@@ -192,19 +192,29 @@ function collectSectionCopyAuditTargets(
   });
 }
 
-export function collectAiCopyAuditTargets(siteJson: Record<string, unknown>) {
+export function collectAiCopyAuditTargets(siteJson: Record<string, unknown>, options: { focus?: string } = {}) {
   const targets: AiCopyAuditTarget[] = [];
   const meta = objectValue(siteJson.meta);
   const businessProfile = objectValue(siteJson.businessProfile);
   const seo = objectValue(siteJson.seo);
+  const focus = options.focus || "all";
+  const products = Array.isArray(siteJson.products) ? siteJson.products as Array<Record<string, unknown>> : [];
+  const services = Array.isArray(siteJson.services) ? siteJson.services as Array<Record<string, unknown>> : [];
+  const offeringDetailPageIds = new Set([...products, ...services].map((item) => asString(item.detailPageId)).filter(Boolean));
 
-  pushCopyAuditTarget(targets, ["meta", "seoTitle"], "meta SEO title", meta.seoTitle, true);
-  pushCopyAuditTarget(targets, ["meta", "seoDescription"], "meta SEO description", meta.seoDescription, true);
-  pushCopyAuditTarget(targets, ["businessProfile", "shortPitch"], "business short pitch", businessProfile.shortPitch, true);
-  pushCopyAuditTarget(targets, ["seo", "cityLandingPhrase"], "SEO city phrase", seo.cityLandingPhrase, true);
+  if (focus !== "offerings") {
+    pushCopyAuditTarget(targets, ["meta", "seoTitle"], "meta SEO title", meta.seoTitle, true);
+    pushCopyAuditTarget(targets, ["meta", "seoDescription"], "meta SEO description", meta.seoDescription, true);
+    pushCopyAuditTarget(targets, ["businessProfile", "shortPitch"], "business short pitch", businessProfile.shortPitch, true);
+    pushCopyAuditTarget(targets, ["seo", "cityLandingPhrase"], "SEO city phrase", seo.cityLandingPhrase, true);
+  }
 
   const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
-  pages.slice(0, 12).forEach((page, pageIndex) => {
+  const pagesForAudit = focus === "offerings" ? pages : pages.slice(0, 12);
+  pagesForAudit.forEach((page, pageIndex) => {
+    const pageId = asString(page.pageId);
+    if (focus === "site" && offeringDetailPageIds.has(pageId)) return;
+    if (focus === "offerings" && !offeringDetailPageIds.has(pageId)) return;
     const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
     sections.slice(0, 16).forEach((section, sectionIndex) => {
       const type = asString(section.type);
@@ -214,19 +224,20 @@ export function collectAiCopyAuditTargets(siteJson: Record<string, unknown>) {
   });
 
   const offers = Array.isArray(siteJson.offers) ? siteJson.offers as Array<Record<string, unknown>> : [];
-  offers.slice(0, 12).forEach((offer, index) => {
-    pushCopyAuditTarget(targets, ["offers", index, "title"], `offer ${index + 1} title`, offer.title);
-    pushCopyAuditTarget(targets, ["offers", index, "description"], `offer ${index + 1} description`, offer.description);
-    pushCopyAuditTarget(targets, ["offers", index, "priceHint"], `offer ${index + 1} price hint`, offer.priceHint);
-  });
+  if (focus !== "offerings") {
+    offers.slice(0, 12).forEach((offer, index) => {
+      pushCopyAuditTarget(targets, ["offers", index, "title"], `offer ${index + 1} title`, offer.title);
+      pushCopyAuditTarget(targets, ["offers", index, "description"], `offer ${index + 1} description`, offer.description);
+      pushCopyAuditTarget(targets, ["offers", index, "priceHint"], `offer ${index + 1} price hint`, offer.priceHint);
+    });
+  }
 
-  const offerings = [
-    ...(Array.isArray(siteJson.products) ? siteJson.products as Array<Record<string, unknown>> : []),
-    ...(Array.isArray(siteJson.services) ? siteJson.services as Array<Record<string, unknown>> : []),
-  ];
+  if (focus === "site") return targets.slice(0, 180);
+
+  const offerings = [...products, ...services];
   const offeringRoots = [
-    ...(Array.isArray(siteJson.products) ? (siteJson.products as Array<Record<string, unknown>>).map((_, index) => ["products", index] as Array<string | number>) : []),
-    ...(Array.isArray(siteJson.services) ? (siteJson.services as Array<Record<string, unknown>>).map((_, index) => ["services", index] as Array<string | number>) : []),
+    ...products.map((_, index) => ["products", index] as Array<string | number>),
+    ...services.map((_, index) => ["services", index] as Array<string | number>),
   ];
   offerings.slice(0, 16).forEach((offering, index) => {
     const rootPath = offeringRoots[index];
@@ -714,26 +725,35 @@ function businessFactsForAiCopy(originData: unknown, siteJson: Record<string, un
   };
 }
 
-export function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, originData: unknown, businessName: string) {
+export function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, originData: unknown, businessName: string, options: { focus?: string } = {}) {
   const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
   const offers = Array.isArray(siteJson.offers) ? siteJson.offers as Array<Record<string, unknown>> : [];
   const products = Array.isArray(siteJson.products) ? siteJson.products as Array<Record<string, unknown>> : [];
   const services = Array.isArray(siteJson.services) ? siteJson.services as Array<Record<string, unknown>> : [];
+  const focus = options.focus || "site";
+  const offeringDetailPageIds = new Set([...products, ...services].map((item) => asString(item.detailPageId)).filter(Boolean));
+  const sectionTargets = pages.flatMap((page) => {
+    const pageId = asString(page.pageId);
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    return sections
+      .filter((section) => ["hero", "features", "offers", "offeringDetail", "reviews", "hoursLocation", "faq", "gridCards", "textImageBlock"].includes(asString(section.type)))
+      .filter((section) => {
+        if (focus === "offerings") return offeringDetailPageIds.has(pageId) || asString(section.type) === "offeringDetail";
+        return !offeringDetailPageIds.has(pageId);
+      })
+      .map((section) => ({ pageId, ...sectionCopyTarget(section) }));
+  });
   return {
     facts: businessFactsForAiCopy(originData, siteJson, businessName),
+    focus,
     metaCopyTargets: {
       seoTitle: safeCopyText(objectValue(siteJson.meta).seoTitle, 160),
       seoDescription: safeCopyText(objectValue(siteJson.meta).seoDescription, 260),
       shortPitch: safeCopyText(objectValue(siteJson.businessProfile).shortPitch, 420),
       cityLandingPhrase: safeCopyText(objectValue(siteJson.seo).cityLandingPhrase, 140),
     },
-    sectionTargets: pages.flatMap((page) => {
-      const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
-      return sections
-        .filter((section) => ["hero", "features", "offers", "offeringDetail", "reviews", "hoursLocation", "faq", "gridCards", "textImageBlock"].includes(asString(section.type)))
-        .map(sectionCopyTarget);
-    }).slice(0, 30),
-    offers: offers.map((offer, index) => ({
+    sectionTargets: sectionTargets.slice(0, focus === "offerings" ? 80 : 24),
+    offers: (focus === "offerings" ? [] : offers).map((offer, index) => ({
       index,
       title: safeCopyText(offer.title, 120),
       description: safeCopyText(offer.description, 360),
@@ -750,7 +770,7 @@ export function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, origin
       included: safeCopyArray(item.included, 8, 100),
       highlights: safeCopyPairs(item.highlights, 4),
       relatedReviewKeywords: safeCopyArray(item.relatedReviewKeywords, 8, 40),
-    })).slice(0, 16),
+    })).slice(0, focus === "offerings" ? 16 : 6),
   };
 }
 
@@ -1006,10 +1026,11 @@ export async function generateAiCopyPatch(
   const requireAi = body.requireAi === true;
   const businessName = asString(body.businessName);
   const originData = body.originData || {};
+  const copyPatchFocus = asString(body.copyPatchFocus, "site");
   const submittedJson = siteJsonOverride || (body.jsonContent && typeof body.jsonContent === "object" && !Array.isArray(body.jsonContent)
     ? body.jsonContent as Record<string, unknown>
     : null);
-  const copyTargetBrief = buildAiCopyTargetBrief(submittedJson || {}, originData, businessName);
+  const copyTargetBrief = buildAiCopyTargetBrief(submittedJson || {}, originData, businessName, { focus: copyPatchFocus });
 
   if (!provider || !model) {
     if (requireAi) {
@@ -1133,6 +1154,10 @@ export async function generateAiCopyPatch(
     "You are a practical local-business copywriter. You DO NOT generate full website JSON. " +
     "You only return a small JSON copy patch matching this schema, with no markdown and no extra keys:\n" +
     `${JSON.stringify(copyPatchSchema)}\n\n` +
+    `This request focus is "${copyPatchFocus}". ` +
+    (copyPatchFocus === "offerings"
+      ? "Prioritize the offerings array and service/product detail page section targets. Return beefy copy for every offering in the brief, including summary, description, bestFor, included, highlights, hero, features, and FAQ. Do not spend output on homepage-only copy unless it directly supports the offering patch. "
+      : "Prioritize homepage/meta/general site sections and keep offering records minimal unless a short offer card needs cleanup. The separate offering-copy chunk will handle service detail depth. ") +
     "Critical rules: you are not given full website JSON, page IDs, navigation hrefs, image URLs, maps URLs, sourceData, palette, font, visual style, favicon, CSS, or storage fields. Do not mention or create them. " +
     "Use verified facts from the provided copy target brief for business identity, address, phone, rating, reviews, hours, status, and location. You may also use conservative industry knowledge to explain common customer problems and service outcomes for the business category, as long as you do not invent certifications, years in business, warranties, brand partnerships, equipment, staff size, exact prices, or completed projects. If a fact is missing, write honest copy like 'contact for availability' instead of inventing. " +
     "Voice rules: write as the business speaking to its potential customers, not as WebView, an admin, a demo builder, an auditor, Google, or a third-party report about the business. " +
@@ -1146,7 +1171,7 @@ export async function generateAiCopyPatch(
     "About-style or text-image copy should explain what the company helps customers accomplish, why the work matters in the local market, and how the team approaches quality, prevention, communication, and long-term value. " +
     "Make the copy much less templated: mention the actual business name, exact city/area when available, category/type, rating/review count when available, phone if available, operating status, hours if useful, and review themes if reviews exist. " +
     "For US businesses write English. For Indonesian businesses write Indonesian. If meta.language is explicit, follow it. Do not mix languages. " +
-    "Every offering needs beefy copy: a specific title, summary, description, 3-5 bestFor items, 3-6 included items, 2-4 highlights, a detailed hero, 3 feature items, and 3-5 FAQ items. Make those details industry-specific instead of generic 'fast consultation' language. " +
+    "Every offering in an offering-focused request needs beefy copy: a specific title, summary, description, 3-5 bestFor items, 3-6 included items, 2-4 highlights, a detailed hero, 3 feature items, and 3-5 FAQ items. Make those details industry-specific instead of generic 'fast consultation' language. " +
     "Keep titles in Title Case except small connector words like for, and, of, to, in. Return plain text only; no HTML; no markdown; no SVG.";
   const userMsg = `Business Name: ${businessName}
 Copy target brief. This is not full website JSON and contains only facts plus editable copy targets:

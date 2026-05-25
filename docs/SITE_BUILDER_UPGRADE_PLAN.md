@@ -177,7 +177,7 @@ Why:
 - Current `gridCards` is generic. Offers should become reusable source-of-truth.
 - For restaurants, same block can represent menu highlights.
 - AI-inferred services/products should not be freeform copy only. The generator should normalize them into structured `products`/`services` records with stable `id`, `detailPageId`, `summary`, `description`, `bestFor`, `included`, `highlights`, and FAQ/detail-page copy targets, then render them as clickable homepage cards plus individual detail pages.
-- Because Cloudflare Pages Functions should avoid one huge model response, generation should be chunked: first ask AI for a compact offering outline, let code rebuild deterministic pages/navigation, then ask AI for copy patch against that validated shape. For timeout-prone providers, use the D1-backed `generation_jobs` chunk flow so outline, copy patch, and final save can be retried separately.
+- Because Cloudflare Pages Functions should avoid one huge model response, generation is chunked: first ask AI for a compact offering outline, let code rebuild deterministic pages/navigation, then ask AI separately for site copy and offering/detail-page copy against that validated shape. For timeout-prone providers, use the D1-backed `generation_jobs` chunk flow so outline, site copy, offering copy, and final save can be retried separately.
 
 ### 6. Amenities / Capabilities Block
 

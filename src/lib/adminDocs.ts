@@ -77,6 +77,15 @@ export const adminDocs: AdminDoc[] = [
     loadContent: md(() => import("../../docs/AI_MODELS_RESEARCH.md?raw")),
   },
   {
+    id: "ai-generation-chunking-audit",
+    title: "AI Generation Chunking Audit",
+    file: "docs/AI_GENERATION_CHUNKING_AUDIT.md",
+    category: "AI",
+    summary: "Audit and QA notes for chunked outline, site copy, offering copy, and final save behavior.",
+    adminPages: ["/admin/leads", "/admin/jobs", "/admin/sites", "/admin/settings"],
+    loadContent: md(() => import("../../docs/AI_GENERATION_CHUNKING_AUDIT.md?raw")),
+  },
+  {
     id: "free-tier-limits-audit",
     title: "Free Tier Limits Audit",
     file: "docs/FREE_TIER_LIMITS_AUDIT.md",

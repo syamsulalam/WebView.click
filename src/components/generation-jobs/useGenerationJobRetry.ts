@@ -9,7 +9,7 @@ import {
 } from "../../lib/generationJobState";
 import { formatCooldownRemaining, getSharedProviderCooldown, logProviderCooldownBlockedJob } from "../../lib/providerCooldown";
 import { useAdminToast } from "../AdminToast";
-import { shortHash } from "./jobUtils";
+import { offeringCopyCoverage, shortHash } from "./jobUtils";
 
 type UseGenerationJobRetryOptions = {
   fallbackProvider: string;
@@ -45,6 +45,7 @@ export function useGenerationJobRetry({
   const { showApiError } = useAdminToast();
   const [retryingJobId, setRetryingJobId] = useState("");
   const [retryingChunkStep, setRetryingChunkStep] = useState("");
+  const [retryingCopyOnlyJobId, setRetryingCopyOnlyJobId] = useState("");
   const [retryOverrideJobId, setRetryOverrideJobId] = useState("");
 
   const retryGenerationJob = async (job: any) => {
@@ -91,7 +92,7 @@ export function useGenerationJobRetry({
         throw new Error(briefData.error || `Copy brief returned ${briefResponse.status}`);
       }
       const currentBriefHash = await sha256Json(briefData.copyTargetBrief || {});
-      const previousBriefHash = String(job.metadata?.copyBriefHash || "");
+      const previousBriefHash = String(job.metadata?.finalCopyBriefHash || job.metadata?.copyBriefHash || "");
       if (previousBriefHash && previousBriefHash !== currentBriefHash && retryOverrideJobId !== job.id) {
         setRetryOverrideJobId(job.id);
         setMessage(`Brief changed for ${job.businessId}. Previous ${shortHash(previousBriefHash)}, current ${shortHash(currentBriefHash)}. Click Retry anyway to use the current brief.`);
@@ -137,6 +138,50 @@ export function useGenerationJobRetry({
     }
   };
 
+  const runChunkedStepRequest = async (jobId: string, step: ChunkedGenerationStep, label: string, extraBody: Record<string, unknown> = {}) => {
+    let data: any = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const response = await fetch(`/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ step, ...extraBody }),
+        });
+        data = await readApiJson<any>(response, `${label} ${step} step`);
+        break;
+      } catch (error) {
+        if (attempt >= 2 || !isTransientStepError(error)) throw error;
+        for (let seconds = 60; seconds > 0; seconds -= 1) {
+          setMessage(`${step} hit a temporary provider/edge failure. Auto retry in ${seconds}s...`);
+          await sleep(1000);
+        }
+        setMessage(`Retrying ${step} step now...`);
+      }
+    }
+    return data;
+  };
+
+  const resolveChunkedRetryJob = async (job: any) => {
+    if (chunkedGenerationState(job).chunked) return job;
+    const parentId = String(job?.metadata?.parentGenerationJobId || "");
+    if (!parentId) throw new Error("This job does not have a chunked parent job for copy-only retry.");
+    const response = await fetch(`/api/generation-jobs?limit=20&q=${encodeURIComponent(parentId)}`);
+    const data = await readApiJson<any>(response, "Load parent chunked generation job");
+    const rows = Array.isArray(data) ? data : Array.isArray(data?.jobs) ? data.jobs : [];
+    const parentJob = rows.find((row: any) => row.id === parentId);
+    if (!parentJob) throw new Error(`Parent chunked job ${parentId} was not found.`);
+    if (!chunkedGenerationState(parentJob).chunked) throw new Error(`Parent job ${parentId} is not a chunked generation job.`);
+    return parentJob;
+  };
+
+  const loadGenerationJobById = async (jobId: string) => {
+    if (!jobId) return null;
+    const response = await fetch(`/api/generation-jobs?limit=20&q=${encodeURIComponent(jobId)}`);
+    const data = await readApiJson<any>(response, "Load generation job");
+    const rows = Array.isArray(data) ? data : Array.isArray(data?.jobs) ? data.jobs : [];
+    return rows.find((row: any) => row.id === jobId) || null;
+  };
+
   const retryChunkedStep = async (job: any, requestedStep?: ChunkedGenerationStep) => {
     const state = chunkedGenerationState(job);
     const step = requestedStep || state.retryStep || state.nextStep;
@@ -144,25 +189,7 @@ export function useGenerationJobRetry({
     const retryKey = `${job.id}:${step}`;
     setRetryingChunkStep(retryKey);
     try {
-      let data: any = null;
-      for (let attempt = 1; attempt <= 2; attempt += 1) {
-        try {
-          const response = await fetch(`/api/generation-jobs/${encodeURIComponent(job.id)}/run-step`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ step }),
-          });
-          data = await readApiJson<any>(response, `Retry ${step} step`);
-          break;
-        } catch (error) {
-          if (attempt >= 2 || !isTransientStepError(error)) throw error;
-          for (let seconds = 60; seconds > 0; seconds -= 1) {
-            setMessage(`${step} hit a temporary provider/edge failure. Auto retry in ${seconds}s...`);
-            await sleep(1000);
-          }
-          setMessage(`Retrying ${step} step now...`);
-        }
-      }
+      const data = await runChunkedStepRequest(job.id, step, "Retry");
       const nextStatus = data.completedStep === "finalize" ? "success" : "running";
       const nextJob = {
         ...job,
@@ -204,11 +231,86 @@ export function useGenerationJobRetry({
     }
   };
 
+  const retryCopyOnly = async (job: any, mode: "offerings" | "allCopy") => {
+    const retryKey = `${job.id}:${mode}`;
+    setRetryingCopyOnlyJobId(retryKey);
+    try {
+      const previousCoverage = offeringCopyCoverage(job);
+      const chunkedJob = await resolveChunkedRetryJob(job);
+      const steps: ChunkedGenerationStep[] = mode === "offerings"
+        ? ["offeringCopy", "finalize"]
+        : ["siteCopy", "offeringCopy", "finalize"];
+      let data: any = null;
+      for (const step of steps) {
+        setMessage(`${mode === "offerings" ? "Retrying service copy" : "Retrying copy chunks"}: ${step}...`);
+        const retryDeltaBody = step === "finalize"
+          ? {
+              copyOnlyRetryCoverageDelta: {
+                mode,
+                sourceJobId: job.id,
+                parentGenerationJobId: chunkedJob.id,
+                before: previousCoverage,
+              },
+            }
+          : {};
+        data = await runChunkedStepRequest(chunkedJob.id, step, mode === "offerings" ? "Retry service copy" : "Retry copy chunks", retryDeltaBody);
+      }
+      const refreshedJob = {
+        ...chunkedJob,
+        businessId: data?.result?.businessId || chunkedJob.businessId || job.businessId,
+        status: "success",
+        error: "",
+        metadata: data?.metadata || chunkedJob.metadata,
+        updatedAt: new Date().toISOString(),
+      };
+      setJobs((currentJobs) => currentJobs.map((currentJob) => currentJob.id === refreshedJob.id ? { ...currentJob, ...refreshedJob } : currentJob));
+      const finalJobId = String(data?.result?.generationJobId || "");
+      const finalJob = finalJobId ? await loadGenerationJobById(finalJobId) : null;
+      if (finalJob) {
+        const persistedDelta = finalJob.metadata?.copyOnlyRetryCoverageDelta;
+        const finalJobWithDelta = persistedDelta ? finalJob : {
+          ...finalJob,
+          metadata: {
+            ...(finalJob.metadata || {}),
+            copyOnlyRetryCoverageDelta: {
+              mode,
+              sourceJobId: job.id,
+              parentGenerationJobId: chunkedJob.id,
+              before: previousCoverage,
+              after: offeringCopyCoverage(finalJob),
+            },
+          },
+        };
+        setJobs((currentJobs) => currentJobs.some((currentJob) => currentJob.id === finalJob.id)
+          ? currentJobs.map((currentJob) => currentJob.id === finalJob.id ? { ...currentJob, ...finalJobWithDelta } : currentJob)
+          : [finalJobWithDelta, ...currentJobs]
+        );
+        setSelectedJob(finalJobWithDelta);
+      } else {
+        setSelectedJob((currentJob: any) => currentJob?.id === refreshedJob.id ? { ...currentJob, ...refreshedJob } : currentJob);
+      }
+      setMessage(mode === "offerings"
+        ? `Retried service copy for ${job.businessId || chunkedJob.businessId || job.id} and opened the final save job.`
+        : `Retried site and service copy for ${job.businessId || chunkedJob.businessId || job.id} and opened the final save job.`
+      );
+      void refreshJobs();
+    } catch (error) {
+      const source = mode === "offerings" ? "Retry service copy only" : "Retry copy chunks";
+      showApiError(error, { source, provider: job?.provider || fallbackProvider, model: job?.model || fallbackModel });
+      setMessage(error instanceof Error ? error.message : `${source} failed.`);
+      void refreshJobs();
+    } finally {
+      setRetryingCopyOnlyJobId("");
+    }
+  };
+
   return {
     retryingJobId,
     retryingChunkStep,
+    retryingCopyOnlyJobId,
     retryOverrideJobId,
     retryGenerationJob,
     retryChunkedStep,
+    retryCopyOnly,
   };
 }

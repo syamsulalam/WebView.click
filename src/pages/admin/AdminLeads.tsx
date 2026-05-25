@@ -898,6 +898,8 @@ export default function AdminLeads() {
         const labels: Record<string, string> = {
           outline: "Inferring service/product pages...",
           copy: "Writing AI-enriched copy...",
+          siteCopy: "Writing homepage and site copy...",
+          offeringCopy: "Writing service detail copy...",
           finalize: "Saving generated site...",
         };
         const retryText = progress?.status === "retry_wait"

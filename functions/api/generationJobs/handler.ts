@@ -17,7 +17,7 @@ export type GenerationJobsDeps = {
   applyAiOfferingOutline: (siteJson: Record<string, unknown>, outline: Record<string, unknown>) => { applied: boolean; count: number };
   generateAiCopyPatch: (db: unknown, env: unknown, body: Record<string, unknown>, siteJsonOverride?: Record<string, unknown>) => Promise<{ patch: Record<string, unknown>; copyBriefHash: string; copyPatchHash: string } | null>;
   applyAiCopyPatch: (siteJson: Record<string, unknown>, patch: Record<string, unknown>) => Record<string, unknown>;
-  collectAiCopyAuditTargets: (siteJson: Record<string, unknown>) => any[];
+  collectAiCopyAuditTargets: (siteJson: Record<string, unknown>, options?: { focus?: string }) => any[];
   buildAiCopyAudit: (targets: any[], siteJson: Record<string, unknown>, patchApplied: boolean) => { summary: Record<string, unknown>; items: unknown[] };
   handleSites: (request: Request, db: unknown, env: unknown, segments: string[]) => Promise<Response>;
 };
@@ -55,6 +55,141 @@ function chunkedGenerationJsonWithOutline(deps: GenerationJobsDeps, metadata: Re
   return { payload, finalJson };
 }
 
+function objectPatch(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function mergeCopyPatch(...patches: Array<Record<string, unknown> | null>) {
+  const merged: Record<string, unknown> = {};
+  const structuredKeys = new Set(["metaCopy", "sections", "offers", "offerings", "faq", "conversion", "footer", "hero"]);
+  for (const patch of patches) {
+    if (!patch) continue;
+    const metaCopy = objectPatch(patch.metaCopy);
+    if (metaCopy) merged.metaCopy = { ...(objectPatch(merged.metaCopy) || {}), ...metaCopy };
+    const sections = objectPatch(patch.sections);
+    if (sections) merged.sections = { ...(objectPatch(merged.sections) || {}), ...sections };
+    if (Array.isArray(patch.offers)) merged.offers = patch.offers;
+    if (Array.isArray(patch.offerings)) merged.offerings = patch.offerings;
+    if (Array.isArray(patch.faq)) merged.faq = patch.faq;
+    const conversion = objectPatch(patch.conversion);
+    if (conversion) merged.conversion = { ...(objectPatch(merged.conversion) || {}), ...conversion };
+    const footer = objectPatch(patch.footer);
+    if (footer) merged.footer = { ...(objectPatch(merged.footer) || {}), ...footer };
+    const hero = objectPatch(patch.hero);
+    if (hero) merged.hero = { ...(objectPatch(merged.hero) || {}), ...hero };
+    Object.entries(patch).forEach(([key, value]) => {
+      if (!structuredKeys.has(key)) merged[key] = value;
+    });
+  }
+  return merged;
+}
+
+function mergeCopyAudits(...audits: Array<{ summary?: Record<string, unknown>; items?: unknown[] } | null>) {
+  const items = audits.flatMap((audit) => Array.isArray(audit?.items) ? audit.items as unknown[] : []);
+  const summary = {
+    targetFieldsSentToAi: 0,
+    sourceSentencesSentToAi: 0,
+    aiRewritten: 0,
+    aiFilledBlank: 0,
+    sourceKept: 0,
+    fallbackSource: 0,
+    missingAfter: 0,
+    storedItems: Math.min(items.length, 160),
+  };
+  for (const audit of audits) {
+    const source = audit?.summary || {};
+    for (const key of Object.keys(summary) as Array<keyof typeof summary>) {
+      if (key === "storedItems") continue;
+      summary[key] += Number(source[key] || 0);
+    }
+  }
+  return { summary, items: items.slice(0, 160) };
+}
+
+async function sha256Json(value: unknown) {
+  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function records(value: unknown) {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === "object" && !Array.isArray(item)) as Array<Record<string, unknown>> : [];
+}
+
+function stableText(value: unknown) {
+  if (typeof value === "string" || typeof value === "number") return String(value).replace(/\s+/g, " ").trim();
+  if (Array.isArray(value)) return JSON.stringify(value.map((item) => objectPatch(item) || stringValue(item)).filter(Boolean));
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return "";
+}
+
+function firstSection(page: Record<string, unknown> | undefined, type: string) {
+  return records(page?.sections).find((section) => stringValue(section.type) === type);
+}
+
+function faqItemsForPage(page: Record<string, unknown> | undefined) {
+  return records(objectPatch(firstSection(page, "faq")?.content)?.items);
+}
+
+function buildOfferingCopyCoverage(beforeJson: Record<string, unknown>, afterJson: Record<string, unknown>) {
+  const beforeOfferings = [...records(beforeJson.products), ...records(beforeJson.services)];
+  const afterOfferings = [...records(afterJson.products), ...records(afterJson.services)];
+  const beforePages = records(beforeJson.pages);
+  const afterPages = records(afterJson.pages);
+  const beforeById = new Map(beforeOfferings.map((item) => [stringValue(item.id), item]));
+  const beforePageById = new Map(beforePages.map((page) => [stringValue(page.pageId), page]));
+  const items = afterOfferings.map((after, index) => {
+    const id = stringValue(after.id);
+    const before = beforeById.get(id) || beforeOfferings[index] || {};
+    const detailPageId = stringValue(after.detailPageId || before.detailPageId);
+    const beforePage = beforePageById.get(detailPageId);
+    const afterPage = afterPages.find((page) => stringValue(page.pageId) === detailPageId);
+    const summaryChanged = stableText(before.summary) !== stableText(after.summary);
+    const descriptionChanged = stableText(before.description) !== stableText(after.description);
+    const highlightsChanged = stableText(before.highlights) !== stableText(after.highlights);
+    const faqChanged = stableText(faqItemsForPage(beforePage)) !== stableText(faqItemsForPage(afterPage));
+    const changed = summaryChanged || descriptionChanged || highlightsChanged || faqChanged;
+    return {
+      id,
+      type: stringValue(after.type) || stringValue(before.type) || "service",
+      title: stringValue(after.title) || stringValue(before.title) || `Offering ${index + 1}`,
+      changed,
+      summaryChanged,
+      descriptionChanged,
+      highlightsChanged,
+      faqChanged,
+    };
+  });
+  return {
+    total: items.length,
+    changed: items.filter((item) => item.changed).length,
+    summaryChanged: items.filter((item) => item.summaryChanged).length,
+    descriptionChanged: items.filter((item) => item.descriptionChanged).length,
+    highlightsChanged: items.filter((item) => item.highlightsChanged).length,
+    faqChanged: items.filter((item) => item.faqChanged).length,
+    items,
+  };
+}
+
+function copyOnlyRetryCoverageDeltaFromRequest(body: Record<string, unknown>, afterCoverage: unknown, parentGenerationJobId: string) {
+  const context = objectPatch(body.copyOnlyRetryCoverageDelta) || objectPatch(body.copyOnlyRetryContext);
+  const before = objectPatch(context?.before);
+  const after = objectPatch(afterCoverage);
+  if (!context || !before || !after) return null;
+  const mode = stringValue(context.mode);
+  return {
+    mode: mode === "offerings" || mode === "allCopy" ? mode : "copy",
+    sourceJobId: stringValue(context.sourceJobId),
+    parentGenerationJobId: stringValue(context.parentGenerationJobId) || parentGenerationJobId,
+    before: { ...before, recorded: before.recorded !== false },
+    after: { ...after, recorded: true },
+    recordedAt: new Date().toISOString(),
+  };
+}
+
 export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Request, db: D1DatabaseLike, env: EnvLike, segments: string[]): Promise<Response> {
   if (request.method === "POST" && segments[1] === "chunked-start") {
     const body = await deps.readJsonBody(request);
@@ -73,7 +208,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
       nextStep: "outline",
       payload: body,
       copyPatchApplied: false,
-      createdFor: "outline_copy_finalize_retryable_flow",
+      createdFor: "outline_site_offering_finalize_retryable_flow",
       checkedAt: new Date().toISOString(),
     };
     await deps.ensureRequiredColumns(db, deps.generateRequiredColumns);
@@ -122,33 +257,75 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
           metadata.offeringOutlineError = "AI offering outline returned no usable JSON.";
         }
         metadata.step = "outline_complete";
-        metadata.nextStep = "copy";
+        metadata.nextStep = "siteCopy";
         metadata.updatedAt = new Date().toISOString();
         await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
-        return deps.json({ success: true, id: jobId, completedStep: "outline", nextStep: "copy", metadata });
+        return deps.json({ success: true, id: jobId, completedStep: "outline", nextStep: "siteCopy", metadata });
       }
 
-      if (requestedStep === "copy") {
+      if (requestedStep === "copy" || requestedStep === "siteCopy") {
         const { finalJson } = chunkedGenerationJsonWithOutline(deps, metadata);
-        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson);
-        const copyPatchResult = await deps.generateAiCopyPatch(db, env, payload, finalJson);
+        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson, { focus: "site" });
+        const copyPatchResult = await deps.generateAiCopyPatch(db, env, { ...payload, copyPatchFocus: "site" }, finalJson);
         if (!copyPatchResult) {
-          throw new Error("AI copy patch did not return JSON for chunked generation.");
+          throw new Error("AI site copy patch did not return JSON for chunked generation.");
         }
         const patchedJson = structuredClone(finalJson) as Record<string, unknown>;
         deps.applyAiCopyPatch(patchedJson, copyPatchResult.patch);
         const copyAudit = deps.buildAiCopyAudit(copyAuditTargets, patchedJson, true);
+        metadata.siteCopyPatch = copyPatchResult.patch;
+        metadata.siteCopyBriefHash = copyPatchResult.copyBriefHash;
+        metadata.siteCopyPatchHash = copyPatchResult.copyPatchHash;
+        metadata.siteCopyAuditSummary = copyAudit.summary;
+        metadata.siteCopyAuditItems = copyAudit.items;
         metadata.copyPatch = copyPatchResult.patch;
         metadata.copyBriefHash = copyPatchResult.copyBriefHash;
         metadata.copyPatchHash = copyPatchResult.copyPatchHash;
         metadata.copyPatchApplied = true;
         metadata.copyAuditSummary = copyAudit.summary;
         metadata.copyAuditItems = copyAudit.items;
-        metadata.step = "copy_complete";
+        metadata.step = "siteCopy_complete";
+        metadata.nextStep = "offeringCopy";
+        metadata.updatedAt = new Date().toISOString();
+        await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+        return deps.json({ success: true, id: jobId, completedStep: "siteCopy", nextStep: "offeringCopy", metadata });
+      }
+
+      if (requestedStep === "offeringCopy") {
+        const { finalJson } = chunkedGenerationJsonWithOutline(deps, metadata);
+        const sitePatch = objectPatch(metadata.siteCopyPatch) || objectPatch(metadata.copyPatch);
+        if (sitePatch) deps.applyAiCopyPatch(finalJson, sitePatch);
+        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson, { focus: "offerings" });
+        const offeringPatchResult = await deps.generateAiCopyPatch(db, env, { ...payload, copyPatchFocus: "offerings" }, finalJson);
+        if (!offeringPatchResult) {
+          throw new Error("AI offering copy patch did not return JSON for chunked generation.");
+        }
+        const combinedPatch = mergeCopyPatch(sitePatch, offeringPatchResult.patch);
+        const patchedJson = structuredClone(finalJson) as Record<string, unknown>;
+        deps.applyAiCopyPatch(patchedJson, offeringPatchResult.patch);
+        const offeringCopyCoverage = buildOfferingCopyCoverage(finalJson, patchedJson);
+        const copyAudit = deps.buildAiCopyAudit(copyAuditTargets, patchedJson, true);
+        const combinedAudit = mergeCopyAudits(
+          { summary: objectPatch(metadata.siteCopyAuditSummary) || undefined, items: Array.isArray(metadata.siteCopyAuditItems) ? metadata.siteCopyAuditItems : [] },
+          copyAudit,
+        );
+        metadata.offeringCopyPatch = offeringPatchResult.patch;
+        metadata.offeringCopyBriefHash = offeringPatchResult.copyBriefHash;
+        metadata.offeringCopyPatchHash = offeringPatchResult.copyPatchHash;
+        metadata.offeringCopyAuditSummary = copyAudit.summary;
+        metadata.offeringCopyAuditItems = copyAudit.items;
+        metadata.offeringCopyCoverage = offeringCopyCoverage;
+        metadata.copyPatch = combinedPatch;
+        metadata.copyBriefHash = offeringPatchResult.copyBriefHash;
+        metadata.copyPatchHash = await sha256Json(combinedPatch);
+        metadata.copyPatchApplied = true;
+        metadata.copyAuditSummary = combinedAudit.summary;
+        metadata.copyAuditItems = combinedAudit.items;
+        metadata.step = "offeringCopy_complete";
         metadata.nextStep = "finalize";
         metadata.updatedAt = new Date().toISOString();
         await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
-        return deps.json({ success: true, id: jobId, completedStep: "copy", nextStep: "finalize", metadata });
+        return deps.json({ success: true, id: jobId, completedStep: "offeringCopy", nextStep: "finalize", metadata });
       }
 
       if (requestedStep === "finalize") {
@@ -157,6 +334,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
           ? metadata.copyPatch as Record<string, unknown>
           : null;
         if (copyPatch) deps.applyAiCopyPatch(finalJson, copyPatch);
+        const copyOnlyRetryCoverageDelta = copyOnlyRetryCoverageDeltaFromRequest(body, metadata.offeringCopyCoverage, jobId);
         const finalizeBody = {
           ...storedPayload,
           requireAi: false,
@@ -171,6 +349,18 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
           prepatchedCopyPatchHash: metadata.copyPatchHash || "",
           prepatchedCopyAuditSummary: metadata.copyAuditSummary || null,
           prepatchedCopyAuditItems: Array.isArray(metadata.copyAuditItems) ? metadata.copyAuditItems : [],
+          prepatchedSiteCopyPatch: metadata.siteCopyPatch || null,
+          prepatchedSiteCopyBriefHash: metadata.siteCopyBriefHash || "",
+          prepatchedSiteCopyPatchHash: metadata.siteCopyPatchHash || "",
+          prepatchedSiteCopyAuditSummary: metadata.siteCopyAuditSummary || null,
+          prepatchedSiteCopyAuditItems: Array.isArray(metadata.siteCopyAuditItems) ? metadata.siteCopyAuditItems : [],
+          prepatchedOfferingCopyPatch: metadata.offeringCopyPatch || null,
+          prepatchedOfferingCopyBriefHash: metadata.offeringCopyBriefHash || "",
+          prepatchedOfferingCopyPatchHash: metadata.offeringCopyPatchHash || "",
+          prepatchedOfferingCopyAuditSummary: metadata.offeringCopyAuditSummary || null,
+          prepatchedOfferingCopyAuditItems: Array.isArray(metadata.offeringCopyAuditItems) ? metadata.offeringCopyAuditItems : [],
+          prepatchedOfferingCopyCoverage: metadata.offeringCopyCoverage || null,
+          prepatchedCopyOnlyRetryCoverageDelta: copyOnlyRetryCoverageDelta,
           parentGenerationJobId: jobId,
         };
         const finalizeRequest = new Request(new URL("/api/sites/generate", request.url), {
@@ -320,6 +510,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
   const status = String(url.searchParams.get("status") || "").trim().toLowerCase();
   const patch = String(url.searchParams.get("patch") || "").trim().toLowerCase();
   const aiRewrite = String(url.searchParams.get("aiRewrite") || "").trim().toLowerCase();
+  const offeringCoverage = String(url.searchParams.get("offeringCoverage") || "").trim().toLowerCase();
   const preflight = String(url.searchParams.get("preflight") || "").trim().toLowerCase();
   const query = String(url.searchParams.get("q") || "").trim().slice(0, 120);
   const includeCounts = url.searchParams.get("counts") === "1";
@@ -350,6 +541,22 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
   }
   if (aiRewrite === "zero") {
     where.push(`j.metadata_json LIKE '%"copyPatchApplied":true%' AND j.metadata_json LIKE '%"aiRewritten":0%'`);
+  }
+  const lowOfferingCoverageSql = `(CASE
+    WHEN json_valid(j.metadata_json) THEN
+      CASE
+        WHEN CAST(COALESCE(json_extract(j.metadata_json, '$.offeringCopyCoverage.total'), 0) AS REAL) > 0
+          AND (
+            CAST(COALESCE(json_extract(j.metadata_json, '$.offeringCopyCoverage.changed'), 0) AS REAL)
+            / CAST(json_extract(j.metadata_json, '$.offeringCopyCoverage.total') AS REAL)
+          ) < 0.5
+        THEN 1
+        ELSE 0
+      END
+    ELSE 0
+  END) = 1`;
+  if (offeringCoverage === "low") {
+    where.push(lowOfferingCoverageSql);
   }
 
   bindings.push(limit, offset);
@@ -401,14 +608,15 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         SUM(CASE WHEN j.metadata_json LIKE '%"preflightBlocked":true%' THEN 1 ELSE 0 END) AS preflight_count,
         SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS patch_count,
         SUM(CASE WHEN j.metadata_json IS NULL OR j.metadata_json NOT LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS fallback_count,
-        SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' AND j.metadata_json LIKE '%"aiRewritten":0%' THEN 1 ELSE 0 END) AS no_rewrite_count
+        SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' AND j.metadata_json LIKE '%"aiRewritten":0%' THEN 1 ELSE 0 END) AS no_rewrite_count,
+        SUM(CASE WHEN ${lowOfferingCoverageSql} THEN 1 ELSE 0 END) AS low_offering_coverage_count
        FROM generation_jobs j
        LEFT JOIN places_prospects p ON p.place_id = j.place_id
        ${searchWhereSql}`,
     );
     const counts = searchBindings.length
-      ? await countsStatement.bind(...searchBindings).first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number }>()
-      : await countsStatement.first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number }>();
+      ? await countsStatement.bind(...searchBindings).first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number; low_offering_coverage_count?: number }>()
+      : await countsStatement.first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number; low_offering_coverage_count?: number }>();
     return deps.json({
       jobs,
       counts: {
@@ -418,6 +626,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         fallback: Number(counts?.fallback_count || 0),
         patch: Number(counts?.patch_count || 0),
         noRewrite: Number(counts?.no_rewrite_count || 0),
+        lowOfferingCoverage: Number(counts?.low_offering_coverage_count || 0),
       },
     });
   }

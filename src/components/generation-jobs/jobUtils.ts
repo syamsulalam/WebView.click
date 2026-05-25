@@ -5,6 +5,7 @@ export type GenerationJobCounts = {
   fallback: number;
   patch: number;
   noRewrite: number;
+  lowOfferingCoverage: number;
 };
 
 export function shortHash(value: unknown) {
@@ -38,6 +39,80 @@ export function copyAuditSummary(job: any) {
   return summary && typeof summary === "object" ? summary : {};
 }
 
+export function normalizeOfferingCopyCoverage(coverage: any, recorded = true) {
+  if (coverage && typeof coverage === "object" && !Array.isArray(coverage)) {
+    const items = Array.isArray(coverage.items) ? coverage.items : [];
+    return {
+      total: Number(coverage.total ?? items.length ?? 0),
+      changed: Number(coverage.changed ?? items.filter((item: any) => item?.changed).length ?? 0),
+      summaryChanged: Number(coverage.summaryChanged ?? items.filter((item: any) => item?.summaryChanged).length ?? 0),
+      descriptionChanged: Number(coverage.descriptionChanged ?? items.filter((item: any) => item?.descriptionChanged).length ?? 0),
+      highlightsChanged: Number(coverage.highlightsChanged ?? items.filter((item: any) => item?.highlightsChanged).length ?? 0),
+      faqChanged: Number(coverage.faqChanged ?? items.filter((item: any) => item?.faqChanged).length ?? 0),
+      items,
+      recorded,
+    };
+  }
+  return {
+    total: 0,
+    changed: 0,
+    summaryChanged: 0,
+    descriptionChanged: 0,
+    highlightsChanged: 0,
+    faqChanged: 0,
+    items: [],
+    recorded: false,
+  };
+}
+
+export function offeringCopyCoverage(job: any) {
+  const coverage = job?.metadata?.offeringCopyCoverage;
+  if (coverage && typeof coverage === "object" && !Array.isArray(coverage)) {
+    return normalizeOfferingCopyCoverage(coverage, true);
+  }
+
+  const patchOfferings = Array.isArray(job?.metadata?.offeringCopyPatch?.offerings)
+    ? job.metadata.offeringCopyPatch.offerings
+    : Array.isArray(job?.metadata?.copyPatch?.offerings)
+      ? job.metadata.copyPatch.offerings
+      : [];
+  return {
+    total: patchOfferings.length,
+    changed: 0,
+    summaryChanged: 0,
+    descriptionChanged: 0,
+    highlightsChanged: 0,
+    faqChanged: 0,
+    items: patchOfferings,
+    recorded: false,
+  };
+}
+
+export function offeringCopyCoverageClass(coverage: ReturnType<typeof offeringCopyCoverage>) {
+  if (!coverage.total) return "bg-slate-100 text-slate-600";
+  if (!coverage.recorded) return "bg-slate-100 text-slate-700";
+  const ratio = coverage.changed / coverage.total;
+  if (ratio >= 0.8) return "bg-emerald-100 text-emerald-800";
+  if (ratio >= 0.5) return "bg-amber-100 text-amber-900";
+  return "bg-red-100 text-red-800";
+}
+
+export function offeringCopyCoverageLabel(coverage: ReturnType<typeof offeringCopyCoverage>) {
+  if (!coverage.total) return "services -";
+  return coverage.recorded ? `services ${coverage.changed}/${coverage.total}` : `services ?/${coverage.total}`;
+}
+
+export function offeringCopyCoverageTooltip(coverage: ReturnType<typeof offeringCopyCoverage>) {
+  if (!coverage.total) return "No service/product offering coverage was recorded for this job.";
+  if (!coverage.recorded) return "This older job has offering patch data but no saved before-vs-after coverage summary.";
+  return `Offering copy changed ${coverage.changed} of ${coverage.total} services/products. Summary ${coverage.summaryChanged}, description ${coverage.descriptionChanged}, highlights ${coverage.highlightsChanged}, FAQ ${coverage.faqChanged}.`;
+}
+
+export function lowOfferingCopyCoverage(job: any) {
+  const coverage = offeringCopyCoverage(job);
+  return coverage.recorded && coverage.total > 0 && coverage.changed / coverage.total < 0.5;
+}
+
 export function auditStatusLabel(status: string) {
   if (status === "ai_rewritten") return "AI rewritten";
   if (status === "ai_filled_blank") return "AI filled";
@@ -60,6 +135,7 @@ export function filterJobs(jobs: any[], filter: string) {
   if (filter === "fallback") return jobs.filter((job) => !patchApplied(job));
   if (filter === "patch") return jobs.filter((job) => patchApplied(job));
   if (filter === "noRewrite") return jobs.filter((job) => noAiRewrite(job));
+  if (filter === "lowOfferingCoverage") return jobs.filter((job) => lowOfferingCopyCoverage(job));
   return jobs;
 }
 
@@ -70,6 +146,7 @@ export function sortJobs(jobs: any[], sort: string) {
     if (sort === "fallback") return Number(!patchApplied(b)) - Number(!patchApplied(a));
     if (sort === "patch") return Number(patchApplied(b)) - Number(patchApplied(a));
     if (sort === "noRewrite") return Number(noAiRewrite(b)) - Number(noAiRewrite(a));
+    if (sort === "lowOfferingCoverage") return Number(lowOfferingCopyCoverage(b)) - Number(lowOfferingCopyCoverage(a));
     return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
   });
 }

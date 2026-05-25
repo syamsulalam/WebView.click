@@ -25,7 +25,7 @@ Completed since this audit was written:
 - [x] Centralized admin generation orchestration in `src/lib/adminSiteGeneration.ts`.
 - [x] Made `/admin/leads`, `/admin/sites`, and Jobs retry use the same generation payload/preflight path.
 - [x] Added deterministic AI offering outline handling before copy patch, with max 12 generated offerings and one JSON repair attempt.
-- [x] Added D1-backed chunked generation jobs: `outline`, `copy`, and `finalize`.
+- [x] Added D1-backed chunked generation jobs: `outline`, `siteCopy`, `offeringCopy`, and `finalize`.
 - [x] Added per-step chunked progress and retry controls in the Jobs drawer.
 - [x] Improved palette/photo parity between `/admin/leads`, `/admin/sites`, `/demo`, public `/:businessId`, and static download export.
 - [x] Updated `docs/CODEBASE_REFERENCE.md` for the new generation and Jobs behavior.
@@ -144,7 +144,7 @@ Suggested order:
 
 1. Extract pure helpers that do not touch `db`, `env`, or `request`.
 2. Done: extract AI provider/JSON repair/offering outline/copy patch helpers.
-3. Done: extract generation job handlers, including chunked `outline`, `copy`, and `finalize`.
+3. Done: extract generation job handlers, including chunked `outline`, `siteCopy`, `offeringCopy`, and `finalize`.
 4. Done: extract site storage/R2 modules.
 5. Done: extract Places search/details/manual import module.
 6. Done: extract remaining Places photo/history/manual duplicate handlers.

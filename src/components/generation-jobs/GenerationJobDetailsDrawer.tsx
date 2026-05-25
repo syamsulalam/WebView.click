@@ -17,6 +17,11 @@ import {
   auditStatusLabel,
   copyAuditItems,
   copyAuditSummary,
+  normalizeOfferingCopyCoverage,
+  offeringCopyCoverage,
+  offeringCopyCoverageClass,
+  offeringCopyCoverageLabel,
+  offeringCopyCoverageTooltip,
 } from "./jobUtils";
 
 type GenerationJobDetailsDrawerProps = {
@@ -50,6 +55,18 @@ export default function GenerationJobDetailsDrawer({
 }: GenerationJobDetailsDrawerProps) {
   const auditItems = copyAuditItems(job);
   const auditSummary = copyAuditSummary(job);
+  const offeringCoverage = offeringCopyCoverage(job);
+  const coverageDelta = job?.metadata?.copyOnlyRetryCoverageDelta && typeof job.metadata.copyOnlyRetryCoverageDelta === "object"
+    ? job.metadata.copyOnlyRetryCoverageDelta
+    : job?.copyOnlyRetryCoverageDelta && typeof job.copyOnlyRetryCoverageDelta === "object"
+      ? job.copyOnlyRetryCoverageDelta
+      : null;
+  const previousCoverage = coverageDelta?.before ? normalizeOfferingCopyCoverage(coverageDelta.before, true) : null;
+  const deltaAfterCoverage = coverageDelta?.after ? normalizeOfferingCopyCoverage(coverageDelta.after, true) : null;
+  const afterCoverage = deltaAfterCoverage || offeringCoverage;
+  const coverageGain = previousCoverage?.recorded && afterCoverage.recorded
+    ? Number(afterCoverage.changed || 0) - Number(previousCoverage.changed || 0)
+    : null;
   const aiReadiness = job?.metadata?.aiReadiness || null;
   const remoteValidation = job?.metadata?.remoteValidation || aiReadiness?.remoteValidation || null;
   const providerCooldown = job?.metadata?.providerCooldown || null;
@@ -60,6 +77,12 @@ export default function GenerationJobDetailsDrawer({
     : null;
   const returnedCopyPatch = job?.metadata?.copyPatch && typeof job.metadata.copyPatch === "object"
     ? job.metadata.copyPatch
+    : null;
+  const returnedSiteCopyPatch = job?.metadata?.siteCopyPatch && typeof job.metadata.siteCopyPatch === "object"
+    ? job.metadata.siteCopyPatch
+    : null;
+  const returnedOfferingCopyPatch = job?.metadata?.offeringCopyPatch && typeof job.metadata.offeringCopyPatch === "object"
+    ? job.metadata.offeringCopyPatch
     : null;
   const provider = job?.provider || fallbackProvider;
   const selectedReadiness = {
@@ -78,11 +101,27 @@ export default function GenerationJobDetailsDrawer({
     },
     {
       key: "copyPatch",
-      title: "AI returned copy patch",
-      helper: "Raw parsed copy patch returned by AI. Compare this with the copy audit below to see whether AI omitted a field, returned unchanged wording, or the patch did not map onto the final site JSON.",
+      title: "AI returned combined copy patch",
+      helper: "Combined copy patch applied before final save. Compare this with the copy audit below to see whether AI omitted a field, returned unchanged wording, or the patch did not map onto the final site JSON.",
       value: returnedCopyPatch,
       copyKey: `${job.id}:ai-copy-patch`,
       empty: "No AI copy patch has been recorded for this job yet.",
+    },
+    {
+      key: "siteCopyPatch",
+      title: "AI returned site copy patch",
+      helper: "Homepage/meta/general-site copy returned by the site copy chunk.",
+      value: returnedSiteCopyPatch,
+      copyKey: `${job.id}:ai-site-copy-patch`,
+      empty: "No separate site copy patch has been recorded for this job yet.",
+    },
+    {
+      key: "offeringCopyPatch",
+      title: "AI returned offering copy patch",
+      helper: "Service/product detail copy returned by the offering copy chunk.",
+      value: returnedOfferingCopyPatch,
+      copyKey: `${job.id}:ai-offering-copy-patch`,
+      empty: "No separate offering copy patch has been recorded for this job yet.",
     },
   ];
 
@@ -188,13 +227,13 @@ export default function GenerationJobDetailsDrawer({
               <div className="mb-2">
                 <h3 className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
                   Chunked generation
-                  <HelpTooltip text="Shows the D1-backed outline, copy, and finalize steps for this job. Failed steps can be retried without starting a new generation job." />
+                  <HelpTooltip text="Shows the D1-backed outline, site copy, offering copy, and finalize steps for this job. Failed steps can be retried without starting a new generation job." />
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500">
                   Next step: {chunkedState.nextStep || "none"}{chunkedState.failureStep ? ` - Failed step: ${chunkedState.failureStep}` : ""}
                 </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="grid gap-2 sm:grid-cols-4">
                 {CHUNKED_GENERATION_STEPS.map((step) => {
                   const status = chunkedStepStatus(job, step.key);
                   const retryKey = `${job.id}:${step.key}`;
@@ -238,7 +277,7 @@ export default function GenerationJobDetailsDrawer({
             <div className="mb-2">
               <h3 className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
                 AI returned work
-                <HelpTooltip text="Shows the parsed JSON returned by AI for chunked outline/copy steps. Use this with the copy audit to debug why regenerated copy did or did not change." />
+                <HelpTooltip text="Shows the parsed JSON returned by AI for chunked outline, site-copy, and offering-copy steps. Use this with the copy audit to debug why regenerated copy did or did not change." />
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
                 Inspect the model output before and after WebView.click applies it to the saved site.
@@ -391,6 +430,64 @@ export default function GenerationJobDetailsDrawer({
                 </div>
               ))}
             </div>
+            {(offeringCoverage.total > 0 || job.metadata?.offeringCopyPatch || previousCoverage) && (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Offering copy coverage
+                      <HelpTooltip text="Counts service/product offerings whose saved summary, description, highlights, or detail-page FAQ changed during the offering-copy chunk." />
+                    </h4>
+                    <p className="mt-1 text-xs text-slate-600">{offeringCopyCoverageTooltip(offeringCoverage)}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${offeringCopyCoverageClass(offeringCoverage)}`}>
+                    {offeringCopyCoverageLabel(offeringCoverage)}
+                  </span>
+                </div>
+                {offeringCoverage.recorded && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                    {[
+                      ["Summary", offeringCoverage.summaryChanged],
+                      ["Description", offeringCoverage.descriptionChanged],
+                      ["Highlights", offeringCoverage.highlightsChanged],
+                      ["FAQ", offeringCoverage.faqChanged],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{String(label)}</p>
+                        <p className="mt-0.5 font-bold text-slate-950">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {previousCoverage && (
+                  <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50 p-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+                      Copy-only retry delta
+                    </p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                      <div className="rounded-md bg-white p-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Before</p>
+                        <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${offeringCopyCoverageClass(previousCoverage)}`}>
+                          {offeringCopyCoverageLabel(previousCoverage)}
+                        </span>
+                      </div>
+                      <div className="rounded-md bg-white p-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">After</p>
+                        <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${offeringCopyCoverageClass(afterCoverage)}`}>
+                          {offeringCopyCoverageLabel(afterCoverage)}
+                        </span>
+                      </div>
+                      <div className="rounded-md bg-white p-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Delta</p>
+                        <p className={`mt-1 font-bold ${Number(coverageGain || 0) > 0 ? "text-emerald-700" : Number(coverageGain || 0) < 0 ? "text-red-700" : "text-slate-700"}`}>
+                          {coverageGain === null ? "n/a" : `${coverageGain >= 0 ? "+" : ""}${coverageGain} services`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {auditItems.length > 0 ? (
               <div className="mt-3 max-h-[42vh] space-y-2 overflow-auto rounded-xl border border-slate-200 bg-white p-2">
                 {auditItems.map((item: any, index: number) => (

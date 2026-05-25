@@ -187,6 +187,8 @@ export default function AdminSites() {
     const labels: Record<string, string> = {
       outline: "Inferring service/product pages",
       copy: "Writing AI copy patch",
+      siteCopy: "Writing homepage and site copy",
+      offeringCopy: "Writing service detail copy",
       finalize: "Saving generated site",
     };
     const suffix = progress?.status === "retry_wait"
@@ -210,7 +212,8 @@ export default function AdminSites() {
   };
   const generationProgressPercent = (step: string) => {
     if (step === "outline") return 33;
-    if (step === "copy") return 66;
+    if (step === "copy" || step === "siteCopy") return 55;
+    if (step === "offeringCopy") return 76;
     if (step === "finalize") return 92;
     return 12;
   };

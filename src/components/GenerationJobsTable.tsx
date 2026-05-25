@@ -11,7 +11,12 @@ import { useGenerationJobRetry } from "./generation-jobs/useGenerationJobRetry";
 import {
   cooldownBlocked,
   filterJobs,
+  lowOfferingCopyCoverage,
   noAiRewrite,
+  offeringCopyCoverage,
+  offeringCopyCoverageClass,
+  offeringCopyCoverageLabel,
+  offeringCopyCoverageTooltip,
   patchApplied,
   shortHash,
   sortJobs,
@@ -71,6 +76,7 @@ export default function GenerationJobsTable({
     fallback: jobs.filter((job) => !patchApplied(job)).length,
     patch: jobs.filter((job) => patchApplied(job)).length,
     noRewrite: jobs.filter((job) => noAiRewrite(job)).length,
+    lowOfferingCoverage: jobs.filter((job) => lowOfferingCopyCoverage(job)).length,
   }), [jobs]);
   const counts = remoteCounts || localCounts;
   const visibleJobs = useMemo(
@@ -96,9 +102,11 @@ export default function GenerationJobsTable({
   const {
     retryingJobId,
     retryingChunkStep,
+    retryingCopyOnlyJobId,
     retryOverrideJobId,
     retryGenerationJob,
     retryChunkedStep,
+    retryCopyOnly,
   } = useGenerationJobRetry({
     fallbackProvider,
     fallbackModel,
@@ -126,6 +134,7 @@ export default function GenerationJobsTable({
         if (filter === "fallback") params.set("patch", "fallback");
         if (filter === "patch") params.set("patch", "applied");
         if (filter === "noRewrite") params.set("aiRewrite", "zero");
+        if (filter === "lowOfferingCoverage") params.set("offeringCoverage", "low");
       }
       if (serverBackedSearch && searchQuery.trim()) {
         params.set("q", searchQuery.trim());
@@ -144,6 +153,7 @@ export default function GenerationJobsTable({
           fallback: Number(data.counts.fallback || 0),
           patch: Number(data.counts.patch || 0),
           noRewrite: Number(data.counts.noRewrite || 0),
+          lowOfferingCoverage: Number(data.counts.lowOfferingCoverage || 0),
         });
       } else if (!serverBackedFilters) {
         setRemoteCounts(null);
@@ -209,6 +219,13 @@ export default function GenerationJobsTable({
   };
 
   const exportVisibleJobs = async () => {
+    const copyOnlyRetryChangedDelta = (job: any) => {
+      const delta = job.metadata?.copyOnlyRetryCoverageDelta;
+      if (!delta || typeof delta !== "object") return null;
+      const beforeChanged = Number(delta.before?.changed);
+      const afterChanged = Number(delta.after?.changed);
+      return Number.isFinite(beforeChanged) && Number.isFinite(afterChanged) ? afterChanged - beforeChanged : null;
+    };
     const payload = {
       exportedAt: new Date().toISOString(),
       source: "generation_jobs_table",
@@ -237,6 +254,9 @@ export default function GenerationJobsTable({
         remoteValidation: job.metadata?.remoteValidation || job.metadata?.aiReadiness?.remoteValidation || null,
         copyPatchApplied: job.metadata?.copyPatchApplied === true,
         copyAuditSummary: job.metadata?.copyAuditSummary || null,
+        offeringCopyCoverage: job.metadata?.offeringCopyCoverage || null,
+        copyOnlyRetryCoverageDelta: job.metadata?.copyOnlyRetryCoverageDelta || null,
+        copyOnlyRetryChangedDelta: copyOnlyRetryChangedDelta(job),
       })),
     };
     await copyValue("jobs:compact-export", JSON.stringify(payload, null, 2));
@@ -249,7 +269,18 @@ export default function GenerationJobsTable({
     { value: "fallback", label: "Fallback", count: counts.fallback },
     { value: "patch", label: "Patch", count: counts.patch },
     { value: "noRewrite", label: "No rewrite", count: counts.noRewrite },
+    { value: "lowOfferingCoverage", label: "Low service copy", count: counts.lowOfferingCoverage },
   ];
+
+  const copyRetryModeForJob = (job: any): "offerings" | "allCopy" | "" => {
+    const canRetryCopyChunks = Boolean(job.metadata?.chunked || job.metadata?.parentGenerationJobId);
+    if (!canRetryCopyChunks) return "";
+    if (lowOfferingCopyCoverage(job)) return "offerings";
+    if (noAiRewrite(job)) return "allCopy";
+    if (filter === "lowOfferingCoverage") return "offerings";
+    if (filter === "noRewrite") return "allCopy";
+    return "";
+  };
 
   return (
     <div className={`${compact ? "rounded-xl border border-slate-200 bg-white p-4" : "rounded-2xl border border-slate-200 bg-white shadow-sm"} ${className}`}>
@@ -259,7 +290,7 @@ export default function GenerationJobsTable({
             Generation jobs
             <HelpTooltip
               widthClass="w-80"
-              text="Preflight blocked means AI readiness or provider cooldown stopped the click before full generation. Fallback means no AI copy patch was applied. Patch means AI copy was merged into the deterministic site JSON. No rewrite means the patch ran but did not change source copy."
+              text="Preflight blocked means AI readiness or provider cooldown stopped the click before full generation. Fallback means no AI copy patch was applied. Patch means AI copy was merged into the deterministic site JSON. No rewrite means the patch ran but did not change source copy. Low service copy means fewer than half of service/product pages changed summary, description, highlights, or FAQ."
             />
           </p>
           {!compact && <p className="mt-1 text-xs text-slate-500">Filter, sort, and retry generation attempts.</p>}
@@ -315,6 +346,7 @@ export default function GenerationJobsTable({
             <option value="fallback">Fallback first</option>
             <option value="patch">Patch applied first</option>
             <option value="noRewrite">No AI rewrite first</option>
+            <option value="lowOfferingCoverage">Low service copy first</option>
           </select>
           <HoverTooltip text="Copy compact JSON for the currently visible generation jobs.">
             <button
@@ -358,12 +390,17 @@ export default function GenerationJobsTable({
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {visibleJobs.map((job) => {
-                  const briefHash = shortHash(job.metadata?.copyBriefHash);
+                  const displayBriefHash = job.metadata?.finalCopyBriefHash || job.metadata?.copyBriefHash;
+                  const briefHash = shortHash(displayBriefHash);
                   const patchHash = shortHash(job.metadata?.copyPatchHash);
                   const applied = patchApplied(job);
                   const blockedByCooldown = cooldownBlocked(job);
                   const readiness = retryReadiness(job);
                   const chunkedState = chunkedGenerationState(job);
+                  const offeringCoverage = offeringCopyCoverage(job);
+                  const copyRetryMode = copyRetryModeForJob(job);
+                  const copyRetryKey = copyRetryMode ? `${job.id}:${copyRetryMode}` : "";
+                  const failedChunkRetryKey = chunkedState.retryStep ? `${job.id}:${chunkedState.retryStep}` : "";
                   return (
                     <tr key={job.id} className="align-top hover:bg-slate-50">
                     <td className={`${compact ? "max-w-[260px] px-3 py-2" : "max-w-[320px] px-4 py-3"}`}>
@@ -417,7 +454,7 @@ export default function GenerationJobsTable({
                       </td>
                       <td className={`${compact ? "px-3 py-2" : "px-4 py-3"}`}>
                         {briefHash ? (
-                          <HoverTooltip text={job.metadata?.copyBriefHash} widthClass="w-80">
+                          <HoverTooltip text={displayBriefHash} widthClass="w-80">
                             <span className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs font-semibold text-slate-700">{briefHash}</span>
                           </HoverTooltip>
                         ) : (
@@ -436,6 +473,13 @@ export default function GenerationJobsTable({
                           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${applied ? "bg-emerald-100 text-emerald-800" : blockedByCooldown ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-600"}`}>
                             {applied ? (compact ? "applied" : "patch applied") : blockedByCooldown ? "blocked before AI" : (compact ? "fallback" : "fallback only")}
                           </span>
+                          {(offeringCoverage.total > 0 || job.metadata?.offeringCopyPatch) && (
+                            <HoverTooltip text={offeringCopyCoverageTooltip(offeringCoverage)} widthClass="w-80">
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${offeringCopyCoverageClass(offeringCoverage)}`}>
+                                {offeringCopyCoverageLabel(offeringCoverage)}
+                              </span>
+                            </HoverTooltip>
+                          )}
                         </div>
                       </td>
                       <td className={`${compact ? "px-3 py-2" : "px-4 py-3"}`}>
@@ -447,11 +491,42 @@ export default function GenerationJobsTable({
                           )}
                           {job.businessId && (
                             <div className="flex flex-wrap items-center gap-2">
+                              {job.status === "failed" && chunkedState.retryStep && (
+                                <HoverTooltip text="Retry the failed chunked step without starting a new full generation job." widthClass="w-72">
+                                  <button
+                                    type="button"
+                                    onClick={() => retryChunkedStep(job)}
+                                    disabled={Boolean(retryingJobId || retryingChunkStep || retryingCopyOnlyJobId)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50"
+                                    aria-label="Retry failed chunked step"
+                                  >
+                                    {retryingChunkStep === failedChunkRetryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
+                                    Failed step
+                                  </button>
+                                </HoverTooltip>
+                              )}
+                              {copyRetryMode && (
+                                <HoverTooltip text={copyRetryMode === "offerings"
+                                  ? "Retry only the offering-copy chunk, then finalize to save service page copy. Uses the chunked parent job when this row is a final save job."
+                                  : "Retry site-copy and offering-copy chunks, then finalize. This avoids rerunning the outline step."
+                                } widthClass="w-80">
+                                  <button
+                                    type="button"
+                                    onClick={() => retryCopyOnly(job, copyRetryMode)}
+                                    disabled={Boolean(retryingJobId || retryingChunkStep || retryingCopyOnlyJobId)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+                                    aria-label={copyRetryMode === "offerings" ? "Retry service copy only" : "Retry copy chunks"}
+                                  >
+                                    {retryingCopyOnlyJobId === copyRetryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
+                                    {copyRetryMode === "offerings" ? "Service copy" : "Copy only"}
+                                  </button>
+                                </HoverTooltip>
+                              )}
                               <HoverTooltip text="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms.">
                                 <button
                                   type="button"
                                   onClick={() => retryGenerationJob(job)}
-                                  disabled={Boolean(retryingJobId || retryingChunkStep)}
+                                  disabled={Boolean(retryingJobId || retryingChunkStep || retryingCopyOnlyJobId)}
                                   className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50"
                                   aria-label={retryOverrideJobId === job.id ? "Retry generation job anyway" : "Retry generation job"}
                                 >
