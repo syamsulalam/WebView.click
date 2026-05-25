@@ -366,3 +366,150 @@ test("sites generate endpoint saves site JSON and updates job, lead, prospect, a
   assert.ok(savedJson.pages.some((page: Record<string, unknown>) => page.pageId === "contact"));
   assert.ok(calls.sites[0].options.json_summary);
 });
+
+test("sites generate endpoint saves compact D1 manifest when R2 JSON storage is available", async () => {
+  const calls = {
+    sites: [] as Array<{ businessId: string; jsonContent: string; options: Record<string, unknown> }>,
+    r2Puts: [] as Array<{ key: string; text: string; contentType: string }>,
+  };
+
+  const deps: SitesHandlerDeps = {
+    templateSchema: {},
+    json,
+    errorJson,
+    readJsonBody,
+    asString,
+    normalizeBusinessId,
+    placeIdFromPlace: (place) => asString((place as Record<string, unknown>).place_id),
+    parseJsonObject,
+    tableColumns: async () => new Set(["business_id", "json_content", "r2_json_key", "r2_json_url", "json_summary"]),
+    ensureRequiredColumns: async () => undefined,
+    generateRequiredColumns: [],
+    createGenerationJob: async () => undefined,
+    updateGenerationJob: async () => undefined,
+    incrementDailyUsage: async () => undefined,
+    updateProspectRecord: async () => undefined,
+    upsertLeadRecord: async () => undefined,
+    insertCrmActivitySafe: async () => undefined,
+    saveJsonSiteRecord: async (_db, businessId, jsonContent, options = {}) => {
+      calls.sites.push({ businessId, jsonContent, options });
+    },
+    siteStorageDeps: {
+      json,
+      errorJson,
+      readJsonBody,
+      asString,
+      parseJsonObject,
+      ensureRequiredColumns,
+      saveJsonSiteRecord: async () => undefined,
+    },
+    aiSiteGenerationDeps: {
+      getSetting: async () => undefined,
+      getAiReadiness: async () => ({ ready: true }),
+      buildAiFailureDiagnostics: (input: Record<string, unknown>) => input,
+      extractProviderErrorDetails: () => ({ message: "", rawSnippet: "", providerCode: "", providerStatus: "" }),
+      kieModelConfigs: {},
+    },
+    sha256Json,
+  };
+
+  const db = {
+    prepare() {
+      return {
+        bind() {
+          return this;
+        },
+        async first() {
+          return null;
+        },
+        async all() {
+          return { results: [] };
+        },
+        async run() {
+          return { success: true };
+        },
+      };
+    },
+  };
+
+  const payload = {
+    businessName: "Austin Emergency Plumbing",
+    businessId: "austin-emergency-plumbing",
+    provider: "mock",
+    model: "mock-json",
+    skipAiCopyPatch: true,
+    originData: {
+      place_id: "place-r2",
+      types: ["plumber"],
+      formatted_address: "400 Water St, Austin, TX",
+      rating: 4.7,
+      user_ratings_total: 143,
+      url: "https://www.google.com/maps/place/Austin+Emergency+Plumbing",
+    },
+    jsonContent: {
+      meta: { language: "en", businessName: "Austin Emergency Plumbing", niche: "plumber" },
+      businessProfile: { name: "Austin Emergency Plumbing", contact: {}, address: {} },
+      navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+      design: { themeVariables: { colors: {} } },
+      brand: {},
+      sourceData: { googleMapsUri: "https://www.google.com/maps/place/Austin+Emergency+Plumbing" },
+      location: {},
+      trust: { rating: 4.7, reviewCount: 143 },
+      pages: [{ pageId: "home", sections: [{ type: "hero", id: "home-hero", content: { headline: "Emergency plumbing" } }] }],
+      services: [{ id: "emergency-plumbing", title: "Emergency Plumbing", summary: "Fast plumbing help.", detailPageId: "service-emergency-plumbing" }],
+      products: [],
+      offers: [],
+    },
+  };
+
+  const response = await handleSites(
+    deps,
+    new Request("https://webview.click/api/sites/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+    db as never,
+    {
+      R2_PUBLIC_BASE_URL: "https://assets.example.test",
+      R2: {
+        async put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string, options?: { httpMetadata?: { contentType?: string } }) {
+          const text = typeof value === "string"
+            ? value
+            : value instanceof ArrayBuffer
+              ? new TextDecoder().decode(value)
+              : ArrayBuffer.isView(value)
+                ? new TextDecoder().decode(value)
+                : "";
+          calls.r2Puts.push({ key, text, contentType: options?.httpMetadata?.contentType || "" });
+        },
+      },
+    },
+    ["sites", "generate"],
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.r2Puts.length, 2);
+  assert.equal(calls.r2Puts[0].key, "sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+  assert.equal(calls.r2Puts[1].contentType, "application/json; charset=utf-8");
+
+  assert.equal(calls.sites.length, 1);
+  const savedSite = calls.sites[0];
+  assert.equal(savedSite.businessId, "austin-emergency-plumbing");
+  assert.equal(savedSite.options.r2_json_key, "sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+  assert.equal(savedSite.options.r2_json_url, "https://assets.example.test/sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+
+  const manifest = JSON.parse(savedSite.jsonContent);
+  assert.equal(manifest.storageOnly, true);
+  assert.equal(manifest.businessId, "austin-emergency-plumbing");
+  assert.equal(manifest.r2JsonKey, "sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+  assert.equal(manifest.r2JsonUrl, "https://assets.example.test/sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+  assert.equal(manifest.summary.businessName, "Austin Emergency Plumbing");
+  assert.equal(manifest.summary.rating, 4.7);
+  assert.equal(manifest.pages, undefined);
+
+  const r2Json = JSON.parse(calls.r2Puts[1].text);
+  assert.equal(r2Json.storage.r2JsonKey, "sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+  assert.equal(r2Json.storage.r2JsonUrl, "https://assets.example.test/sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+  assert.ok(Array.isArray(r2Json.pages));
+});

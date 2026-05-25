@@ -798,7 +798,7 @@ Logic router modules:
 - Dashboard stats/activity endpoints live in `functions/api/stats/handler.ts`: `GET /api/stats` and `GET /api/activities`.
 - Lead endpoints live in `functions/api/leads/handler.ts`: `GET /api/leads`, `PUT /api/leads/:id/status`, and `POST /api/leads/:business_id/ping`.
 - Prospect endpoints live in `functions/api/prospects/handler.ts`: filtered `GET /api/prospects`, `PUT /api/prospects/:placeId/status`, and `PUT /api/prospects/:placeId/selection`.
-- Endpoint-level fixtures for extracted API handlers live in `tests/apiHandlers.test.ts`; run `npm run test:api-handlers` when local dependencies are installed.
+- Endpoint-level fixtures for extracted API handlers live in `tests/apiHandlers.test.ts`; run `npm run test:api-handlers` when local dependencies are installed, or trigger the manual GitHub Actions workflow `API Handler Tests` to run `npm ci` and the fixture suite remotely without installing dependencies locally.
 
 Logic AI:
 - AI site generation helpers live in `functions/api/ai/siteGeneration.ts`. The router passes dependencies for settings, readiness, provider diagnostics, and KIE model config, while the module owns JSON object provider calls, one-shot JSON repair, offering outline normalization/apply, copy target brief creation, copy patch generation, deterministic merge, and copy audit helpers.
