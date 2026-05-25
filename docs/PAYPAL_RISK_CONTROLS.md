@@ -35,7 +35,7 @@ Account risk is behavior-based, not just a simple public monthly limit. Risk sig
 
 - Keep payment descriptions boring and accurate: "Generated website package and launch workflow for [business]".
 - Always collect business name, requested domain, customer email, and payment reference before sending the buyer to PayPal.
-- Show the buyer a payment note instruction before opening PayPal.
+- For manual fallback links only, show the buyer a payment note instruction before opening PayPal.
 - Keep delivery proof: preview URL, exported package, setup messages, DNS/domain notes, and handover confirmation.
 - Avoid large sudden PayPal volume on a fresh account.
 - Withdraw funds on a normal cadence instead of keeping large balances in PayPal.
@@ -45,7 +45,7 @@ Account risk is behavior-based, not just a simple public monthly limit. Risk sig
 
 ## Buyer Payment Note
 
-Default note shown by WebView.click:
+Default fallback note shown by WebView.click when a manual PayPal link is used:
 
 > Please pay as goods/services or invoice payment, not Friends and Family. Include the business name, requested domain, and WebView.click payment reference in the payment note.
 
@@ -64,11 +64,11 @@ This makes PayPal payments easier to match against CRM activity and reduces uncl
 - [x] `/api/payments/paypal-capture-order` captures approved PayPal orders and records paid ledger/subscription/lead status.
 - [x] Checkout supports optional `$10` page/edit add-ons with 10% bulk discount at 5-9 actions and 20% at 10+ actions.
 - [x] PayPal API checkout returns `requiresManualReview=false` and captures in-place; manual fallback links still return `requiresManualReview=true`.
-- [x] Public `/demo` and `/:businessId` checkout modal shows payment note instructions and copyable payment reference for PayPal/manual rails.
-- [x] Admin Settings includes `PAYPAL_ACCOUNT_MODE` with `business` and `personal_bridge`.
+- [x] Public `/demo` and `/:businessId` checkout modal shows payment note instructions and copyable payment reference for manual fallback rails; API-backed PayPal stores the reference on the PayPal order.
+- [x] Admin Settings shows fallback account mode only when a manual PayPal fallback link is configured or an old `personal_bridge` value is present.
 - [x] Admin Settings includes `PAYPAL_RISK_ACKNOWLEDGED`.
-- [x] Admin Settings includes editable `PAYPAL_PAYMENT_NOTE`.
-- [x] Admin Settings shows a PayPal account-risk guardrails panel.
+- [x] Admin Settings shows editable `PAYPAL_PAYMENT_NOTE` only when a manual PayPal fallback link is configured.
+- [x] Admin Settings shows a compact PayPal guardrails panel.
 - [x] Admin Dashboard marks PayPal as partial, not ready, when a PayPal link exists but the risk checklist is not acknowledged or the link/mode looks personal.
 - [x] Codebase reference documents the PayPal/manual payment review step.
 - [x] Added `lead_payments` ledger table for manual payment reconciliation.
@@ -86,18 +86,17 @@ This makes PayPal payments easier to match against CRM activity and reduces uncl
 ## Production Smoke Test
 
 1. In `/admin/settings#settings-payment`, set `PAYMENT_PROCESSOR=paypal`.
-2. Set `PAYPAL_ACCOUNT_MODE=business`.
-3. Paste the sandbox API key / Client ID into `PAYPAL_SANDBOX_CLIENT_ID` and the sandbox secret into `PAYPAL_SANDBOX_CLIENT_SECRET`.
-4. Set the PayPal mode toggle to Sandbox (`PAYPAL_IS_PRODUCTION=false`).
-5. Set `PAYPAL_RISK_ACKNOWLEDGED=true` after reviewing this document.
-6. Optionally set `PAYPAL_BUSINESS_URL` as fallback.
-7. Save settings.
-8. Open `/demo` or a public generated preview.
-9. Continue through Download / Setup until payment.
-10. Confirm the modal shows the PayPal button in-place.
-11. Pay with a sandbox buyer account.
-12. Confirm `/admin/leads` has a paid PayPal ledger row with capture ID, payer email, amount, and matching reference.
-13. Paste the live API key / Client ID into `PAYPAL_LIVE_CLIENT_ID` and the live secret into `PAYPAL_LIVE_CLIENT_SECRET`, then switch the PayPal mode toggle to Live (`PAYPAL_IS_PRODUCTION=true`) only after sandbox capture works.
+2. Paste the sandbox API key / Client ID into `PAYPAL_SANDBOX_CLIENT_ID` and the sandbox secret into `PAYPAL_SANDBOX_CLIENT_SECRET`.
+3. Set the PayPal mode toggle to Sandbox (`PAYPAL_IS_PRODUCTION=false`).
+4. Set `PAYPAL_RISK_ACKNOWLEDGED=true` after reviewing this document.
+5. Optionally set `PAYPAL_BUSINESS_URL` as fallback; only then review fallback account mode and `PAYPAL_PAYMENT_NOTE`.
+6. Save settings.
+7. Open `/demo` or a public generated preview.
+8. Continue through Download / Setup until payment.
+9. Confirm the modal shows the PayPal button in-place.
+10. Pay with a sandbox buyer account.
+11. Confirm `/admin/leads` has a paid PayPal ledger row with capture ID, payer email, amount, and matching reference.
+12. Paste the live API key / Client ID into `PAYPAL_LIVE_CLIENT_ID` and the live secret into `PAYPAL_LIVE_CLIENT_SECRET`, then switch the PayPal mode toggle to Live (`PAYPAL_IS_PRODUCTION=true`) only after sandbox capture works.
 
 ## PayPal Business Webhook Setup Later
 

@@ -166,8 +166,9 @@ Operational note:
 - `/admin/settings` uses a Sandbox/Live toggle and only shows the credential fields for the active mode.
 - PayPal may call the public REST app credential an API key; store that value in the `*_CLIENT_ID` / "API key / Client ID" field.
 - `/admin/settings` warns when PayPal is selected but the active sandbox/live API key / Client ID or secret is missing.
+- Manual PayPal payment note/account-mode fields are fallback-only and stay hidden unless `PAYPAL_BUSINESS_URL` is configured.
 - Keep CRM checkout activity because API order creation can still fail and fall back to manual link.
-- WebView.click has PayPal risk controls in `/admin/settings#settings-payment`: account mode, risk acknowledgement, editable payment note, and buyer-facing payment reference review before opening PayPal.
+- WebView.click has PayPal risk controls in `/admin/settings#settings-payment`: compact guardrails, risk acknowledgement, optional fallback account mode/payment note, and buyer-facing payment reference review only for manual fallback rails.
 - See `docs/PAYPAL_RISK_CONTROLS.md` and `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md` for the operating checklist and implementation tracker.
 
 ### Upwork Direct Contracts

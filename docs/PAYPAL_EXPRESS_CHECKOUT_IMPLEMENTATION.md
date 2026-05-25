@@ -67,6 +67,7 @@ Settings:
 - `PAYPAL_LIVE_CLIENT_SECRET`
 - `PAYPAL_WEBHOOK_ID` after webhook is configured.
 - `PAYPAL_BUSINESS_URL` optional fallback link.
+- `PAYPAL_PAYMENT_NOTE` is only used for manual PayPal fallback links. API Checkout stores the reference in the PayPal order and captures automatically.
 
 Legacy fallback:
 

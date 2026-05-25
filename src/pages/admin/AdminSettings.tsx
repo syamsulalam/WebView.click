@@ -213,9 +213,9 @@ const paymentFieldGroups: Array<{
       { key: "PAYPAL_LIVE_CLIENT_ID", label: "Live API key / Client ID", placeholder: "Live REST app API key / client ID", tooltip: "PayPal may label this API key or Client ID. It is the public live ID used by the PayPal JavaScript SDK and Orders API when mode is Live." },
       { key: "PAYPAL_LIVE_CLIENT_SECRET", label: "Live API secret", type: "password", placeholder: "Live REST app secret", tooltip: "Server-side live secret used to create/capture live PayPal Orders. Never expose it in public pages." },
       { key: "PAYPAL_BUSINESS_URL", label: "PayPal fallback link", placeholder: "https://www.paypal.com/...", tooltip: "Optional fallback PayPal Business checkout/invoice/payment link if API order creation fails or credentials are not ready." },
-      { key: "PAYPAL_ACCOUNT_MODE", label: "PayPal account mode", type: "select", tooltip: "Business is the target mode. Personal bridge is only for temporary low-volume testing while you upgrade.", options: [{ value: "business", label: "Business / invoice link" }, { value: "personal_bridge", label: "Personal temporary bridge" }] },
+      { key: "PAYPAL_ACCOUNT_MODE", label: "Fallback account mode", type: "select", tooltip: "Only relevant when using a manual PayPal fallback link. Business is preferred; Personal bridge should only be temporary low-volume testing.", options: [{ value: "business", label: "Business / invoice link" }, { value: "personal_bridge", label: "Personal temporary bridge" }] },
       { key: "PAYPAL_RISK_ACKNOWLEDGED", label: "PayPal risk checklist", type: "select", tooltip: "Set to acknowledged only after reviewing the PayPal risk checklist below and preparing delivery/payment records.", options: [{ value: "false", label: "Not acknowledged" }, { value: "true", label: "Acknowledged" }] },
-      { key: "PAYPAL_PAYMENT_NOTE", label: "PayPal payment note instruction", placeholder: "Ask buyer to include business, domain, and reference", tooltip: "Shown before opening PayPal so the buyer sends a trackable business payment and does not use Friends and Family." },
+      { key: "PAYPAL_PAYMENT_NOTE", label: "Fallback payment note", placeholder: "Ask buyer to include business, domain, and reference", tooltip: "Only used when checkout falls back to a manual PayPal link. API checkout stores the reference on the PayPal order and captures automatically." },
       { key: "PAYPAL_WEBHOOK_ID", label: "PayPal Webhook ID", placeholder: "Webhook ID from PayPal app", tooltip: "Optional but recommended. Direct Checkout capture records payment immediately; webhook still protects against missed browser callbacks." },
       { key: "ADMIN_WHATSAPP_NUMBER", label: "Admin WhatsApp number", placeholder: "62812...", tooltip: "Fallback contact if the PayPal/manual checkout needs admin follow-up." },
     ],
@@ -494,6 +494,7 @@ export default function AdminSettings() {
   const paypalLooksPersonal = /paypal\.me\//i.test(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
   const shouldShowPayPalRisk = paypalSelected || Boolean(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
   const paypalRiskAcknowledged = settings.PAYPAL_RISK_ACKNOWLEDGED === "true";
+  const paypalGuardrailNeedsAttention = Boolean((paypalSelected && !paypalRiskAcknowledged) || paypalLooksPersonal);
   const paypalProductionSetting = settings.PAYPAL_IS_PRODUCTION || "false";
   const paypalLiveMode = paypalProductionSetting === "true";
   const activePaypalModeLabel = paypalLiveMode ? "Live" : "Sandbox";
@@ -508,12 +509,9 @@ export default function AdminSettings() {
       : settings.PAYPAL_SANDBOX_CLIENT_SECRET || settings.PAYPAL_CLIENT_SECRET || "",
   ).trim();
   const paypalActiveCredentialsMissing = paypalSelected && (!activePaypalClientId || !activePaypalClientSecret);
-  const paypalRiskItems = [
-    { label: "Use goods/services, invoice, or business checkout. Do not ask buyers to use Friends and Family.", done: paypalRiskAcknowledged },
-    { label: "Include business name, requested domain, and payment reference in every payment note.", done: Boolean(String(settings.PAYPAL_PAYMENT_NOTE || "").trim()) },
-    { label: "Keep proof of delivery: demo URL, payment reference, setup messages, DNS notes, and handover confirmation.", done: paypalRiskAcknowledged },
-    { label: "Use Personal only as a short bridge; upgrade to Business before regular commercial volume.", done: !paypalLooksPersonal || paypalRiskAcknowledged },
-  ];
+  const paypalGuardrailMessage = paypalLooksPersonal
+    ? "Personal/PayPal.me fallback detected. Prefer Business Checkout, keep proof of delivery, and avoid Friends and Family."
+    : "Keep delivery records and payment references. New PayPal sellers can still see holds or reviews.";
 
   if (loading) {
     return <div className="p-8 flex items-center justify-center">Loading settings...</div>;
@@ -771,7 +769,7 @@ export default function AdminSettings() {
               <div>
                 <p className="font-semibold">PayPal {activePaypalModeLabel} credentials are incomplete</p>
                 <p className="mt-1 text-xs leading-relaxed">
-                  You selected PayPal checkout, but the active {activePaypalModeLabel.toLowerCase()} Client ID or Client Secret is missing. Add both before leaving Settings, or checkout will fall back to manual/mock follow-up instead of inline PayPal capture.
+                  You selected PayPal checkout, but the active {activePaypalModeLabel.toLowerCase()} API key / Client ID or secret is missing. Add both before leaving Settings, or checkout will fall back to manual/mock follow-up instead of inline PayPal capture.
                 </p>
               </div>
             </div>
@@ -797,32 +795,20 @@ export default function AdminSettings() {
           </label>
 
           {shouldShowPayPalRisk && (
-          <div className={`mt-4 rounded-xl border p-4 ${paypalSelected ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
-            <div className="flex items-start gap-3">
-              <ShieldAlert size={20} className={paypalSelected ? "mt-0.5 shrink-0 text-amber-700" : "mt-0.5 shrink-0 text-slate-500"} />
+          <div className={`mt-4 rounded-xl border px-3 py-2.5 ${paypalGuardrailNeedsAttention ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
+            <div className="flex items-start gap-2.5">
+              <ShieldAlert size={17} className={paypalGuardrailNeedsAttention ? "mt-0.5 shrink-0 text-amber-700" : "mt-0.5 shrink-0 text-slate-500"} />
               <div className="min-w-0 flex-1">
-                <p className={`inline-flex items-center gap-1.5 text-sm font-semibold ${paypalSelected ? "text-amber-950" : "text-slate-900"}`}>
-                  PayPal account-risk guardrails
-                  <HelpTooltip text="PayPal Personal is risky for recurring commercial sales. The checkout adds a payment reference and note step for PayPal/manual rails, but account risk still depends on your PayPal account history, dispute rate, volume pattern, and compliance." widthClass="w-80" />
+                <p className={`inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${paypalGuardrailNeedsAttention ? "text-amber-950" : "text-slate-700"}`}>
+                  PayPal guardrails
+                  <HelpTooltip text="API Checkout captures payment directly and stores a PayPal order reference. Still keep delivery records and avoid Personal/Friends-and-Family style payments for business sales." widthClass="w-80" />
                 </p>
-                <p className={`mt-1 text-xs leading-relaxed ${paypalSelected ? "text-amber-900" : "text-slate-600"}`}>
-                  {paypalSelected
-                    ? paypalLooksPersonal
-                      ? "PayPal is active and appears to be a Personal/PayPal.me bridge. Keep volume low, use goods/services, and upgrade to Business as soon as repeat sales start."
-                      : "PayPal is active. Use this as a recognizable fallback rail, keep delivery records, and expect possible holds on new or unusual seller activity."
-                    : "These controls are ready if you switch the active processor to PayPal."}
+                <p className={`mt-0.5 text-xs leading-relaxed ${paypalGuardrailNeedsAttention ? "text-amber-900" : "text-slate-600"}`}>
+                  {paypalGuardrailMessage}
                 </p>
-                <div className="mt-3 grid gap-2">
-                  {paypalRiskItems.map((item) => (
-                    <div key={item.label} className="flex items-start gap-2 text-xs">
-                      <CheckCircle2 size={14} className={`mt-0.5 shrink-0 ${item.done ? "text-emerald-600" : "text-slate-400"}`} />
-                      <span className={paypalSelected && !item.done ? "text-amber-950" : "text-slate-600"}>{item.label}</span>
-                    </div>
-                  ))}
-                </div>
                 {paypalSelected && !paypalRiskAcknowledged && (
-                  <p className="mt-3 rounded-lg border border-amber-300 bg-white/70 p-2 text-xs font-medium text-amber-950">
-                    Set PayPal risk checklist to Acknowledged after you review the docs and prepare records. Checkout still works, but the buyer-facing payment step will include an admin-not-acknowledged warning.
+                  <p className="mt-2 rounded-lg border border-amber-300 bg-white/70 px-2 py-1.5 text-xs font-medium text-amber-950">
+                    Set the risk checklist to Acknowledged after reviewing the docs and preparing delivery records.
                   </p>
                 )}
               </div>
@@ -877,6 +863,8 @@ export default function AdminSettings() {
                       if (group.title !== "PayPal Business") return true;
                       if (field.key.startsWith("PAYPAL_SANDBOX_")) return !paypalLiveMode;
                       if (field.key.startsWith("PAYPAL_LIVE_")) return paypalLiveMode;
+                      if (field.key === "PAYPAL_PAYMENT_NOTE") return Boolean(paypalLink);
+                      if (field.key === "PAYPAL_ACCOUNT_MODE") return Boolean(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
                       return true;
                     })
                     .map((field) => (
