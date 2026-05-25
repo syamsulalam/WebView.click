@@ -894,13 +894,18 @@ export default function AdminLeads() {
         selectedPhotoPriority: selection.selectedPhotoPriority,
         searchQuery,
       });
-      const data = await postChunkedGenerateSite(payload, "Generate site", (step) => {
+      const data = await postChunkedGenerateSite(payload, "Generate site", (step, progress) => {
         const labels: Record<string, string> = {
           outline: "Inferring service/product pages...",
           copy: "Writing AI-enriched copy...",
           finalize: "Saving generated site...",
         };
-        setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: labels[step] || "Generating site JSON..." } }));
+        const retryText = progress?.status === "retry_wait"
+          ? ` ${step} hit a temporary provider/edge failure. Auto retry in ${progress.retryInSeconds}s...`
+          : progress?.status === "retrying"
+            ? ` Retrying ${step} now...`
+            : "";
+        setGenerationMessages(prev => ({ ...prev, [placeKey]: { type: "success", text: `${labels[step] || "Generating site JSON..."}${retryText}` } }));
       });
 
       fetchLeads();

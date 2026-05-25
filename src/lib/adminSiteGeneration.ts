@@ -375,10 +375,26 @@ export async function postGenerateSite(payload: Record<string, unknown>, label =
   return readApiJson<any>(response, label);
 }
 
+type ChunkedGenerateProgress = {
+  status: "running" | "retry_wait" | "retrying" | "complete";
+  attempt: number;
+  retryInSeconds?: number;
+  message?: string;
+};
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isTransientChunkedGenerationError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /HTTP\s*(502|503|504)|Cloudflare\/HTML|temporar|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
+}
+
 export async function postChunkedGenerateSite(
   payload: Record<string, unknown>,
   label = "Generate site",
-  onStep?: (step: string) => void,
+  onStep?: (step: string, progress?: ChunkedGenerateProgress) => void,
 ) {
   const startResponse = await fetch("/api/generation-jobs/chunked-start", {
     method: "POST",
@@ -391,13 +407,32 @@ export async function postChunkedGenerateSite(
 
   let result: any = start;
   for (const step of ["outline", "copy", "finalize"]) {
-    onStep?.(step);
-    const stepResponse = await fetch(`/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step }),
-    });
-    result = await readApiJson<any>(stepResponse, `${label} ${step}`);
+    let attempt = 1;
+    while (attempt <= 2) {
+      onStep?.(step, { status: attempt === 1 ? "running" : "retrying", attempt });
+      try {
+        const stepResponse = await fetch(`/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ step }),
+        });
+        result = await readApiJson<any>(stepResponse, `${label} ${step}`);
+        onStep?.(step, { status: "complete", attempt });
+        break;
+      } catch (error) {
+        if (attempt >= 2 || !isTransientChunkedGenerationError(error)) throw error;
+        for (let seconds = 60; seconds > 0; seconds -= 1) {
+          onStep?.(step, {
+            status: "retry_wait",
+            attempt,
+            retryInSeconds: seconds,
+            message: error instanceof Error ? error.message : String(error || ""),
+          });
+          await sleep(1000);
+        }
+        attempt += 1;
+      }
+    }
   }
 
   return result.result || result;

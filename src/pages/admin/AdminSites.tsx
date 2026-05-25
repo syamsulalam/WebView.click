@@ -141,6 +141,7 @@ export default function AdminSites() {
   const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
   const [regeneratingId, setRegeneratingId] = useState("");
   const [generatingProspectId, setGeneratingProspectId] = useState("");
+  const [generationProgress, setGenerationProgress] = useState<Record<string, { step: string; text: string; retryInSeconds?: number }>>({});
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -168,6 +169,41 @@ export default function AdminSites() {
     return acc;
   }, {});
   const activeRegenerateKeyReady = providerKeyStatus[activeRegenerateProvider] ?? null;
+  const updateGenerationProgress = (
+    key: string,
+    step: string,
+    progress?: { status?: string; retryInSeconds?: number },
+  ) => {
+    const labels: Record<string, string> = {
+      outline: "Inferring service/product pages",
+      copy: "Writing AI copy patch",
+      finalize: "Saving generated site",
+    };
+    const suffix = progress?.status === "retry_wait"
+      ? ` - temporary failure, auto retry in ${progress.retryInSeconds}s`
+      : progress?.status === "retrying"
+        ? " - retrying now"
+        : progress?.status === "complete"
+          ? " - done"
+          : "";
+    setGenerationProgress((current) => ({
+      ...current,
+      [key]: { step, text: `${labels[step] || "Generating"}${suffix}`, retryInSeconds: progress?.retryInSeconds },
+    }));
+  };
+  const clearGenerationProgress = (key: string) => {
+    setGenerationProgress((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+  const generationProgressPercent = (step: string) => {
+    if (step === "outline") return 33;
+    if (step === "copy") return 66;
+    if (step === "finalize") return 92;
+    return 12;
+  };
 
   const fetchSites = async () => {
     setIsLoading(true);
@@ -349,7 +385,7 @@ export default function AdminSites() {
         selectedPhotoPriority: selection.selectedPhotoPriority,
         searchQuery: (prospect as ProspectRow & { query?: string }).query || "",
       });
-      await postChunkedGenerateSite(payload, "Generate site");
+      await postChunkedGenerateSite(payload, "Generate site", (step, progress) => updateGenerationProgress(placeId, step, progress));
       const requiredKey = providerApiKeyMap[activeRegenerateProvider];
       const hasProviderKey = requiredKey && String(settings?.[requiredKey] || "").trim();
       notifyAction(
@@ -368,6 +404,7 @@ export default function AdminSites() {
       }
     } finally {
       setGeneratingProspectId("");
+      clearGenerationProgress(placeId);
     }
   };
 
@@ -439,7 +476,7 @@ export default function AdminSites() {
         selectedLogoPriority: siteJson?.brand?.selectedPhotoPriority || "",
       };
       if (mode === "ai") {
-        await postChunkedGenerateSite(regeneratePayload, "AI regenerate");
+        await postChunkedGenerateSite(regeneratePayload, "AI regenerate", (step, progress) => updateGenerationProgress(site.businessId, step, progress));
       } else {
         await postGenerateSite(regeneratePayload, "Re-gather Google data");
       }
@@ -461,6 +498,7 @@ export default function AdminSites() {
       }
     } finally {
       setRegeneratingId("");
+      clearGenerationProgress(site.businessId);
     }
   };
 
@@ -601,6 +639,20 @@ export default function AdminSites() {
                     ? "Maps search/query placeholder. Import captured listing JSON before generating."
                     : prospect.formatted_address || prospect.formattedAddress || "No address"}
                 </p>
+                {generationProgress[prospect.place_id] && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-900">
+                    <span className="inline-flex items-center gap-1.5">
+                      <RefreshCw size={12} className="animate-spin" />
+                      {generationProgress[prospect.place_id].text}
+                    </span>
+                    <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-amber-100">
+                      <span
+                        className="block h-full rounded-full bg-amber-500 transition-all"
+                        style={{ width: `${generationProgressPercent(generationProgress[prospect.place_id].step)}%` }}
+                      />
+                    </span>
+                  </div>
+                )}
               </div>
               <code className="truncate rounded-lg bg-gray-50 px-2 py-1 text-xs text-gray-600">{prospect.place_id}</code>
               <span className="text-xs text-gray-600">
@@ -712,6 +764,20 @@ export default function AdminSites() {
                     );
                   })()}
                 </div>
+                {generationProgress[site.businessId] && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-900">
+                    <span className="inline-flex items-center gap-1.5">
+                      <RefreshCw size={12} className="animate-spin" />
+                      {generationProgress[site.businessId].text}
+                    </span>
+                    <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-amber-100">
+                      <span
+                        className="block h-full rounded-full bg-amber-500 transition-all"
+                        style={{ width: `${generationProgressPercent(generationProgress[site.businessId].step)}%` }}
+                      />
+                    </span>
+                  </div>
+                )}
               </div>
               <code className="truncate rounded-lg bg-gray-50 px-2 py-1 text-xs text-gray-600">{site.businessId}</code>
               <span className="text-gray-600">{[site.language, site.region].filter(Boolean).join("-") || "-"}</span>

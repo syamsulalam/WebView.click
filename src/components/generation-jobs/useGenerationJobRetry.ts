@@ -25,6 +25,15 @@ async function sha256Json(value: unknown) {
   return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isTransientStepError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /HTTP\s*(502|503|504)|Cloudflare\/HTML|temporar|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
+}
+
 export function useGenerationJobRetry({
   fallbackProvider,
   fallbackModel,
@@ -135,12 +144,25 @@ export function useGenerationJobRetry({
     const retryKey = `${job.id}:${step}`;
     setRetryingChunkStep(retryKey);
     try {
-      const response = await fetch(`/api/generation-jobs/${encodeURIComponent(job.id)}/run-step`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step }),
-      });
-      const data = await readApiJson<any>(response, `Retry ${step} step`);
+      let data: any = null;
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          const response = await fetch(`/api/generation-jobs/${encodeURIComponent(job.id)}/run-step`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ step }),
+          });
+          data = await readApiJson<any>(response, `Retry ${step} step`);
+          break;
+        } catch (error) {
+          if (attempt >= 2 || !isTransientStepError(error)) throw error;
+          for (let seconds = 60; seconds > 0; seconds -= 1) {
+            setMessage(`${step} hit a temporary provider/edge failure. Auto retry in ${seconds}s...`);
+            await sleep(1000);
+          }
+          setMessage(`Retrying ${step} step now...`);
+        }
+      }
       const nextStatus = data.completedStep === "finalize" ? "success" : "running";
       const nextJob = {
         ...job,
