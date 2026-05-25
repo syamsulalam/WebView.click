@@ -17,6 +17,7 @@ import {
 } from "../../lib/adminSiteGeneration";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
+import AdminDocsReader from "../../components/AdminDocsReader";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import { useAdminToast } from "../../components/AdminToast";
@@ -511,7 +512,7 @@ export default function AdminSites() {
             </p>
             <p className="text-xs text-emerald-700">Prospect yang sudah gather data tapi belum dibuatkan site.</p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-4">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <select
               value={activeRegenerateProvider}
               onChange={(event) => {
@@ -544,6 +545,27 @@ export default function AdminSites() {
               )}
             />
             <AdminProviderCooldownBadge provider={activeRegenerateProvider} className="justify-center rounded-lg py-2" />
+            <AdminDocsReader
+              pathname="/admin/sites"
+              defaultDocId="design-guide"
+              tooltip="Open generated-site design guidance for generation/regeneration QA."
+              buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"
+              iconSize={15}
+            />
+            <AdminDocsReader
+              pathname="/admin/sites"
+              defaultDocId="niche-style-presets"
+              tooltip="Open niche style preset docs for industry-specific generated site styling."
+              buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"
+              iconSize={15}
+            />
+            <AdminDocsReader
+              pathname="/admin/sites"
+              defaultDocId="font-pairing-guide"
+              tooltip="Open font pairing docs for generated-site typography choices."
+              buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"
+              iconSize={15}
+            />
           </div>
         </div>
 
@@ -754,10 +776,35 @@ export default function AdminSites() {
                   {openRegenerateMenu === site.businessId && (
                     <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl">
                       <div className="mb-3">
-                        <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-900">
-                          Regenerate option
-                          <HelpTooltip text="AI regenerate keeps protected site structure and asks AI for copy improvements. Re-gather refreshes Google data and resaves without an AI call." />
-                        </p>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-900">
+                            Regenerate option
+                            <HelpTooltip text="AI regenerate keeps protected site structure and asks AI for copy improvements. Re-gather refreshes Google data and resaves without an AI call." />
+                          </p>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <AdminDocsReader
+                              pathname="/admin/sites"
+                              defaultDocId="design-guide"
+                              tooltip="Open design guide for checking regenerated site output."
+                              buttonClassName="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-indigo-700"
+                              iconSize={14}
+                            />
+                            <AdminDocsReader
+                              pathname="/admin/sites"
+                              defaultDocId="niche-style-presets"
+                              tooltip="Open niche style preset docs for this site's industry styling."
+                              buttonClassName="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-indigo-700"
+                              iconSize={14}
+                            />
+                            <AdminDocsReader
+                              pathname="/admin/sites"
+                              defaultDocId="font-pairing-guide"
+                              tooltip="Open font pairing docs for typography review."
+                              buttonClassName="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-indigo-700"
+                              iconSize={14}
+                            />
+                          </div>
+                        </div>
                         <p className="mt-1 text-[11px] leading-4 text-gray-500">Re-gather fixes stale Google data like fallback Maps URLs. AI regenerate only requests a copy patch; protected structure stays deterministic.</p>
                       </div>
 

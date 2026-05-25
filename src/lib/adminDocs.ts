@@ -1,0 +1,230 @@
+export type AdminDoc = {
+  id: string;
+  title: string;
+  file: string;
+  category: string;
+  summary: string;
+  adminPages: string[];
+  loadContent: () => Promise<string>;
+};
+
+function md(loader: () => Promise<{ default: string }>) {
+  return () => loader().then((module) => module.default);
+}
+
+export const adminDocs: AdminDoc[] = [
+  {
+    id: "codebase-reference",
+    title: "Codebase Reference",
+    file: "docs/CODEBASE_REFERENCE.md",
+    category: "System",
+    summary: "Main map for pages, APIs, data flow, debugging notes, and current behavior.",
+    adminPages: ["/admin", "/admin/leads", "/admin/jobs", "/admin/sites", "/admin/schema", "/admin/settings"],
+    loadContent: md(() => import("../../docs/CODEBASE_REFERENCE.md?raw")),
+  },
+  {
+    id: "admin-workflow-audit",
+    title: "Admin Workflow Audit",
+    file: "docs/ADMIN_WORKFLOW_AUDIT.md",
+    category: "Admin QA",
+    summary: "Admin workflow risks, follow-up tasks, and production testing checklist.",
+    adminPages: ["/admin", "/admin/leads", "/admin/jobs", "/admin/sites"],
+    loadContent: md(() => import("../../docs/ADMIN_WORKFLOW_AUDIT.md?raw")),
+  },
+  {
+    id: "admin-tooltip-collapse-audit",
+    title: "Admin Tooltip / Collapse Audit",
+    file: "docs/ADMIN_UI_TOOLTIP_COLLAPSE_AUDIT.md",
+    category: "Admin QA",
+    summary: "Tracks compact icon-only actions, tooltips, and collapsed settings work.",
+    adminPages: ["/admin/leads", "/admin/jobs", "/admin/sites", "/admin/settings"],
+    loadContent: md(() => import("../../docs/ADMIN_UI_TOOLTIP_COLLAPSE_AUDIT.md?raw")),
+  },
+  {
+    id: "google-places-data-inventory",
+    title: "Google Places Data Inventory",
+    file: "docs/GOOGLE_PLACES_DATA_INVENTORY.md",
+    category: "Prospecting",
+    summary: "Fields available from Places search/details and how they support generation.",
+    adminPages: ["/admin/leads", "/admin/settings"],
+    loadContent: md(() => import("../../docs/GOOGLE_PLACES_DATA_INVENTORY.md?raw")),
+  },
+  {
+    id: "google-places-photo-strategy",
+    title: "Google Places Photo Strategy",
+    file: "docs/GOOGLE_PLACES_PHOTO_STRATEGY.md",
+    category: "Prospecting",
+    summary: "Photo selection and proxy rules for stronger generated demos.",
+    adminPages: ["/admin/leads", "/admin/sites", "/admin/settings"],
+    loadContent: md(() => import("../../docs/GOOGLE_PLACES_PHOTO_STRATEGY.md?raw")),
+  },
+  {
+    id: "google-maps-manual-import-plan",
+    title: "Google Maps Manual Import Plan",
+    file: "docs/GOOGLE_MAPS_MANUAL_IMPORT_PLAN.md",
+    category: "Prospecting",
+    summary: "Manual import workflow for prospects found outside automated search.",
+    adminPages: ["/admin/leads"],
+    loadContent: md(() => import("../../docs/GOOGLE_MAPS_MANUAL_IMPORT_PLAN.md?raw")),
+  },
+  {
+    id: "ai-models-research",
+    title: "AI Models Research",
+    file: "docs/AI_MODELS_RESEARCH.md",
+    category: "AI",
+    summary: "Model/provider notes, pricing context, and generation tradeoffs.",
+    adminPages: ["/admin/leads", "/admin/jobs", "/admin/sites", "/admin/settings"],
+    loadContent: md(() => import("../../docs/AI_MODELS_RESEARCH.md?raw")),
+  },
+  {
+    id: "free-tier-limits-audit",
+    title: "Free Tier Limits Audit",
+    file: "docs/FREE_TIER_LIMITS_AUDIT.md",
+    category: "Operations",
+    summary: "Quota-sensitive areas and conservative guardrails for production testing.",
+    adminPages: ["/admin", "/admin/leads", "/admin/jobs", "/admin/settings"],
+    loadContent: md(() => import("../../docs/FREE_TIER_LIMITS_AUDIT.md?raw")),
+  },
+  {
+    id: "design-guide",
+    title: "Design Guide",
+    file: "docs/DESIGN_GUIDE.md",
+    category: "Generation",
+    summary: "Design system guidance for generated websites and admin-facing UI.",
+    adminPages: ["/admin/sites", "/admin/settings"],
+    loadContent: md(() => import("../../docs/DESIGN_GUIDE.md?raw")),
+  },
+  {
+    id: "niche-style-presets",
+    title: "Niche Style Presets",
+    file: "docs/NICHE_STYLE_PRESETS.md",
+    category: "Generation",
+    summary: "Industry style presets used to make generated sites feel less generic.",
+    adminPages: ["/admin/leads", "/admin/sites", "/admin/settings"],
+    loadContent: md(() => import("../../docs/NICHE_STYLE_PRESETS.md?raw")),
+  },
+  {
+    id: "font-pairing-guide",
+    title: "Font Pairing Guide",
+    file: "docs/FONT_PAIRING_GUIDE.md",
+    category: "Generation",
+    summary: "Font pairing options and when to use each for generated demos.",
+    adminPages: ["/admin/sites", "/admin/settings"],
+    loadContent: md(() => import("../../docs/FONT_PAIRING_GUIDE.md?raw")),
+  },
+  {
+    id: "shaders-guide",
+    title: "Shaders Guide",
+    file: "docs/SHADERS_GUIDE.md",
+    category: "Generation",
+    summary: "Procedural visual guidance for generated sites that use shader treatments.",
+    adminPages: ["/admin/sites"],
+    loadContent: md(() => import("../../docs/SHADERS_GUIDE.md?raw")),
+  },
+  {
+    id: "site-builder-upgrade-plan",
+    title: "Site Builder Upgrade Plan",
+    file: "docs/SITE_BUILDER_UPGRADE_PLAN.md",
+    category: "Generation",
+    summary: "Roadmap and audit notes for improving generated site richness.",
+    adminPages: ["/admin/sites", "/admin/schema"],
+    loadContent: md(() => import("../../docs/SITE_BUILDER_UPGRADE_PLAN.md?raw")),
+  },
+  {
+    id: "domain-availability-research",
+    title: "Domain Availability Research",
+    file: "docs/DOMAIN_AVAILABILITY_RESEARCH.md",
+    category: "Checkout",
+    summary: "Domain availability pre-check behavior and limitations.",
+    adminPages: ["/admin/leads", "/admin/sites", "/admin/settings"],
+    loadContent: md(() => import("../../docs/DOMAIN_AVAILABILITY_RESEARCH.md?raw")),
+  },
+  {
+    id: "payment-positioning-strategy",
+    title: "Payment Positioning Strategy",
+    file: "docs/PAYMENT_POSITIONING_STRATEGY.md",
+    category: "Payments",
+    summary: "Offer framing for the paid setup package and conversion-oriented payment copy.",
+    adminPages: ["/admin", "/admin/leads", "/admin/settings"],
+    loadContent: md(() => import("../../docs/PAYMENT_POSITIONING_STRATEGY.md?raw")),
+  },
+  {
+    id: "payment-processor-research",
+    title: "Payment Processor Research",
+    file: "docs/PAYMENT_PROCESSOR_RESEARCH.md",
+    category: "Payments",
+    summary: "Payment rail comparison and current setup decisions.",
+    adminPages: ["/admin", "/admin/leads", "/admin/settings"],
+    loadContent: md(() => import("../../docs/PAYMENT_PROCESSOR_RESEARCH.md?raw")),
+  },
+  {
+    id: "paypal-risk-controls",
+    title: "PayPal Risk Controls",
+    file: "docs/PAYPAL_RISK_CONTROLS.md",
+    category: "Payments",
+    summary: "PayPal operating guidance, manual reconciliation, and risk-reduction checklist.",
+    adminPages: ["/admin", "/admin/leads", "/admin/settings"],
+    loadContent: md(() => import("../../docs/PAYPAL_RISK_CONTROLS.md?raw")),
+  },
+  {
+    id: "paypal-express-checkout",
+    title: "PayPal Checkout Implementation",
+    file: "docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md",
+    category: "Payments",
+    summary: "PayPal JS SDK + Orders v2 implementation, add-ons, and sandbox QA.",
+    adminPages: ["/admin/leads", "/admin/settings"],
+    loadContent: md(() => import("../../docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md?raw")),
+  },
+  {
+    id: "lemon-squeezy-integration",
+    title: "Lemon Squeezy Integration",
+    file: "docs/LEMON_SQUEEZY_INTEGRATION.md",
+    category: "Payments",
+    summary: "Legacy Lemon Squeezy integration notes and fallback context.",
+    adminPages: ["/admin/settings"],
+    loadContent: md(() => import("../../docs/LEMON_SQUEEZY_INTEGRATION.md?raw")),
+  },
+  {
+    id: "setup-panduan",
+    title: "Setup Guide",
+    file: "docs/setup-panduan.md",
+    category: "Operations",
+    summary: "Deployment, Cloudflare, credential, and production setup notes.",
+    adminPages: ["/admin/schema", "/admin/settings"],
+    loadContent: md(() => import("../../docs/setup-panduan.md?raw")),
+  },
+  {
+    id: "clerk-auth",
+    title: "Clerk Auth",
+    file: "docs/clerk-auth.md",
+    category: "Operations",
+    summary: "Admin authentication setup and Clerk role notes.",
+    adminPages: ["/admin/settings"],
+    loadContent: md(() => import("../../docs/clerk-auth.md?raw")),
+  },
+  {
+    id: "refactor-audit",
+    title: "Refactor Audit",
+    file: "docs/REFACTOR_AUDIT.md",
+    category: "Operations",
+    summary: "Refactor findings, testing notes, and remaining cleanup risk.",
+    adminPages: ["/admin/jobs", "/admin/schema", "/admin/settings"],
+    loadContent: md(() => import("../../docs/REFACTOR_AUDIT.md?raw")),
+  },
+  {
+    id: "webview-click",
+    title: "WebView.click Overview",
+    file: "docs/WebView.click.md",
+    category: "System",
+    summary: "Project/product overview and high-level context.",
+    adminPages: ["/admin"],
+    loadContent: md(() => import("../../docs/WebView.click.md?raw")),
+  },
+];
+
+export function adminDocsForPath(pathname: string) {
+  const normalized = pathname.replace(/\/+$/, "") || "/admin";
+  return adminDocs
+    .filter((doc) => doc.adminPages.includes(normalized))
+    .sort((a, b) => a.adminPages.length - b.adminPages.length || a.title.localeCompare(b.title));
+}

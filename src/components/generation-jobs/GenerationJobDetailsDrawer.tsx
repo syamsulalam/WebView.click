@@ -9,6 +9,7 @@ import {
 } from "../../lib/generationJobState";
 import { formatCooldownRemaining } from "../../lib/providerCooldown";
 import AdminAiReadinessBadge from "../AdminAiReadinessBadge";
+import AdminDocsReader from "../AdminDocsReader";
 import HelpTooltip from "../HelpTooltip";
 import HoverTooltip from "../HoverTooltip";
 import {
@@ -100,6 +101,13 @@ export default function GenerationJobDetailsDrawer({
                 />
               </div>
             )}
+            <AdminDocsReader
+              pathname="/admin/jobs"
+              defaultDocId="admin-workflow-audit"
+              tooltip="Open generation job QA docs in the admin docs reader."
+              buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
+              iconSize={17}
+            />
             <HoverTooltip text="Close job details drawer.">
               <button
                 type="button"

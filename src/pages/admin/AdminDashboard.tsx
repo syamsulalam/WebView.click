@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, CircleDashed, ListChecks } from "lucide-react";
+import AdminDocsReader from "../../components/AdminDocsReader";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
 
@@ -192,7 +193,16 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto font-sans bg-gray-50/50 min-h-[calc(100vh-64px)] rounded-3xl mt-4 border border-gray-100">
-      <h1 className="text-3xl font-semibold mb-8 text-gray-900 tracking-tight">Overview</h1>
+      <div className="mb-8 flex items-center justify-between gap-3">
+        <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">Overview</h1>
+        <AdminDocsReader
+          pathname="/admin"
+          defaultDocId="admin-workflow-audit"
+          tooltip="Open admin workflow docs for dashboard QA."
+          buttonClassName="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-white hover:text-indigo-700"
+          iconSize={18}
+        />
+      </div>
       {apiWarning && (
         <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
           <p className="font-semibold">Mode fallback aktif</p>
@@ -243,7 +253,16 @@ export default function AdminDashboard() {
                 </h2>
                 <p className="mt-1 text-sm text-gray-500">Missing items should be fixed in Settings before heavy prospecting or generation.</p>
               </div>
-              <a href="/admin/settings" className="text-sm font-semibold text-indigo-700 hover:underline">Open Settings</a>
+              <div className="flex items-center gap-2">
+                <AdminDocsReader
+                  pathname="/admin"
+                  defaultDocId="setup-panduan"
+                  tooltip="Open setup docs for readiness checks."
+                  buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
+                  iconSize={16}
+                />
+                <a href="/admin/settings" className="text-sm font-semibold text-indigo-700 hover:underline">Open Settings</a>
+              </div>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
               {readinessItems.map((item) => (
@@ -300,6 +319,13 @@ export default function AdminDashboard() {
                     <ListChecks size={16} />
                   </a>
                 </HoverTooltip>
+                <AdminDocsReader
+                  pathname="/admin"
+                  defaultDocId="free-tier-limits-audit"
+                  tooltip="Open free-tier and quota guardrail docs."
+                  buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-indigo-700 hover:bg-indigo-50"
+                  iconSize={16}
+                />
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-4">

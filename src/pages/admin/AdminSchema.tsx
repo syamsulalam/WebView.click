@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { CloudUpload, Loader2, Wrench } from "lucide-react";
+import AdminDocsReader from "../../components/AdminDocsReader";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
 
@@ -100,6 +101,13 @@ export default function AdminSchema() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <AdminDocsReader
+            pathname="/admin/schema"
+            defaultDocId="site-builder-upgrade-plan"
+            tooltip="Open site builder/schema upgrade docs."
+            buttonClassName="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            iconSize={16}
+          />
           <HoverTooltip text="Run the production D1 schema self-heal. Use after deploys that add tables or columns before testing admin workflows.">
             <button
               type="button"

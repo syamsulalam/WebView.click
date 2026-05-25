@@ -1,6 +1,6 @@
 # WebView.click Codebase Reference
 
-Terakhir diperbarui: 21 Mei 2026.
+Terakhir diperbarui: 25 Mei 2026.
 
 Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
 
@@ -148,6 +148,7 @@ Logic penting:
 - Full page mode menampilkan `Load more` jika rows loaded masih lebih sedikit dari count server; tombol ini memanggil endpoint dengan `offset={loadedRows}` lalu append ke tabel.
 - Kolom Job menyediakan tombol copy kecil untuk Job ID dan Business ID; saat sukses icon berubah menjadi check sementara.
 - Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, provider failure diagnostics, retry dari drawer, audit copy AI, dan raw `metadata` JSON dengan tombol copy.
+- Drawer details punya icon-only docs quick link yang membuka admin workflow/generation job QA docs langsung di `AdminDocsReader`.
 - Untuk job `metadata.chunked=true`, drawer menampilkan progress `Outline`, `Copy`, dan `Finalize` plus tombol `Retry/Run` per step yang memanggil `POST /api/generation-jobs/:jobId/run-step`, supaya admin bisa melanjutkan step gagal tanpa membuat generation job baru.
 - Chunked step derivation lives in `src/lib/generationJobState.ts`, with targeted tests in `tests/generationJobState.test.ts`; run `npm run test:generation-job-state` when local dependencies are installed.
 - Drawer details UI now lives in `src/components/generation-jobs/GenerationJobDetailsDrawer.tsx`, retry orchestration lives in `src/components/generation-jobs/useGenerationJobRetry.ts`, and reusable job badges/filter/sort/copy-audit helpers live in `src/components/generation-jobs/jobUtils.ts`. `GenerationJobsTable` keeps data loading, search/filter state, visible table rendering, and selected-job state.
@@ -228,6 +229,24 @@ Fungsi:
 - Segmented tab control shared untuk workspace admin yang perlu memisahkan beberapa mode kerja dalam satu route.
 - Dipakai di `/admin/leads` agar tab `Find Leads`, `Search History`, dan `CRM Pipeline` konsisten secara visual.
 
+### `src/components/AdminDocsReader.tsx`
+
+Fungsi:
+- Popup markdown reader untuk membaca dokumentasi proyek langsung dari `/admin`.
+- Dipasang sebagai icon `BookOpen` di sidebar `AdminLayout` supaya admin tidak perlu membuka GitHub/local folder saat production testing.
+
+Logic penting:
+- Daftar dokumen dan mapping route hidup di `src/lib/adminDocs.ts`.
+- Markdown docs di-load dengan lazy Vite raw imports dari folder `docs/`; `src/vite-env.d.ts` menyediakan type Vite client untuk `?raw`.
+- Reader menampilkan bagian `Relevant here` berdasarkan route admin aktif: dashboard, leads, jobs, sites, schema, atau settings.
+- Dense admin surfaces can pass `defaultDocId` to preselect a workflow doc, such as PayPal reconciliation or generation job QA.
+- Semua docs tetap bisa dicari dari modal yang sama.
+- Renderer markdown dibuat lokal dan merender teks sebagai React nodes; HTML dari dokumen tidak dieksekusi.
+
+Risiko debug:
+- Jika menambah dokumen `.md` yang perlu muncul di admin, tambahkan import dan entry di `src/lib/adminDocs.ts`.
+- Jika build gagal pada import markdown, cek `src/vite-env.d.ts` dan path relatif dari `src/lib/adminDocs.ts` ke `docs/`.
+
 ### `src/components/AdminLayout.tsx`
 
 Fungsi:
@@ -240,6 +259,7 @@ Logic penting:
 - Sidebar nav hover tooltip menampilkan label dan deskripsi singkat setiap admin area agar fitur baru lebih mudah dipahami tanpa membuka semua halaman.
 - Saat pindah route admin, container konten dan window otomatis scroll ke atas agar tab baru tidak mulai dari posisi scroll tab sebelumnya.
 - Sidebar menampilkan badge kecil `DB` setelah `/admin/schema` berhasil menjalankan `Repair DB now`; timestamp disimpan di localStorage key `webview.admin.lastDbRepairAt`.
+- Sidebar menampilkan icon docs yang membuka `AdminDocsReader` dengan dokumen relevan untuk route admin aktif.
 - `ClerkSecureLayout` hanya mengizinkan user dengan `publicMetadata.role === "admin"`.
 - Jika role belum admin, halaman menampilkan instruksi update metadata Clerk.
 
@@ -311,6 +331,7 @@ Logic penting:
 - Metric cards dan aktivitas terbaru punya tooltip untuk membedakan angka dashboard dari source-of-truth workflow per prospek.
 - Readiness card memakai `HelpTooltip` pada heading dan setiap item agar admin tahu setup mana yang memblokir search, generation, atau checkout.
 - Utility links in dense dashboard controls, such as generation-job review, use icon-only buttons with hover tooltips to reduce admin panel text noise.
+- Dashboard includes docs quick links for admin workflow, setup readiness, and free-tier usage guardrails.
 
 ### `src/pages/admin/AdminLeads.tsx`
 
@@ -321,6 +342,8 @@ Fungsi:
 - Mengelola status lead.
 - CRM Pipeline punya Payment Reconciliation panel untuk recent `lead_payments`, export CSV `checkout_pending`, dan action per-lead `Verify payment`.
 - Payment verification modal and prospect details drawer close actions use shared hover tooltips for compact QA controls.
+- Payment verification modal includes an icon-only docs quick link that opens PayPal/payment reconciliation docs directly inside admin.
+- Prospect details drawer includes docs quick links for Google Places data inventory and photo strategy where those details are reviewed.
 - Repeated admin utility actions are intentionally icon-only with hover tooltips and `aria-label`, including cache trim, capture helper, manual import, search-history refresh, duplicate refresh, filter reset/reload, Google refresh search, bulk select/generate/jobs, payment export/refresh, row details/skip/gather/generate, and drawer refresh/maps actions.
 
 API yang dipakai:
@@ -453,6 +476,7 @@ Logic penting:
 - Full page memakai `serverBackedFilters` agar filter jobs mencari dari server/D1, bukan hanya dari 200 row yang sedang loaded.
 - Full page juga memakai `serverBackedSearch` untuk mencari job lama berdasarkan nama bisnis, `businessId`, `placeId`, job ID, atau metadata JSON.
 - Page heading memakai tooltip untuk menjelaskan bahwa halaman ini adalah audit trail job generation, termasuk retry/fallback/copy patch status.
+- Page header includes an icon-only docs quick link that opens generation job QA/admin workflow docs.
 
 Risiko debug:
 - Retry butuh row `json_sites` untuk `businessId` tersebut; job lama tanpa site JSON tidak bisa diulang dari halaman ini.
@@ -499,6 +523,7 @@ Logic penting:
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
 - JSON/data modal close action uses shared hover tooltip so the compact X control is named during production QA.
 - Repeated site list actions are intentionally icon-only with hover tooltips and `aria-label`, including page refresh, ready-prospect Maps/Data/Generate, generated-site Preview/Maps/Data/Brief/Regen, and modal close.
+- Ready-to-generate and per-site regenerate controls include docs quick links for `Design Guide`, `Niche Style Presets`, and `Font Pairing Guide`.
 - Generate/regenerate/readiness action notices memakai `AdminToast`, sehingga pesan sukses seperti `AI copy patch regenerated ...` tetap floating di kanan atas meski admin sedang melihat bagian bawah list.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
 - Initial load `/admin/sites` memakai `readApiJson` untuk `/api/sites` dan `/api/prospects`, sehingga Cloudflare HTML 503 ditampilkan sebagai masalah Pages Functions/edge, bukan pesan mentah `Response bukan JSON`.
@@ -526,6 +551,7 @@ Logic penting:
 - Setelah repair sukses, halaman menyimpan timestamp ke localStorage agar badge `DB repaired ... ago` muncul di admin sidebar.
 - Tombol D1-to-R2 migration icon-only memanggil `POST /api/sites/migrate-r2` batch 25 row, memindahkan row lama `json_sites.json_content` yang masih full JSON ke R2, lalu mengganti D1 dengan manifest kecil.
 - Schema heading dan maintenance buttons punya tooltip dan `aria-label` karena kedua actions memengaruhi production D1/R2 compatibility.
+- Schema maintenance header includes an icon-only docs quick link to the site builder/schema upgrade plan.
 
 ### `src/pages/admin/AdminSettings.tsx`
 
@@ -543,6 +569,7 @@ Logic penting:
 - Provider selector hanya menampilkan field API key untuk provider aktif.
 - Settings punya anchor sections `settings-ai-provider`, `settings-google-places`, dan `settings-payment` untuk dashboard readiness deep-links.
 - Dense settings sections use collapsed-by-default panels remembered in `localStorage` (`webview.adminSettings.openSections`) so production QA can expand only the area being edited.
+- `settings-ai-provider` and `settings-payment` headers include icon-only docs quick links. AI opens model/provider docs; Payment opens PayPal Checkout docs when PayPal is active, otherwise payment processor research.
 - Provider tab dan estimator provider/model disimpan ke localStorage agar pilihan terakhir tetap dipakai setelah refresh.
 - Setelah settings berhasil tersimpan, cache AI readiness otomatis dibersihkan agar key baru langsung terbaca oleh badge/preflight.
 - Estimator provider/model punya tombol refresh AI readiness icon-only dengan hover tooltip untuk clear cache manual tanpa menunggu TTL 30 detik.
@@ -1022,3 +1049,4 @@ Jika menambah laman atau komponen baru:
 - `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md`: PayPal JS SDK + Orders v2 implementation notes, sandbox QA, and `$197/year` plus add-on pricing structure.
 - `docs/DOMAIN_AVAILABILITY_RESEARCH.md`: riset provider gratis/murah untuk cek availability domain.
 - `docs/SITE_BUILDER_UPGRADE_PLAN.md`: rencana upgrade JSON schema dan renderer agar demo/site output lebih modern dan personalized.
+- `docs/ADMIN_WORKFLOW_AUDIT.md` and `docs/ADMIN_UI_TOOLTIP_COLLAPSE_AUDIT.md`: admin QA/workflow notes exposed through the in-app docs reader.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
+import AdminDocsReader from "../../components/AdminDocsReader";
 import HelpTooltip from "../../components/HelpTooltip";
 
 const providerApiKeyMap: Record<string, string> = {
@@ -32,15 +33,24 @@ export default function AdminJobs() {
 
   return (
     <div className="min-h-screen p-6 lg:p-8">
-      <div className="mb-6">
-        <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
-          Generation queue
-          <HelpTooltip text="Audit trail for website generation attempts, including failed jobs, fallback-only saves, copy patch jobs, and retries." />
-        </p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Generation Jobs</h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Audit, sort, and retry site generation jobs without crowding the prospecting screen.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
+            Generation queue
+            <HelpTooltip text="Audit trail for website generation attempts, including failed jobs, fallback-only saves, copy patch jobs, and retries." />
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Generation Jobs</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-600">
+            Audit, sort, and retry site generation jobs without crowding the prospecting screen.
+          </p>
+        </div>
+        <AdminDocsReader
+          pathname="/admin/jobs"
+          defaultDocId="admin-workflow-audit"
+          tooltip="Open generation job QA docs."
+          buttonClassName="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-white hover:text-indigo-700"
+          iconSize={18}
+        />
       </div>
 
       <GenerationJobsTable

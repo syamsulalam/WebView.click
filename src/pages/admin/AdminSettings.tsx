@@ -5,6 +5,7 @@ import { useLocalStorageState } from "../../lib/localStorageState";
 import { clearAiReadinessCache } from "../../lib/aiReadiness";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
+import AdminDocsReader from "../../components/AdminDocsReader";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
@@ -544,20 +545,31 @@ export default function AdminSettings() {
       )}
 
       <div id="settings-ai-provider" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => toggleSettingsSection("aiProvider")}
-          className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left hover:bg-slate-50"
-        >
-          <div>
-            <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-              AI Provider Credentials
-              <HelpTooltip text="Expand only when editing API keys. Generation provider/model selection still happens in Leads and Sites." />
-            </h2>
-            <p className="mt-1 text-xs text-gray-500">{selectedProviderConfig.label} selected for credential editing.</p>
+        <div className="flex w-full items-center justify-between gap-2 hover:bg-slate-50">
+          <button
+            type="button"
+            onClick={() => toggleSettingsSection("aiProvider")}
+            className="flex min-w-0 flex-1 items-center justify-between gap-4 px-6 py-4 text-left"
+          >
+            <div>
+              <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                AI Provider Credentials
+                <HelpTooltip text="Expand only when editing API keys. Generation provider/model selection still happens in Leads and Sites." />
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">{selectedProviderConfig.label} selected for credential editing.</p>
+            </div>
+            <ChevronDown size={18} className={`text-slate-500 transition ${settingsSectionOpen("aiProvider") ? "rotate-180" : ""}`} />
+          </button>
+          <div className="pr-6">
+            <AdminDocsReader
+              pathname="/admin/settings"
+              defaultDocId="ai-models-research"
+              tooltip="Open AI model and provider setup docs."
+              buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
+              iconSize={17}
+            />
           </div>
-          <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("aiProvider") ? "rotate-180" : ""}`} />
-        </button>
+        </div>
         {settingsSectionOpen("aiProvider") && (
         <div className="grid border-t border-gray-100 md:grid-cols-[240px_1fr]">
           <aside className="border-b md:border-b-0 md:border-r border-gray-100 p-4 bg-gray-50">
@@ -647,22 +659,31 @@ export default function AdminSettings() {
         </div>
 
         <div id="settings-payment" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <button
-            type="button"
-            onClick={() => toggleSettingsSection("payment")}
-            className="flex w-full items-center justify-between gap-4 text-left"
-          >
-            <div>
-              <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                Payment Setup
-                <HelpTooltip text="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up." />
-              </h2>
-              <p className="text-xs leading-relaxed text-gray-500">
-                Active processor: {paymentProcessorOptions.find((option) => option.value === activePaymentProcessor)?.label || activePaymentProcessor}
-              </p>
-            </div>
-            <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("payment") ? "rotate-180" : ""}`} />
-          </button>
+          <div className="flex w-full items-start justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => toggleSettingsSection("payment")}
+              className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
+            >
+              <div>
+                <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                  Payment Setup
+                  <HelpTooltip text="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up." />
+                </h2>
+                <p className="text-xs leading-relaxed text-gray-500">
+                  Active processor: {paymentProcessorOptions.find((option) => option.value === activePaymentProcessor)?.label || activePaymentProcessor}
+                </p>
+              </div>
+              <ChevronDown size={18} className={`text-slate-500 transition ${settingsSectionOpen("payment") ? "rotate-180" : ""}`} />
+            </button>
+            <AdminDocsReader
+              pathname="/admin/settings"
+              defaultDocId={paypalSelected ? "paypal-express-checkout" : "payment-processor-research"}
+              tooltip="Open payment setup docs."
+              buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
+              iconSize={17}
+            />
+          </div>
 
           {settingsSectionOpen("payment") && (
           <div className="mt-4">

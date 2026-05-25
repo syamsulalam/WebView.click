@@ -23,6 +23,7 @@ import {
 } from "../../lib/adminSiteGeneration";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
+import AdminDocsReader from "../../components/AdminDocsReader";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
 import AdminWorkspaceTabs from "../../components/AdminWorkspaceTabs";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
@@ -2254,11 +2255,20 @@ export default function AdminLeads() {
                 </p>
                 <p className="mt-1 text-sm text-slate-500">{paymentVerifyLead.business_name}</p>
               </div>
-              <HoverTooltip text="Close payment verification without saving changes.">
-                <button type="button" onClick={() => setPaymentVerifyLead(null)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close payment verification">
-                  <X size={18} />
-                </button>
-              </HoverTooltip>
+              <div className="flex shrink-0 items-center gap-2">
+                <AdminDocsReader
+                  pathname="/admin/leads"
+                  defaultDocId="paypal-risk-controls"
+                  tooltip="Open PayPal/payment reconciliation docs in the admin docs reader."
+                  buttonClassName="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
+                  iconSize={16}
+                />
+                <HoverTooltip text="Close payment verification without saving changes.">
+                  <button type="button" onClick={() => setPaymentVerifyLead(null)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close payment verification">
+                    <X size={18} />
+                  </button>
+                </HoverTooltip>
+              </div>
             </div>
             <div className="space-y-4 p-5">
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
@@ -2372,11 +2382,20 @@ export default function AdminLeads() {
                       <h2 className="mt-1 text-xl font-semibold text-slate-950">{mergedPlace.name}</h2>
                       <p className="mt-1 text-sm text-slate-500">{mergedPlace.formatted_address || mergedPlace.formattedAddress || "No address"}</p>
                     </div>
-                    <HoverTooltip text="Close prospect details drawer.">
-                      <button type="button" onClick={() => setDetailsPanelPlace(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close prospect details">
-                        <X size={18} />
-                      </button>
-                    </HoverTooltip>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <AdminDocsReader
+                        pathname="/admin/leads"
+                        defaultDocId="google-places-data-inventory"
+                        tooltip="Open Google Places data docs for prospect details."
+                        buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
+                        iconSize={17}
+                      />
+                      <HoverTooltip text="Close prospect details drawer.">
+                        <button type="button" onClick={() => setDetailsPanelPlace(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close prospect details">
+                          <X size={18} />
+                        </button>
+                      </HoverTooltip>
+                    </div>
                   </div>
 
                   <div className="grid gap-3 text-sm sm:grid-cols-2">
@@ -2444,10 +2463,19 @@ export default function AdminLeads() {
                   )}
 
                   <div className="mt-6">
-                    <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-                      Photo and palette source
-                      <HelpTooltip text="The selected Places photo and extracted palette become brand provenance in the generated JSON and affect preview colors." />
-                    </p>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                        Photo and palette source
+                        <HelpTooltip text="The selected Places photo and extracted palette become brand provenance in the generated JSON and affect preview colors." />
+                      </p>
+                      <AdminDocsReader
+                        pathname="/admin/leads"
+                        defaultDocId="google-places-photo-strategy"
+                        tooltip="Open Google Places photo strategy docs."
+                        buttonClassName="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
+                        iconSize={16}
+                      />
+                    </div>
                     <p className="mt-1 text-xs text-slate-500">Choose the closest brand/logo-like image. Selection is saved into the generated JSON as Google Places provenance.</p>
                     {photos.length > 0 ? (
                       <div className="mt-3 grid grid-cols-3 gap-3">

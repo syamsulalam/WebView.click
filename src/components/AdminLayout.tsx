@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation } from "react-router-dom";
 import { Globe2, LayoutDashboard, ListChecks, Users, UserCircle, Webhook, Settings } from "lucide-react";
 import { SignIn, useUser, useClerk } from "@clerk/clerk-react";
 import { AdminToastProvider, useAdminToast } from "./AdminToast";
+import AdminDocsReader from "./AdminDocsReader";
 
 export default function AdminLayout() {
   const isDevHost = window.location.hostname.includes('run.app') || window.location.hostname.includes('localhost');
@@ -92,6 +93,8 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
             </span>
           </Link>
         )}
+
+        <AdminDocsReader pathname={location.pathname} />
         
         <button 
           onClick={onSignOut}
