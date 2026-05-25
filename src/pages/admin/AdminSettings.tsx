@@ -153,23 +153,28 @@ const paymentProcessorOptions = [
   { value: "lemon_squeezy_legacy", label: "Lemon Squeezy legacy", helper: "Legacy only. Lemon Squeezy prohibits web development/services for this offer." },
 ];
 
+const offerConversionGroup = {
+  title: "Offer and conversion",
+  description: "Shown as USD to US clients, then converted to IDR for Indonesia-local gateways.",
+  fields: [
+    { key: "PAYMENT_USD_AMOUNT", label: "USD amount", type: "number", placeholder: "197", tooltip: "Customer-facing USD price for the done-for-you setup offer. Local Indonesia gateways receive an IDR conversion." },
+    { key: "PAYMENT_ADDON_PAGE_USD", label: "Page/edit add-on USD", type: "number", placeholder: "10", tooltip: "Flat fee per additional generated page or edit action before bulk discount. Current checkout applies 10% off for 5-9 actions and 20% off for 10+ actions." },
+    { key: "PAYMENT_USD_TO_IDR_RATE", label: "USD to IDR rate", type: "number", placeholder: "16000", tooltip: "Manual conversion rate used before sending IDR amount to Xendit, Midtrans, or DOKU. Update this if exchange rates move." },
+    { key: "PAYMENT_PACKAGE_NAME", label: "Package name", placeholder: "WebView.click Done-for-you Website Setup", tooltip: "Name sent to hosted checkout/invoice providers." },
+    { key: "PAYMENT_PACKAGE_DESCRIPTION", label: "Package description", placeholder: "$197 total...", tooltip: "Description sent to checkout providers and useful for payment dispute clarity." },
+  ],
+} satisfies {
+  title: string;
+  description: string;
+  fields: Array<{ key: string; label: string; type?: "text" | "password" | "number" | "select"; placeholder?: string; tooltip: string }>;
+};
+
 const paymentFieldGroups: Array<{
   title: string;
   description: string;
   processors?: string[];
   fields: Array<{ key: string; label: string; type?: "text" | "password" | "number" | "select"; placeholder?: string; tooltip: string; options?: Array<{ value: string; label: string }> }>;
 }> = [
-  {
-    title: "Offer and conversion",
-    description: "Shown as USD to US clients, then converted to IDR for Indonesia-local gateways.",
-    fields: [
-      { key: "PAYMENT_USD_AMOUNT", label: "USD amount", type: "number", placeholder: "197", tooltip: "Customer-facing USD price for the done-for-you setup offer. Local Indonesia gateways receive an IDR conversion." },
-      { key: "PAYMENT_ADDON_PAGE_USD", label: "Page/edit add-on USD", type: "number", placeholder: "10", tooltip: "Flat fee per additional generated page or edit action before bulk discount. Current checkout applies 10% off for 5-9 actions and 20% off for 10+ actions." },
-      { key: "PAYMENT_USD_TO_IDR_RATE", label: "USD to IDR rate", type: "number", placeholder: "16000", tooltip: "Manual conversion rate used before sending IDR amount to Xendit, Midtrans, or DOKU. Update this if exchange rates move." },
-      { key: "PAYMENT_PACKAGE_NAME", label: "Package name", placeholder: "WebView.click Done-for-you Website Setup", tooltip: "Name sent to hosted checkout/invoice providers." },
-      { key: "PAYMENT_PACKAGE_DESCRIPTION", label: "Package description", placeholder: "$197 total...", tooltip: "Description sent to checkout providers and useful for payment dispute clarity." },
-    ],
-  },
   {
     title: "Xendit",
     description: "Use hosted invoice creation. Keep the key secret; it is only used server-side.",
@@ -673,6 +678,50 @@ export default function AdminSettings() {
               placeholder="AIzaSy..."
               className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
             />
+          </div>
+          )}
+        </div>
+
+        <div id="settings-offer-conversion" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <button
+            type="button"
+            onClick={() => toggleSettingsSection("offerConversion")}
+            className="flex w-full items-start justify-between gap-4 text-left"
+          >
+            <div>
+              <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                Offer & Conversion
+                <HelpTooltip text="Pricing and package copy shown to buyers and sent to checkout providers. Keep this separate from gateway credentials so payment setup stays focused." />
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                ${settings.PAYMENT_USD_AMOUNT || "197"}/year base offer, ${settings.PAYMENT_ADDON_PAGE_USD || "10"} page/edit add-ons, IDR rate {settings.PAYMENT_USD_TO_IDR_RATE || "16000"}.
+              </p>
+            </div>
+            <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-500 transition ${settingsSectionOpen("offerConversion") ? "rotate-180" : ""}`} />
+          </button>
+
+          {settingsSectionOpen("offerConversion") && (
+          <div className="mt-4">
+            <p className="mb-4 text-xs leading-relaxed text-gray-500">
+              {offerConversionGroup.description}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {offerConversionGroup.fields.map((field) => (
+                <label key={field.key} className="text-sm">
+                  <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
+                    {field.label}
+                    <HelpTooltip text={field.tooltip} widthClass="w-72" />
+                  </span>
+                  <input
+                    type={field.type || "text"}
+                    value={settings[field.key] || ""}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    placeholder={field.placeholder}
+                    className="w-full rounded-lg border border-gray-300 bg-white p-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+              ))}
+            </div>
           </div>
           )}
         </div>

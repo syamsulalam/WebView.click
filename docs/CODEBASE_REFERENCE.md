@@ -567,7 +567,7 @@ API yang dipakai:
 
 Logic penting:
 - Provider selector hanya menampilkan field API key untuk provider aktif.
-- Settings punya anchor sections `settings-ai-provider`, `settings-google-places`, dan `settings-payment` untuk dashboard readiness deep-links.
+- Settings punya anchor sections `settings-ai-provider`, `settings-google-places`, `settings-offer-conversion`, dan `settings-payment` untuk direct navigation/readiness deep-links.
 - Dense settings sections use collapsed-by-default panels remembered in `localStorage` (`webview.adminSettings.openSections`) so production QA can expand only the area being edited.
 - `settings-ai-provider` and `settings-payment` headers include icon-only docs quick links. AI opens model/provider docs; Payment opens PayPal Checkout docs when PayPal is active, otherwise payment processor research.
 - When `PAYMENT_PROCESSOR=paypal`, Settings uses a Sandbox/Live segmented toggle, shows only the active mode's API key / Client ID and secret fields, and displays an amber warning if the selected mode is missing either credential.
@@ -582,7 +582,8 @@ Logic penting:
 - Banner status custom menggantikan `alert()` browser.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - KIE.ai ditampilkan sebagai estimasi diskon karena pricing live berada di dashboard/pricing KIE.
-- Payment settings sekarang mencakup active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), base USD amount, page/edit add-on USD fee, USD->IDR rate, package copy, Xendit key, Midtrans keys/mode, DOKU keys/mode, PayPal sandbox/live keys/mode, PayPal/Wise/Payoneer/manual fields, legacy Lemon fields, dan nomor WhatsApp admin. The UI shows only the active processor form plus shared offer/conversion fields; PayPal risk guardrails appear only when PayPal is active or already configured.
+- Offer & Conversion settings are separate from Payment Setup and cover the base USD amount, page/edit add-on USD fee, USD->IDR rate, package name, and package description.
+- Payment settings sekarang fokus ke active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), Xendit key, Midtrans keys/mode, DOKU keys/mode, PayPal sandbox/live keys/mode, PayPal/Wise/Payoneer/manual fields, legacy Lemon fields, dan nomor WhatsApp admin. The UI shows only the active processor form; PayPal risk guardrails appear only when PayPal is active or already configured.
 - Section `Prospect Scoring` menyimpan preset, default threshold, dan bobot scoring ke D1 settings agar prioritas prospek bisa ditune dari UI tanpa edit kode.
 - Bobot scoring memakai angka positif/negatif. Reset weights mengembalikan default dari `src/lib/prospectScoring.ts`.
 - Tooltip dipasang pada Settings heading, manual save, provider tabs, Google Places, Payment Links, AI cost estimator, AI readiness refresh/result, and scoring controls to clarify which settings affect generation, search, checkout, and estimates.
