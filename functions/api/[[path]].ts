@@ -4,7 +4,7 @@ import { asString, corsHeaders, errorJson, json, normalizeBusinessId, parseJsonA
 import { checkoutRequiredColumns, databaseRepairReport, generateRequiredColumns, paymentLedgerRequiredColumns, prospectDetailsRequiredColumns, prospectListRequiredColumns, prospectStatusRequiredColumns, prospectWebsiteCheckRequiredColumns, selectionRequiredColumns, setupTables } from "./_shared/schema";
 import type { D1Database, Env, PagesContext } from "./_shared/types";
 import { buildAiFailureDiagnostics, extractProviderErrorDetails, getAiReadiness, handleAiProviderFailure, handleAiProviderHealth, handleAiReadiness, kieModelConfigs, type AiReadinessDeps } from "./ai/readiness";
-import { applyAiCopyPatch, applyAiOfferingOutline, generateAiCopyPatch, generateAiOfferingOutline, type AiSiteGenerationDeps } from "./ai/siteGeneration";
+import { applyAiCopyPatch, applyAiOfferingOutline, buildAiCopyAudit, collectAiCopyAuditTargets, generateAiCopyPatch, generateAiOfferingOutline, type AiSiteGenerationDeps } from "./ai/siteGeneration";
 import { handleDomains, type DomainsDeps } from "./domains/handler";
 import { handleGenerationJobs, type GenerationJobsDeps } from "./generationJobs/handler";
 import { handleLeads, type LeadsDeps } from "./leads/handler";
@@ -140,6 +140,8 @@ const generationJobsDeps: GenerationJobsDeps = {
   applyAiOfferingOutline,
   generateAiCopyPatch: (db, env, body, siteJsonOverride) => generateAiCopyPatch(aiSiteGenerationDeps, db, env, body, siteJsonOverride),
   applyAiCopyPatch,
+  collectAiCopyAuditTargets,
+  buildAiCopyAudit,
   handleSites: (request, db, env, segments) => handleSites(sitesHandlerDeps, request, db as D1Database, env as Env, segments),
 };
 

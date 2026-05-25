@@ -17,6 +17,8 @@ export type GenerationJobsDeps = {
   applyAiOfferingOutline: (siteJson: Record<string, unknown>, outline: Record<string, unknown>) => { applied: boolean; count: number };
   generateAiCopyPatch: (db: unknown, env: unknown, body: Record<string, unknown>, siteJsonOverride?: Record<string, unknown>) => Promise<{ patch: Record<string, unknown>; copyBriefHash: string; copyPatchHash: string } | null>;
   applyAiCopyPatch: (siteJson: Record<string, unknown>, patch: Record<string, unknown>) => Record<string, unknown>;
+  collectAiCopyAuditTargets: (siteJson: Record<string, unknown>) => any[];
+  buildAiCopyAudit: (targets: any[], siteJson: Record<string, unknown>, patchApplied: boolean) => { summary: Record<string, unknown>; items: unknown[] };
   handleSites: (request: Request, db: unknown, env: unknown, segments: string[]) => Promise<Response>;
 };
 
@@ -128,14 +130,20 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
 
       if (requestedStep === "copy") {
         const { finalJson } = chunkedGenerationJsonWithOutline(deps, metadata);
+        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson);
         const copyPatchResult = await deps.generateAiCopyPatch(db, env, payload, finalJson);
         if (!copyPatchResult) {
           throw new Error("AI copy patch did not return JSON for chunked generation.");
         }
+        const patchedJson = structuredClone(finalJson) as Record<string, unknown>;
+        deps.applyAiCopyPatch(patchedJson, copyPatchResult.patch);
+        const copyAudit = deps.buildAiCopyAudit(copyAuditTargets, patchedJson, true);
         metadata.copyPatch = copyPatchResult.patch;
         metadata.copyBriefHash = copyPatchResult.copyBriefHash;
         metadata.copyPatchHash = copyPatchResult.copyPatchHash;
         metadata.copyPatchApplied = true;
+        metadata.copyAuditSummary = copyAudit.summary;
+        metadata.copyAuditItems = copyAudit.items;
         metadata.step = "copy_complete";
         metadata.nextStep = "finalize";
         metadata.updatedAt = new Date().toISOString();
@@ -157,6 +165,12 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
           jsonContent: finalJson,
           skipAiCopyPatch: true,
           prepatchedWithAi: Boolean(copyPatch),
+          prepatchedOfferingOutline: metadata.offeringOutline || null,
+          prepatchedCopyPatch: copyPatch || null,
+          prepatchedCopyBriefHash: metadata.copyBriefHash || "",
+          prepatchedCopyPatchHash: metadata.copyPatchHash || "",
+          prepatchedCopyAuditSummary: metadata.copyAuditSummary || null,
+          prepatchedCopyAuditItems: Array.isArray(metadata.copyAuditItems) ? metadata.copyAuditItems : [],
           parentGenerationJobId: jobId,
         };
         const finalizeRequest = new Request(new URL("/api/sites/generate", request.url), {

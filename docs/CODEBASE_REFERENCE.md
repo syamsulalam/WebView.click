@@ -1,6 +1,6 @@
 # WebView.click Codebase Reference
 
-Terakhir diperbarui: 25 Mei 2026.
+Terakhir diperbarui: 26 Mei 2026.
 
 Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
 
@@ -18,6 +18,10 @@ Routes utama:
 - `/admin/schema` -> `AdminSchema`
 - `/admin/settings` -> `AdminSettings`
 - `/:businessId` -> `PublicViewer`
+
+Cloudflare Pages SPA fallback:
+- `public/_redirects` berisi `/* /index.html 200` agar direct open/refresh untuk `/demo`, `/admin/*`, dan `/:businessId` tetap masuk ke React app, bukan Pages static 404.
+- `public/_routes.json` tetap membatasi Pages Functions ke `/api` dan `/api/*`, sehingga fallback SPA tidak membuat semua route menjadi Function invocation.
 
 ## Components
 
@@ -146,6 +150,7 @@ Logic penting:
 - Komponen sendiri yang mengambil `GET /api/generation-jobs?limit=...`, menghitung counter filter, menyimpan filter/sort ke localStorage berdasarkan `storageKeyPrefix`, dan menjalankan retry job.
 - Dalam `serverBackedFilters` mode, perubahan filter `Failed`, `Preflight blocked`, `Fallback`, `Patch`, atau `No rewrite` memanggil endpoint dengan `status=failed`, `preflight=blocked`, `patch=fallback`, `patch=applied`, atau `aiRewrite=zero`, bukan hanya menyaring rows yang sudah loaded.
 - Dalam `serverBackedSearch` mode, search box mengirim `q` ke server untuk mencari `business_id`, `place_id`, job `id`, nama prospect, dan metadata JSON.
+- `initialSearchQuery` dan `openJobId` dipakai oleh `/admin/jobs?job=...&q=...` untuk membuka drawer job tertentu dari deep link, sambil mereset filter ke `All` supaya row sukses/gagal tidak tersembunyi oleh filter lama.
 - Full page mode menampilkan `Load more` jika rows loaded masih lebih sedikit dari count server; tombol ini memanggil endpoint dengan `offset={loadedRows}` lalu append ke tabel.
 - Kolom Job menyediakan tombol copy kecil untuk Job ID dan Business ID; saat sukses icon berubah menjadi check sementara.
 - Kolom Action punya tombol `Details` yang membuka drawer kanan berisi status, provider/model, business/place IDs, timestamps, raw error, provider failure diagnostics, retry dari drawer, audit copy AI, dan raw `metadata` JSON dengan tombol copy.
@@ -154,6 +159,7 @@ Logic penting:
 - Manual retry step otomatis mencoba ulang satu kali setelah 60 detik untuk error transient seperti HTTP 502/503/504, Cloudflare HTML response, temporary provider failure, upstream network failure, or empty response. Non-transient provider/model/key errors tetap gagal eksplisit.
 - Chunked step derivation lives in `src/lib/generationJobState.ts`, with targeted tests in `tests/generationJobState.test.ts`; run `npm run test:generation-job-state` when local dependencies are installed.
 - Drawer details UI now lives in `src/components/generation-jobs/GenerationJobDetailsDrawer.tsx`, retry orchestration lives in `src/components/generation-jobs/useGenerationJobRetry.ts`, and reusable job badges/filter/sort/copy-audit helpers live in `src/components/generation-jobs/jobUtils.ts`. `GenerationJobsTable` keeps data loading, search/filter state, visible table rendering, and selected-job state.
+- Drawer details menampilkan `AI returned work` untuk parsed `offeringOutline` dan `copyPatch` dari job metadata, dengan tombol copy. Ini adalah surface utama untuk melihat output model sebelum patch diaplikasikan ke JSON final.
 - Retry mengambil current copy brief dari `GET /api/sites/:businessId/copy-brief`, menghitung hash browser-side, lalu memperingatkan jika hash berbeda dari job lama sebelum membuat job baru.
 - Retry mengirim `requireAi: true`, sehingga error provider/model/API key terlihat sebagai failed job dan pesan UI, bukan diam-diam menyimpan fallback copy.
 - Tombol retry menampilkan readiness badge; provider/model berasal dari job lama jika ada, atau fallback localStorage parent, dan key status dikirim parent dari `/api/settings`.
@@ -261,7 +267,7 @@ Logic penting:
 - Sidebar nav hover tooltip menampilkan label dan deskripsi singkat setiap admin area agar fitur baru lebih mudah dipahami tanpa membuka semua halaman.
 - Saat pindah route admin, container konten dan window otomatis scroll ke atas agar tab baru tidak mulai dari posisi scroll tab sebelumnya.
 - Sidebar menampilkan badge kecil `DB` setelah `/admin/schema` berhasil menjalankan `Repair DB now`; timestamp disimpan di localStorage key `webview.admin.lastDbRepairAt`.
-- Sidebar menampilkan icon docs yang membuka `AdminDocsReader` dengan dokumen relevan untuk route admin aktif.
+- Sidebar menampilkan icon docs yang membuka `AdminDocsReader` dengan dokumen relevan untuk route admin aktif; button class di `AdminLayout` sengaja disamakan dengan icon nav lain agar visual menu konsisten.
 - `ClerkSecureLayout` hanya mengizinkan user dengan `publicMetadata.role === "admin"`.
 - Jika role belum admin, halaman menampilkan instruksi update metadata Clerk.
 
@@ -525,6 +531,7 @@ Logic penting:
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
 - JSON/data modal close action uses shared hover tooltip so the compact X control is named during production QA.
 - Repeated site list actions are intentionally icon-only with hover tooltips and `aria-label`, including page refresh, ready-prospect Maps/Data/Generate, generated-site Preview/Maps/Data/Brief/Regen, and modal close.
+- Generated-site rows include a compact `Jobs` action that links to `/admin/jobs?job={latestGenerationJobId}&q={latestGenerationJobId}` and opens the latest generation audit drawer for that site. The action color reflects latest job status: green success, red failed, amber running/unknown. Older rows without job metadata show a disabled action with tooltip.
 - Ready-to-generate and per-site regenerate controls include docs quick links for `Design Guide`, `Niche Style Presets`, and `Font Pairing Guide`.
 - Generate/regenerate/readiness action notices memakai `AdminToast`, sehingga pesan sukses seperti `AI copy patch regenerated ...` tetap floating di kanan atas meski admin sedang melihat bagian bawah list.
 - `/admin/sites` shows per-business inline progress while first generate/regenerate is running, including the active `outline`, `copy`, or `finalize` step, a compact progress bar, and transient auto-retry countdowns, so one business failure/status is visible without opening `/admin/jobs`.
@@ -651,13 +658,15 @@ API yang dipakai:
 
 Logic penting:
 - Jika JSON site ditemukan, halaman meneruskan data ke `SiteRenderer`.
+- Fetch `GET /api/sites/:businessId` memakai retry singkat dengan cache-busting query dan `cache: "no-store"` sebelum menampilkan error. Ini mengurangi kasus preview public terlihat 404 sesaat setelah generate/regenerate ketika D1/R2/edge masih sync.
+- Error public tidak lagi memakai copy `404 - Not Found`; UI menampilkan pesan "preview is still preparing" plus tombol `Try again`, supaya owner tidak melihat halaman yang terasa rusak saat kondisi sementara.
 - `handleDownloadZip(siteData?)` membuat zip HTML statis dari site data aktif yang dikirim `WebsiteActionPanel`, sehingga palette pilihan di public renderer ikut masuk export.
 - Panel prospek dari `SiteRenderer` memakai `WebsiteActionPanel` dengan `variant="public"`, sehingga flow download/setup sama dengan `/demo`.
 - Jika site lama tidak punya `brand.paletteOptions`, `SiteRenderer` membuat fallback option dari `brand.palette`, `meta.brandPalette`, atau `design.themeVariables.colors`.
 - Payment checkout memakai `POST /api/payments/checkout`; payment link basic/premium lama masih bisa dibaca tapi bukan flow utama.
 
 Risiko debug:
-- Jika halaman 404, cek row `json_sites.business_id`.
+- Jika halaman tetap menampilkan preview loading issue setelah retry, cek row `json_sites.business_id`; jika row ada tetapi API mengembalikan 502, cek R2 binding/object `sites/{businessId}/{businessId}.json`.
 - Jika warna/typography rusak, cek shape `design.themeVariables` di JSON.
 
 ## Shared Logic
@@ -917,6 +926,7 @@ Logic R2:
 - D1 `json_sites` tidak lagi menyimpan full JSON untuk situs baru jika R2 tersedia. D1 hanya menyimpan manifest/summary kecil di `json_content`, plus `r2_json_key`, `r2_json_url`, dan `json_summary`.
 - `GET /api/sites/:businessId` membaca full JSON dari R2 jika row D1 punya `r2_json_key`; row lama yang masih menyimpan full JSON di D1 tetap dibaca sebagai fallback.
 - `GET /api/sites` memakai `json_summary`/manifest dari D1 untuk list admin, sehingga tidak perlu membaca full JSON R2 untuk setiap row.
+- `GET /api/sites` juga returns `latestGenerationJobId`, `latestGenerationJobStatus`, dan `latestGenerationJobUpdatedAt` dari latest matching `generation_jobs.business_id`, dipakai `/admin/sites` untuk jump langsung ke audit row.
 - `POST /api/sites/migrate-r2` adalah maintenance action untuk row lama: upload full JSON D1 ke R2, update `storage.r2JsonKey`, lalu replace `json_content` dengan compact manifest. Jika R2 belum binding, endpoint gagal eksplisit.
 
 Risiko debug:
@@ -956,7 +966,8 @@ Logic Generation Jobs:
 - `POST /api/generation-jobs/cooldown-blocked` mencatat generate/regenerate/retry yang diblokir oleh shared provider cooldown sebelum `/api/sites/generate`. Row ini ikut `Preflight blocked` filter dan drawer menampilkan `Provider cooldown block`.
 - `POST /api/generation-jobs/chunked-start` membuat D1-backed generation job berstatus `running` dengan payload generate di `metadata_json.payload` dan `nextStep: "outline"`. Dipakai oleh `/admin/leads`, `/admin/sites` AI generate/regenerate, dan job retry.
 - `POST /api/generation-jobs/:jobId/run-step` menjalankan step retryable `outline`, `copy`, atau `finalize`. Step outline menyimpan `offeringOutline`; step copy menyimpan `copyPatch`; step finalize menggabungkan outline+copy patch ke JSON lalu memakai save pipeline `/api/sites/generate` dengan `skipAiCopyPatch=true` agar final save tidak memanggil AI ulang.
-- `generation_jobs.metadata_json` menyimpan audit generate: `offeringOutlineHash`, `offeringOutlineRepairAttempted`, `offeringOutlineInitialParseError`, `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, ringkasan/item audit copy AI (`copyAuditSummary`, `copyAuditItems`), provider/model, failure metadata bila generate gagal, dan `aiReadiness`/`remoteValidation` bila preflight memblokir sebelum generate.
+- Step finalize meneruskan `offeringOutline`, `copyPatch`, hash, dan copy audit parent ke child `/api/sites/generate` job, sehingga row finalize yang lebih baru tetap bisa dipakai untuk debug output AI.
+- `generation_jobs.metadata_json` menyimpan audit generate: parsed `offeringOutline`, `offeringOutlineHash`, `offeringOutlineRepairAttempted`, `offeringOutlineInitialParseError`, parsed `copyPatch`, `copyBriefHash`, `copyPatchHash`, `copyPatchApplied`, ringkasan/item audit copy AI (`copyAuditSummary`, `copyAuditItems`), provider/model, failure metadata bila generate gagal, dan `aiReadiness`/`remoteValidation` bila preflight memblokir sebelum generate.
 - Drawer `GenerationJobsTable` membaca `metadata.step`, `metadata.nextStep`, `metadata.failureStage`, dan hash outline/copy untuk menampilkan status per step chunked job; tombol retry step hanya menjalankan step gagal/next step lewat endpoint `run-step`.
 - `GenerationJobsTable` punya tombol `Export compact` yang menyalin JSON ringkas jobs yang sedang visible, termasuk provider/model, failure stage, readiness/cooldown metadata, dan copy audit summary untuk support/debug.
 - Jika generate sukses, prospect draft diupdate ke `site_generated` dan `generated_business_id` diisi.
@@ -968,7 +979,7 @@ Logic Generation Jobs:
 - `/admin/jobs` memakai `offset` untuk tombol `Load more`; quick drawer `/admin/leads` tetap tanpa pagination agar ringan.
 - Panel Jobs menampilkan fingerprint pendek `brief:{8 chars}` dan `patch:{8 chars}` dari `copyBriefHash`/`copyPatchHash`, plus badge `patch applied` atau `fallback only`.
 - Panel Jobs punya action `Retry current brief` dari row dan drawer detail: UI menghitung hash `GET /api/sites/:businessId/copy-brief` saat ini, membandingkannya dengan `generation_jobs.metadata.copyBriefHash`, lalu memberi warning inline jika brief berubah. Klik kedua (`Retry anyway`) membuat job baru memakai brief/current site JSON terbaru.
-- Drawer detail menampilkan `AI copy audit` untuk job baru: jumlah source sentence yang dikirim, jumlah yang diubah/diisi AI, jumlah fallback/kept, dan daftar per field dengan source copy versus final copy.
+- Drawer detail menampilkan `AI copy audit` untuk job baru: jumlah source sentence yang dikirim, jumlah yang diubah/diisi AI, jumlah fallback/kept, dan daftar per field dengan source copy versus final copy. Chunked copy step menghitung audit segera setelah AI copy patch diterima, sehingga admin bisa membedakan "AI tidak mengirim field", "AI mengirim copy yang sama", dan "patch tidak mengubah final JSON".
 - Panel Jobs punya filter `All`, `Failed`, `Preflight blocked`, `Fallback`, `Patch`, dan `No rewrite`; di halaman penuh filter memakai server/D1, sedangkan quick drawer menyaring row yang sudah loaded.
 - Panel Jobs dirender sebagai compact table dengan kolom Job, Status, Model, Brief hash, Patch hash, dan Action agar status/retry lebih mudah discan saat job history panjang.
 - `/admin/jobs` menambahkan sort lokal `Newest`, `Failed first`, `Fallback first`, `Patch applied first`, dan `No AI rewrite first`; quick drawer `/admin/leads` memakai sort yang sama.

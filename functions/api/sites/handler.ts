@@ -224,8 +224,27 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
 
     const orderColumn = columns.has("updated_at") ? "updated_at" : columns.has("created_at") ? "created_at" : "business_id";
     const rows = await db
-      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites ORDER BY ${orderColumn} DESC`)
-      .all<{ id?: string; business_id: string; json_content: string; r2_json_key?: string; r2_json_url?: string; json_summary?: string; created_at?: string; updated_at?: string }>();
+      .prepare(
+        `SELECT ${selectedColumns.map((column) => `s.${column}`).join(", ")},
+          (SELECT j.id FROM generation_jobs j WHERE j.business_id = s.business_id ORDER BY datetime(j.created_at) DESC LIMIT 1) AS latest_generation_job_id,
+          (SELECT j.status FROM generation_jobs j WHERE j.business_id = s.business_id ORDER BY datetime(j.created_at) DESC LIMIT 1) AS latest_generation_job_status,
+          (SELECT j.updated_at FROM generation_jobs j WHERE j.business_id = s.business_id ORDER BY datetime(j.created_at) DESC LIMIT 1) AS latest_generation_job_updated_at
+         FROM json_sites s
+         ORDER BY s.${orderColumn} DESC`,
+      )
+      .all<{
+        id?: string;
+        business_id: string;
+        json_content: string;
+        r2_json_key?: string;
+        r2_json_url?: string;
+        json_summary?: string;
+        created_at?: string;
+        updated_at?: string;
+        latest_generation_job_id?: string;
+        latest_generation_job_status?: string;
+        latest_generation_job_updated_at?: string;
+      }>();
 
     return json((rows.results || []).map((row) => {
       let parsed: Record<string, unknown> = {};
@@ -260,6 +279,9 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         aiModel: asString(summary.aiModel, ""),
         r2JsonUrl: row.r2_json_url || "",
         storageMode: row.r2_json_key ? "r2" : "legacy_d1",
+        latestGenerationJobId: row.latest_generation_job_id || "",
+        latestGenerationJobStatus: row.latest_generation_job_status || "",
+        latestGenerationJobUpdatedAt: row.latest_generation_job_updated_at || "",
       };
     }));
   }
@@ -316,6 +338,16 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const paletteOptions = Array.isArray(body.paletteOptions) ? body.paletteOptions : [];
     const skipAiCopyPatch = body.skipAiCopyPatch === true;
     const prepatchedWithAi = body.prepatchedWithAi === true;
+    const prepatchedOfferingOutline = body.prepatchedOfferingOutline && typeof body.prepatchedOfferingOutline === "object" && !Array.isArray(body.prepatchedOfferingOutline)
+      ? body.prepatchedOfferingOutline as Record<string, unknown>
+      : null;
+    const prepatchedCopyPatch = body.prepatchedCopyPatch && typeof body.prepatchedCopyPatch === "object" && !Array.isArray(body.prepatchedCopyPatch)
+      ? body.prepatchedCopyPatch as Record<string, unknown>
+      : null;
+    const prepatchedCopyAuditSummary = body.prepatchedCopyAuditSummary && typeof body.prepatchedCopyAuditSummary === "object" && !Array.isArray(body.prepatchedCopyAuditSummary)
+      ? body.prepatchedCopyAuditSummary as Record<string, unknown>
+      : null;
+    const prepatchedCopyAuditItems = Array.isArray(body.prepatchedCopyAuditItems) ? body.prepatchedCopyAuditItems : [];
     const originPlaceId = placeIdFromPlace(originData);
     const jobId = crypto.randomUUID();
     const jobMetadata: Record<string, unknown> = {
@@ -351,11 +383,16 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       jobMetadata.copyPatchApplied = prepatchedWithAi;
       jobMetadata.copyPatchSkipped = true;
       jobMetadata.parentGenerationJobId = asString(body.parentGenerationJobId);
+      if (prepatchedOfferingOutline) jobMetadata.offeringOutline = prepatchedOfferingOutline;
+      if (prepatchedCopyPatch) jobMetadata.copyPatch = prepatchedCopyPatch;
+      if (asString(body.prepatchedCopyBriefHash)) jobMetadata.copyBriefHash = asString(body.prepatchedCopyBriefHash);
+      if (asString(body.prepatchedCopyPatchHash)) jobMetadata.copyPatchHash = asString(body.prepatchedCopyPatchHash);
     } else {
       try {
         const outlineResult = await generateAiOfferingOutline(aiSiteGenerationDeps, db, env, body, finalJson, originData, businessName);
         if (outlineResult) {
           const outlineApplyResult = applyAiOfferingOutline(finalJson, outlineResult.outline);
+          jobMetadata.offeringOutline = outlineResult.outline;
           jobMetadata.offeringOutlineHash = outlineResult.outlineHash;
           jobMetadata.offeringOutlineApplied = outlineApplyResult.applied;
           jobMetadata.offeringOutlineCount = outlineApplyResult.count;
@@ -370,7 +407,11 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     }
     const copyBrief = buildAiCopyTargetBrief(finalJson, originData, businessName);
     const copyAuditTargets = collectAiCopyAuditTargets(finalJson);
-    jobMetadata.copyBriefHash = await sha256Json(copyBrief);
+    const currentCopyBriefHash = await sha256Json(copyBrief);
+    jobMetadata.copyBriefHash = skipAiCopyPatch && asString(body.prepatchedCopyBriefHash)
+      ? asString(body.prepatchedCopyBriefHash)
+      : currentCopyBriefHash;
+    if (skipAiCopyPatch) jobMetadata.finalCopyBriefHash = currentCopyBriefHash;
     jobMetadata.copyAuditSummary = {
       targetFieldsSentToAi: copyAuditTargets.length,
       sourceSentencesSentToAi: copyAuditTargets.filter((target) => target.before).length,
@@ -381,6 +422,10 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       missingAfter: 0,
       storedItems: 0,
     };
+    if (skipAiCopyPatch && prepatchedCopyAuditSummary) {
+      jobMetadata.copyAuditSummary = prepatchedCopyAuditSummary;
+      jobMetadata.copyAuditItems = prepatchedCopyAuditItems;
+    }
     await updateGenerationJob(db, jobId, { metadata_json: JSON.stringify(jobMetadata) });
 
     if (!skipAiCopyPatch) {
@@ -389,6 +434,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         if (copyPatchResult) {
           applyAiCopyPatch(finalJson, copyPatchResult.patch);
           const copyAudit = buildAiCopyAudit(copyAuditTargets, finalJson, true);
+          jobMetadata.copyPatch = copyPatchResult.patch;
           jobMetadata.copyBriefHash = copyPatchResult.copyBriefHash || jobMetadata.copyBriefHash;
           jobMetadata.copyPatchHash = copyPatchResult.copyPatchHash;
           jobMetadata.copyPatchApplied = true;

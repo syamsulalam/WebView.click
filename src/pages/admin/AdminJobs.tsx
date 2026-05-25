@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import GenerationJobsTable from "../../components/GenerationJobsTable";
 import AdminDocsReader from "../../components/AdminDocsReader";
@@ -13,6 +14,7 @@ const providerApiKeyMap: Record<string, string> = {
 };
 
 export default function AdminJobs() {
+  const location = useLocation();
   const [aiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
   const [aiModel] = useLocalStorageState("webview.adminLeads.aiModel", "~anthropic/claude-sonnet-latest");
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -22,6 +24,9 @@ export default function AdminJobs() {
     acc[provider] = settingsLoaded ? Boolean(String(settings?.[key] || "").trim()) : null;
     return acc;
   }, {});
+  const urlParams = new URLSearchParams(location.search);
+  const focusedJobId = urlParams.get("job") || "";
+  const focusedSearchQuery = urlParams.get("q") || focusedJobId;
 
   useEffect(() => {
     fetch("/api/settings")
@@ -62,6 +67,8 @@ export default function AdminJobs() {
         variant="full"
         serverBackedFilters
         serverBackedSearch
+        initialSearchQuery={focusedSearchQuery}
+        openJobId={focusedJobId}
       />
     </div>
   );

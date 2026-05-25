@@ -29,6 +29,8 @@ type GenerationJobsTableProps = {
   showFullPageLink?: boolean;
   serverBackedFilters?: boolean;
   serverBackedSearch?: boolean;
+  initialSearchQuery?: string;
+  openJobId?: string;
   onJobsLoaded?: (jobs: any[]) => void;
 };
 
@@ -43,6 +45,8 @@ export default function GenerationJobsTable({
   showFullPageLink = false,
   serverBackedFilters = false,
   serverBackedSearch = false,
+  initialSearchQuery = "",
+  openJobId = "",
   onJobsLoaded,
 }: GenerationJobsTableProps) {
   const [jobs, setJobs] = useState<any[]>([]);
@@ -56,6 +60,7 @@ export default function GenerationJobsTable({
   const [searchInput, setSearchInput] = useState(searchQuery);
   const [copiedKey, setCopiedKey] = useState("");
   const [selectedJob, setSelectedJob] = useState<any>(null);
+  const [autoOpenedJobId, setAutoOpenedJobId] = useState("");
 
   const compact = variant === "compact";
   const requestLimit = Math.max(1, Math.min(500, limit || (compact ? 100 : 200)));
@@ -160,6 +165,26 @@ export default function GenerationJobsTable({
   useEffect(() => {
     fetchJobs();
   }, [requestLimit, serverFilterKey, serverSearchKey]);
+
+  useEffect(() => {
+    const incomingSearch = initialSearchQuery.trim();
+    if (!incomingSearch) return;
+    setFilter("all");
+    setSearchInput(incomingSearch);
+    setSearchQuery(incomingSearch);
+  }, [initialSearchQuery, setFilter, setSearchQuery]);
+
+  useEffect(() => {
+    if (!openJobId) {
+      setAutoOpenedJobId("");
+      return;
+    }
+    if (autoOpenedJobId === openJobId) return;
+    const matchingJob = jobs.find((job) => job.id === openJobId);
+    if (!matchingJob) return;
+    setSelectedJob(matchingJob);
+    setAutoOpenedJobId(openJobId);
+  }, [openJobId, jobs, autoOpenedJobId]);
 
   const applySearch = (event?: FormEvent) => {
     event?.preventDefault();

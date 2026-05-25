@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, ChevronDown, Database, FileText, Globe2, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
+import { Brain, ChevronDown, Database, FileText, Globe2, ListChecks, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { readApiJson } from "../../lib/apiResponse";
@@ -43,6 +43,9 @@ type SiteRow = {
   generationMode?: string;
   aiProvider?: string;
   aiModel?: string;
+  latestGenerationJobId?: string;
+  latestGenerationJobStatus?: string;
+  latestGenerationJobUpdatedAt?: string;
 };
 
 type RegenerateMode = "resave" | "ai";
@@ -67,6 +70,13 @@ function generationBadge(site: SiteRow) {
     title: "Generation mode metadata is missing or from an older site row.",
     className: "bg-amber-100 text-amber-800",
   };
+}
+
+function latestJobActionClass(status?: string) {
+  if (status === "success") return "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100";
+  if (status === "failed") return "border-red-200 bg-red-50 text-red-700 hover:bg-red-100";
+  if (status === "running") return "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100";
+  return "border-gray-200 text-gray-700 hover:bg-gray-50";
 }
 
 const providerApiKeyMap: Record<string, string> = {
@@ -718,7 +728,7 @@ export default function AdminSites() {
           <span>Updated</span>
           <span className="inline-flex items-center justify-end gap-1.5 text-right">
             Actions
-            <HelpTooltip text="Preview opens the public site, Data shows saved JSON source data, Brief shows copy-only input, and Regen lets you refresh Google data or run an AI copy patch." />
+            <HelpTooltip text="Preview opens the public site, Data shows saved JSON source data, Brief shows copy-only input, Jobs opens the latest generation audit row, and Regen refreshes Google data or runs an AI copy patch." />
           </span>
         </div>
 
@@ -827,6 +837,28 @@ export default function AdminSites() {
                     <FileText size={14} />
                   </button>
                 </HoverTooltip>
+                {site.latestGenerationJobId ? (
+                  <HoverTooltip text={`Open latest generation job audit (${site.latestGenerationJobStatus || "unknown"}${site.latestGenerationJobUpdatedAt ? `, ${new Date(site.latestGenerationJobUpdatedAt).toLocaleString()}` : ""}).`}>
+                    <a
+                      href={`/admin/jobs?job=${encodeURIComponent(site.latestGenerationJobId)}&q=${encodeURIComponent(site.latestGenerationJobId)}`}
+                      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border ${latestJobActionClass(site.latestGenerationJobStatus)}`}
+                      aria-label="Open latest generation job audit"
+                    >
+                      <ListChecks size={14} />
+                    </a>
+                  </HoverTooltip>
+                ) : (
+                  <HoverTooltip text="No generation job audit row is linked to this older site record yet. Regenerate once to create one.">
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-400 opacity-60"
+                      aria-label="No generation job audit available"
+                    >
+                      <ListChecks size={14} />
+                    </button>
+                  </HoverTooltip>
+                )}
                 <div className="relative">
                   <HoverTooltip text="Choose AI copy regeneration or Google re-gather/resave for this generated site.">
                     <button

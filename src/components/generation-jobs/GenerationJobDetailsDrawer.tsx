@@ -55,12 +55,36 @@ export default function GenerationJobDetailsDrawer({
   const providerCooldown = job?.metadata?.providerCooldown || null;
   const aiFailure = job?.metadata?.aiFailure || job?.metadata?.providerFailure || null;
   const chunkedState = chunkedGenerationState(job);
+  const returnedOutline = job?.metadata?.offeringOutline && typeof job.metadata.offeringOutline === "object"
+    ? job.metadata.offeringOutline
+    : null;
+  const returnedCopyPatch = job?.metadata?.copyPatch && typeof job.metadata.copyPatch === "object"
+    ? job.metadata.copyPatch
+    : null;
   const provider = job?.provider || fallbackProvider;
   const selectedReadiness = {
     provider,
     model: job?.model || fallbackModel,
     hasApiKey: providerKeyStatus[provider] ?? null,
   };
+  const returnedWorkSections = [
+    {
+      key: "outline",
+      title: "AI returned outline",
+      helper: "Raw parsed offering outline returned by the outline step before deterministic pages/navigation are rebuilt.",
+      value: returnedOutline,
+      copyKey: `${job.id}:ai-outline`,
+      empty: "No AI outline has been recorded for this job yet.",
+    },
+    {
+      key: "copyPatch",
+      title: "AI returned copy patch",
+      helper: "Raw parsed copy patch returned by AI. Compare this with the copy audit below to see whether AI omitted a field, returned unchanged wording, or the patch did not map onto the final site JSON.",
+      value: returnedCopyPatch,
+      copyKey: `${job.id}:ai-copy-patch`,
+      empty: "No AI copy patch has been recorded for this job yet.",
+    },
+  ];
 
   return (
     <div className="fixed inset-0 z-[250] flex justify-end bg-slate-950/30" role="dialog" aria-modal="true">
@@ -209,6 +233,49 @@ export default function GenerationJobDetailsDrawer({
               )}
             </section>
           )}
+
+          <section>
+            <div className="mb-2">
+              <h3 className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
+                AI returned work
+                <HelpTooltip text="Shows the parsed JSON returned by AI for chunked outline/copy steps. Use this with the copy audit to debug why regenerated copy did or did not change." />
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Inspect the model output before and after WebView.click applies it to the saved site.
+              </p>
+            </div>
+            <div className="space-y-3">
+              {returnedWorkSections.map((section) => (
+                <article key={section.key} className="rounded-xl border border-slate-200 bg-white">
+                  <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-3 py-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">{section.title}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{section.helper}</p>
+                    </div>
+                    {section.value && (
+                      <HoverTooltip text={`Copy ${section.title.toLowerCase()} JSON.`}>
+                        <button
+                          type="button"
+                          onClick={() => onCopyValue(section.copyKey, JSON.stringify(section.value, null, 2))}
+                          className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+                        >
+                          {copiedKey === section.copyKey ? <Check size={12} /> : <Copy size={12} />}
+                          Copy
+                        </button>
+                      </HoverTooltip>
+                    )}
+                  </div>
+                  {section.value ? (
+                    <pre className="max-h-72 overflow-auto rounded-b-xl bg-slate-950 p-3 text-xs text-slate-100">
+                      {JSON.stringify(section.value, null, 2)}
+                    </pre>
+                  ) : (
+                    <p className="px-3 py-3 text-xs text-slate-500">{section.empty}</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
 
           {job.metadata?.preflightBlocked && aiReadiness && (
             <section>

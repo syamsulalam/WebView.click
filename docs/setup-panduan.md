@@ -43,6 +43,7 @@ File ini menangani:
 Pastikan binding D1 bernama `DB`. Jika binding belum aktif, endpoint API akan mengembalikan JSON error, bukan fallback HTML.
 
 File `public/_routes.json` membatasi Pages Functions hanya untuk `/api` dan `/api/*`, sehingga asset statis dan route SPA tetap dilayani Cloudflare Pages tanpa biaya invocation API yang tidak perlu.
+File `public/_redirects` berisi `/* /index.html 200` agar direct open/refresh pada route React seperti `/admin/jobs` atau `/{businessId}` tidak menjadi static 404 di Cloudflare Pages.
 
 ### Konfigurasi Cloudflare D1 (Database)
 Aplikasi produksi menggunakan Cloudflare D1:

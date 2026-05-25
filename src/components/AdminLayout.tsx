@@ -94,7 +94,11 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
           </Link>
         )}
 
-        <AdminDocsReader pathname={location.pathname} />
+        <AdminDocsReader
+          pathname={location.pathname}
+          buttonClassName="p-3 rounded-xl transition-colors group relative text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          iconSize={24}
+        />
         
         <button 
           onClick={onSignOut}
