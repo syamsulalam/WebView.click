@@ -17,6 +17,7 @@ export default function HoverTooltip({
   tooltipClassName = "",
 }: HoverTooltipProps) {
   const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const tooltipRef = useRef<HTMLSpanElement | null>(null);
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0, placement: "top" as "top" | "bottom" });
 
@@ -25,8 +26,13 @@ export default function HoverTooltip({
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
     const placement = rect.top > 140 ? "top" : "bottom";
+    const tooltipWidth = tooltipRef.current?.offsetWidth || 288;
+    const sideMargin = 12;
+    const minLeft = tooltipWidth / 2 + sideMargin;
+    const maxLeft = window.innerWidth - tooltipWidth / 2 - sideMargin;
+    const anchorCenter = rect.left + rect.width / 2;
     setPosition({
-      left: Math.min(Math.max(rect.left + rect.width / 2, 12), window.innerWidth - 12),
+      left: Math.min(Math.max(anchorCenter, minLeft), Math.max(minLeft, maxLeft)),
       top: placement === "top" ? rect.top - 8 : rect.bottom + 8,
       placement,
     });
@@ -64,6 +70,7 @@ export default function HoverTooltip({
       {children}
       {visible && typeof document !== "undefined" && createPortal(
         <span
+          ref={tooltipRef}
           role="tooltip"
           className={`pointer-events-none fixed z-[100001] -translate-x-1/2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-medium leading-relaxed text-white opacity-100 shadow-2xl ${position.placement === "top" ? "-translate-y-full" : ""} ${widthClass} ${tooltipClassName}`}
           style={{ left: position.left, top: position.top }}

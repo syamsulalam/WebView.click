@@ -121,7 +121,7 @@ Logic penting:
 - Default width `w-72`, bisa dioverride via `widthClass`.
 - Menerima `text` string atau `children` untuk konten custom.
 - Tooltip bubble dirender via `createPortal(document.body)` sebagai fixed layer `z-[100001]`, sehingga tetap berada di foreground walau parent card/modal punya `overflow-hidden` atau stacking context.
-- Posisi tooltip dihitung dari anchor dan ikut update saat scroll/resize; jika ruang atas sempit, tooltip muncul di bawah anchor.
+- Posisi tooltip dihitung dari anchor dan ikut update saat scroll/resize; jika ruang atas sempit, tooltip muncul di bawah anchor. Center position clamps against tooltip width so sidebar/edge icons do not push the bubble off-screen.
 - Admin pages memakai `HelpTooltip` untuk menjelaskan kontrol yang efeknya tidak langsung terlihat, seperti API keys, scoring, generation jobs, schema repair, R2 migration, search filters, batch generate, dan regenerate.
 
 ### `src/components/HoverTooltip.tsx`
@@ -133,6 +133,7 @@ Logic penting:
 - Dipakai untuk mengganti atribut browser `title=` pada UI React agar tooltip konsisten dengan desain admin/public app.
 - Jika `text` kosong, wrapper merender children langsung tanpa tooltip; ini menjaga conditional tooltip seperti disabled placeholder buttons tetap sederhana.
 - Tooltip bubble juga dirender via portal body-level fixed layer `z-[100001]`, supaya tidak tertutup parent, modal, drawer, table overflow, atau card `overflow-hidden`.
+- Center position clamps against measured tooltip width, so icon-only actions near the left or right browser edge stay readable.
 - Untuk tooltip berbentuk icon/help text gunakan `HelpTooltip`; untuk tooltip pada elemen existing gunakan `HoverTooltip`.
 
 ### `src/components/GenerationJobsTable.tsx`
