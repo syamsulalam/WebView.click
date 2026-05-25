@@ -71,6 +71,9 @@ async function getPaypalApiCredentials(deps: PaymentsDeps, db: D1DatabaseLike, e
     sandboxClientSecret,
     liveClientId,
     liveClientSecret,
+    sandboxWebhookId,
+    liveWebhookId,
+    legacyWebhookId,
     productionSetting,
   ] = await Promise.all([
     deps.getSetting(db, env, "PAYPAL_CLIENT_ID"),
@@ -79,6 +82,9 @@ async function getPaypalApiCredentials(deps: PaymentsDeps, db: D1DatabaseLike, e
     deps.getSetting(db, env, "PAYPAL_SANDBOX_CLIENT_SECRET"),
     deps.getSetting(db, env, "PAYPAL_LIVE_CLIENT_ID"),
     deps.getSetting(db, env, "PAYPAL_LIVE_CLIENT_SECRET"),
+    deps.getSetting(db, env, "PAYPAL_SANDBOX_WEBHOOK_ID"),
+    deps.getSetting(db, env, "PAYPAL_LIVE_WEBHOOK_ID"),
+    deps.getSetting(db, env, "PAYPAL_WEBHOOK_ID"),
     deps.getSetting(db, env, "PAYPAL_IS_PRODUCTION"),
   ]);
   const isProduction = productionSetting === "true";
@@ -88,6 +94,7 @@ async function getPaypalApiCredentials(deps: PaymentsDeps, db: D1DatabaseLike, e
     productionSetting,
     clientId: isProduction ? firstString(liveClientId, legacyClientId) : firstString(sandboxClientId, legacyClientId),
     clientSecret: isProduction ? firstString(liveClientSecret, legacyClientSecret) : firstString(sandboxClientSecret, legacyClientSecret),
+    webhookId: isProduction ? firstString(liveWebhookId, legacyWebhookId) : firstString(sandboxWebhookId, legacyWebhookId),
   };
 }
 
@@ -420,23 +427,21 @@ async function recordPaypalWebhookPayment(deps: PaymentsDeps, db: D1DatabaseLike
 
 async function handlePaypalWebhook(deps: PaymentsDeps, request: Request, db: D1DatabaseLike, env: unknown) {
   const event = await deps.readJsonBody(request);
-  const [credentials, webhookId] = await Promise.all([
-    getPaypalApiCredentials(deps, db, env),
-    deps.getSetting(db, env, "PAYPAL_WEBHOOK_ID"),
-  ]);
+  const credentials = await getPaypalApiCredentials(deps, db, env);
 
-  if (!credentials.clientId || !credentials.clientSecret || !webhookId) {
+  if (!credentials.clientId || !credentials.clientSecret || !credentials.webhookId) {
     return deps.json({
       success: true,
       configured: false,
       ignored: true,
-      message: "PayPal webhook endpoint is available but Business API credentials/webhook ID are not configured yet.",
+      mode: credentials.mode,
+      message: `PayPal webhook endpoint is available but ${credentials.mode} API credentials/webhook ID are not configured yet.`,
     });
   }
 
   const baseUrl = paypalApiBase(credentials.isProduction);
   const accessToken = await paypalAccessToken(baseUrl, credentials.clientId, credentials.clientSecret);
-  const verified = await verifyPaypalWebhookSignature(baseUrl, accessToken, webhookId, request, event);
+  const verified = await verifyPaypalWebhookSignature(baseUrl, accessToken, credentials.webhookId, request, event);
   if (!verified) {
     return deps.errorJson("PayPal webhook signature verification failed.", 400);
   }

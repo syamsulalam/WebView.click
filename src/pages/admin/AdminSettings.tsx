@@ -62,8 +62,10 @@ const initialSettings: Record<string, string> = {
   PAYPAL_CLIENT_SECRET: "",
   PAYPAL_SANDBOX_CLIENT_ID: "",
   PAYPAL_SANDBOX_CLIENT_SECRET: "",
+  PAYPAL_SANDBOX_WEBHOOK_ID: "",
   PAYPAL_LIVE_CLIENT_ID: "",
   PAYPAL_LIVE_CLIENT_SECRET: "",
+  PAYPAL_LIVE_WEBHOOK_ID: "",
   PAYPAL_WEBHOOK_ID: "",
   PAYPAL_IS_PRODUCTION: "false",
   WISE_PAYMENT_URL: "",
@@ -210,13 +212,15 @@ const paymentFieldGroups: Array<{
     fields: [
       { key: "PAYPAL_SANDBOX_CLIENT_ID", label: "Sandbox API key / Client ID", placeholder: "Sandbox REST app API key / client ID", tooltip: "PayPal may label this API key or Client ID. It is the public sandbox ID used by the PayPal JavaScript SDK and Orders API when mode is Sandbox." },
       { key: "PAYPAL_SANDBOX_CLIENT_SECRET", label: "Sandbox API secret", type: "password", placeholder: "Sandbox REST app secret", tooltip: "Server-side sandbox secret used to create/capture sandbox PayPal Orders. Never expose it in public pages." },
+      { key: "PAYPAL_SANDBOX_WEBHOOK_ID", label: "Sandbox Webhook ID", placeholder: "Sandbox webhook ID from PayPal app", tooltip: "Webhook ID created in the sandbox REST app. It must match the sandbox API key/secret for signature verification." },
       { key: "PAYPAL_LIVE_CLIENT_ID", label: "Live API key / Client ID", placeholder: "Live REST app API key / client ID", tooltip: "PayPal may label this API key or Client ID. It is the public live ID used by the PayPal JavaScript SDK and Orders API when mode is Live." },
       { key: "PAYPAL_LIVE_CLIENT_SECRET", label: "Live API secret", type: "password", placeholder: "Live REST app secret", tooltip: "Server-side live secret used to create/capture live PayPal Orders. Never expose it in public pages." },
+      { key: "PAYPAL_LIVE_WEBHOOK_ID", label: "Live Webhook ID", placeholder: "Live webhook ID from PayPal app", tooltip: "Webhook ID created in the live REST app. It must match the live API key/secret for signature verification." },
       { key: "PAYPAL_BUSINESS_URL", label: "PayPal fallback link", placeholder: "https://www.paypal.com/...", tooltip: "Optional fallback PayPal Business checkout/invoice/payment link if API order creation fails or credentials are not ready." },
       { key: "PAYPAL_ACCOUNT_MODE", label: "Fallback account mode", type: "select", tooltip: "Only relevant when using a manual PayPal fallback link. Business is preferred; Personal bridge should only be temporary low-volume testing.", options: [{ value: "business", label: "Business / invoice link" }, { value: "personal_bridge", label: "Personal temporary bridge" }] },
       { key: "PAYPAL_RISK_ACKNOWLEDGED", label: "PayPal risk checklist", type: "select", tooltip: "Set to acknowledged only after reviewing the PayPal risk checklist below and preparing delivery/payment records.", options: [{ value: "false", label: "Not acknowledged" }, { value: "true", label: "Acknowledged" }] },
       { key: "PAYPAL_PAYMENT_NOTE", label: "Fallback payment note", placeholder: "Ask buyer to include business, domain, and reference", tooltip: "Only used when checkout falls back to a manual PayPal link. API checkout stores the reference on the PayPal order and captures automatically." },
-      { key: "PAYPAL_WEBHOOK_ID", label: "PayPal Webhook ID", placeholder: "Webhook ID from PayPal app", tooltip: "Optional but recommended. Direct Checkout capture records payment immediately; webhook still protects against missed browser callbacks." },
+      { key: "PAYPAL_WEBHOOK_ID", label: "Legacy shared Webhook ID", placeholder: "Legacy shared webhook ID", tooltip: "Legacy fallback only. Prefer sandbox/live webhook IDs so signature verification always matches the active PayPal mode." },
       { key: "ADMIN_WHATSAPP_NUMBER", label: "Admin WhatsApp number", placeholder: "62812...", tooltip: "Fallback contact if the PayPal/manual checkout needs admin follow-up." },
     ],
   },
@@ -863,6 +867,7 @@ export default function AdminSettings() {
                       if (group.title !== "PayPal Business") return true;
                       if (field.key.startsWith("PAYPAL_SANDBOX_")) return !paypalLiveMode;
                       if (field.key.startsWith("PAYPAL_LIVE_")) return paypalLiveMode;
+                      if (field.key === "PAYPAL_WEBHOOK_ID") return Boolean(settings.PAYPAL_WEBHOOK_ID);
                       if (field.key === "PAYPAL_PAYMENT_NOTE") return Boolean(paypalLink);
                       if (field.key === "PAYPAL_ACCOUNT_MODE") return Boolean(paypalLink) || settings.PAYPAL_ACCOUNT_MODE === "personal_bridge";
                       return true;

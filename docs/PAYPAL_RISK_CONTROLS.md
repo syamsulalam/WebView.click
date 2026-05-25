@@ -105,8 +105,8 @@ When PayPal Business is ready:
 1. Create a PayPal REST app.
 2. Add webhook URL: `https://webview.click/api/payments/paypal-webhook`.
 3. Subscribe to completed payment events such as `PAYMENT.CAPTURE.COMPLETED`.
-4. Copy the PayPal webhook ID into `PAYPAL_WEBHOOK_ID`.
-5. Add the active mode credential pair (`PAYPAL_SANDBOX_CLIENT_ID`/`PAYPAL_SANDBOX_CLIENT_SECRET` or `PAYPAL_LIVE_CLIENT_ID`/`PAYPAL_LIVE_CLIENT_SECRET`) and set the matching Sandbox/Live toggle.
+4. Copy the sandbox webhook ID into `PAYPAL_SANDBOX_WEBHOOK_ID`, or the live webhook ID into `PAYPAL_LIVE_WEBHOOK_ID`.
+5. Add the matching credential pair (`PAYPAL_SANDBOX_CLIENT_ID`/`PAYPAL_SANDBOX_CLIENT_SECRET` or `PAYPAL_LIVE_CLIENT_ID`/`PAYPAL_LIVE_CLIENT_SECRET`) and set the matching Sandbox/Live toggle.
 6. Test in sandbox first.
 
 Until those settings are filled, the endpoint safely returns success and ignores events.

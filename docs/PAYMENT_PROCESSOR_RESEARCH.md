@@ -156,9 +156,11 @@ Settings needed:
 - `PAYPAL_IS_PRODUCTION=false` for sandbox, `true` for live.
 - `PAYPAL_SANDBOX_CLIENT_ID`
 - `PAYPAL_SANDBOX_CLIENT_SECRET`
+- `PAYPAL_SANDBOX_WEBHOOK_ID`
 - `PAYPAL_LIVE_CLIENT_ID`
 - `PAYPAL_LIVE_CLIENT_SECRET`
-- `PAYPAL_WEBHOOK_ID` after webhook setup.
+- `PAYPAL_LIVE_WEBHOOK_ID`
+- `PAYPAL_WEBHOOK_ID` only as legacy fallback.
 - `PAYPAL_BUSINESS_URL` as optional fallback link.
 
 Operational note:

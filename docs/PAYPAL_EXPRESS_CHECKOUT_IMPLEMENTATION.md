@@ -63,15 +63,18 @@ Settings:
 - `PAYPAL_IS_PRODUCTION=false` for sandbox, `true` for live.
 - `PAYPAL_SANDBOX_CLIENT_ID`
 - `PAYPAL_SANDBOX_CLIENT_SECRET`
+- `PAYPAL_SANDBOX_WEBHOOK_ID`
 - `PAYPAL_LIVE_CLIENT_ID`
 - `PAYPAL_LIVE_CLIENT_SECRET`
-- `PAYPAL_WEBHOOK_ID` after webhook is configured.
+- `PAYPAL_LIVE_WEBHOOK_ID`
+- `PAYPAL_WEBHOOK_ID` is read only as a legacy fallback; prefer mode-specific webhook IDs.
 - `PAYPAL_BUSINESS_URL` optional fallback link.
 - `PAYPAL_PAYMENT_NOTE` is only used for manual PayPal fallback links. API Checkout stores the reference in the PayPal order and captures automatically.
 
 Legacy fallback:
 
 - Existing `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` are still read as fallback values so older production settings do not break.
+- Existing `PAYPAL_WEBHOOK_ID` is still read as a fallback value, but sandbox and live webhook IDs should be stored separately.
 - New setup should fill the sandbox and live fields separately, then switch mode only with the `/admin/settings` Sandbox/Live toggle (`PAYPAL_IS_PRODUCTION`).
 - PayPal may label the public REST app credential as an API key in some dashboard views. Use that value in the `*_CLIENT_ID` / "API key / Client ID" field, and use the matching secret in the `*_CLIENT_SECRET` / "API secret" field.
 
@@ -87,7 +90,8 @@ Legacy fallback:
 8. Pay with a sandbox buyer account.
 9. Confirm the modal shows payment captured.
 10. Confirm `/admin/leads` shows a paid ledger row with PayPal transaction ID and payer email.
-11. Only after this succeeds, paste the live API key / Client ID into `PAYPAL_LIVE_CLIENT_ID` and the live secret into `PAYPAL_LIVE_CLIENT_SECRET`, then set the PayPal mode toggle to Live (`PAYPAL_IS_PRODUCTION=true`).
+11. Create a sandbox webhook in the sandbox REST app and paste its ID into `PAYPAL_SANDBOX_WEBHOOK_ID` if you want webhook backup verification during sandbox QA.
+12. Only after this succeeds, paste the live API key / Client ID into `PAYPAL_LIVE_CLIENT_ID` and the live secret into `PAYPAL_LIVE_CLIENT_SECRET`, create a live webhook in the live REST app, paste its ID into `PAYPAL_LIVE_WEBHOOK_ID`, then set the PayPal mode toggle to Live (`PAYPAL_IS_PRODUCTION=true`).
 
 ## Debug Notes
 
@@ -95,7 +99,7 @@ Legacy fallback:
 - If PayPal is selected in Settings and the active mode API key / Client ID or secret is missing, `/admin/settings` shows an amber warning before you leave the page.
 - If order creation fails, `/api/payments/checkout` falls back to `PAYPAL_BUSINESS_URL` when available and keeps the checkout-pending CRM row.
 - If capture succeeds in PayPal but CRM recording fails, use `/admin/leads` manual payment verification with the PayPal capture ID while reviewing Function logs.
-- Keep webhook configured even though direct capture records payments immediately; it protects against browser callback interruptions.
+- Keep the active mode webhook configured even though direct capture records payments immediately; it protects against browser callback interruptions.
 
 ## Sources
 
