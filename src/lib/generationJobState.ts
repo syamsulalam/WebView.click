@@ -1,7 +1,7 @@
 export const CHUNKED_GENERATION_STEPS = [
   { key: "outline", label: "Outline" },
   { key: "siteCopy", label: "Site copy" },
-  { key: "offeringCopy", label: "Offering copy" },
+  { key: "offeringCopy", label: "Service copy" },
   { key: "finalize", label: "Finalize" },
 ] as const;
 
@@ -20,9 +20,12 @@ export function chunkedGenerationState(job: any) {
   const step = String(metadata.step || "");
   const nextStep = normalizeChunkedStep(metadata.nextStep);
   const failureStep = normalizeChunkedStep(metadata.failureStage);
+  const offeringCopyCursor = Number(metadata.offeringCopyCursor || 0);
+  const offeringCopyTotal = Number(metadata.offeringCopyTotal || 0);
+  const offeringCopyPartial = step === "offeringCopy_partial" || (nextStep === "offeringCopy" && offeringCopyTotal > 0 && offeringCopyCursor < offeringCopyTotal);
   const outlineDone = Boolean(metadata.offeringOutlineHash || step === "outline_complete" || step === "copy_complete" || step === "siteCopy_complete" || step === "offeringCopy_complete" || step === "finalize_complete");
   const siteCopyDone = Boolean(metadata.siteCopyPatchHash || metadata.copyPatchHash || step === "copy_complete" || step === "siteCopy_complete" || step === "offeringCopy_complete" || step === "finalize_complete");
-  const offeringCopyDone = Boolean(metadata.offeringCopyPatchHash || step === "offeringCopy_complete" || step === "finalize_complete");
+  const offeringCopyDone = !offeringCopyPartial && Boolean(metadata.offeringCopyPatchHash || step === "offeringCopy_complete" || step === "finalize_complete");
   const finalizeDone = Boolean(job?.status === "success" || step === "finalize_complete");
   const doneByStep: Record<ChunkedGenerationStep, boolean> = {
     outline: outlineDone,

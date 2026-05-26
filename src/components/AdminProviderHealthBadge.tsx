@@ -49,8 +49,9 @@ export default function AdminProviderHealthBadge({ provider, model, className = 
   const rate = Number(health?.failureRate || 0);
   const percent = Math.round(rate * 100);
   const topKind = health?.topFailureKind?.kind || health?.latestFailure?.failureKind || "";
+  const recommendation = health?.serviceCopyRecommendation;
   const title = health
-    ? `${failed}/${total} generation attempts failed in the last 24h${topKind ? `. Most common: ${topKind}` : ""}.${health.latestFailure?.actionHint ? ` Latest hint: ${health.latestFailure.actionHint}` : ""}`
+    ? `${failed}/${total} generation attempts failed in the last 24h${topKind ? `. Most common: ${topKind}` : ""}.${recommendation?.reason ? ` Service-copy recommendation: ${recommendation.reason}` : ""}${health.latestFailure?.actionHint ? ` Latest hint: ${health.latestFailure.actionHint}` : ""}`
     : "No provider health data loaded yet.";
 
   return (
@@ -61,6 +62,7 @@ export default function AdminProviderHealthBadge({ provider, model, className = 
       <Activity size={13} />
       {loading ? "Checking 24h failure rate" : total ? `${percent}% fail · ${failed}/${total} 24h` : "No 24h attempts"}
       {topKind && <span className="max-w-[150px] truncate opacity-80">{topKind}</span>}
+      {recommendation?.mode === "slow" && <span className="rounded bg-white/70 px-1.5 py-0.5 text-[10px]">slow suggested</span>}
       <HelpTooltip
         widthClass="w-72"
         text="Uses local generation job history only. It shows failed attempts divided by all attempts for this provider/model in the last 24 hours, so you can avoid flaky models before batch generation."

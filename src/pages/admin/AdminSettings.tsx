@@ -3,6 +3,12 @@ import { AlertCircle, CheckCircle2, ChevronDown, Copy, Loader2, RotateCcw, Save,
 import { aiModelPrices, defaultInputTokens, defaultOutputTokens, estimateCostUsd, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { clearAiReadinessCache } from "../../lib/aiReadiness";
+import {
+  AI_SERVICE_COPY_PROVIDER_MODES_KEY,
+  aiServiceCopyModeKey,
+  parseAiServiceCopyProviderModes,
+  resolveAiServiceCopyProviderMode,
+} from "../../lib/aiSlowProviderMode";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
 import AdminDocsReader from "../../components/AdminDocsReader";
@@ -79,6 +85,7 @@ const initialSettings: Record<string, string> = {
   SCORING_PRESET: "balanced",
   SCORING_MIN_SCORE_DEFAULT: "0",
   SCORING_WEIGHTS_JSON: serializeProspectScoreWeights(defaultProspectScoreWeights),
+  AI_SERVICE_COPY_PROVIDER_MODES_JSON: "",
 };
 
 const providerOptions: Array<{
@@ -491,6 +498,28 @@ export default function AdminSettings() {
   const pricingModels = aiModelPrices.filter((item) => item.provider === pricingProvider);
   const pricingEstimate = estimateCostUsd(pricingProvider, pricingModel, inputTokens, outputTokens);
   const pricingProviderKeyReady = Boolean(String(settings?.[pricingProviderApiKeyMap[pricingProvider]] || "").trim());
+  const serviceCopyProviderModes = useMemo(
+    () => parseAiServiceCopyProviderModes(settings[AI_SERVICE_COPY_PROVIDER_MODES_KEY]),
+    [settings[AI_SERVICE_COPY_PROVIDER_MODES_KEY]],
+  );
+  const serviceCopyModeKey = aiServiceCopyModeKey(pricingProvider, pricingModel);
+  const selectedServiceCopyMode = resolveAiServiceCopyProviderMode(settings, pricingProvider, pricingModel);
+  const updateSelectedServiceCopyMode = (updates: { slowMode?: boolean; serviceCopyBatchSize?: number }) => {
+    const nextMode = {
+      ...(serviceCopyProviderModes[serviceCopyModeKey] || {}),
+      provider: pricingProvider,
+      model: pricingModel,
+      slowMode: updates.slowMode ?? selectedServiceCopyMode.slowMode,
+      serviceCopyBatchSize: updates.serviceCopyBatchSize ?? selectedServiceCopyMode.serviceCopyBatchSize,
+      updatedAt: new Date().toISOString(),
+    };
+    if (nextMode.slowMode) nextMode.serviceCopyBatchSize = 1;
+    const nextModes = {
+      ...serviceCopyProviderModes,
+      [serviceCopyModeKey]: nextMode,
+    };
+    handleChange(AI_SERVICE_COPY_PROVIDER_MODES_KEY, JSON.stringify(nextModes, null, 2));
+  };
   const activePaymentProcessor = settings.PAYMENT_PROCESSOR || "mock";
   const visiblePaymentFieldGroups = paymentFieldGroups.filter((group) => !group.processors || group.processors.includes(activePaymentProcessor));
   const paypalSelected = activePaymentProcessor === "paypal";
@@ -1116,6 +1145,60 @@ export default function AdminSettings() {
             <AdminProviderCooldownBadge provider={pricingProvider} />
             <AdminProviderHealthBadge provider={pricingProvider} model={pricingModel} />
           </div>
+        </div>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
+                Service copy speed mode
+                <HelpTooltip text="Saved per provider/model. Slow provider mode caps service-copy retries to one service per Pages Function request so slow providers are less likely to return Cloudflare 524 timeout pages." widthClass="w-80" />
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
+                Current model: {pricingProvider} / {pricingModel}. Jobs will show the estimated service-copy request count before retrying.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-1">
+                {[
+                  { value: false, label: "Standard" },
+                  { value: true, label: "Slow" },
+                ].map((option) => {
+                  const active = selectedServiceCopyMode.slowMode === option.value;
+                  return (
+                    <button
+                      key={option.label}
+                      type="button"
+                      onClick={() => updateSelectedServiceCopyMode({ slowMode: option.value, serviceCopyBatchSize: option.value ? 1 : 2 })}
+                      className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                        active ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
+                      }`}
+                      aria-pressed={active}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                Max per request
+                <select
+                  value={selectedServiceCopyMode.serviceCopyBatchSize}
+                  onChange={(event) => updateSelectedServiceCopyMode({ serviceCopyBatchSize: Number(event.target.value) })}
+                  disabled={selectedServiceCopyMode.slowMode}
+                  className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
+                >
+                  {[1, 2, 3, 4].map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+          <p className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+            {selectedServiceCopyMode.slowMode
+              ? "Slow mode is on: service copy runs one service/product per request for this provider/model."
+              : `Standard mode is on: service copy can ask for up to ${selectedServiceCopyMode.serviceCopyBatchSize} services/products per request for this provider/model.`}
+          </p>
         </div>
         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

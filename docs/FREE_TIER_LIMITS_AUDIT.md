@@ -1,6 +1,6 @@
 # Free Tier Limits and Function Call Audit
 
-Last reviewed: 2026-05-18.
+Last reviewed: 2026-05-26.
 
 Purpose: keep WebView.click friendly to the Cloudflare Pages Free tier and avoid surprise usage from Google Places, AI providers, Clerk, R2, and payment/domain integrations. Treat these limits as planning guardrails, not as guaranteed billing advice. Recheck the linked vendor pages before increasing automation volume.
 
@@ -9,6 +9,7 @@ Purpose: keep WebView.click friendly to the Cloudflare Pages Free tier and avoid
 Sources:
 - Cloudflare Pages limits: https://developers.cloudflare.com/pages/platform/limits/
 - Cloudflare Workers limits: https://developers.cloudflare.com/workers/platform/limits/
+- Cloudflare Error 524: https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-524/
 - Cloudflare D1 pricing: https://developers.cloudflare.com/d1/platform/pricing/
 - Cloudflare R2 pricing: https://developers.cloudflare.com/r2/pricing/
 - Google Maps Platform billing/pricing: https://developers.google.com/maps/billing-and-pricing/overview
@@ -32,6 +33,8 @@ Cloudflare Workers Free, relevant because Pages Functions run on Workers:
 - 10 ms CPU time per HTTP request.
 - 128 MB memory.
 - 6 simultaneous outgoing connections per request.
+- HTTP Workers have no hard duration limit while the client remains connected, but CPU time is separate from wall-clock waiting on network calls.
+- Cloudflare 524 means Cloudflare connected to the origin but did not receive a response before the proxy read timeout. For Pages Functions that are waiting on slow AI providers, avoid this by returning between smaller units of work instead of holding one request open for a large AI response.
 
 Cloudflare D1 Free:
 - 5 million rows read per day.
@@ -109,11 +112,18 @@ External paid providers:
 - Guardrail: show the Jobs `Preflight blocked` filter and readiness message clearly so admins fix settings instead of retrying blindly.
 
 `POST /api/sites/generate`
-- External calls: one AI generation call when AI copy patch is required.
+- External calls: one AI generation call when using the older direct AI path. Chunked admin generation finalizes with `skipAiCopyPatch=true`, so the final save should not call AI again.
 - Possible R2 calls: upload final JSON and non-Google external image assets.
 - D1 work: generation job insert/update, site manifest writes, prospect status update, activity writes.
 - Risk: this is the most expensive app action because it can combine AI cost, D1 writes, R2 writes, and external asset fetches.
 - Guardrail: run AI readiness before generation, send only the enrichment brief to AI, keep full JSON/schema generation deterministic, avoid re-uploading Google Places photos to R2, and watch the dashboard `Site generation` counter.
+
+`POST /api/generation-jobs/:jobId/run-step`
+- External calls: `outline` makes one AI outline call, `siteCopy` makes one AI copy call, `offeringCopy` makes one AI call per service/product item, and `finalize` makes no AI call.
+- D1 work: reads the parent generation job, updates metadata after each successful step/item, and writes success/failure state.
+- Risk: KIE.ai and other slow providers can exceed practical Cloudflare proxy timing if asked for all service detail copy in one response.
+- Guardrail: `offeringCopy` is intentionally micro-batched. It stores `offeringCopyCursor`, `offeringCopyTotal`, cumulative `offeringCopyPatch`, per-item hashes, and coverage in metadata. The browser keeps calling the same visible `Service copy` step until the API returns `nextStep: "finalize"`.
+- `AI_SERVICE_COPY_PROVIDER_MODES_JSON` in Settings controls provider/model service-copy mode. Slow mode caps to 1 service/product per request; standard mode can allow 1-4 services/products per request for faster providers. KIE defaults to slow mode even before an explicit setting is saved.
 
 `GET /api/sites/:businessId`
 - External calls: none expected.

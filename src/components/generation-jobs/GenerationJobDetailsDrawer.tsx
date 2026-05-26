@@ -7,11 +7,13 @@ import {
   chunkedStepStatusLabel,
   type ChunkedGenerationStep,
 } from "../../lib/generationJobState";
+import { resolveAiServiceCopyProviderMode, serviceCopyPlanText } from "../../lib/aiSlowProviderMode";
 import { formatCooldownRemaining } from "../../lib/providerCooldown";
 import AdminAiReadinessBadge from "../AdminAiReadinessBadge";
 import AdminDocsReader from "../AdminDocsReader";
 import HelpTooltip from "../HelpTooltip";
 import HoverTooltip from "../HoverTooltip";
+import ProviderServiceCopyModeBadge from "../ProviderServiceCopyModeBadge";
 import {
   auditStatusClass,
   auditStatusLabel,
@@ -29,6 +31,8 @@ type GenerationJobDetailsDrawerProps = {
   fallbackProvider: string;
   fallbackModel: string;
   providerKeyStatus: Record<string, boolean | null | undefined>;
+  settings?: Record<string, unknown>;
+  onSettingsChange?: (nextSettings: Record<string, string>) => void;
   retryingJobId: string;
   retryingChunkStep: string;
   retryOverrideJobId: string;
@@ -44,6 +48,8 @@ export default function GenerationJobDetailsDrawer({
   fallbackProvider,
   fallbackModel,
   providerKeyStatus,
+  settings = {},
+  onSettingsChange,
   retryingJobId,
   retryingChunkStep,
   retryOverrideJobId,
@@ -73,6 +79,19 @@ export default function GenerationJobDetailsDrawer({
   const aiFailure = job?.metadata?.aiFailure || job?.metadata?.providerFailure || null;
   const chunkedState = chunkedGenerationState(job);
   const runnableStep = chunkedState.retryStep || (job?.status === "running" ? chunkedState.nextStep : "");
+  const offeringCopyCursor = Number(job?.metadata?.offeringCopyCursor || 0);
+  const offeringCopyTotal = Number(job?.metadata?.offeringCopyTotal || 0);
+  const offeringCopyProgress = offeringCopyTotal > 0
+    ? `Service copy progress: ${Math.min(offeringCopyCursor, offeringCopyTotal)}/${offeringCopyTotal}.`
+    : "";
+  const serviceCopyPlan = serviceCopyPlanText({
+    provider: job?.provider || fallbackProvider,
+    model: job?.model || fallbackModel,
+    settings,
+    total: offeringCopyTotal || offeringCoverage.total,
+    completed: offeringCopyCursor,
+  });
+  const serviceCopyMode = resolveAiServiceCopyProviderMode(settings, job?.provider || fallbackProvider, job?.model || fallbackModel);
   const stepLabel = (step: string) => {
     if (step === "outline") return "Outline";
     if (step === "siteCopy") return "Site copy";
@@ -205,21 +224,32 @@ export default function GenerationJobDetailsDrawer({
                 <p className="mt-1 text-xs leading-relaxed text-indigo-900">
                   {chunkedState.chunked
                     ? runnableStep
-                      ? `This chunked job can continue from ${stepLabel(runnableStep)} without starting over.`
+                      ? `This chunked job can continue from ${stepLabel(runnableStep)} without starting over. ${offeringCopyProgress}${runnableStep === "offeringCopy" ? ` ${serviceCopyPlan}` : ""}`
                       : "No chunked step is waiting. Use full retry only if you want to generate again from the current saved site."
                     : "This is not a chunked job. Use full retry to create a new generation attempt from the current saved site."}
                 </p>
               </div>
               {chunkedState.chunked && runnableStep ? (
-                <button
-                  type="button"
-                  onClick={() => onRetryChunkedStep(job, runnableStep as ChunkedGenerationStep)}
-                  disabled={Boolean(retryingChunkStep || retryingJobId)}
-                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-800 disabled:opacity-50"
-                >
-                  {retryingChunkStep === `${job.id}:${runnableStep}` ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
-                  {job.status === "failed" ? "Retry" : "Resume"} {stepLabel(runnableStep)}
-                </button>
+                <div className="flex shrink-0 flex-col items-stretch gap-2">
+                  {runnableStep === "offeringCopy" && (
+                    <ProviderServiceCopyModeBadge
+                      provider={job?.provider || fallbackProvider}
+                      model={job?.model || fallbackModel}
+                      currentSlowMode={serviceCopyMode.slowMode}
+                      settings={settings}
+                      onSettingsChange={onSettingsChange}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onRetryChunkedStep(job, runnableStep as ChunkedGenerationStep)}
+                    disabled={Boolean(retryingChunkStep || retryingJobId)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-800 disabled:opacity-50"
+                  >
+                    {retryingChunkStep === `${job.id}:${runnableStep}` ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
+                    {job.status === "failed" ? "Retry" : "Resume"} {stepLabel(runnableStep)}
+                  </button>
+                </div>
               ) : job.businessId ? (
                 <button
                   type="button"

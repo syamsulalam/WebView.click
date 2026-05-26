@@ -1850,6 +1850,8 @@ export default function AdminLeads() {
                 fallbackProvider={activeProviderKey}
                 fallbackModel={activeModel}
                 providerKeyStatus={providerKeyStatus}
+                settings={settings}
+                onSettingsChange={setSettings}
                 variant="compact"
                 showFullPageLink
                 onJobsLoaded={(jobs) => setGenerationJobCount(jobs.length)}

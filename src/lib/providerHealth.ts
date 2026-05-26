@@ -17,6 +17,11 @@ export type ProviderHealthSummary = {
     retryable?: boolean;
     createdAt?: string;
   } | null;
+  serviceCopyRecommendation?: {
+    mode?: "slow" | string;
+    reason?: string;
+    signalCount?: number;
+  } | null;
   checkedAt?: string;
 };
 

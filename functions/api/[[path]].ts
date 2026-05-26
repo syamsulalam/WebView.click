@@ -136,6 +136,7 @@ const generationJobsDeps: GenerationJobsDeps = {
   updateGenerationJob: updateGenerationJob as GenerationJobsDeps["updateGenerationJob"],
   updateProspectRecord: updateProspectRecord as GenerationJobsDeps["updateProspectRecord"],
   insertProviderCooldownEvent: insertProviderCooldownEvent as GenerationJobsDeps["insertProviderCooldownEvent"],
+  getSetting: getSetting as GenerationJobsDeps["getSetting"],
   generateAiOfferingOutline: (db, env, body, siteJson, originData, businessName) => generateAiOfferingOutline(aiSiteGenerationDeps, db, env, body, siteJson, originData, businessName),
   applyAiOfferingOutline,
   generateAiCopyPatch: (db, env, body, siteJsonOverride) => generateAiCopyPatch(aiSiteGenerationDeps, db, env, body, siteJsonOverride),

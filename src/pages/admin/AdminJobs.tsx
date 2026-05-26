@@ -63,6 +63,8 @@ export default function AdminJobs() {
         fallbackProvider={aiProvider}
         fallbackModel={aiModel}
         providerKeyStatus={providerKeyStatus}
+        settings={settings}
+        onSettingsChange={setSettings}
         limit={200}
         variant="full"
         serverBackedFilters

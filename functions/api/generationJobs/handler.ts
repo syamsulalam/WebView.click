@@ -13,11 +13,12 @@ export type GenerationJobsDeps = {
   updateGenerationJob: (db: unknown, jobId: string, values: Record<string, unknown>) => Promise<void>;
   updateProspectRecord: (db: unknown, placeId: string, values: Record<string, unknown>) => Promise<void>;
   insertProviderCooldownEvent: (db: unknown, values: Record<string, unknown>) => Promise<void>;
+  getSetting: (db: unknown, env: unknown, key: string) => Promise<string | undefined>;
   generateAiOfferingOutline: (db: unknown, env: unknown, body: Record<string, unknown>, siteJson: Record<string, unknown>, originData: unknown, businessName: string) => Promise<{ outline: Record<string, unknown>; outlineHash: string; repairAttempted?: boolean; repairError?: string } | null>;
   applyAiOfferingOutline: (siteJson: Record<string, unknown>, outline: Record<string, unknown>) => { applied: boolean; count: number };
   generateAiCopyPatch: (db: unknown, env: unknown, body: Record<string, unknown>, siteJsonOverride?: Record<string, unknown>) => Promise<{ patch: Record<string, unknown>; copyBriefHash: string; copyPatchHash: string } | null>;
   applyAiCopyPatch: (siteJson: Record<string, unknown>, patch: Record<string, unknown>) => Record<string, unknown>;
-  collectAiCopyAuditTargets: (siteJson: Record<string, unknown>, options?: { focus?: string }) => any[];
+  collectAiCopyAuditTargets: (siteJson: Record<string, unknown>, options?: { focus?: string; offeringIndex?: number; offeringBatchSize?: number }) => any[];
   buildAiCopyAudit: (targets: any[], siteJson: Record<string, unknown>, patchApplied: boolean) => { summary: Record<string, unknown>; items: unknown[] };
   handleSites: (request: Request, db: unknown, env: unknown, segments: string[]) => Promise<Response>;
 };
@@ -59,6 +60,40 @@ function objectPatch(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
+function mergeOfferingPatchArray(existingValue: unknown, incomingValue: unknown) {
+  const merged = Array.isArray(existingValue)
+    ? existingValue.filter((item) => item && typeof item === "object" && !Array.isArray(item)).map((item) => ({ ...(item as Record<string, unknown>) }))
+    : [];
+  const keyFor = (item: Record<string, unknown>) => {
+    const id = stringValue(item.id);
+    if (id) return `id:${id}`;
+    const detailPageId = stringValue(item.detailPageId);
+    if (detailPageId) return `detail:${detailPageId}`;
+    const title = stringValue(item.title).toLowerCase();
+    return title ? `title:${title}` : "";
+  };
+  const indexByKey = new Map<string, number>();
+  merged.forEach((item, index) => {
+    const key = keyFor(item);
+    if (key) indexByKey.set(key, index);
+  });
+  const incoming = Array.isArray(incomingValue)
+    ? incomingValue.filter((item) => item && typeof item === "object" && !Array.isArray(item)) as Array<Record<string, unknown>>
+    : [];
+  incoming.forEach((item) => {
+    const next = { ...item };
+    const key = keyFor(next);
+    const existingIndex = key ? indexByKey.get(key) : undefined;
+    if (existingIndex !== undefined) {
+      merged[existingIndex] = { ...merged[existingIndex], ...next };
+    } else {
+      if (key) indexByKey.set(key, merged.length);
+      merged.push(next);
+    }
+  });
+  return merged;
+}
+
 function mergeCopyPatch(...patches: Array<Record<string, unknown> | null>) {
   const merged: Record<string, unknown> = {};
   const structuredKeys = new Set(["metaCopy", "sections", "offers", "offerings", "faq", "conversion", "footer", "hero"]);
@@ -69,7 +104,7 @@ function mergeCopyPatch(...patches: Array<Record<string, unknown> | null>) {
     const sections = objectPatch(patch.sections);
     if (sections) merged.sections = { ...(objectPatch(merged.sections) || {}), ...sections };
     if (Array.isArray(patch.offers)) merged.offers = patch.offers;
-    if (Array.isArray(patch.offerings)) merged.offerings = patch.offerings;
+    if (Array.isArray(patch.offerings)) merged.offerings = mergeOfferingPatchArray(merged.offerings, patch.offerings);
     if (Array.isArray(patch.faq)) merged.faq = patch.faq;
     const conversion = objectPatch(patch.conversion);
     if (conversion) merged.conversion = { ...(objectPatch(merged.conversion) || {}), ...conversion };
@@ -117,6 +152,47 @@ function stringValue(value: unknown) {
 
 function records(value: unknown) {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === "object" && !Array.isArray(item)) as Array<Record<string, unknown>> : [];
+}
+
+function serviceCopyModeKey(provider: string, model: string) {
+  return `${provider.trim()}::${model.trim()}`;
+}
+
+function defaultServiceCopyMode(provider: string, model: string) {
+  const slowMode = provider.trim() === "KIE" || /^kie\//i.test(model.trim());
+  return { slowMode, serviceCopyBatchSize: slowMode ? 1 : 2 };
+}
+
+function parseServiceCopyModes(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, Record<string, unknown>> : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeServiceCopyBatchSize(value: unknown, fallback: number) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(1, Math.min(4, Math.floor(numeric)));
+}
+
+async function resolveServiceCopyMode(deps: GenerationJobsDeps, db: unknown, env: unknown, payload: Record<string, unknown>) {
+  const provider = stringValue(payload.provider);
+  const model = stringValue(payload.model);
+  const defaults = defaultServiceCopyMode(provider, model);
+  const modes = parseServiceCopyModes(await deps.getSetting(db, env, "AI_SERVICE_COPY_PROVIDER_MODES_JSON"));
+  const exact = modes[serviceCopyModeKey(provider, model)] || {};
+  const slowMode = typeof exact.slowMode === "boolean" ? exact.slowMode : defaults.slowMode;
+  const configuredBatchSize = normalizeServiceCopyBatchSize(exact.serviceCopyBatchSize, defaults.serviceCopyBatchSize);
+  return {
+    provider,
+    model,
+    slowMode,
+    serviceCopyBatchSize: slowMode ? Math.min(configuredBatchSize, 1) : configuredBatchSize,
+  };
 }
 
 function stableText(value: unknown) {
@@ -284,6 +360,16 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         metadata.copyPatchApplied = true;
         metadata.copyAuditSummary = copyAudit.summary;
         metadata.copyAuditItems = copyAudit.items;
+        delete metadata.offeringCopyPatch;
+        delete metadata.offeringCopyBriefHash;
+        delete metadata.offeringCopyPatchHash;
+        delete metadata.offeringCopyAuditSummary;
+        delete metadata.offeringCopyAuditItems;
+        delete metadata.offeringCopyCoverage;
+        delete metadata.offeringCopyBriefHashes;
+        delete metadata.offeringCopyPatchHashes;
+        metadata.offeringCopyCursor = 0;
+        metadata.offeringCopyTotal = 0;
         metadata.step = "siteCopy_complete";
         metadata.nextStep = "offeringCopy";
         metadata.updatedAt = new Date().toISOString();
@@ -295,37 +381,121 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         const { finalJson } = chunkedGenerationJsonWithOutline(deps, metadata);
         const sitePatch = objectPatch(metadata.siteCopyPatch) || objectPatch(metadata.copyPatch);
         if (sitePatch) deps.applyAiCopyPatch(finalJson, sitePatch);
-        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson, { focus: "offerings" });
-        const offeringPatchResult = await deps.generateAiCopyPatch(db, env, { ...payload, copyPatchFocus: "offerings" }, finalJson);
+        const resetOfferingCopy = body.resetOfferingCopy === true;
+        const offerings = [...records(finalJson.products), ...records(finalJson.services)];
+        const total = offerings.length;
+        const previousCursor = Number(metadata.offeringCopyCursor);
+        const cursor = resetOfferingCopy ? 0 : Math.min(total, Math.max(0, Number.isFinite(previousCursor) ? Math.floor(previousCursor) : 0));
+        const serviceCopyMode = await resolveServiceCopyMode(deps, db, env, payload);
+        const batchSize = Math.min(serviceCopyMode.serviceCopyBatchSize, Math.max(1, total - cursor));
+        if (!total || cursor >= total) {
+          const combinedPatch = mergeCopyPatch(sitePatch, objectPatch(metadata.offeringCopyPatch));
+          const patchedJson = structuredClone(finalJson) as Record<string, unknown>;
+          const offeringPatch = objectPatch(metadata.offeringCopyPatch);
+          if (offeringPatch) deps.applyAiCopyPatch(patchedJson, offeringPatch);
+          const offeringCopyCoverage = buildOfferingCopyCoverage(finalJson, patchedJson);
+          metadata.offeringCopyCoverage = offeringCopyCoverage;
+          metadata.copyPatch = combinedPatch;
+          metadata.copyPatchHash = await sha256Json(combinedPatch);
+          metadata.copyPatchApplied = true;
+          metadata.offeringCopyCursor = total;
+          metadata.offeringCopyTotal = total;
+          metadata.step = "offeringCopy_complete";
+          metadata.nextStep = "finalize";
+          metadata.updatedAt = new Date().toISOString();
+          await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+          return deps.json({ success: true, id: jobId, completedStep: "offeringCopy", nextStep: "finalize", metadata, progress: { step: "offeringCopy", completed: total, total } });
+        }
+
+        const currentOffering = offerings[cursor] || {};
+        const batchOfferings = offerings.slice(cursor, cursor + batchSize);
+        const currentOfferingId = stringValue(currentOffering.id);
+        const currentOfferingTitle = batchSize === 1
+          ? stringValue(currentOffering.title) || `Offering ${cursor + 1}`
+          : `${batchSize} services (${cursor + 1}-${cursor + batchSize})`;
+        const previousOfferingPatch = resetOfferingCopy ? null : objectPatch(metadata.offeringCopyPatch);
+        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson, { focus: "offerings", offeringIndex: cursor, offeringBatchSize: batchSize });
+        const offeringPatchResult = await deps.generateAiCopyPatch(db, env, {
+          ...payload,
+          copyPatchFocus: "offerings",
+          copyPatchOfferingIndex: cursor,
+          copyPatchOfferingBatchSize: batchSize,
+          copyPatchOfferingTotal: total,
+        }, finalJson);
         if (!offeringPatchResult) {
           throw new Error("AI offering copy patch did not return JSON for chunked generation.");
         }
-        const combinedPatch = mergeCopyPatch(sitePatch, offeringPatchResult.patch);
+        const cumulativeOfferingPatch = mergeCopyPatch(previousOfferingPatch, offeringPatchResult.patch);
+        const combinedPatch = mergeCopyPatch(sitePatch, cumulativeOfferingPatch);
         const patchedJson = structuredClone(finalJson) as Record<string, unknown>;
-        deps.applyAiCopyPatch(patchedJson, offeringPatchResult.patch);
+        deps.applyAiCopyPatch(patchedJson, cumulativeOfferingPatch);
         const offeringCopyCoverage = buildOfferingCopyCoverage(finalJson, patchedJson);
         const copyAudit = deps.buildAiCopyAudit(copyAuditTargets, patchedJson, true);
-        const combinedAudit = mergeCopyAudits(
-          { summary: objectPatch(metadata.siteCopyAuditSummary) || undefined, items: Array.isArray(metadata.siteCopyAuditItems) ? metadata.siteCopyAuditItems : [] },
+        const offeringAudit = mergeCopyAudits(
+          resetOfferingCopy ? null : {
+            summary: objectPatch(metadata.offeringCopyAuditSummary) || undefined,
+            items: Array.isArray(metadata.offeringCopyAuditItems) ? metadata.offeringCopyAuditItems : [],
+          },
           copyAudit,
         );
-        metadata.offeringCopyPatch = offeringPatchResult.patch;
+        const combinedAudit = mergeCopyAudits(
+          { summary: objectPatch(metadata.siteCopyAuditSummary) || undefined, items: Array.isArray(metadata.siteCopyAuditItems) ? metadata.siteCopyAuditItems : [] },
+          offeringAudit,
+        );
+        const nextCursor = Math.min(total, cursor + batchSize);
+        const updatedAt = new Date().toISOString();
+        const previousBriefHashes = resetOfferingCopy || !Array.isArray(metadata.offeringCopyBriefHashes) ? [] : metadata.offeringCopyBriefHashes;
+        const previousPatchHashes = resetOfferingCopy || !Array.isArray(metadata.offeringCopyPatchHashes) ? [] : metadata.offeringCopyPatchHashes;
+        metadata.offeringCopyPatch = cumulativeOfferingPatch;
         metadata.offeringCopyBriefHash = offeringPatchResult.copyBriefHash;
-        metadata.offeringCopyPatchHash = offeringPatchResult.copyPatchHash;
-        metadata.offeringCopyAuditSummary = copyAudit.summary;
-        metadata.offeringCopyAuditItems = copyAudit.items;
+        metadata.offeringCopyPatchHash = await sha256Json(cumulativeOfferingPatch);
+        metadata.offeringCopyLastPatchHash = offeringPatchResult.copyPatchHash;
+        metadata.offeringCopyAuditSummary = offeringAudit.summary;
+        metadata.offeringCopyAuditItems = offeringAudit.items;
         metadata.offeringCopyCoverage = offeringCopyCoverage;
+        metadata.offeringCopyCursor = nextCursor;
+        metadata.offeringCopyTotal = total;
+        metadata.offeringCopyLastItem = {
+          index: cursor,
+          id: currentOfferingId,
+          title: currentOfferingTitle,
+          briefHash: offeringPatchResult.copyBriefHash,
+          patchHash: offeringPatchResult.copyPatchHash,
+          updatedAt,
+        };
+        metadata.offeringCopyLastBatch = {
+          startIndex: cursor,
+          endIndex: nextCursor - 1,
+          count: batchSize,
+          items: batchOfferings.map((item, offset) => ({
+            index: cursor + offset,
+            id: stringValue(item.id),
+            title: stringValue(item.title) || `Offering ${cursor + offset + 1}`,
+          })),
+          mode: serviceCopyMode,
+          updatedAt,
+        };
+        metadata.offeringCopyMode = serviceCopyMode;
+        metadata.offeringCopyBriefHashes = [...previousBriefHashes, { index: cursor, id: currentOfferingId, hash: offeringPatchResult.copyBriefHash, updatedAt }].slice(-32);
+        metadata.offeringCopyPatchHashes = [...previousPatchHashes, { index: cursor, id: currentOfferingId, hash: offeringPatchResult.copyPatchHash, updatedAt }].slice(-32);
         metadata.copyPatch = combinedPatch;
         metadata.copyBriefHash = offeringPatchResult.copyBriefHash;
         metadata.copyPatchHash = await sha256Json(combinedPatch);
         metadata.copyPatchApplied = true;
         metadata.copyAuditSummary = combinedAudit.summary;
         metadata.copyAuditItems = combinedAudit.items;
-        metadata.step = "offeringCopy_complete";
-        metadata.nextStep = "finalize";
-        metadata.updatedAt = new Date().toISOString();
+        metadata.step = nextCursor >= total ? "offeringCopy_complete" : "offeringCopy_partial";
+        metadata.nextStep = nextCursor >= total ? "finalize" : "offeringCopy";
+        metadata.updatedAt = updatedAt;
         await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
-        return deps.json({ success: true, id: jobId, completedStep: "offeringCopy", nextStep: "finalize", metadata });
+        return deps.json({
+          success: true,
+          id: jobId,
+          completedStep: nextCursor >= total ? "offeringCopy" : "offeringCopyItem",
+          nextStep: metadata.nextStep,
+          metadata,
+          progress: { step: "offeringCopy", completed: nextCursor, total, itemTitle: currentOfferingTitle, batchSize, mode: serviceCopyMode },
+        });
       }
 
       if (requestedStep === "finalize") {

@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import { Check, Copy, ExternalLink, FileText, Loader2, RefreshCw, RotateCw, Search, X } from "lucide-react";
 import { useLocalStorageState } from "../lib/localStorageState";
 import { chunkedGenerationState } from "../lib/generationJobState";
+import { resolveAiServiceCopyProviderMode, serviceCopyPlanText } from "../lib/aiSlowProviderMode";
 import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
 import HoverTooltip from "./HoverTooltip";
 import GenerationJobDetailsDrawer from "./generation-jobs/GenerationJobDetailsDrawer";
 import { useGenerationJobRetry } from "./generation-jobs/useGenerationJobRetry";
+import ProviderServiceCopyModeBadge from "./ProviderServiceCopyModeBadge";
 import {
   cooldownBlocked,
   filterJobs,
@@ -28,6 +30,8 @@ type GenerationJobsTableProps = {
   fallbackProvider: string;
   fallbackModel: string;
   providerKeyStatus?: Record<string, boolean | null | undefined>;
+  settings?: Record<string, unknown>;
+  onSettingsChange?: (nextSettings: Record<string, string>) => void;
   limit?: number;
   variant?: "compact" | "full";
   className?: string;
@@ -44,6 +48,8 @@ export default function GenerationJobsTable({
   fallbackProvider,
   fallbackModel,
   providerKeyStatus = {},
+  settings = {},
+  onSettingsChange,
   limit,
   variant = "full",
   className = "",
@@ -96,6 +102,20 @@ export default function GenerationJobsTable({
       provider,
       model: job?.model || fallbackModel,
       hasApiKey: providerKeyStatus[provider] ?? null,
+    };
+  };
+
+  const serviceCopyContext = (job: any, reset = false) => {
+    const provider = job?.provider || fallbackProvider;
+    const model = job?.model || fallbackModel;
+    const coverage = offeringCopyCoverage(job);
+    const total = Number(job?.metadata?.offeringCopyTotal || coverage.total || 0);
+    const completed = Number(job?.metadata?.offeringCopyCursor || 0);
+    return {
+      provider,
+      model,
+      mode: resolveAiServiceCopyProviderMode(settings, provider, model),
+      estimate: serviceCopyPlanText({ provider, model, settings, total, completed, reset }),
     };
   };
 
@@ -255,6 +275,7 @@ export default function GenerationJobsTable({
         copyPatchApplied: job.metadata?.copyPatchApplied === true,
         copyAuditSummary: job.metadata?.copyAuditSummary || null,
         offeringCopyCoverage: job.metadata?.offeringCopyCoverage || null,
+        offeringCopyMode: job.metadata?.offeringCopyMode || null,
         copyOnlyRetryCoverageDelta: job.metadata?.copyOnlyRetryCoverageDelta || null,
         copyOnlyRetryChangedDelta: copyOnlyRetryChangedDelta(job),
       })),
@@ -410,6 +431,11 @@ export default function GenerationJobsTable({
                   const copyRetryKey = copyRetryMode ? `${job.id}:${copyRetryMode}` : "";
                   const chunkedRunnableStep = chunkedState.retryStep || (job.status === "running" ? chunkedState.nextStep : "");
                   const chunkedRetryKey = chunkedRunnableStep ? `${job.id}:${chunkedRunnableStep}` : "";
+                  const offeringCopyCursor = Number(job.metadata?.offeringCopyCursor || 0);
+                  const offeringCopyTotal = Number(job.metadata?.offeringCopyTotal || 0);
+                  const offeringCopyInProgress = chunkedState.chunked && offeringCopyTotal > 0 && chunkedState.nextStep === "offeringCopy";
+                  const chunkedServiceCopyContext = chunkedRunnableStep === "offeringCopy" ? serviceCopyContext(job) : null;
+                  const copyRetryServiceCopyContext = copyRetryMode === "offerings" || copyRetryMode === "allCopy" ? serviceCopyContext(job, true) : null;
                   return (
                     <tr key={job.id} className="align-top hover:bg-slate-50">
                     <td className={`${compact ? "max-w-[260px] px-3 py-2" : "max-w-[320px] px-4 py-3"}`}>
@@ -453,6 +479,11 @@ export default function GenerationJobsTable({
                         {chunkedState.chunked && (
                           <span className="mt-1.5 block w-fit rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
                             {job.status === "success" ? "chunked done" : `chunked ${chunkedState.nextStep || chunkedState.failureStep || "pending"}`}
+                          </span>
+                        )}
+                        {offeringCopyInProgress && (
+                          <span className="mt-1.5 block w-fit rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
+                            service copy {Math.min(offeringCopyCursor, offeringCopyTotal)}/{offeringCopyTotal}
                           </span>
                         )}
                         <p className={`${compact ? "text-[11px]" : "text-xs"} mt-2 text-slate-500`}>{job.createdAt ? new Date(job.createdAt).toLocaleString() : ""}</p>
@@ -501,7 +532,7 @@ export default function GenerationJobsTable({
                           {job.businessId && (
                             <div className="flex flex-wrap items-center gap-2">
                               {chunkedState.chunked && chunkedRunnableStep && (
-                                <HoverTooltip text="Continue only the current chunked step. Use this when a job stopped midway after a provider/edge error." widthClass="w-80">
+                                <HoverTooltip text={`${chunkedServiceCopyContext ? `${chunkedServiceCopyContext.estimate} ` : ""}Continue only the current chunked step. Use this when a job stopped midway after a provider/edge error.`} widthClass="w-80">
                                   <button
                                     type="button"
                                     onClick={() => retryChunkedStep(job, chunkedRunnableStep as any)}
@@ -520,8 +551,8 @@ export default function GenerationJobsTable({
                               )}
                               {copyRetryMode && (
                                 <HoverTooltip text={copyRetryMode === "offerings"
-                                  ? "Retry only the offering-copy chunk, then finalize to save service page copy. Uses the chunked parent job when this row is a final save job."
-                                  : "Retry site-copy and offering-copy chunks, then finalize. This avoids rerunning the outline step."
+                                  ? `${copyRetryServiceCopyContext?.estimate || ""} Retry only the offering-copy chunk, then finalize to save service page copy. Uses the chunked parent job when this row is a final save job.`
+                                  : `${copyRetryServiceCopyContext?.estimate || ""} Retry site-copy and offering-copy chunks, then finalize. This avoids rerunning the outline step.`
                                 } widthClass="w-80">
                                   <button
                                     type="button"
@@ -534,6 +565,15 @@ export default function GenerationJobsTable({
                                     {copyRetryMode === "offerings" ? "Improve services" : "Retry copy chunks"}
                                   </button>
                                 </HoverTooltip>
+                              )}
+                              {(chunkedServiceCopyContext || copyRetryServiceCopyContext) && (
+                                <ProviderServiceCopyModeBadge
+                                  provider={(chunkedServiceCopyContext || copyRetryServiceCopyContext)!.provider}
+                                  model={(chunkedServiceCopyContext || copyRetryServiceCopyContext)!.model}
+                                  currentSlowMode={(chunkedServiceCopyContext || copyRetryServiceCopyContext)!.mode.slowMode}
+                                  settings={settings}
+                                  onSettingsChange={onSettingsChange}
+                                />
                               )}
                               <HoverTooltip text="Start a brand-new full generation retry from the current saved site and current copy brief. This is heavier than resuming a chunked step.">
                                 <button
@@ -604,6 +644,8 @@ export default function GenerationJobsTable({
           fallbackProvider={fallbackProvider}
           fallbackModel={fallbackModel}
           providerKeyStatus={providerKeyStatus}
+          settings={settings}
+          onSettingsChange={onSettingsChange}
           retryingJobId={retryingJobId}
           retryingChunkStep={retryingChunkStep}
           retryOverrideJobId={retryOverrideJobId}

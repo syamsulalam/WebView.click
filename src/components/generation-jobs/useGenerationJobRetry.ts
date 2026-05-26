@@ -31,7 +31,7 @@ function sleep(ms: number) {
 
 function isTransientStepError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
-  return /HTTP\s*(502|503|504)|Cloudflare\/HTML|temporar|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
+  return /HTTP\s*(502|503|504|524)|Cloudflare\/HTML|temporar|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
 }
 
 export function useGenerationJobRetry({
@@ -161,6 +161,25 @@ export function useGenerationJobRetry({
     return data;
   };
 
+  const runOfferingCopyUntilFinalizeReady = async (
+    jobId: string,
+    label: string,
+    firstExtraBody: Record<string, unknown> = {},
+  ) => {
+    let data: any = null;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      data = await runChunkedStepRequest(jobId, "offeringCopy", label, attempt === 0 ? firstExtraBody : {});
+      const completed = Number(data?.progress?.completed ?? data?.metadata?.offeringCopyCursor ?? 0);
+      const total = Number(data?.progress?.total ?? data?.metadata?.offeringCopyTotal ?? 0);
+      const itemTitle = String(data?.progress?.itemTitle || data?.metadata?.offeringCopyLastItem?.title || "").trim();
+      if (total > 0) {
+        setMessage(`Service copy ${Math.min(completed, total)}/${total}${itemTitle ? `: ${itemTitle}` : ""}`);
+      }
+      if (data?.completedStep === "offeringCopy" || data?.nextStep !== "offeringCopy") return data;
+    }
+    throw new Error("Service copy is still not ready to finalize after 24 item retries. Refresh jobs and resume Service copy again.");
+  };
+
   const resolveChunkedRetryJob = async (job: any) => {
     if (chunkedGenerationState(job).chunked) return job;
     const parentId = String(job?.metadata?.parentGenerationJobId || "");
@@ -189,7 +208,9 @@ export function useGenerationJobRetry({
     const retryKey = `${job.id}:${step}`;
     setRetryingChunkStep(retryKey);
     try {
-      const data = await runChunkedStepRequest(job.id, step, "Retry");
+      const data = step === "offeringCopy"
+        ? await runOfferingCopyUntilFinalizeReady(job.id, "Retry")
+        : await runChunkedStepRequest(job.id, step, "Retry");
       const nextStatus = data.completedStep === "finalize" ? "success" : "running";
       const nextJob = {
         ...job,
@@ -253,7 +274,13 @@ export function useGenerationJobRetry({
               },
             }
           : {};
-        data = await runChunkedStepRequest(chunkedJob.id, step, mode === "offerings" ? "Retry service copy" : "Retry copy chunks", retryDeltaBody);
+        data = step === "offeringCopy"
+          ? await runOfferingCopyUntilFinalizeReady(
+              chunkedJob.id,
+              mode === "offerings" ? "Retry service copy" : "Retry copy chunks",
+              { resetOfferingCopy: true },
+            )
+          : await runChunkedStepRequest(chunkedJob.id, step, mode === "offerings" ? "Retry service copy" : "Retry copy chunks", retryDeltaBody);
       }
       const refreshedJob = {
         ...chunkedJob,

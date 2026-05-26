@@ -66,6 +66,7 @@ Code then validates that outline and deterministically rebuilds:
   - `offeringCopy`: focus only on service/product records and their detail pages.
   - `finalize`: merge patches and save the site.
 - Mirror the extra chunk in `/admin/leads`, `/admin/sites`, and `/admin/jobs` progress/status surfaces.
+- Micro-batch `offeringCopy` by provider/model speed mode. The visible step stays `Service copy`, but metadata stores `offeringCopyCursor`, `offeringCopyTotal`, per-item hashes, cumulative `offeringCopyPatch`, and cumulative coverage so a slow KIE response only risks one service item rather than the whole service-copy pass. `/admin/settings` stores `AI_SERVICE_COPY_PROVIDER_MODES_JSON`; slow mode caps service copy to 1 item/request, while standard mode can allow 1-4 items/request for faster models.
 
 ## Expected Result After Deploy
 
@@ -78,6 +79,8 @@ New generation jobs should show:
 - `Offering copy coverage` badge in `/admin/jobs` showing how many services/products changed summary, description, highlights, or FAQ.
 - server-backed `Low service copy` filter in `/admin/jobs` for jobs where fewer than half of services/products changed those key detail fields.
 - one-click `Service copy` retry from low-coverage rows, which reruns `offeringCopy` and `finalize` without rebuilding the outline or full generation, then opens the new final save job drawer with a before/after coverage delta.
+- service-copy progress such as `service copy 3/8` while the row is still resumable, plus pre-click estimates for remaining requests based on the provider/model speed mode.
+- `Recommended: Slow mode` badge beside service-copy retry controls when recent local job history for that provider/model shows timeout/provider-temporary signals.
 - fewer thin placeholder lines such as "Built around the needs customers usually search for...".
 
 ## Production QA
@@ -91,5 +94,5 @@ After deploying:
 5. Confirm `AI returned outline`, `AI returned copy patch`, and `AI copy audit` are populated.
 6. Confirm the `services changed/total` badge is green or amber; red means too many service pages stayed thin.
 7. Use `/admin/jobs` filter `Low service copy` to find red/thin jobs across older pages.
-8. Click `Service copy` on a low-coverage row and confirm the retry finishes with a new final save job opened in the drawer plus a before/after coverage delta.
+8. Click `Improve services` or `Resume Service copy` on a low-coverage/stalled row and confirm service-copy progress advances item by item before `Finalize`.
 9. Inspect public preview service pages and check that each service has owner-voice detail copy, practical benefits, included steps, FAQ, and contact CTA.

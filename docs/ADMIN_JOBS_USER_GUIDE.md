@@ -20,8 +20,8 @@ Each job row has several controls. They are intentionally separate because they 
 | Control | Use it for | What it does |
 | --- | --- | --- |
 | `Open preview` | Inspect the generated public site | Opens `/:businessId` in a new tab. |
-| `Resume Outline`, `Resume Site copy`, `Resume Service copy`, `Resume Finalize` | A chunked job is still `running` but stopped midway | Runs only the waiting chunked step. This is the normal fix for a Pages Function/provider interruption. |
-| `Retry Outline`, `Retry Site copy`, `Retry Service copy`, `Retry Finalize` | A chunked job is `failed` | Retries only the failed chunked step. |
+| `Resume Outline`, `Resume Site copy`, `Resume Service copy`, `Resume Finalize` | A chunked job is still `running` but stopped midway | Runs only the waiting chunked step. `Service copy` resumes service-by-service progress until it is ready to finalize. |
+| `Retry Outline`, `Retry Site copy`, `Retry Service copy`, `Retry Finalize` | A chunked job is `failed` | Retries only the failed chunked step. `Service copy` continues from the saved service index unless you use `Improve services`, which intentionally starts service copy over. |
 | `Improve services` | Service pages are thin or service coverage is low | Reruns only the service/offering copy chunk, then finalizes. |
 | `Retry copy chunks` | AI patch applied but copy did not meaningfully change | Reruns site-copy plus service-copy chunks, then finalizes. |
 | `Full retry` | You want a new full attempt from current saved site data | Starts a new generation job from the current copy brief. This is heavier than resuming a chunk. |
@@ -73,10 +73,21 @@ Advanced/debug sections are lower in the drawer:
 | --- | --- |
 | `Outline` | AI infers service/product lines and page structure. |
 | `Site copy` | AI rewrites homepage, meta, and general site copy. |
-| `Service copy` | AI writes service/product detail copy, highlights, and FAQs. |
+| `Service copy` | AI writes service/product detail copy, highlights, and FAQs. This is internally split into one service/product per request so slow providers are less likely to hit Cloudflare timeout pages. |
 | `Finalize` | Saves the patched JSON as the generated site. |
 
-If a provider returns HTTP 502, 503, 504, HTML, timeout, or temporary upstream failure, retry the same chunk once. If the same provider keeps failing, switch provider/model before running a full retry or new batch.
+If a provider returns HTTP 502, 503, 504, 524, HTML, timeout, or temporary upstream failure, retry the same chunk once. HTTP 524 means Cloudflare connected to the Pages Function but did not receive a timely response, commonly because the Function was waiting too long on a slow provider. If the same provider keeps failing on one service item, switch provider/model before running a full retry or new batch.
+
+## Slow provider mode
+
+Use `/admin/settings` -> `Estimator Biaya AI` -> `Service copy speed mode` to tune a provider/model.
+
+- `Slow`: caps service copy to 1 service/product per request. Use this for KIE or any model that often returns Cloudflare 524.
+- `Standard`: lets service copy request 1-4 services/products at a time. Use this for faster models when you want fewer Pages Function requests.
+
+Jobs tooltips and the drawer show the estimated service-copy request count before you click `Resume Service copy`, `Improve services`, or `Retry copy chunks`.
+
+If recent jobs for the same provider/model had Cloudflare 524, provider temporary, network, empty response, HTML, or timeout-style failures, `/admin/jobs` can show `Recommended: Slow mode` beside service-copy retry controls. This badge uses WebView.click's own generation job history, not a hardcoded opinion about a provider. Click `Apply` on the badge to save slow mode for that provider/model without leaving Jobs.
 
 ## Understanding service coverage
 
@@ -98,6 +109,7 @@ Use `Improve services` when service coverage is low.
 - AI readiness/cooldown metadata
 - copy audit summary
 - `offeringCopyCoverage`
+- `offeringCopyMode`
 - `copyOnlyRetryCoverageDelta`
 - `copyOnlyRetryChangedDelta`
 

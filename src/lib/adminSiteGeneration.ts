@@ -388,7 +388,7 @@ function sleep(ms: number) {
 
 function isTransientChunkedGenerationError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
-  return /HTTP\s*(502|503|504)|Cloudflare\/HTML|temporar|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
+  return /HTTP\s*(502|503|504|524)|Cloudflare\/HTML|temporar|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
 }
 
 export async function postChunkedGenerateSite(
@@ -407,31 +407,41 @@ export async function postChunkedGenerateSite(
 
   let result: any = start;
   for (const step of ["outline", "siteCopy", "offeringCopy", "finalize"]) {
-    let attempt = 1;
-    while (attempt <= 2) {
-      onStep?.(step, { status: attempt === 1 ? "running" : "retrying", attempt });
-      try {
-        const stepResponse = await fetch(`/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ step }),
-        });
-        result = await readApiJson<any>(stepResponse, `${label} ${step}`);
-        onStep?.(step, { status: "complete", attempt });
-        break;
-      } catch (error) {
-        if (attempt >= 2 || !isTransientChunkedGenerationError(error)) throw error;
-        for (let seconds = 60; seconds > 0; seconds -= 1) {
-          onStep?.(step, {
-            status: "retry_wait",
-            attempt,
-            retryInSeconds: seconds,
-            message: error instanceof Error ? error.message : String(error || ""),
+    for (let itemAttempt = 0; itemAttempt < 24; itemAttempt += 1) {
+      let attempt = 1;
+      while (attempt <= 2) {
+        onStep?.(step, { status: attempt === 1 ? "running" : "retrying", attempt });
+        try {
+          const stepResponse = await fetch(`/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ step }),
           });
-          await sleep(1000);
+          result = await readApiJson<any>(stepResponse, `${label} ${step}`);
+          onStep?.(step, {
+            status: "complete",
+            attempt,
+            message: result?.progress?.total
+              ? `Service copy ${result.progress.completed}/${result.progress.total}`
+              : undefined,
+          });
+          break;
+        } catch (error) {
+          if (attempt >= 2 || !isTransientChunkedGenerationError(error)) throw error;
+          for (let seconds = 60; seconds > 0; seconds -= 1) {
+            onStep?.(step, {
+              status: "retry_wait",
+              attempt,
+              retryInSeconds: seconds,
+              message: error instanceof Error ? error.message : String(error || ""),
+            });
+            await sleep(1000);
+          }
+          attempt += 1;
         }
-        attempt += 1;
       }
+      if (step !== "offeringCopy" || result?.nextStep !== "offeringCopy") break;
+      if (itemAttempt >= 23) throw new Error("Service copy is still not ready to finalize after 24 item requests. Resume Service copy from /admin/jobs.");
     }
   }
 

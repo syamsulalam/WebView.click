@@ -562,6 +562,7 @@ export async function handleAiProviderHealth(deps: AiReadinessDeps, request: Req
     .all<{ error?: string; metadata_json?: string; created_at?: string }>();
 
   const failureKinds = new Map<string, number>();
+  let slowModeSignalCount = 0;
   let latestFailure: Record<string, unknown> | null = null;
   for (const row of failureRows.results || []) {
     const metadata = deps.parseJsonObject(row.metadata_json);
@@ -585,7 +586,20 @@ export async function handleAiProviderHealth(deps: AiReadinessDeps, request: Req
     });
     const failure = { ...fallbackFailure, ...(storedFailure || {}), createdAt: row.created_at || "", error: row.error || "" };
     const kind = deps.asString(failure.failureKind, "unknown_provider_error");
+    const status = Number(failure.httpStatus || 0);
+    const stage = deps.asString(failure.stage);
+    const textForSignal = `${deps.asString(failure.message)} ${deps.asString(failure.error)} ${deps.asString(failure.rawSnippet)}`;
     failureKinds.set(kind, (failureKinds.get(kind) || 0) + 1);
+    if (
+      status === 524 ||
+      kind === "provider_temporary" ||
+      kind === "network_error" ||
+      kind === "empty_response" ||
+      /Cloudflare\/HTML|Cloudflare timeout|returned HTML|did not return normally|timeout/i.test(textForSignal) ||
+      /chunked_offeringCopy|offeringCopy/i.test(stage)
+    ) {
+      slowModeSignalCount += 1;
+    }
     if (!latestFailure) latestFailure = failure;
   }
 
@@ -606,6 +620,13 @@ export async function handleAiProviderHealth(deps: AiReadinessDeps, request: Req
     failureRate,
     topFailureKind: topFailureKind ? { kind: topFailureKind[0], count: topFailureKind[1] } : null,
     latestFailure,
+    serviceCopyRecommendation: slowModeSignalCount > 0
+      ? {
+          mode: "slow",
+          reason: `${slowModeSignalCount} recent provider/edge failure${slowModeSignalCount === 1 ? "" : "s"} may benefit from smaller service-copy batches.`,
+          signalCount: slowModeSignalCount,
+        }
+      : null,
     checkedAt: new Date().toISOString(),
   });
 }
