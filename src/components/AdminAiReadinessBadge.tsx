@@ -191,7 +191,7 @@ export default function AdminAiReadinessBadge({
           aria-expanded={detailsOpen}
         >
           <Info size={11} />
-          Details
+          Provider details
         </button>
       )}
       {detailsOpen && (

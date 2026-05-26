@@ -32,6 +32,15 @@ export const adminDocs: AdminDoc[] = [
     loadContent: md(() => import("../../docs/ADMIN_WORKFLOW_AUDIT.md?raw")),
   },
   {
+    id: "admin-jobs-user-guide",
+    title: "Admin Jobs User Guide",
+    file: "docs/ADMIN_JOBS_USER_GUIDE.md",
+    category: "Admin QA",
+    summary: "Practical guide for reading generation jobs, using row actions, opening the drawer, and retrying chunked failures.",
+    adminPages: ["/admin/jobs"],
+    loadContent: md(() => import("../../docs/ADMIN_JOBS_USER_GUIDE.md?raw")),
+  },
+  {
     id: "admin-tooltip-collapse-audit",
     title: "Admin Tooltip / Collapse Audit",
     file: "docs/ADMIN_UI_TOOLTIP_COLLAPSE_AUDIT.md",

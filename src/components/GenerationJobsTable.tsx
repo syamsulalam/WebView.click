@@ -282,6 +282,14 @@ export default function GenerationJobsTable({
     return "";
   };
 
+  const chunkedStepLabel = (step: string) => {
+    if (step === "outline") return "Outline";
+    if (step === "siteCopy") return "Site copy";
+    if (step === "offeringCopy") return "Service copy";
+    if (step === "finalize") return "Finalize";
+    return step || "step";
+  };
+
   return (
     <div className={`${compact ? "rounded-xl border border-slate-200 bg-white p-4" : "rounded-2xl border border-slate-200 bg-white shadow-sm"} ${className}`}>
       <div className={`flex flex-col gap-3 ${compact ? "mb-3" : "border-b border-slate-100 p-4"} lg:flex-row lg:items-center lg:justify-between`}>
@@ -400,7 +408,8 @@ export default function GenerationJobsTable({
                   const offeringCoverage = offeringCopyCoverage(job);
                   const copyRetryMode = copyRetryModeForJob(job);
                   const copyRetryKey = copyRetryMode ? `${job.id}:${copyRetryMode}` : "";
-                  const failedChunkRetryKey = chunkedState.retryStep ? `${job.id}:${chunkedState.retryStep}` : "";
+                  const chunkedRunnableStep = chunkedState.retryStep || (job.status === "running" ? chunkedState.nextStep : "");
+                  const chunkedRetryKey = chunkedRunnableStep ? `${job.id}:${chunkedRunnableStep}` : "";
                   return (
                     <tr key={job.id} className="align-top hover:bg-slate-50">
                     <td className={`${compact ? "max-w-[260px] px-3 py-2" : "max-w-[320px] px-4 py-3"}`}>
@@ -486,22 +495,26 @@ export default function GenerationJobsTable({
                         <div className="flex flex-col items-start gap-2">
                           {job.businessId && (
                             <a href={`/${job.businessId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:underline">
-                              Preview {!compact && <ExternalLink size={12} />}
+                              {compact ? "Preview" : "Open preview"} <ExternalLink size={12} />
                             </a>
                           )}
                           {job.businessId && (
                             <div className="flex flex-wrap items-center gap-2">
-                              {job.status === "failed" && chunkedState.retryStep && (
-                                <HoverTooltip text="Retry the failed chunked step without starting a new full generation job." widthClass="w-72">
+                              {chunkedState.chunked && chunkedRunnableStep && (
+                                <HoverTooltip text="Continue only the current chunked step. Use this when a job stopped midway after a provider/edge error." widthClass="w-80">
                                   <button
                                     type="button"
-                                    onClick={() => retryChunkedStep(job)}
+                                    onClick={() => retryChunkedStep(job, chunkedRunnableStep as any)}
                                     disabled={Boolean(retryingJobId || retryingChunkStep || retryingCopyOnlyJobId)}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50"
-                                    aria-label="Retry failed chunked step"
+                                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                                      job.status === "failed"
+                                        ? "bg-red-50 text-red-800 hover:bg-red-100"
+                                        : "bg-amber-50 text-amber-900 hover:bg-amber-100"
+                                    }`}
+                                    aria-label={`${job.status === "failed" ? "Retry failed" : "Resume"} ${chunkedStepLabel(chunkedRunnableStep)} step`}
                                   >
-                                    {retryingChunkStep === failedChunkRetryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
-                                    Failed step
+                                    {retryingChunkStep === chunkedRetryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
+                                    {job.status === "failed" ? "Retry" : "Resume"} {chunkedStepLabel(chunkedRunnableStep)}
                                   </button>
                                 </HoverTooltip>
                               )}
@@ -518,19 +531,20 @@ export default function GenerationJobsTable({
                                     aria-label={copyRetryMode === "offerings" ? "Retry service copy only" : "Retry copy chunks"}
                                   >
                                     {retryingCopyOnlyJobId === copyRetryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
-                                    {copyRetryMode === "offerings" ? "Service copy" : "Copy only"}
+                                    {copyRetryMode === "offerings" ? "Improve services" : "Retry copy chunks"}
                                   </button>
                                 </HoverTooltip>
                               )}
-                              <HoverTooltip text="Retry with the current copy brief. If the brief hash changed, the first click warns and the second click confirms.">
+                              <HoverTooltip text="Start a brand-new full generation retry from the current saved site and current copy brief. This is heavier than resuming a chunked step.">
                                 <button
                                   type="button"
                                   onClick={() => retryGenerationJob(job)}
                                   disabled={Boolean(retryingJobId || retryingChunkStep || retryingCopyOnlyJobId)}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50"
+                                  className={`${compact ? "h-8 w-8 justify-center" : "h-8 px-2.5"} inline-flex items-center gap-1.5 rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50`}
                                   aria-label={retryOverrideJobId === job.id ? "Retry generation job anyway" : "Retry generation job"}
                                 >
                                   {retryingJobId === job.id ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
+                                  {!compact && <span className="text-xs font-semibold">{retryOverrideJobId === job.id ? "Retry anyway" : "Full retry"}</span>}
                                 </button>
                               </HoverTooltip>
                               <AdminAiReadinessBadge
@@ -541,14 +555,15 @@ export default function GenerationJobsTable({
                               />
                             </div>
                           )}
-                          <HoverTooltip text="Open raw job details">
+                          <HoverTooltip text="Open generation job drawer with raw metadata, chunked step status, returned AI work, and retry-step controls.">
                             <button
                               type="button"
                               onClick={() => setSelectedJob(job)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+                              className={`${compact ? "h-8 w-8 justify-center" : "h-8 px-2.5"} inline-flex items-center gap-1.5 rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-indigo-700`}
                               aria-label="Open generation job details"
                             >
                               <FileText size={13} />
+                              {!compact && <span className="text-xs font-semibold">Job details</span>}
                             </button>
                           </HoverTooltip>
                         </div>

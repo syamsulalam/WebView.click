@@ -1,4 +1,4 @@
-import { Check, Copy, Loader2, RotateCw, X } from "lucide-react";
+import { Check, Copy, Loader2, PanelRight, RotateCw, X } from "lucide-react";
 import {
   CHUNKED_GENERATION_STEPS,
   chunkedGenerationState,
@@ -72,6 +72,14 @@ export default function GenerationJobDetailsDrawer({
   const providerCooldown = job?.metadata?.providerCooldown || null;
   const aiFailure = job?.metadata?.aiFailure || job?.metadata?.providerFailure || null;
   const chunkedState = chunkedGenerationState(job);
+  const runnableStep = chunkedState.retryStep || (job?.status === "running" ? chunkedState.nextStep : "");
+  const stepLabel = (step: string) => {
+    if (step === "outline") return "Outline";
+    if (step === "siteCopy") return "Site copy";
+    if (step === "offeringCopy") return "Service copy";
+    if (step === "finalize") return "Finalize";
+    return step || "step";
+  };
   const returnedOutline = job?.metadata?.offeringOutline && typeof job.metadata.offeringOutline === "object"
     ? job.metadata.offeringOutline
     : null;
@@ -126,21 +134,27 @@ export default function GenerationJobDetailsDrawer({
   ];
 
   return (
-    <div className="fixed inset-0 z-[250] flex justify-end bg-slate-950/30" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[250] flex justify-end bg-slate-950/40" role="dialog" aria-modal="true" aria-label="Generation job details drawer">
       <button
         type="button"
         className="absolute inset-0 cursor-default"
         onClick={onClose}
         aria-label="Close job details"
       />
-      <aside className="relative flex h-full w-full max-w-xl flex-col overflow-hidden bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+      <aside className="relative flex h-full w-full max-w-2xl flex-col overflow-hidden border-l-4 border-l-indigo-600 bg-white shadow-2xl">
+        <div className="absolute left-0 top-1/2 hidden -translate-x-full -translate-y-1/2 rounded-l-xl bg-indigo-600 px-2 py-4 text-[10px] font-bold uppercase tracking-[0.18em] text-white shadow-lg lg:block [writing-mode:vertical-rl]">
+          Job drawer
+        </div>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">Generation job</p>
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">
+              <PanelRight size={14} />
+              Generation job drawer
+            </p>
             <h2 className="mt-1 truncate text-lg font-bold text-slate-950">
               {job.prospectName || job.metadata?.businessName || job.businessId || job.id}
             </h2>
-            <p className="mt-1 truncate text-xs text-slate-500">{job.id}</p>
+            <p className="mt-1 truncate text-xs text-slate-500">Job ID: {job.id}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {job.businessId && (
@@ -153,7 +167,7 @@ export default function GenerationJobDetailsDrawer({
                     className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
                   >
                     {retryingJobId === job.id ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
-                    {retryOverrideJobId === job.id ? "Retry anyway" : "Retry"}
+                    {retryOverrideJobId === job.id ? "Full retry anyway" : "Full retry"}
                   </button>
                 </HoverTooltip>
                 <AdminAiReadinessBadge
@@ -166,8 +180,8 @@ export default function GenerationJobDetailsDrawer({
             )}
             <AdminDocsReader
               pathname="/admin/jobs"
-              defaultDocId="admin-workflow-audit"
-              tooltip="Open generation job QA docs in the admin docs reader."
+              defaultDocId="admin-jobs-user-guide"
+              tooltip="Open the admin jobs user guide in the docs reader."
               buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
               iconSize={17}
             />
@@ -184,6 +198,42 @@ export default function GenerationJobDetailsDrawer({
           </div>
         </div>
         <div className="flex-1 space-y-4 overflow-auto p-5 text-sm">
+          <section className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-indigo-950">Next action</h3>
+                <p className="mt-1 text-xs leading-relaxed text-indigo-900">
+                  {chunkedState.chunked
+                    ? runnableStep
+                      ? `This chunked job can continue from ${stepLabel(runnableStep)} without starting over.`
+                      : "No chunked step is waiting. Use full retry only if you want to generate again from the current saved site."
+                    : "This is not a chunked job. Use full retry to create a new generation attempt from the current saved site."}
+                </p>
+              </div>
+              {chunkedState.chunked && runnableStep ? (
+                <button
+                  type="button"
+                  onClick={() => onRetryChunkedStep(job, runnableStep as ChunkedGenerationStep)}
+                  disabled={Boolean(retryingChunkStep || retryingJobId)}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-800 disabled:opacity-50"
+                >
+                  {retryingChunkStep === `${job.id}:${runnableStep}` ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
+                  {job.status === "failed" ? "Retry" : "Resume"} {stepLabel(runnableStep)}
+                </button>
+              ) : job.businessId ? (
+                <button
+                  type="button"
+                  onClick={() => onRetryGenerationJob(job)}
+                  disabled={Boolean(retryingJobId || retryingChunkStep)}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-700 disabled:opacity-50"
+                >
+                  {retryingJobId === job.id ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />}
+                  Full retry
+                </button>
+              ) : null}
+            </div>
+          </section>
+
           <div className="grid gap-3 sm:grid-cols-2">
             {[
               ["Status", job.status || "-"],
@@ -273,17 +323,17 @@ export default function GenerationJobDetailsDrawer({
             </section>
           )}
 
-          <section>
-            <div className="mb-2">
+          <details className="rounded-2xl border border-slate-200 bg-white p-3">
+            <summary className="cursor-pointer list-none">
               <h3 className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
                 AI returned work
                 <HelpTooltip text="Shows the parsed JSON returned by AI for chunked outline, site-copy, and offering-copy steps. Use this with the copy audit to debug why regenerated copy did or did not change." />
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
-                Inspect the model output before and after WebView.click applies it to the saved site.
+                Expand to inspect raw model output before WebView.click applies it to the saved site.
               </p>
-            </div>
-            <div className="space-y-3">
+            </summary>
+            <div className="mt-3 space-y-3">
               {returnedWorkSections.map((section) => (
                 <article key={section.key} className="rounded-xl border border-slate-200 bg-white">
                   <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-3 py-2">
@@ -314,7 +364,7 @@ export default function GenerationJobDetailsDrawer({
                 </article>
               ))}
             </div>
-          </section>
+          </details>
 
           {job.metadata?.preflightBlocked && aiReadiness && (
             <section>
@@ -521,24 +571,30 @@ export default function GenerationJobDetailsDrawer({
             )}
           </section>
 
-          <section>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="font-semibold text-slate-950">Raw metadata</h3>
+          <details className="rounded-2xl border border-slate-200 bg-white p-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
+              <span>
+                <span className="block font-semibold text-slate-950">Raw metadata</span>
+                <span className="mt-0.5 block text-xs text-slate-500">Advanced debug JSON. Usually not needed for normal retry workflow.</span>
+              </span>
               <HoverTooltip text="Copy raw generation job metadata JSON.">
                 <button
                   type="button"
-                  onClick={() => onCopyValue(`${job.id}:metadata`, JSON.stringify(job.metadata || {}, null, 2))}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void onCopyValue(`${job.id}:metadata`, JSON.stringify(job.metadata || {}, null, 2));
+                  }}
                   className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
                 >
                   {copiedKey === `${job.id}:metadata` ? <Check size={12} /> : <Copy size={12} />}
                   Copy
                 </button>
               </HoverTooltip>
-            </div>
-            <pre className="max-h-[45vh] overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-xs text-slate-100">
+            </summary>
+            <pre className="mt-3 max-h-[45vh] overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-xs text-slate-100">
               {JSON.stringify(job.metadata || {}, null, 2)}
             </pre>
-          </section>
+          </details>
         </div>
       </aside>
     </div>
