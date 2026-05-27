@@ -260,6 +260,55 @@ test("repairServiceCardImages fills homepage and service page cards without AI r
   assert.equal(servicesItems[1].image, "/api/places/photo?reference=pump&maxwidth=960");
 });
 
+test("repairServiceCardImages rotates gallery images instead of preserving duplicate card images", () => {
+  const site: Record<string, unknown> = {
+    meta: { language: "en" },
+    brand: { preferredHeroImage: "/same.jpg" },
+    services: [
+      { title: "Concrete Delivery", summary: "Ready mix delivery.", image: "/same.jpg", detailPageId: "service-concrete-delivery" },
+      { title: "Pump Scheduling", summary: "Coordinate a concrete pump.", image: "/same.jpg", detailPageId: "service-pump-scheduling" },
+      { title: "Short Load Orders", summary: "Small-batch concrete.", image: "/same.jpg", detailPageId: "service-short-load-orders" },
+    ],
+    pages: [
+      {
+        pageId: "home",
+        sections: [
+          {
+            type: "offers",
+            id: "offers-1",
+            content: {
+              items: [
+                { title: "Concrete Delivery", detailPageId: "service-concrete-delivery", image: "/same.jpg" },
+                { title: "Pump Scheduling", detailPageId: "service-pump-scheduling", image: "/same.jpg" },
+                { title: "Short Load Orders", detailPageId: "service-short-load-orders", image: "/same.jpg" },
+              ],
+            },
+          },
+          {
+            type: "imageGallery",
+            id: "gallery",
+            content: { images: ["/gallery-1.jpg", "/gallery-2.jpg", "/gallery-3.jpg"] },
+          },
+        ],
+      },
+    ],
+  };
+
+  repairServiceCardImages(site, {});
+
+  assert.deepEqual((site.services as Array<Record<string, unknown>>).map((item) => item.image), [
+    "/gallery-1.jpg",
+    "/gallery-2.jpg",
+    "/gallery-3.jpg",
+  ]);
+  const homeSection = (((site.pages as Array<Record<string, unknown>>)[0].sections as Array<Record<string, unknown>>)[0].content as Record<string, unknown>);
+  assert.deepEqual((homeSection.items as Array<Record<string, unknown>>).map((item) => item.image), [
+    "/gallery-1.jpg",
+    "/gallery-2.jpg",
+    "/gallery-3.jpg",
+  ]);
+});
+
 test("ensureFeedbackPage creates feedback page without adding header navigation", () => {
   const site: Record<string, unknown> = {
     meta: { language: "id" },

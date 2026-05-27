@@ -298,7 +298,7 @@ Props penting:
 - `onDownloadZip`: callback download zip, tersedia di demo dan public preview.
 - `fontPairings`, `selectedFontPairing`, `onFontPairingChange`: opsi font pairing yang cocok dengan industri agar owner bisa memilih style font sebelum download/setup.
 - `paletteOptions`, `selectedPaletteOption`, `onPaletteOptionChange`: opsi palette hasil ekstraksi foto bisnis agar owner bisa memilih warna sebelum download/setup.
-- Panel tetap menampilkan kontrol `Color palette` jika hanya satu palette tersedia, supaya public preview lama/hasil regen yang tidak punya multi-photo options tetap memperlihatkan warna yang akan masuk export.
+- Panel menampilkan kontrol font/palette dengan label dan select inline agar modal `Get this website` tetap ringkas. Kontrol `Color palette` hanya muncul jika ada lebih dari satu saved palette yang benar-benar bisa dipilih; site lama dengan satu palette tetap memakai warna tersimpan tanpa select kosong.
 
 Logic penting:
 - Domain extension list berasal dari `src/lib/domainExtensions.ts`.
@@ -413,7 +413,7 @@ Logic penting:
 - JSON scaffold fallback dibuat oleh `src/lib/generatedSiteScaffold.ts` melalui helper orchestration `src/lib/adminSiteGeneration.ts`, sehingga `/admin/leads` dan `/admin/sites` memakai shape fallback yang sama.
 - JSON scaffold fallback menentukan `meta.language` dari alamat/region Places: US default English, Indonesia default Indonesian.
 - JSON scaffold fallback menentukan `design.stylePreset`, `design.stylePresetConfig`, `design.visualStyle`, dan `design.visualStyleConfig` via `src/lib/siteStylePresets.ts`.
-- JSON scaffold fallback menentukan `design.fontPairing`, `fontPairingConfig`, dan `themeVariables.typography` via `src/lib/fontPairings.ts`.
+- JSON scaffold fallback menentukan `design.fontPairing`, `fontPairingConfig`, dan `themeVariables.typography` via `src/lib/fontPairings.ts`; pilihan awal divariasikan dengan stable business seed supaya bisnis dalam industri sama tidak selalu memakai font pairing pertama.
 - Prompt AI generator juga diinstruksikan memakai bahasa sesuai region bisnis.
 - Prompt AI generator dan Function post-process menjaga parity dengan `/demo`: jika ada minimal dua foto bisnis yang usable, JSON final harus punya page `gallery`, nav item `#gallery`, dan section `imageGallery`.
 - Prompt AI generator mengidentifikasi apakah bisnis menjual `products`, `services`, atau `both`, lalu membuat `productServiceStrategy`, arrays `products`/`services`, submenu navbar children, dan satu halaman detail non-thin untuk setiap produk/layanan.
@@ -506,10 +506,12 @@ Fungsi:
 - Memberi link Google Maps/Google Business listing dari `sourceData.googleMapsUri` atau `businessProfile.contact.directionsUrl` untuk membandingkan hasil generate dengan listing asli.
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
 - Tombol `Brief` membuka `GET /api/sites/:businessId/copy-brief`, yaitu `copyTargetBrief` stored-site yang dipakai untuk debugging bahan copy-only yang dikirim ke AI. Saat regenerate, fresh Google Places details masih bisa menambah fakta baru sebelum AI call.
-- Tombol `Repair service images` memanggil `POST /api/sites/:businessId/repair-service-images` untuk memperbaiki hanya image field di homepage/services offer cards dari saved detail-page images, brand images, dan Google Places photos. Action ini tidak memanggil AI dan tidak regenerate full site.
-- Search bar punya filter `Missing images` yang menampilkan site dengan `missingServiceCardImageCount > 0` dari saved summary, sehingga admin bisa menemukan homepage/services cards tanpa image sebelum membuka preview.
+- Tombol `Repair service images` memanggil `POST /api/sites/:businessId/repair-service-images` untuk memperbaiki hanya image field di homepage/services offer cards dari saved gallery images, saved detail-page images, brand images, dan Google Places photos. Action ini hanya muncul untuk row yang punya missing/duplicate service card image, tidak memanggil AI, dan tidak regenerate full site.
+- Search bar punya filter `Image issues` yang menampilkan site dengan missing atau duplicate service-card images dari saved summary, sehingga admin bisa menemukan homepage/services cards yang kosong atau memakai image berulang sebelum membuka preview.
 - Tombol `Repair filtered` menjalankan repair service images untuk maksimal 10 site dari hasil search/filter saat ini, satu per satu, supaya admin bisa membersihkan missing image ringan tanpa membuka tiap preview dan tanpa membuat request paralel berat.
 - Setelah repair image berjalan, row menampilkan badge `Repaired {date}` dari summary `lastImageRepairAt` supaya QA bisa melihat site mana yang sudah dibersihkan dalam production pass.
+- Tombol `Refresh visual variation` memanggil `POST /api/sites/:businessId/refresh-visual-variation` untuk mengubah saved font pairing/typography ke stable seeded variant dan mengirim palette tambahan yang diekstrak client-side dari gallery images jika jumlah saved palette lebih sedikit daripada jumlah foto gallery. Action ini tidak memanggil AI, tidak mengubah copy, dan tidak mengubah image.
+- Tombol `Visual filtered` menjalankan refresh visual variation plus palette backfill untuk maksimal 10 site dari hasil search/filter saat ini, satu per satu, supaya situs lama bisa dibuat lebih bervariasi tanpa regenerate full site atau tombol terpisah.
 - Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini memakai `src/lib/adminSiteGeneration.ts` untuk provider cooldown, AI readiness, refresh Place Details, shared scaffold payload, photo/palette resolution, dan chunked generation steps yang sama dengan `/admin/leads`. Jika AI provider gagal, error ditampilkan dan job ditandai failed agar fallback tidak menyamar sebagai hasil AI.
 - First generate dari `Ready to Generate` juga memakai chunked AI flow untuk step outline/siteCopy/offeringCopy/finalize; mode `Re-gather Google data + resave` tetap memakai save langsung tanpa AI.
 - Fallback JSON dari `/admin/sites` dibuat oleh `src/lib/generatedSiteScaffold.ts`, sama seperti `/admin/leads`, lalu di-post-process untuk page services/contact/feedback/gallery.
@@ -528,15 +530,18 @@ API yang dipakai:
 - `POST /api/sites/generate`
 - `GET /api/sites/:businessId/copy-brief`
 - `POST /api/sites/:businessId/repair-service-images`
+- `POST /api/sites/:businessId/refresh-visual-variation`
 
 Logic penting:
 - Search lokal bisa mencari nama bisnis, slug, niche, bahasa, dan region.
 - Metadata tampilan diambil dari `meta`, `businessProfile`, dan `trust` di JSON site.
 - List Generated Sites menampilkan badge storage mode: `R2 JSON` jika D1 hanya manifest dan full JSON ada di R2, atau `Legacy D1 JSON` jika row lama masih menyimpan full JSON di D1.
 - List Generated Sites menampilkan badge generation mode: `AI Copy Patch` jika `meta.generationMode=ai_copy_patch`/`generatedWithAi=true`, atau `Fallback Only` jika site dibuat dari gathered-data/scaffold tanpa copy patch AI.
-- List Generated Sites menampilkan badge `Missing N img` jika saved summary mendeteksi homepage/services offer cards tanpa image. Badge ini memakai field summary `serviceCardImageTotal`, `missingServiceCardImageCount`, dan `hasMissingServiceCardImages`; row R2 lama yang belum pernah resave/repair sejak field ini ada mungkin belum punya audit count.
+- List Generated Sites menampilkan badge `Fix N img` jika saved summary mendeteksi homepage/services offer cards tanpa image atau memakai image yang sama berulang. Badge ini memakai field summary `serviceCardImageTotal`, `missingServiceCardImageCount`, `duplicateServiceCardImageCount`, `hasMissingServiceCardImages`, `hasDuplicateServiceCardImages`, dan `needsServiceCardImageRepair`; row R2 lama yang belum pernah resave/repair sejak field ini ada mungkin belum punya audit count.
 - Batch `Repair filtered` memakai endpoint single-site `POST /api/sites/:businessId/repair-service-images` secara sequential dan dibatasi 10 row per klik; response toast merangkum jumlah site repaired, image field changed, dan failure count.
 - Field summary `lastImageRepairAt` diisi setiap kali endpoint repair service images berhasil menyimpan JSON, termasuk jika jumlah changed = 0, karena timestamp menandai audit/cleanup pass sudah dijalankan.
+- List Generated Sites menampilkan badge `Visual {date}` dari `lastVisualVariationAt` setelah font pairing variation disimpan. Summary juga menyimpan `fontPairing` dan `fontPairingLabel` untuk tooltip/debug.
+- Batch `Visual filtered` memakai endpoint single-site `POST /api/sites/:businessId/refresh-visual-variation` secara sequential dan dibatasi 10 row per klik; sebelum POST, client mengambil full site JSON dan mencoba mengekstrak palette dari gallery image yang belum punya `brand.paletteOptions`. Jika browser canvas diblokir oleh CORS, client memakai seeded fallback palette per image supaya site lama tetap mendapat pilihan warna tambahan. Response toast merangkum jumlah site refreshed, font pairing yang berubah, dan palette set yang bertambah.
 - Pilihan provider/model regenerate disimpan ke localStorage agar refresh halaman tetap memakai model terakhir yang dipilih admin.
 - Pilihan provider/model yang sama dipakai untuk `Generate` prospect gathered di section `Ready to Generate`.
 - First generate dari `Ready to Generate` memakai selected photo/palette yang tersimpan di prospect jika ada; jika tidak ada, flow memilih foto Places fallback dengan prioritas owner-like yang sama seperti `/admin/leads` dan memakai URL proxy `maxwidth=960` untuk visual generated site.
@@ -545,7 +550,7 @@ Logic penting:
 - `AI regenerate` dan `Re-gather Google data + resave` mengirim ulang `brand.paletteOptions` dari site JSON agar pilihan warna yang sudah ada tidak bergantung pada shape lama atau fallback renderer.
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
 - JSON/data modal close action uses shared hover tooltip so the compact X control is named during production QA.
-- Repeated site list actions are intentionally icon-only with hover tooltips and `aria-label`, including page refresh, ready-prospect Maps/Data/Generate, generated-site Preview/Maps/Data/Brief/Repair service images/Regen, and modal close.
+- Repeated site list actions are intentionally icon-only with hover tooltips and `aria-label`, including page refresh, ready-prospect Maps/Data/Generate, generated-site Preview/Maps/Data/Brief/Repair service images/Refresh visual variation/Regen, and modal close.
 - Generated-site rows include a compact `Jobs` action that links to `/admin/jobs?job={latestGenerationJobId}&q={latestGenerationJobId}` and opens the latest generation audit drawer for that site. The action color reflects latest job status: green success, red failed, amber running/unknown. Older rows without job metadata show a disabled action with tooltip.
 - Ready-to-generate and per-site regenerate controls include docs quick links for `Design Guide`, `Niche Style Presets`, and `Font Pairing Guide`.
 - Generate/regenerate/readiness action notices memakai `AdminToast`, sehingga pesan sukses seperti `AI copy patch regenerated ...` tetap floating di kanan atas meski admin sedang melihat bagian bawah list.
@@ -748,7 +753,7 @@ Logic penting:
 - `ensureContactPage(site, originData)` menambahkan page `contact` dengan section `contactForm` dari section contact-like lama, `businessProfile`, `location`, `hours`, `sourceData`, footer, dan origin Google Places.
 - Contact page hours are language-aware and compacted; repeated daily hours become lines like `Daily: 6:00 AM - 11:00 PM`, and Indonesian pages use labels such as `Setiap hari`, `Sen-Sab`, and `Tutup`.
 - `ensureServicesPage(site)` menambahkan aggregate page `services` dari `products`, `services`, atau `offers`, termasuk children nav menuju detail pages jika header navigation sudah tersedia.
-- `repairServiceCardImages(site, originData)` menyinkronkan image field untuk products/services/offers dan setiap offers-section card dari saved detail-page hero/detail images, brand images, dan Google Places photos. Helper ini membuat preview homepage/services grid bisa diperbaiki tanpa AI regenerate.
+- `repairServiceCardImages(site, originData)` menyinkronkan image field untuk products/services/offers dan setiap offers-section card dari saved gallery images, saved detail-page hero/detail images, brand images, dan Google Places photos. Helper ini merotasi gambar gallery/Places ketika card/detail images duplikat supaya service grid tidak memakai gambar yang sama berulang, dan membuat preview homepage/services grid bisa diperbaiki tanpa AI regenerate.
 - `ensureFeedbackPage(site)` menambahkan page `feedback` tanpa memasukkannya ke header navigation.
 - `ensureGalleryPage(site, originData)` menambahkan page `gallery` jika minimal dua gambar usable tersedia dari brand, products/services/offers, atau Google Places photos.
 - `applyGeneratedSitePageInserts(site, originData)` menjalankan urutan shared `repair service card images -> services -> contact -> feedback -> gallery`, dan dipakai oleh Function generation serta `SiteRenderer` runtime normalization.
@@ -763,6 +768,7 @@ Fungsi:
 
 Logic penting:
 - `buildGeneratedSiteScaffold(place, options)` creates the fallback JSON shape from Google Places data, selected image, palette, and business id.
+- Font pairing selection uses `fontPairingVariantForText()` from `src/lib/fontPairings.ts`: first build the industry-matched allowed set, then choose a stable variant from business name, business id, Place ID, and address. This gives same-industry generated sites different typography without random reshuffling on refresh.
 - The scaffold includes `meta`, `sourceData`, `design`, `brand`, `businessProfile`, `trust`, `productServiceStrategy`, products/services/offers, capabilities, location, hours, conversion, SEO, navigation, homepage sections, and offering detail pages.
 - The scaffold seeds multiple plausible service/product offerings from business name, category, and search query for common niches such as concrete, roofing, plumbing, HVAC, cleaning, landscaping, medical, restaurants, florists, furniture, and retail. AI copy patch then rewrites those slots with richer industry-specific copy.
 - The builder calls `applyGeneratedSitePageInserts()` so services/contact/feedback/gallery pages are centralized with post-processing.
@@ -854,6 +860,7 @@ Endpoint:
 - `POST /api/sites/generate`
 - `POST /api/sites/migrate-r2`
 - `POST /api/sites/:businessId/repair-service-images`
+- `POST /api/sites/:businessId/refresh-visual-variation`
 - `GET /api/sites`
 - `GET /api/sites/:business_id`
 - `POST /api/payments/checkout`
@@ -935,9 +942,10 @@ Logic Google Places/logo:
 Logic R2:
 - `/api/sites` route handling lives in `functions/api/sites/handler.ts`: site list/read/copy brief, no-AI service card image repair, `POST /api/sites/generate`, final lead/prospect/activity writes, generation job success/failure updates, deterministic visual/font/favicon defaults, and the save path shared by chunked job finalize.
 - R2/site storage helpers live in `functions/api/sites/storage.ts`; `functions/api/sites/handler.ts` calls this module for image filename normalization, image asset upload, JSON upload/read, compact manifests, public R2 URLs, and `POST /api/sites/migrate-r2`.
-- `siteSummaryFromJson()` stores service-card image audit fields (`serviceCardImageTotal`, `missingServiceCardImageCount`, `hasMissingServiceCardImages`, `lastImageRepairAt`) so `/api/sites` can badge/filter missing images and show repair pass timestamps from D1 summaries without reading every full R2 JSON.
+- `siteSummaryFromJson()` stores service-card image audit fields (`serviceCardImageTotal`, `missingServiceCardImageCount`, `duplicateServiceCardImageCount`, `hasMissingServiceCardImages`, `hasDuplicateServiceCardImages`, `needsServiceCardImageRepair`, `lastImageRepairAt`) and visual variation fields (`fontPairing`, `fontPairingLabel`, `lastVisualVariationAt`) so `/api/sites` can badge/filter missing/duplicate images and show repair/visual pass timestamps from D1 summaries without reading every full R2 JSON.
 - Binding optional: `R2`.
 - Public URL: `R2_PUBLIC_BASE_URL`, default/fallback production `https://assets.webview.click`.
+- Bucket CORS policy for `assets.webview.click` lives in `cloudflare/r2-cors-webview.json`, is applied with `npm run r2:cors`, and can be inspected with `npm run r2:cors:list`. It allows public `GET`/`HEAD` reads with wildcard origins so admin palette extraction can load R2 images using `<img crossOrigin="anonymous">` without tainting canvas. Applying this requires a Wrangler login/API token with R2 bucket CORS edit permission.
 - Saat `POST /api/sites/generate`, Function:
   - Menormalisasi filename image non-URL agar mengandung slug `businessId`.
   - Meng-upload image URL non-Google yang bisa di-fetch ke `sites/{businessId}/assets/{businessId}-asset-XX.ext`.
@@ -950,6 +958,7 @@ Logic R2:
 - `GET /api/sites` juga returns `latestGenerationJobId`, `latestGenerationJobStatus`, dan `latestGenerationJobUpdatedAt` dari latest matching `generation_jobs.business_id`, dipakai `/admin/sites` untuk jump langsung ke audit row.
 - `POST /api/sites/migrate-r2` adalah maintenance action untuk row lama: upload full JSON D1 ke R2, update `storage.r2JsonKey`, lalu replace `json_content` dengan compact manifest. Jika R2 belum binding, endpoint gagal eksplisit.
 - `POST /api/sites/:businessId/repair-service-images` membaca full JSON dari R2/D1, menjalankan shared `repairServiceCardImages()` plus post-processing inserts, menulis `meta.lastImageRepairAt`, lalu menyimpan ulang JSON/manifest. Response mengembalikan `changed`, `availableImages`, `lastImageRepairAt`, dan `storageMode` supaya UI bisa menjelaskan apakah ada field yang berubah dan kapan pass terakhir berjalan.
+- `POST /api/sites/:businessId/refresh-visual-variation` membaca full JSON dari R2/D1, menerapkan `applySeededFontPairing(..., force=true)`, menerima optional `paletteOptions` dari admin client, merge/dedupe option baru ke `brand.paletteOptions`, menulis `meta.lastVisualVariationAt`, lalu menyimpan ulang JSON/manifest. Endpoint hanya mengubah saved typography, saved palette options, dan metadata timestamp visual; copy, images, sourceData, navigation, dan service pages tidak diubah.
 
 Risiko debug:
 - Jika asset tidak bisa dibuka, cek custom domain R2 `assets.webview.click`, bucket public/custom domain setting, dan env `R2_PUBLIC_BASE_URL`.

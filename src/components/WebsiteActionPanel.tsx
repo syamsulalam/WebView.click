@@ -312,52 +312,54 @@ export default function WebsiteActionPanel({
             <div className="space-y-3 p-4">
               {fontPairings.length > 1 && onFontPairingChange && (
                 <label className="block rounded-xl border border-slate-200 bg-white p-3">
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                  <span className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-950">
                     Font style
                     <InfoTooltip text="Choose an industry-matched font pairing before download. The exported HTML keeps the selected look." />
                   </span>
-                  <select
-                    value={selectedFontPairing}
-                    onChange={(event) => onFontPairingChange(event.target.value)}
-                    className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {fontPairings.map((pairing) => (
-                      <option key={pairing.id} value={pairing.id}>
-                        {pairing.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">Style</span>
+                    <select
+                      value={selectedFontPairing}
+                      onChange={(event) => onFontPairingChange(event.target.value)}
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {fontPairings.map((pairing) => (
+                        <option key={pairing.id} value={pairing.id}>
+                          {pairing.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <span className="mt-1 block text-xs text-slate-500">
                     {fontPairings.find((pairing) => pairing.id === selectedFontPairing)?.mood || fontPairings[0]?.mood}
                   </span>
                 </label>
               )}
-              {paletteOptions.length > 0 && onPaletteOptionChange && (
+              {paletteOptions.length > 1 && onPaletteOptionChange && (
                 <label className="block rounded-xl border border-slate-200 bg-white p-3">
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                  <span className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-950">
                     Color palette
                     <InfoTooltip text="Choose a palette extracted from business photos before download. The exported HTML keeps the selected colors." />
                   </span>
-                  <select
-                    value={selectedPaletteOption}
-                    onChange={(event) => onPaletteOptionChange(event.target.value)}
-                    disabled={paletteOptions.length < 2}
-                    className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {paletteOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label || option.id}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">Palette</span>
+                    <select
+                      value={selectedPaletteOption}
+                      onChange={(event) => onPaletteOptionChange(event.target.value)}
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {paletteOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label || option.id}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <span className="mt-2 flex overflow-hidden rounded-full border border-slate-200">
                     {(paletteOptions.find((option) => option.id === selectedPaletteOption)?.colors || paletteOptions[0]?.colors || []).slice(0, 5).map((color: string) => (
                       <span key={color} className="h-5 flex-1" style={{ backgroundColor: color }} />
                     ))}
                   </span>
-                  {paletteOptions.length < 2 && (
-                    <span className="mt-1 block text-xs text-slate-500">Only one saved palette is available for this site.</span>
-                  )}
                 </label>
               )}
               {onDownloadZip && (

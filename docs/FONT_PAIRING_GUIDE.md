@@ -25,6 +25,7 @@ Generated site JSON can now include:
       "bodyFont": "Source Sans Pro",
       "mood": "strong, condensed, direct",
       "allowedValues": ["bebas-source", "archivo-hind", "oswald-nunito"],
+      "selectionMode": "stable_seeded_business_variant",
       "selectionRule": "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download."
     },
     "themeVariables": {
@@ -56,4 +57,6 @@ Montserrat + Raleway, Lobster + Open Sans, Ubuntu + Nanum Gothic, Bebas Neue + S
 
 ## Notes for Generation
 
-AI generation should pick `design.fontPairing` from an industry-appropriate group, not randomly. If the AI fails or generation uses fallback JSON, the app infers a safe pairing from business name, Google Places types, address, and search query.
+Generation picks `design.fontPairing` from an industry-appropriate group, then uses a stable business seed (`businessName`, `businessId`, Place ID, and address) to vary the selected pairing within that group. This keeps typography suitable for the industry while preventing same-category sites from all using the first matching font pair.
+
+The selected value is persisted in site JSON. Refreshing or repairing a site does not reshuffle typography unless the site is regenerated from a path that rebuilds missing design metadata.

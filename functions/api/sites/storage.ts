@@ -219,7 +219,13 @@ function serviceCardImageSummary(deps: Pick<SiteStorageDeps, "asString">, parsed
     deps.asString(card.href, deps.asString(card.detailPageId)),
   );
   const missing = meaningfulCards.filter((card) => !isUsableImageUrl(deps, card.image)).length;
-  return { total: meaningfulCards.length, missing };
+  const usage = new Map<string, number>();
+  meaningfulCards.forEach((card) => {
+    const image = deps.asString(card.image).trim();
+    if (isUsableImageUrl(deps, image)) usage.set(image, (usage.get(image) || 0) + 1);
+  });
+  const duplicate = Array.from(usage.values()).reduce((total, count) => total + Math.max(0, count - 1), 0);
+  return { total: meaningfulCards.length, missing, duplicate };
 }
 
 export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, parsed: Record<string, unknown>, businessId: string) {
@@ -228,6 +234,8 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
   const businessProfile = parsed.businessProfile && typeof parsed.businessProfile === "object" ? parsed.businessProfile as Record<string, unknown> : {};
   const trust = parsed.trust && typeof parsed.trust === "object" ? parsed.trust as Record<string, unknown> : {};
   const sourceData = parsed.sourceData && typeof parsed.sourceData === "object" ? parsed.sourceData as Record<string, unknown> : {};
+  const design = parsed.design && typeof parsed.design === "object" ? parsed.design as Record<string, unknown> : {};
+  const fontPairingConfig = design.fontPairingConfig && typeof design.fontPairingConfig === "object" ? design.fontPairingConfig as Record<string, unknown> : {};
   const contact = businessProfile.contact && typeof businessProfile.contact === "object" ? businessProfile.contact as Record<string, unknown> : {};
   const serviceImageSummary = serviceCardImageSummary(deps, parsed);
   return {
@@ -244,8 +252,14 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
     aiModel: asString(meta.aiModel),
     serviceCardImageTotal: serviceImageSummary.total,
     missingServiceCardImageCount: serviceImageSummary.missing,
+    duplicateServiceCardImageCount: serviceImageSummary.duplicate,
     hasMissingServiceCardImages: serviceImageSummary.missing > 0,
+    hasDuplicateServiceCardImages: serviceImageSummary.duplicate > 0,
+    needsServiceCardImageRepair: serviceImageSummary.missing > 0 || serviceImageSummary.duplicate > 0,
     lastImageRepairAt: asString(meta.lastImageRepairAt),
+    fontPairing: asString(design.fontPairing),
+    fontPairingLabel: asString(fontPairingConfig.label),
+    lastVisualVariationAt: asString(meta.lastVisualVariationAt),
   };
 }
 

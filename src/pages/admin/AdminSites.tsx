@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, ChevronDown, Database, FileText, Globe2, Image as ImageIcon, ListChecks, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, Wrench, X } from "lucide-react";
+import { Brain, ChevronDown, Database, FileText, Globe2, Image as ImageIcon, ListChecks, MapPin, Play, RefreshCw, RotateCw, Search, Shuffle, Sparkles, Wrench, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { readApiJson } from "../../lib/apiResponse";
@@ -45,8 +45,14 @@ type SiteRow = {
   aiModel?: string;
   serviceCardImageTotal?: number | null;
   missingServiceCardImageCount?: number | null;
+  duplicateServiceCardImageCount?: number | null;
   hasMissingServiceCardImages?: boolean;
+  hasDuplicateServiceCardImages?: boolean;
+  needsServiceCardImageRepair?: boolean;
   lastImageRepairAt?: string;
+  fontPairing?: string;
+  fontPairingLabel?: string;
+  lastVisualVariationAt?: string;
   latestGenerationJobId?: string;
   latestGenerationJobStatus?: string;
   latestGenerationJobUpdatedAt?: string;
@@ -55,6 +61,7 @@ type SiteRow = {
 type RegenerateMode = "resave" | "ai";
 
 const SERVICE_IMAGE_BATCH_REPAIR_LIMIT = 10;
+const VISUAL_VARIATION_BATCH_LIMIT = 10;
 
 function generationBadge(site: SiteRow) {
   if (site.generationMode === "ai_copy_patch" || site.generatedWithAi) {
@@ -159,6 +166,8 @@ export default function AdminSites() {
   const [regeneratingId, setRegeneratingId] = useState("");
   const [repairingServiceImagesId, setRepairingServiceImagesId] = useState("");
   const [batchRepairingServiceImages, setBatchRepairingServiceImages] = useState(false);
+  const [refreshingVisualVariationId, setRefreshingVisualVariationId] = useState("");
+  const [batchRefreshingVisualVariation, setBatchRefreshingVisualVariation] = useState(false);
   const [generatingProspectId, setGeneratingProspectId] = useState("");
   const [generationProgress, setGenerationProgress] = useState<Record<string, { step: string; text: string; retryInSeconds?: number }>>({});
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
@@ -271,7 +280,7 @@ export default function AdminSites() {
   const filteredSites = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const imageFilteredSites = siteImageFilter === "missing"
-      ? sites.filter((site) => Number(site.missingServiceCardImageCount || 0) > 0 || site.hasMissingServiceCardImages === true)
+      ? sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0)
       : sites;
     if (!needle) return imageFilteredSites;
     return imageFilteredSites.filter((site) => [
@@ -280,17 +289,17 @@ export default function AdminSites() {
       site.niche,
       site.language,
       site.region,
-      Number(site.missingServiceCardImageCount || 0) > 0 ? "missing service images" : "",
+      site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0 ? "missing duplicate service images" : "",
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [query, siteImageFilter, sites]);
 
   const missingServiceImageSiteCount = useMemo(
-    () => sites.filter((site) => Number(site.missingServiceCardImageCount || 0) > 0 || site.hasMissingServiceCardImages === true).length,
+    () => sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0).length,
     [sites],
   );
 
   const filteredMissingServiceImageSites = useMemo(
-    () => filteredSites.filter((site) => Number(site.missingServiceCardImageCount || 0) > 0 || site.hasMissingServiceCardImages === true),
+    () => filteredSites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0),
     [filteredSites],
   );
 
@@ -319,6 +328,148 @@ export default function AdminSites() {
       throw new Error(data.error || `Site JSON returned ${response.status}`);
     }
     return data;
+  };
+
+  const normalizePaletteForContrast = (palette: string[]) => {
+    const hexToRgb = (hex: string) => {
+      const normalized = hex.trim().replace("#", "");
+      const expanded = normalized.length === 3 ? normalized.split("").map((char) => char + char).join("") : normalized;
+      if (!/^[0-9a-f]{6}$/i.test(expanded)) return null;
+      return {
+        r: parseInt(expanded.slice(0, 2), 16),
+        g: parseInt(expanded.slice(2, 4), 16),
+        b: parseInt(expanded.slice(4, 6), 16),
+      };
+    };
+    const rgbToHex = (r: number, g: number, b: number) =>
+      `#${[r, g, b].map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0")).join("")}`;
+    const relativeLuminance = (hex: string) => {
+      const rgb = hexToRgb(hex);
+      if (!rgb) return 0;
+      const channel = (value: number) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+    };
+    const darkenForWhiteText = (hex: string) => {
+      const rgb = hexToRgb(hex);
+      if (!rgb) return hex;
+      let factor = 0.82;
+      let current = hex;
+      while (relativeLuminance(current) > 0.32 && factor > 0.32) {
+        current = rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
+        factor -= 0.12;
+      }
+      return current;
+    };
+    const next = [...palette];
+    if (next[0]) next[0] = darkenForWhiteText(next[0]);
+    if (next[1]) next[1] = darkenForWhiteText(next[1]);
+    return next;
+  };
+
+  const fallbackPaletteForImage = (imageUrl: string) => {
+    const fallbackPalettes = [
+      ["#111827", "#2563EB", "#F8FAFC", "#F59E0B", "#0F766E"],
+      ["#1F2937", "#B45309", "#FFF7ED", "#047857", "#7C2D12"],
+      ["#0F172A", "#7C3AED", "#F5F3FF", "#E11D48", "#0369A1"],
+      ["#172554", "#0891B2", "#ECFEFF", "#CA8A04", "#155E75"],
+      ["#3F3F46", "#16A34A", "#F7FEE7", "#EA580C", "#166534"],
+    ];
+    const hash = imageUrl.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
+    return normalizePaletteForContrast(fallbackPalettes[hash % fallbackPalettes.length]);
+  };
+
+  const extractPaletteFromImage = async (imageUrl: string): Promise<string[]> => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const size = 80;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas unavailable for palette extraction."));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, size, size);
+      const pixels = ctx.getImageData(0, 0, size, size).data;
+      const buckets = new Map<string, number>();
+      for (let i = 0; i < pixels.length; i += 16) {
+        const alpha = pixels[i + 3];
+        if (alpha < 180) continue;
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        if (max > 245 || min < 10 || max - min < 18) continue;
+        const key = [r, g, b].map((value) => Math.round(value / 32) * 32).join(",");
+        buckets.set(key, (buckets.get(key) || 0) + 1);
+      }
+      const palette = Array.from(buckets.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([key]) => {
+          const [r, g, b] = key.split(",").map(Number);
+          return `#${[r, g, b].map((value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0")).join("")}`;
+        });
+      resolve(normalizePaletteForContrast(palette.length ? palette : ["#111827", "#4F46E5", "#F3F4F6"]));
+    };
+    img.onerror = () => reject(new Error("Could not read image for palette extraction."));
+    img.src = imageUrl;
+  });
+
+  const siteGalleryImages = (siteJson: any) => {
+    const images: string[] = [];
+    const addImage = (value: unknown) => {
+      const image = typeof value === "string" ? value.trim() : "";
+      if (!image || images.includes(image)) return;
+      images.push(image);
+    };
+    const pages = Array.isArray(siteJson?.pages) ? siteJson.pages : [];
+    pages.forEach((page: any) => {
+      const sections = Array.isArray(page?.sections) ? page.sections : [];
+      sections.forEach((section: any) => {
+        if (section?.type === "imageGallery" && Array.isArray(section?.content?.images)) {
+          section.content.images.forEach(addImage);
+        }
+      });
+    });
+    addImage(siteJson?.brand?.preferredHeroImage);
+    addImage(siteJson?.brand?.logoImageUrl);
+    return images.filter((image) => image.startsWith("/") || image.startsWith("http")).slice(0, 5);
+  };
+
+  const buildMissingPaletteOptionsForSite = async (site: SiteRow) => {
+    const siteJson = await fetchSiteJson(site);
+    const images = siteGalleryImages(siteJson);
+    const existingOptions = Array.isArray(siteJson?.brand?.paletteOptions) ? siteJson.brand.paletteOptions : [];
+    if (images.length <= existingOptions.length) return [];
+    const existingSources = new Set(existingOptions.map((option: any) => String(option?.sourceImageUrl || option?.photoReference || "").trim()).filter(Boolean));
+    const targets = images.filter((image) => !existingSources.has(image)).slice(0, Math.max(0, images.length - existingOptions.length));
+    const options: any[] = [];
+    for (let index = 0; index < targets.length; index += 1) {
+      const sourceImageUrl = targets[index];
+      let colors = fallbackPaletteForImage(sourceImageUrl);
+      let priorityLabel = "Generated gallery fallback";
+      try {
+        colors = await extractPaletteFromImage(sourceImageUrl);
+        priorityLabel = "Generated gallery";
+      } catch {
+        // Browser canvas can be blocked by cross-origin images; keep a seeded fallback so older sites still get distinct palette options.
+      }
+      options.push({
+        id: `site-gallery-${existingOptions.length + index + 1}`,
+        label: `Gallery palette ${existingOptions.length + index + 1}`,
+        colors,
+        sourceImageUrl,
+        priorityLabel,
+      });
+    }
+    return options;
   };
 
   const handleSeeGatheredData = async (site: SiteRow) => {
@@ -613,6 +764,81 @@ export default function AdminSites() {
     }
   };
 
+  const postRefreshVisualVariation = async (site: SiteRow) => {
+    const paletteOptions = await buildMissingPaletteOptionsForSite(site);
+    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/refresh-visual-variation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paletteOptions }),
+    });
+    return readApiJson<{ changed?: boolean; paletteOptionsChanged?: boolean; fontPairing?: string; fontPairingLabel?: string; paletteOptionCount?: number; lastVisualVariationAt?: string }>(response, "Refresh visual variation");
+  };
+
+  const handleRefreshVisualVariation = async (site: SiteRow) => {
+    setRefreshingVisualVariationId(site.businessId);
+    try {
+      const result = await postRefreshVisualVariation(site);
+      notifyAction(
+        "success",
+        result?.changed || result?.paletteOptionsChanged ? "Visual variation refreshed" : "Visual variation marked reviewed",
+        `${site.businessName} now uses ${result?.fontPairingLabel || result?.fontPairing || "the seeded font pairing"}${result?.paletteOptionsChanged ? ` with ${result.paletteOptionCount || "updated"} palette options` : ""}. No AI call or copy regeneration was used.`,
+      );
+      fetchSites();
+    } catch (err) {
+      showApiError(err, { source: "Refresh visual variation" });
+    } finally {
+      setRefreshingVisualVariationId("");
+    }
+  };
+
+  const handleRefreshFilteredVisualVariation = async () => {
+    const targets = filteredSites.slice(0, VISUAL_VARIATION_BATCH_LIMIT);
+    if (targets.length === 0) {
+      notifyAction("info", "No filtered sites", "The current filtered list has no generated sites to refresh.");
+      return;
+    }
+
+    setBatchRefreshingVisualVariation(true);
+    let completed = 0;
+    let changed = 0;
+    let paletteUpdated = 0;
+    const failures: string[] = [];
+    try {
+      for (const site of targets) {
+        setRefreshingVisualVariationId(site.businessId);
+        try {
+          const result = await postRefreshVisualVariation(site);
+          completed += 1;
+          if (result?.changed) changed += 1;
+          if (result?.paletteOptionsChanged) paletteUpdated += 1;
+        } catch (error) {
+          failures.push(`${site.businessName}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      const cappedMessage = filteredSites.length > targets.length
+        ? ` Capped at ${VISUAL_VARIATION_BATCH_LIMIT}; ${filteredSites.length - targets.length} filtered row${filteredSites.length - targets.length === 1 ? "" : "s"} remain.`
+        : "";
+      if (failures.length > 0) {
+        notifyAction(
+          completed > 0 ? "warning" : "error",
+          completed > 0 ? "Visual batch partially completed" : "Visual batch failed",
+          `Refreshed ${completed} site${completed === 1 ? "" : "s"}; ${changed} font pairing${changed === 1 ? "" : "s"} changed and ${paletteUpdated} palette set${paletteUpdated === 1 ? "" : "s"} expanded. ${failures.length} failed.${cappedMessage}`,
+        );
+      } else {
+        notifyAction(
+          "success",
+          "Visual batch completed",
+          `Refreshed ${completed} filtered site${completed === 1 ? "" : "s"}; ${changed} font pairing${changed === 1 ? "" : "s"} changed and ${paletteUpdated} palette set${paletteUpdated === 1 ? "" : "s"} expanded.${cappedMessage}`,
+        );
+      }
+      fetchSites();
+    } finally {
+      setRefreshingVisualVariationId("");
+      setBatchRefreshingVisualVariation(false);
+    }
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -645,7 +871,7 @@ export default function AdminSites() {
           placeholder="Cari nama bisnis, slug, niche, bahasa..."
           className="min-w-0 flex-1 bg-transparent text-sm outline-none"
         />
-        <HoverTooltip text="Show only generated sites whose saved summary says one or more homepage/services offer cards are missing an image. Rows generated before this audit exists may appear after repair or resave.">
+        <HoverTooltip text="Show only generated sites whose saved summary says homepage/services offer cards are missing images or repeat the same image. Rows generated before this audit exists may appear after repair or resave.">
           <button
             type="button"
             onClick={() => setSiteImageFilter(siteImageFilter === "missing" ? "all" : "missing")}
@@ -657,17 +883,17 @@ export default function AdminSites() {
             aria-pressed={siteImageFilter === "missing"}
           >
             <ImageIcon size={14} />
-            Missing images
+            Image issues
             <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingServiceImageSiteCount}</span>
           </button>
         </HoverTooltip>
-        <HoverTooltip text={`Repair missing service card images for up to ${SERVICE_IMAGE_BATCH_REPAIR_LIMIT} sites in the current filtered list. Runs one site at a time, uses no AI, and does not regenerate copy.`}>
+        <HoverTooltip text={`Repair missing or repeated service card images for up to ${SERVICE_IMAGE_BATCH_REPAIR_LIMIT} sites in the current filtered list. Runs one site at a time, uses no AI, and does not regenerate copy.`}>
           <button
             type="button"
             onClick={handleRepairFilteredServiceImages}
-            disabled={batchRepairingServiceImages || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
+            disabled={batchRepairingServiceImages || batchRefreshingVisualVariation || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-            aria-label="Repair filtered missing service images"
+            aria-label="Repair filtered service image issues"
           >
             {batchRepairingServiceImages ? (
               <RefreshCw size={14} className="animate-spin" />
@@ -677,6 +903,25 @@ export default function AdminSites() {
             Repair filtered
             <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700">
               {Math.min(filteredMissingServiceImageSites.length, SERVICE_IMAGE_BATCH_REPAIR_LIMIT)}
+            </span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text={`Refresh font pairing variation and backfill missing gallery palettes for up to ${VISUAL_VARIATION_BATCH_LIMIT} sites in the current filtered list. Runs one site at a time and uses no AI.`}>
+          <button
+            type="button"
+            onClick={handleRefreshFilteredVisualVariation}
+            disabled={batchRefreshingVisualVariation || batchRepairingServiceImages || regeneratingId !== "" || filteredSites.length === 0}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+            aria-label="Refresh filtered visual variation"
+          >
+            {batchRefreshingVisualVariation ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <Shuffle size={14} />
+            )}
+            Visual filtered
+            <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-700">
+              {Math.min(filteredSites.length, VISUAL_VARIATION_BATCH_LIMIT)}
             </span>
           </button>
         </HoverTooltip>
@@ -864,7 +1109,7 @@ export default function AdminSites() {
           <span>Updated</span>
           <span className="inline-flex items-center justify-end gap-1.5 text-right">
             Actions
-            <HelpTooltip text="Preview opens the public site, Data shows saved JSON source data, Brief shows copy-only input, Image repairs service card images without AI, Jobs opens the latest generation audit row, and Regen refreshes Google data or runs an AI copy patch." />
+            <HelpTooltip text="Preview opens the public site, Data shows saved JSON source data, Brief shows copy-only input, Image repairs service cards, Shuffle refreshes font variation without AI, Jobs opens the latest generation audit row, and Regen refreshes Google data or runs an AI copy patch." />
           </span>
         </div>
 
@@ -909,11 +1154,11 @@ export default function AdminSites() {
                       </HoverTooltip>
                     );
                   })()}
-                  {Number(site.missingServiceCardImageCount || 0) > 0 && (
-                    <HoverTooltip text={`${site.missingServiceCardImageCount} of ${site.serviceCardImageTotal || "unknown"} saved homepage/services offer cards are missing an image. Use the image action to repair without AI regeneration.`}>
+                  {(Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0 || site.needsServiceCardImageRepair === true) && (
+                    <HoverTooltip text={`${site.missingServiceCardImageCount || 0} missing and ${site.duplicateServiceCardImageCount || 0} duplicate saved homepage/services offer card image${Number(site.duplicateServiceCardImageCount || 0) === 1 ? "" : "s"} out of ${site.serviceCardImageTotal || "unknown"} cards. Use the image action to repair without AI regeneration.`}>
                       <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
                         <ImageIcon size={11} />
-                        Missing {site.missingServiceCardImageCount} img
+                        Fix {Number(site.missingServiceCardImageCount || 0) + Number(site.duplicateServiceCardImageCount || 0)} img
                       </span>
                     </HoverTooltip>
                   )}
@@ -922,6 +1167,14 @@ export default function AdminSites() {
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
                         <Wrench size={11} />
                         Repaired {new Date(site.lastImageRepairAt).toLocaleDateString()}
+                      </span>
+                    </HoverTooltip>
+                  )}
+                  {site.lastVisualVariationAt && (
+                    <HoverTooltip text={`Visual variation last refreshed at ${new Date(site.lastVisualVariationAt).toLocaleString()}. Font pairing: ${site.fontPairingLabel || site.fontPairing || "seeded variant"}.`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-800">
+                        <Shuffle size={11} />
+                        Visual {new Date(site.lastVisualVariationAt).toLocaleDateString()}
                       </span>
                     </HoverTooltip>
                   )}
@@ -989,18 +1242,35 @@ export default function AdminSites() {
                     <FileText size={14} />
                   </button>
                 </HoverTooltip>
-                <HoverTooltip text="Repair only homepage/services grid card images from saved service detail images and available Google photos. No AI call and no full site regeneration.">
+                {(site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0) && (
+                  <HoverTooltip text="Repair only homepage/services grid card images when cards are missing images or repeat the same image. No AI call and no full site regeneration.">
+                    <button
+                      type="button"
+                      onClick={() => handleRepairServiceImages(site)}
+                      disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || regeneratingId)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                      aria-label="Repair service card images"
+                    >
+                      {repairingServiceImagesId === site.businessId ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                      ) : (
+                        <ImageIcon size={14} />
+                      )}
+                    </button>
+                  </HoverTooltip>
+                )}
+                <HoverTooltip text="Refresh only this site's saved font pairing to the stable seeded visual variation. No AI call, no copy changes, and no image changes.">
                   <button
                     type="button"
-                    onClick={() => handleRepairServiceImages(site)}
-                    disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || regeneratingId)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-                    aria-label="Repair service card images"
+                    onClick={() => handleRefreshVisualVariation(site)}
+                    disabled={Boolean(refreshingVisualVariationId || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || regeneratingId)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                    aria-label="Refresh visual variation"
                   >
-                    {repairingServiceImagesId === site.businessId ? (
+                    {refreshingVisualVariationId === site.businessId ? (
                       <RefreshCw size={14} className="animate-spin" />
                     ) : (
-                      <ImageIcon size={14} />
+                      <Shuffle size={14} />
                     )}
                   </button>
                 </HoverTooltip>
@@ -1031,7 +1301,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => setOpenRegenerateMenu(openRegenerateMenu === site.businessId ? "" : site.businessId)}
-                      disabled={Boolean(regeneratingId)}
+                      disabled={Boolean(regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       aria-label="Open regenerate menu"
                     >

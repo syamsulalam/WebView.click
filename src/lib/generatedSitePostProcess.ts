@@ -72,6 +72,17 @@ export function collectGalleryImages(finalJson: GeneratedSiteRecord, originData:
     }
   }
 
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  for (const page of pages) {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    for (const section of sections) {
+      const content = objectValue(section.content);
+      if (asString(section.type) === "imageGallery" && Array.isArray(content.images)) {
+        for (const image of content.images) addUniqueImageUrl(images, image);
+      }
+    }
+  }
+
   const photos = Array.isArray(originData.photos) ? originData.photos : [];
   for (const photo of photos) {
     const reference = photoReferenceFromPlacePhoto(photo);
@@ -162,13 +173,38 @@ function detailPageImageById(finalJson: GeneratedSiteRecord) {
   return result;
 }
 
+function pageGalleryImages(finalJson: GeneratedSiteRecord) {
+  const images: string[] = [];
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  for (const page of pages) {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    for (const section of sections) {
+      const content = objectValue(section.content);
+      if (asString(section.type) === "imageGallery" && Array.isArray(content.images)) {
+        for (const image of content.images) addUniqueImageUrl(images, image);
+      }
+    }
+  }
+  return images.filter(isUsableImageUrl);
+}
+
 function availableServiceImages(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord) {
   const images: string[] = [];
   const brand = objectValue(finalJson.brand);
+  pageGalleryImages(finalJson).forEach((image) => addUniqueImageUrl(images, image));
+  collectGalleryImages(finalJson, originData).forEach((image) => addUniqueImageUrl(images, image));
   addUniqueImageUrl(images, brand.preferredHeroImage);
   addUniqueImageUrl(images, brand.logoImageUrl);
-  collectGalleryImages(finalJson, originData).forEach((image) => addUniqueImageUrl(images, image));
   return images.filter(isUsableImageUrl);
+}
+
+function imageUsageFor(items: Array<Record<string, unknown>>) {
+  const usage = new Map<string, number>();
+  items.forEach((item) => {
+    const image = firstUsableImage(item.image);
+    if (image) usage.set(image, (usage.get(image) || 0) + 1);
+  });
+  return usage;
 }
 
 export function repairServiceCardImages(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord = {}) {
@@ -178,15 +214,20 @@ export function repairServiceCardImages(finalJson: GeneratedSiteRecord, originDa
   const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
   const detailImages = detailPageImageById(finalJson);
   const fallbackImages = availableServiceImages(finalJson, originData);
+  const detailImageUsage = new Map<string, number>();
+  detailImages.forEach((image) => detailImageUsage.set(image, (detailImageUsage.get(image) || 0) + 1));
+  const currentImageUsage = imageUsageFor([...products, ...services]);
+  const offerCurrentImageUsage = imageUsageFor(offers);
   let changed = 0;
 
   const imageForOffering = (item: Record<string, unknown>, index: number) => {
+    const currentImage = firstUsableImage(item.image);
     const detailPageId = asString(item.detailPageId);
-    return firstUsableImage(
-      item.image,
-      detailImages.get(detailPageId),
-      fallbackImages[index % Math.max(1, fallbackImages.length)],
-    );
+    const detailImage = firstUsableImage(detailImages.get(detailPageId));
+    const rotatedImage = firstUsableImage(fallbackImages[index % Math.max(1, fallbackImages.length)]);
+    if (currentImage && (currentImageUsage.get(currentImage) || 0) === 1) return currentImage;
+    if (detailImage && (detailImageUsage.get(detailImage) || 0) === 1) return detailImage;
+    return firstUsableImage(rotatedImage, currentImage, detailImage);
   };
 
   const offerings = [...products, ...services];
@@ -210,12 +251,18 @@ export function repairServiceCardImages(finalJson: GeneratedSiteRecord, originDa
   offers.forEach((offer, index) => {
     const detailPageId = asString(offer.detailPageId, asString(objectValue(offer.cta).href).replace(/^#/, ""));
     const titleKey = `title:${asString(offer.title).toLowerCase()}`;
-    const image = firstUsableImage(
-      offer.image,
+    const currentImage = firstUsableImage(offer.image);
+    const matchedImage = firstUsableImage(
       detailPageId ? offeringImageById.get(detailPageId) : "",
       offeringImageById.get(titleKey),
-      fallbackImages[index % Math.max(1, fallbackImages.length)],
     );
+    const image = currentImage && (offerCurrentImageUsage.get(currentImage) || 0) === 1
+      ? currentImage
+      : firstUsableImage(
+          matchedImage,
+          fallbackImages[index % Math.max(1, fallbackImages.length)],
+          currentImage,
+        );
     if (image && offer.image !== image) {
       offer.image = image;
       changed += 1;
@@ -229,15 +276,22 @@ export function repairServiceCardImages(finalJson: GeneratedSiteRecord, originDa
       .forEach((section) => {
         const content = objectValue(section.content);
         const items = Array.isArray(content.items) ? content.items as Array<Record<string, unknown>> : [];
+        const itemImageUsage = imageUsageFor(items);
         items.forEach((item, index) => {
           const detailPageId = asString(item.detailPageId, asString(objectValue(item.cta).href).replace(/^#/, ""));
           const titleKey = `title:${asString(item.title).toLowerCase()}`;
-          const image = firstUsableImage(
-            item.image,
+          const currentImage = firstUsableImage(item.image);
+          const matchedImage = firstUsableImage(
             detailPageId ? offeringImageById.get(detailPageId) : "",
             offeringImageById.get(titleKey),
-            fallbackImages[index % Math.max(1, fallbackImages.length)],
           );
+          const image = currentImage && (itemImageUsage.get(currentImage) || 0) === 1
+            ? currentImage
+            : firstUsableImage(
+                matchedImage,
+                fallbackImages[index % Math.max(1, fallbackImages.length)],
+                currentImage,
+              );
           if (image && item.image !== image) {
             item.image = image;
             changed += 1;

@@ -58,3 +58,31 @@ test("generatedSiteScaffold utility helpers normalize common Places fields", () 
   assert.equal(photoReference({ name: "places/123/photos/abc" }), "places/123/photos/abc");
   assert.deepEqual(photoAttributions({ html_attributions: ["<a href='x'>Google User</a>"] }), ["Google User"]);
 });
+
+test("buildGeneratedSiteScaffold varies font pairing for same-industry businesses by stable business seed", () => {
+  const basePlace = {
+    formatted_address: "100 Main St, Dallas, TX 75201, USA",
+    formatted_phone_number: "+1 555-0100",
+    types: ["concrete_contractor", "establishment"],
+    photos: [{ photo_reference: "photo-1" }],
+  };
+  const sites = Array.from({ length: 8 }, (_, index) => buildGeneratedSiteScaffold(
+    {
+      ...basePlace,
+      place_id: `place-${index + 1}`,
+      name: `Metro Concrete Repair ${index + 1}`,
+    },
+    {
+      businessId: `metro-concrete-repair-${index + 1}`,
+      imageUrl: "/api/places/photo?reference=photo-1&maxwidth=960",
+      searchQuery: "concrete contractor dallas",
+    },
+  ));
+
+  const pairings = new Set(sites.map((site) => (site.design as any).fontPairing));
+  assert.ok(pairings.size > 1);
+  for (const site of sites) {
+    assert.ok((site.design as any).fontPairingConfig.allowedValues.includes((site.design as any).fontPairing));
+    assert.equal((site.design as any).fontPairingConfig.selectionMode, "stable_seeded_business_variant");
+  }
+});

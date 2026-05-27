@@ -1,4 +1,5 @@
 import { applyGeneratedSitePageInserts, repairServiceCardImages } from "../../../src/lib/generatedSitePostProcess";
+import { fontPairingsForText, fontPairingVariantForText } from "../../../src/lib/fontPairings";
 import {
   applyAiCopyPatch,
   applyAiOfferingOutline,
@@ -97,27 +98,80 @@ function shaderPresetForBusiness(text: string) {
   return { id: "local-aurora", label: "Local Aurora", description: "Soft palette clouds that make general local sites feel richer without becoming decorative.", defaultOpacity: 0.28, defaultMotion: 0.55 };
 }
 
-function fontPairingForBusiness(text: string) {
-  const key = text.toLowerCase();
-  if (/(contractor|concrete|roof|construction|builder|paving|masonry|mechanic|auto|security|locksmith)/i.test(key)) {
-    return { id: "bebas-source", label: "Bebas Neue + Source Sans Pro", headingFont: "Bebas Neue", bodyFont: "Source Sans Pro", headingCss: "'Bebas Neue', sans-serif", bodyCss: "'Source Sans Pro', sans-serif", mood: "strong, condensed, direct", allowedValues: ["bebas-source", "archivo-hind", "oswald-nunito", "fjalla-merriweather-sans", "alfa-chivo"] };
+function fontPairingForBusiness(text: string, seed = text) {
+  const options = fontPairingsForText(text, 5);
+  const selected = fontPairingVariantForText(text, seed, 5);
+  return {
+    id: selected.id,
+    label: selected.label,
+    headingFont: selected.headingFont,
+    bodyFont: selected.bodyFont,
+    headingCss: selected.headingCss,
+    bodyCss: selected.bodyCss,
+    mood: selected.mood,
+    allowedValues: options.map((item) => item.id),
+  };
+}
+
+function fontPairingDesignInputs(siteJson: Record<string, unknown>, businessName: string, businessId: string, originData: Record<string, unknown> = {}) {
+  const sourceData = siteJson.sourceData && typeof siteJson.sourceData === "object" ? siteJson.sourceData as Record<string, unknown> : {};
+  const location = siteJson.location && typeof siteJson.location === "object" ? siteJson.location as Record<string, unknown> : {};
+  const profile = siteJson.businessProfile && typeof siteJson.businessProfile === "object" ? siteJson.businessProfile as Record<string, unknown> : {};
+  const meta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
+  const categories = Array.isArray(profile.categories) ? profile.categories : [];
+  const address = asString(originData.formatted_address, asString(originData.formattedAddress, asString(location.formattedAddress, asString(sourceData.formattedAddress))));
+  const placeId = asString(originData.place_id, asString(originData.id, asString(sourceData.placeId)));
+  const context = [
+    businessName,
+    address,
+    asString(meta.niche, asString(profile.typeLabel)),
+    categories.join(" "),
+    Array.isArray(originData.types) ? originData.types.join(" ") : "",
+    asString(sourceData.searchQuery),
+    asString(originData.searchQuery),
+  ].filter(Boolean).join(" ");
+  const seed = [
+    businessName,
+    businessId,
+    placeId,
+    address,
+  ].filter(Boolean).join(" ");
+  return { context, seed };
+}
+
+function applySeededFontPairing(siteJson: Record<string, unknown>, businessName: string, businessId: string, originData: Record<string, unknown> = {}, force = false) {
+  const { context, seed } = fontPairingDesignInputs(siteJson, businessName, businessId, originData);
+  const designConfig = siteJson.design && typeof siteJson.design === "object" ? siteJson.design as Record<string, unknown> : {};
+  const previousPairing = asString(designConfig.fontPairing);
+  const fontPairingConfig = designConfig.fontPairingConfig && typeof designConfig.fontPairingConfig === "object" ? designConfig.fontPairingConfig as Record<string, unknown> : {};
+  const shouldRefreshFontPairing = force || !previousPairing || asString(fontPairingConfig.selectionMode) !== "stable_seeded_business_variant";
+  const fontPairingMeta = fontPairingForBusiness(context, seed);
+  if (shouldRefreshFontPairing) {
+    designConfig.fontPairing = fontPairingMeta.id;
+    designConfig.fontPairingConfig = {
+      label: fontPairingMeta.label,
+      headingFont: fontPairingMeta.headingFont,
+      bodyFont: fontPairingMeta.bodyFont,
+      mood: fontPairingMeta.mood,
+      allowedValues: fontPairingMeta.allowedValues,
+      selectionMode: "stable_seeded_business_variant",
+      seed,
+      selectionRule: "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download.",
+    };
   }
-  if (/(law|legal|attorney|finance|financial|insurance|accounting|consulting)/i.test(key)) {
-    return { id: "merriweather-lora", label: "Merriweather + Lora", headingFont: "Merriweather", bodyFont: "Lora", headingCss: "'Merriweather', serif", bodyCss: "'Lora', serif", mood: "serious, editorial, authoritative", allowedValues: ["merriweather-lora", "vollkorn-pt-sans", "gravitas-poppins", "ibm-plex", "montserrat-raleway"] };
-  }
-  if (/(dental|doctor|medical|clinic|health|wellness|spa|salon|beauty)/i.test(key)) {
-    return { id: "nixie-prompt", label: "Nixie One + Prompt", headingFont: "Nixie One", bodyFont: "Prompt", headingCss: "'Nixie One', serif", bodyCss: "'Prompt', sans-serif", mood: "light, modern, composed", allowedValues: ["nixie-prompt", "poiret-didact", "sacramento-barlow", "francois-karla", "arvo-roboto"] };
-  }
-  if (/(restaurant|cafe|coffee|bakery|bar|food)/i.test(key)) {
-    return { id: "lobster-open-sans", label: "Lobster + Open Sans", headingFont: "Lobster", bodyFont: "Open Sans", headingCss: "'Lobster', cursive", bodyCss: "'Open Sans', sans-serif", mood: "playful, friendly, casual", allowedValues: ["lobster-open-sans", "ultra-slabo", "abril-work-sans", "courgette-libre", "montserrat-raleway"] };
-  }
-  if (/(real estate|property|realtor|interior|architecture|design)/i.test(key)) {
-    return { id: "abril-work-sans", label: "Abril Fatface + Work Sans", headingFont: "Abril Fatface", bodyFont: "Work Sans", headingCss: "'Abril Fatface', serif", bodyCss: "'Work Sans', sans-serif", mood: "editorial, premium, confident", allowedValues: ["abril-work-sans", "gravitas-poppins", "architects-abel", "roboto-mono-spectral", "montserrat-raleway"] };
-  }
-  if (/(gym|fitness|trainer|boxing|sport|martial|crossfit)/i.test(key)) {
-    return { id: "fugaz-lato", label: "Fugaz One + Lato", headingFont: "Fugaz One", bodyFont: "Lato", headingCss: "'Fugaz One', sans-serif", bodyCss: "'Lato', sans-serif", mood: "dynamic, warm, sporty", allowedValues: ["fugaz-lato", "monoton-rubik", "bebas-source", "alfa-chivo", "oswald-nunito"] };
-  }
-  return { id: "montserrat-raleway", label: "Montserrat + Raleway", headingFont: "Montserrat", bodyFont: "Raleway", headingCss: "'Montserrat', sans-serif", bodyCss: "'Raleway', sans-serif", mood: "geometric, polished, approachable", allowedValues: ["montserrat-raleway", "arvo-roboto", "francois-karla", "rokkitt-raleway", "ibm-plex"] };
+  const themeVariables = designConfig.themeVariables && typeof designConfig.themeVariables === "object" ? designConfig.themeVariables as Record<string, unknown> : {};
+  const typography = themeVariables.typography && typeof themeVariables.typography === "object" ? themeVariables.typography as Record<string, unknown> : {};
+  typography.headingFont = shouldRefreshFontPairing ? fontPairingMeta.headingCss : typography.headingFont || fontPairingMeta.headingCss;
+  typography.bodyFont = shouldRefreshFontPairing ? fontPairingMeta.bodyCss : typography.bodyFont || fontPairingMeta.bodyCss;
+  themeVariables.typography = typography;
+  designConfig.themeVariables = themeVariables;
+  siteJson.design = designConfig;
+  return {
+    changed: shouldRefreshFontPairing && previousPairing !== fontPairingMeta.id,
+    fontPairing: fontPairingMeta.id,
+    fontPairingLabel: fontPairingMeta.label,
+    seed,
+  };
 }
 
 function faviconSvgFromBusinessName(name: string, background = "#111827") {
@@ -258,7 +312,13 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         } else {
           const jsonContent = parseJsonObject(row.json_content);
           if (
-            (parsed.hasMissingServiceCardImages === undefined || parsed.lastImageRepairAt === undefined) &&
+            (
+              parsed.hasMissingServiceCardImages === undefined ||
+              parsed.duplicateServiceCardImageCount === undefined ||
+              parsed.needsServiceCardImageRepair === undefined ||
+              parsed.lastImageRepairAt === undefined ||
+              parsed.lastVisualVariationAt === undefined
+            ) &&
             jsonContent.storageOnly !== true &&
             Array.isArray(jsonContent.pages)
           ) {
@@ -288,8 +348,14 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         aiModel: asString(summary.aiModel, ""),
         serviceCardImageTotal: typeof summary.serviceCardImageTotal === "number" ? summary.serviceCardImageTotal : null,
         missingServiceCardImageCount: typeof summary.missingServiceCardImageCount === "number" ? summary.missingServiceCardImageCount : null,
+        duplicateServiceCardImageCount: typeof summary.duplicateServiceCardImageCount === "number" ? summary.duplicateServiceCardImageCount : null,
         hasMissingServiceCardImages: summary.hasMissingServiceCardImages === true,
+        hasDuplicateServiceCardImages: summary.hasDuplicateServiceCardImages === true,
+        needsServiceCardImageRepair: summary.needsServiceCardImageRepair === true,
         lastImageRepairAt: asString(summary.lastImageRepairAt, ""),
+        fontPairing: asString(summary.fontPairing, ""),
+        fontPairingLabel: asString(summary.fontPairingLabel, ""),
+        lastVisualVariationAt: asString(summary.lastVisualVariationAt, ""),
         r2JsonUrl: row.r2_json_url || "",
         storageMode: row.r2_json_key ? "r2" : "legacy_d1",
         latestGenerationJobId: row.latest_generation_job_id || "",
@@ -360,6 +426,103 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       changed: repairResult.changed,
       availableImages: repairResult.availableImages,
       lastImageRepairAt: imageRepairAt,
+      storageMode: r2JsonKey ? "r2" : "legacy_d1",
+    });
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "refresh-visual-variation") {
+    const businessId = segments[1];
+    await ensureRequiredColumns(db, [
+      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+      { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
+      { table: "json_sites", column: "json_summary", definition: "TEXT" },
+      { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+    ]);
+    const columns = await tableColumns(db, "json_sites");
+    const selectedColumns = [
+      "business_id",
+      "json_content",
+      columns.has("r2_json_key") ? "r2_json_key" : "",
+    ].filter(Boolean);
+    const row = await db
+      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
+      .bind(businessId)
+      .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+    if (!row?.json_content) return errorJson("Site not found", 404);
+
+    const siteJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
+    if (!siteJson || typeof siteJson !== "object" || Array.isArray(siteJson)) {
+      return errorJson("Saved site JSON is not an object and cannot refresh visual variation.", 422);
+    }
+    const meta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
+    const profile = siteJson.businessProfile && typeof siteJson.businessProfile === "object" ? siteJson.businessProfile as Record<string, unknown> : {};
+    const businessName = asString(meta.businessName, asString(profile.name, businessId));
+    const sourceData = siteJson.sourceData && typeof siteJson.sourceData === "object" ? siteJson.sourceData as Record<string, unknown> : {};
+    const body = await readJsonBody(request).catch(() => ({}));
+    const variationResult = applySeededFontPairing(siteJson, businessName, businessId, sourceData, true);
+    const incomingPaletteOptions = Array.isArray(body.paletteOptions)
+      ? body.paletteOptions.filter((option) => option && typeof option === "object" && Array.isArray((option as Record<string, unknown>).colors))
+      : [];
+    let paletteOptionsChanged = false;
+    if (incomingPaletteOptions.length > 0) {
+      const brand = siteJson.brand && typeof siteJson.brand === "object" ? siteJson.brand as Record<string, unknown> : {};
+      const existingPaletteOptions = Array.isArray(brand.paletteOptions) ? brand.paletteOptions : [];
+      const existingKeys = new Set(existingPaletteOptions.map((option) => {
+        const record = option && typeof option === "object" ? option as Record<string, unknown> : {};
+        return asString(record.sourceImageUrl, asString(record.photoReference, asString(record.id)));
+      }).filter(Boolean));
+      const mergedPaletteOptions = [...existingPaletteOptions];
+      incomingPaletteOptions.forEach((option) => {
+        const record = option as Record<string, unknown>;
+        const key = asString(record.sourceImageUrl, asString(record.photoReference, asString(record.id)));
+        if (key && existingKeys.has(key)) return;
+        if (key) existingKeys.add(key);
+        mergedPaletteOptions.push(option);
+      });
+      if (mergedPaletteOptions.length > existingPaletteOptions.length) {
+        paletteOptionsChanged = true;
+        brand.paletteOptions = mergedPaletteOptions;
+        const firstOption = mergedPaletteOptions.find((option) => option && typeof option === "object" && Array.isArray((option as Record<string, unknown>).colors)) as Record<string, unknown> | undefined;
+        if (firstOption && (!Array.isArray(brand.palette) || (brand.palette as unknown[]).length === 0)) {
+          brand.palette = firstOption.colors;
+        }
+        siteJson.brand = brand;
+      }
+    }
+    const visualVariationAt = new Date().toISOString();
+    siteJson.meta = { ...meta, lastVisualVariationAt: visualVariationAt };
+    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
+    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
+    let r2JsonUrl = asString(storage.r2JsonUrl);
+    if (r2JsonKey || env.R2) {
+      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
+      if (nextKey) {
+        r2JsonKey = nextKey;
+        r2JsonUrl = publicR2Url(env, nextKey);
+        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
+        await uploadJsonToR2(siteJson, env, businessId);
+      }
+    }
+    const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
+    const d1JsonContent = r2JsonKey
+      ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
+      : JSON.stringify(siteJson);
+    await saveJsonSiteRecord(db, businessId, d1JsonContent, {
+      r2_json_key: r2JsonKey || null,
+      r2_json_url: r2JsonUrl || null,
+      json_summary: JSON.stringify(jsonSummary),
+    });
+    return json({
+      success: true,
+      businessId,
+      changed: variationResult.changed,
+      paletteOptionsChanged,
+      fontPairing: variationResult.fontPairing,
+      fontPairingLabel: variationResult.fontPairingLabel,
+      paletteOptionCount: Array.isArray((siteJson.brand as Record<string, unknown> | undefined)?.paletteOptions)
+        ? ((siteJson.brand as Record<string, unknown>).paletteOptions as unknown[]).length
+        : 0,
+      lastVisualVariationAt: visualVariationAt,
       storageMode: r2JsonKey ? "r2" : "legacy_d1",
     });
   }
@@ -581,14 +744,14 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
 
     const designConfig = finalJson.design && typeof finalJson.design === "object" ? finalJson.design as Record<string, unknown> : {};
     const allowedVisualStyles = ["soft-rounded", "boxy-editorial", "industrial-diagonal", "clean-minimal", "bold-sport"];
-    const designContext = [
+    const visualDesignContext = [
       businessName,
       asString(originData.formatted_address, asString(originData.formattedAddress)),
       Array.isArray(originData.types) ? originData.types.join(" ") : "",
       asString(originData.searchQuery),
     ].filter(Boolean).join(" ");
     if (!allowedVisualStyles.includes(asString(designConfig.visualStyle))) {
-      designConfig.visualStyle = visualStyleForBusiness(designContext);
+      designConfig.visualStyle = visualStyleForBusiness(visualDesignContext);
     }
     if (!designConfig.visualStyleConfig || typeof designConfig.visualStyleConfig !== "object") {
       designConfig.visualStyleConfig = {
@@ -598,7 +761,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         selectionRule: "Use the visual structure that best matches the business niche and desired feel.",
       };
     }
-    const shaderMeta = shaderPresetForBusiness(designContext);
+    const shaderMeta = shaderPresetForBusiness(visualDesignContext);
     const allowedShaderPresets = ["none", "local-aurora", "industrial-grid", "aqua-caustics", "organic-dapple", "cafe-heat", "salon-silk", "fitness-pulse", "legal-vellum", "property-depth"];
     if (!allowedShaderPresets.includes(asString(designConfig.shaderPreset))) {
       designConfig.shaderPreset = shaderMeta.id;
@@ -614,27 +777,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         selectionRule: "Choose a lightweight CSS procedural shader that matches the industry mood. Use none for maximum restraint.",
       };
     }
-    const fontPairingMeta = fontPairingForBusiness(designContext);
-    if (!asString(designConfig.fontPairing)) {
-      designConfig.fontPairing = fontPairingMeta.id;
-    }
-    if (!designConfig.fontPairingConfig || typeof designConfig.fontPairingConfig !== "object") {
-      designConfig.fontPairingConfig = {
-        label: fontPairingMeta.label,
-        headingFont: fontPairingMeta.headingFont,
-        bodyFont: fontPairingMeta.bodyFont,
-        mood: fontPairingMeta.mood,
-        allowedValues: fontPairingMeta.allowedValues,
-        selectionRule: "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download.",
-      };
-    }
-    const themeVariables = designConfig.themeVariables && typeof designConfig.themeVariables === "object" ? designConfig.themeVariables as Record<string, unknown> : {};
-    const typography = themeVariables.typography && typeof themeVariables.typography === "object" ? themeVariables.typography as Record<string, unknown> : {};
-    typography.headingFont = typography.headingFont || fontPairingMeta.headingCss;
-    typography.bodyFont = typography.bodyFont || fontPairingMeta.bodyCss;
-    themeVariables.typography = typography;
-    designConfig.themeVariables = themeVariables;
     finalJson.design = designConfig;
+    applySeededFontPairing(finalJson, businessName, businessId, originData);
 
     const originMapsUrl = asString(originData.url, asString(originData.googleMapsUri));
     const originWebsiteUrl = asString(originData.website, asString(originData.websiteUri));

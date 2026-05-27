@@ -1,4 +1,4 @@
-import { fontPairingsForText, getFontPairing, inferFontPairingFromText } from "./fontPairings";
+import { fontPairingsForText, fontPairingVariantForText, getFontPairing } from "./fontPairings";
 import {
   getShaderPreset,
   getStylePreset,
@@ -270,9 +270,15 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
   const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
   const shaderPreset = inferShaderPresetFromText(context);
   const shaderPresetMeta = getShaderPreset(shaderPreset);
-  const fontPairing = inferFontPairingFromText(context);
-  const fontPairingMeta = getFontPairing(fontPairing);
   const fontPairingOptions = fontPairingsForText(context, 5);
+  const fontPairingSeed = [
+    businessName,
+    businessId,
+    place.place_id || place.id || "",
+    address,
+  ].filter(Boolean).join(" ");
+  const fontPairing = fontPairingVariantForText(context, fontPairingSeed, 5).id;
+  const fontPairingMeta = getFontPairing(fontPairing);
   const googleReviews = Array.isArray(place.reviews) ? place.reviews : [];
   const offeringMode = inferProductServiceMode(place);
   const offerings = buildOfferings(place, isEnglish, offeringMode, imageUrl, options.searchQuery);
@@ -422,7 +428,7 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
       shaderPreset,
       shaderConfig: { preset: shaderPreset, label: shaderPresetMeta.label, description: shaderPresetMeta.description, defaultOpacity: shaderPresetMeta.defaultOpacity, defaultMotion: shaderPresetMeta.defaultMotion, allowedValues: siteShaderPresets.map((item) => item.id), selectionRule: "Choose a lightweight CSS procedural shader that matches the industry mood. Use none for maximum restraint." },
       fontPairing,
-      fontPairingConfig: { label: fontPairingMeta.label, headingFont: fontPairingMeta.headingFont, bodyFont: fontPairingMeta.bodyFont, mood: fontPairingMeta.mood, allowedValues: fontPairingOptions.map((item) => item.id), selectionRule: "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download." },
+      fontPairingConfig: { label: fontPairingMeta.label, headingFont: fontPairingMeta.headingFont, bodyFont: fontPairingMeta.bodyFont, mood: fontPairingMeta.mood, allowedValues: fontPairingOptions.map((item) => item.id), selectionMode: "stable_seeded_business_variant", seed: fontPairingSeed, selectionRule: "Choose an industry-matched Google Font pairing; owners can switch among these matching options before download." },
       themeVariables: { colors: { primary: primaryColor, secondary: secondaryColor, accent: accentColor, textMain: "#1F2937", textMuted: "#6B7280", background: "#FFFFFF" }, typography: { headingFont: fontPairingMeta.headingCss, bodyFont: fontPairingMeta.bodyCss } },
     },
     brand: {

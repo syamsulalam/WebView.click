@@ -62,6 +62,15 @@ export function inferFontPairingFromText(text: string) {
   return (matched || fallbackPairing).id;
 }
 
+function stableTextHash(text: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 export function fontPairingsForText(text: string, limit = 5) {
   const haystack = text.toLowerCase();
   const matches = fontPairings.filter((pairing) =>
@@ -71,6 +80,12 @@ export function fontPairingsForText(text: string, limit = 5) {
   const merged = [...matches, fallbackPairing, getFontPairing("oswald-nunito"), getFontPairing("merriweather-lora"), getFontPairing("francois-karla")]
     .filter((pairing, index, array) => array.findIndex((item) => item.id === pairing.id) === index);
   return merged.slice(0, limit);
+}
+
+export function fontPairingVariantForText(text: string, seed: string, limit = 5) {
+  const options = fontPairingsForText(text, limit);
+  if (options.length === 0) return fallbackPairing;
+  return options[stableTextHash(`${text}|${seed}`) % options.length] || options[0];
 }
 
 export function googleFontImportUrl(pairings: FontPairing[]) {

@@ -63,7 +63,12 @@ Aplikasi produksi menggunakan Cloudflare D1:
 3. Di Cloudflare Pages Dashboard, pergi ke **Settings > Bindings > R2 bucket bindings**.
 4. Tambahkan binding dengan variabel `R2` dan hubungkan ke `webview`.
 5. Tambahkan environment variable `R2_PUBLIC_BASE_URL` dengan nilai `https://assets.webview.click`. Function juga punya fallback ke domain ini, tetapi env variable tetap disarankan agar konfigurasi eksplisit di dashboard Cloudflare Pages.
-6. Setelah deploy, hasil generate akan memakai pola URL publik:
+6. Terapkan CORS bucket agar image asset di `assets.webview.click` bisa dibaca oleh browser canvas untuk ekstraksi palette warna:
+   `npm run r2:cors`
+   Script ini menjalankan `npx wrangler r2 bucket cors set webview --file cloudflare/r2-cors-webview.json --force`. Policy hanya membuka `GET`/`HEAD` untuk public asset read dan mengekspos header dasar (`Content-Length`, `Content-Type`, `ETag`), sehingga `<img crossOrigin="anonymous">` tidak membuat canvas tainted saat admin menjalankan refresh visual/palette.
+   - Verifikasi policy aktif dengan `npm run r2:cors:list`.
+   - Jika Wrangler memakai `CLOUDFLARE_API_TOKEN`, token harus punya izin Cloudflare account/R2 yang cukup untuk membaca dan mengubah bucket CORS policy. Jika muncul `Authentication error [code: 10000]`, buat token baru dengan permission R2 edit untuk account yang memiliki bucket `webview`, atau jalankan dari shell yang sudah `npx wrangler login`.
+7. Setelah deploy, hasil generate akan memakai pola URL publik:
    - JSON: `https://assets.webview.click/sites/{businessId}/{businessId}.json`
    - Asset: `https://assets.webview.click/sites/{businessId}/assets/{businessId}-asset-XX.ext`
 
