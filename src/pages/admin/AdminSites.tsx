@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, ChevronDown, Database, FileText, Globe2, ListChecks, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, X } from "lucide-react";
+import { Brain, ChevronDown, Database, FileText, Globe2, Image as ImageIcon, ListChecks, MapPin, Play, RefreshCw, RotateCw, Search, Sparkles, Wrench, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { readApiJson } from "../../lib/apiResponse";
@@ -43,12 +43,18 @@ type SiteRow = {
   generationMode?: string;
   aiProvider?: string;
   aiModel?: string;
+  serviceCardImageTotal?: number | null;
+  missingServiceCardImageCount?: number | null;
+  hasMissingServiceCardImages?: boolean;
+  lastImageRepairAt?: string;
   latestGenerationJobId?: string;
   latestGenerationJobStatus?: string;
   latestGenerationJobUpdatedAt?: string;
 };
 
 type RegenerateMode = "resave" | "ai";
+
+const SERVICE_IMAGE_BATCH_REPAIR_LIMIT = 10;
 
 function generationBadge(site: SiteRow) {
   if (site.generationMode === "ai_copy_patch" || site.generatedWithAi) {
@@ -148,8 +154,11 @@ export default function AdminSites() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [siteImageFilter, setSiteImageFilter] = useState<"all" | "missing">("all");
   const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
   const [regeneratingId, setRegeneratingId] = useState("");
+  const [repairingServiceImagesId, setRepairingServiceImagesId] = useState("");
+  const [batchRepairingServiceImages, setBatchRepairingServiceImages] = useState(false);
   const [generatingProspectId, setGeneratingProspectId] = useState("");
   const [generationProgress, setGenerationProgress] = useState<Record<string, { step: string; text: string; retryInSeconds?: number }>>({});
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
@@ -261,15 +270,29 @@ export default function AdminSites() {
 
   const filteredSites = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return sites;
-    return sites.filter((site) => [
+    const imageFilteredSites = siteImageFilter === "missing"
+      ? sites.filter((site) => Number(site.missingServiceCardImageCount || 0) > 0 || site.hasMissingServiceCardImages === true)
+      : sites;
+    if (!needle) return imageFilteredSites;
+    return imageFilteredSites.filter((site) => [
       site.businessName,
       site.businessId,
       site.niche,
       site.language,
       site.region,
+      Number(site.missingServiceCardImageCount || 0) > 0 ? "missing service images" : "",
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
-  }, [query, sites]);
+  }, [query, siteImageFilter, sites]);
+
+  const missingServiceImageSiteCount = useMemo(
+    () => sites.filter((site) => Number(site.missingServiceCardImageCount || 0) > 0 || site.hasMissingServiceCardImages === true).length,
+    [sites],
+  );
+
+  const filteredMissingServiceImageSites = useMemo(
+    () => filteredSites.filter((site) => Number(site.missingServiceCardImageCount || 0) > 0 || site.hasMissingServiceCardImages === true),
+    [filteredSites],
+  );
 
   const filteredGatheredProspects = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -515,6 +538,81 @@ export default function AdminSites() {
     }
   };
 
+  const postRepairServiceImages = async (site: SiteRow) => {
+    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/repair-service-images`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    return readApiJson<{ changed?: number; availableImages?: number; lastImageRepairAt?: string }>(response, "Repair service card images");
+  };
+
+  const handleRepairServiceImages = async (site: SiteRow) => {
+    setRepairingServiceImagesId(site.businessId);
+    try {
+      const result = await postRepairServiceImages(site);
+      const changed = Number(result?.changed || 0);
+      const availableImages = Number(result?.availableImages || 0);
+      notifyAction(
+        "success",
+        changed > 0 ? "Service card images repaired" : "Service card images already synced",
+        changed > 0
+          ? `Updated ${changed} saved image field${changed === 1 ? "" : "s"} for ${site.businessName} from ${availableImages} available image${availableImages === 1 ? "" : "s"}.`
+          : `${site.businessName} already has synced service card images from ${availableImages} available image${availableImages === 1 ? "" : "s"}.`,
+      );
+      fetchSites();
+    } catch (err) {
+      showApiError(err, { source: "Repair service card images" });
+    } finally {
+      setRepairingServiceImagesId("");
+    }
+  };
+
+  const handleRepairFilteredServiceImages = async () => {
+    const targets = filteredMissingServiceImageSites.slice(0, SERVICE_IMAGE_BATCH_REPAIR_LIMIT);
+    if (targets.length === 0) {
+      notifyAction("info", "No missing service images", "The current filtered list has no rows with missing service card image summaries.");
+      return;
+    }
+
+    setBatchRepairingServiceImages(true);
+    let completed = 0;
+    let changedFields = 0;
+    const failures: string[] = [];
+    try {
+      for (const site of targets) {
+        setRepairingServiceImagesId(site.businessId);
+        try {
+          const result = await postRepairServiceImages(site);
+          completed += 1;
+          changedFields += Number(result?.changed || 0);
+        } catch (error) {
+          failures.push(`${site.businessName}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      const cappedMessage = filteredMissingServiceImageSites.length > targets.length
+        ? ` Capped at ${SERVICE_IMAGE_BATCH_REPAIR_LIMIT}; ${filteredMissingServiceImageSites.length - targets.length} filtered row${filteredMissingServiceImageSites.length - targets.length === 1 ? "" : "s"} remain.`
+        : "";
+      if (failures.length > 0) {
+        notifyAction(
+          completed > 0 ? "warning" : "error",
+          completed > 0 ? "Batch repair partially completed" : "Batch repair failed",
+          `Repaired ${completed} site${completed === 1 ? "" : "s"} and updated ${changedFields} image field${changedFields === 1 ? "" : "s"}. ${failures.length} failed.${cappedMessage}`,
+        );
+      } else {
+        notifyAction(
+          "success",
+          "Batch service image repair completed",
+          `Repaired ${completed} filtered site${completed === 1 ? "" : "s"} and updated ${changedFields} image field${changedFields === 1 ? "" : "s"}.${cappedMessage}`,
+        );
+      }
+      fetchSites();
+    } finally {
+      setRepairingServiceImagesId("");
+      setBatchRepairingServiceImages(false);
+    }
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -538,15 +636,50 @@ export default function AdminSites() {
         </HoverTooltip>
       </div>
 
-      <div className="mb-5 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+      <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
         <Search size={18} className="text-gray-400" />
         <HelpTooltip text="Filters generated sites and ready prospects by business name, slug, niche, language, or summary fields already loaded on this page." />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Cari nama bisnis, slug, niche, bahasa..."
-          className="w-full bg-transparent text-sm outline-none"
+          className="min-w-0 flex-1 bg-transparent text-sm outline-none"
         />
+        <HoverTooltip text="Show only generated sites whose saved summary says one or more homepage/services offer cards are missing an image. Rows generated before this audit exists may appear after repair or resave.">
+          <button
+            type="button"
+            onClick={() => setSiteImageFilter(siteImageFilter === "missing" ? "all" : "missing")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteImageFilter === "missing"
+                ? "border-sky-300 bg-sky-50 text-sky-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteImageFilter === "missing"}
+          >
+            <ImageIcon size={14} />
+            Missing images
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingServiceImageSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text={`Repair missing service card images for up to ${SERVICE_IMAGE_BATCH_REPAIR_LIMIT} sites in the current filtered list. Runs one site at a time, uses no AI, and does not regenerate copy.`}>
+          <button
+            type="button"
+            onClick={handleRepairFilteredServiceImages}
+            disabled={batchRepairingServiceImages || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+            aria-label="Repair filtered missing service images"
+          >
+            {batchRepairingServiceImages ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <Wrench size={14} />
+            )}
+            Repair filtered
+            <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700">
+              {Math.min(filteredMissingServiceImageSites.length, SERVICE_IMAGE_BATCH_REPAIR_LIMIT)}
+            </span>
+          </button>
+        </HoverTooltip>
       </div>
 
       {error && (
@@ -731,7 +864,7 @@ export default function AdminSites() {
           <span>Updated</span>
           <span className="inline-flex items-center justify-end gap-1.5 text-right">
             Actions
-            <HelpTooltip text="Preview opens the public site, Data shows saved JSON source data, Brief shows copy-only input, Jobs opens the latest generation audit row, and Regen refreshes Google data or runs an AI copy patch." />
+            <HelpTooltip text="Preview opens the public site, Data shows saved JSON source data, Brief shows copy-only input, Image repairs service card images without AI, Jobs opens the latest generation audit row, and Regen refreshes Google data or runs an AI copy patch." />
           </span>
         </div>
 
@@ -776,6 +909,22 @@ export default function AdminSites() {
                       </HoverTooltip>
                     );
                   })()}
+                  {Number(site.missingServiceCardImageCount || 0) > 0 && (
+                    <HoverTooltip text={`${site.missingServiceCardImageCount} of ${site.serviceCardImageTotal || "unknown"} saved homepage/services offer cards are missing an image. Use the image action to repair without AI regeneration.`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                        <ImageIcon size={11} />
+                        Missing {site.missingServiceCardImageCount} img
+                      </span>
+                    </HoverTooltip>
+                  )}
+                  {site.lastImageRepairAt && (
+                    <HoverTooltip text={`Service card image repair last ran at ${new Date(site.lastImageRepairAt).toLocaleString()}.`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                        <Wrench size={11} />
+                        Repaired {new Date(site.lastImageRepairAt).toLocaleDateString()}
+                      </span>
+                    </HoverTooltip>
+                  )}
                 </div>
                 {generationProgress[site.businessId] && (
                   <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-900">
@@ -838,6 +987,21 @@ export default function AdminSites() {
                     aria-label="Open AI copy brief"
                   >
                     <FileText size={14} />
+                  </button>
+                </HoverTooltip>
+                <HoverTooltip text="Repair only homepage/services grid card images from saved service detail images and available Google photos. No AI call and no full site regeneration.">
+                  <button
+                    type="button"
+                    onClick={() => handleRepairServiceImages(site)}
+                    disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || regeneratingId)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                    aria-label="Repair service card images"
+                  >
+                    {repairingServiceImagesId === site.businessId ? (
+                      <RefreshCw size={14} className="animate-spin" />
+                    ) : (
+                      <ImageIcon size={14} />
+                    )}
                   </button>
                 </HoverTooltip>
                 {site.latestGenerationJobId ? (

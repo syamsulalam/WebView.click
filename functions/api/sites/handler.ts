@@ -1,4 +1,4 @@
-import { applyGeneratedSitePageInserts } from "../../../src/lib/generatedSitePostProcess";
+import { applyGeneratedSitePageInserts, repairServiceCardImages } from "../../../src/lib/generatedSitePostProcess";
 import {
   applyAiCopyPatch,
   applyAiOfferingOutline,
@@ -255,6 +255,15 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
           parsed = jsonContent.storageOnly === true && jsonContent.summary && typeof jsonContent.summary === "object"
             ? jsonContent.summary as Record<string, unknown>
             : jsonContent;
+        } else {
+          const jsonContent = parseJsonObject(row.json_content);
+          if (
+            (parsed.hasMissingServiceCardImages === undefined || parsed.lastImageRepairAt === undefined) &&
+            jsonContent.storageOnly !== true &&
+            Array.isArray(jsonContent.pages)
+          ) {
+            parsed = { ...siteSummaryFromJson(siteStorageDeps, jsonContent, row.business_id), ...parsed };
+          }
         }
       } catch {
         parsed = {};
@@ -277,6 +286,10 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         generationMode: asString(summary.generationMode, ""),
         aiProvider: asString(summary.aiProvider, ""),
         aiModel: asString(summary.aiModel, ""),
+        serviceCardImageTotal: typeof summary.serviceCardImageTotal === "number" ? summary.serviceCardImageTotal : null,
+        missingServiceCardImageCount: typeof summary.missingServiceCardImageCount === "number" ? summary.missingServiceCardImageCount : null,
+        hasMissingServiceCardImages: summary.hasMissingServiceCardImages === true,
+        lastImageRepairAt: asString(summary.lastImageRepairAt, ""),
         r2JsonUrl: row.r2_json_url || "",
         storageMode: row.r2_json_key ? "r2" : "legacy_d1",
         latestGenerationJobId: row.latest_generation_job_id || "",
@@ -288,6 +301,67 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
 
   if (request.method === "POST" && segments.length === 2 && segments[1] === "migrate-r2") {
     return migrateOldSiteJsonRowsToR2(siteStorageDeps, request, db, env);
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "repair-service-images") {
+    const businessId = segments[1];
+    await ensureRequiredColumns(db, [
+      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+      { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
+      { table: "json_sites", column: "json_summary", definition: "TEXT" },
+      { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+    ]);
+    const columns = await tableColumns(db, "json_sites");
+    const selectedColumns = [
+      "business_id",
+      "json_content",
+      columns.has("r2_json_key") ? "r2_json_key" : "",
+    ].filter(Boolean);
+    const row = await db
+      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
+      .bind(businessId)
+      .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+    if (!row?.json_content) return errorJson("Site not found", 404);
+
+    const siteJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
+    if (!siteJson || typeof siteJson !== "object" || Array.isArray(siteJson)) {
+      return errorJson("Saved site JSON is not an object and cannot be repaired.", 422);
+    }
+    const originData = siteJson.sourceData && typeof siteJson.sourceData === "object" ? siteJson.sourceData as Record<string, unknown> : {};
+    const repairResult = repairServiceCardImages(siteJson, originData);
+    applyGeneratedSitePageInserts(siteJson, originData);
+    const imageRepairAt = new Date().toISOString();
+    const meta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
+    siteJson.meta = { ...meta, lastImageRepairAt: imageRepairAt };
+    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
+    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
+    let r2JsonUrl = asString(storage.r2JsonUrl);
+    if (r2JsonKey || env.R2) {
+      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
+      if (nextKey) {
+        r2JsonKey = nextKey;
+        r2JsonUrl = publicR2Url(env, nextKey);
+        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
+        await uploadJsonToR2(siteJson, env, businessId);
+      }
+    }
+    const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
+    const d1JsonContent = r2JsonKey
+      ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
+      : JSON.stringify(siteJson);
+    await saveJsonSiteRecord(db, businessId, d1JsonContent, {
+      r2_json_key: r2JsonKey || null,
+      r2_json_url: r2JsonUrl || null,
+      json_summary: JSON.stringify(jsonSummary),
+    });
+    return json({
+      success: true,
+      businessId,
+      changed: repairResult.changed,
+      availableImages: repairResult.availableImages,
+      lastImageRepairAt: imageRepairAt,
+      storageMode: r2JsonKey ? "r2" : "legacy_d1",
+    });
   }
 
   if (request.method === "GET" && segments.length === 3 && segments[2] === "copy-brief") {

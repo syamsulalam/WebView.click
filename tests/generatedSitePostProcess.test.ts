@@ -8,6 +8,7 @@ import {
   ensureGalleryPage,
   ensureServicesPage,
   findContactSourceSection,
+  repairServiceCardImages,
 } from "../src/lib/generatedSitePostProcess";
 
 test("ensureContactPage creates a dedicated contact page from existing contact-like section", () => {
@@ -179,6 +180,84 @@ test("ensureServicesPage creates aggregate services page and nav children", () =
   const servicesNav = (site.navigation as any).headerMenu.find((item: any) => item.href === "#services");
   assert.equal(servicesNav.label, "Services");
   assert.deepEqual(servicesNav.children.map((item: any) => item.href), ["#concrete-pour-scheduling", "#contact"]);
+});
+
+test("ensureServicesPage refreshes an existing services page from current offering images", () => {
+  const site: Record<string, unknown> = {
+    meta: { language: "en" },
+    services: [
+      { title: "Concrete Delivery", summary: "Ready mix delivery.", image: "/service.jpg", detailPageId: "service-concrete-delivery" },
+    ],
+    pages: [
+      {
+        pageId: "services",
+        sections: [
+          { type: "offers", id: "services", content: { items: [{ title: "Old Item", image: "" }] } },
+        ],
+      },
+    ],
+  };
+
+  ensureServicesPage(site);
+
+  const servicesPage = (site.pages as Array<Record<string, unknown>>).find((page) => page.pageId === "services");
+  const section = (servicesPage?.sections as Array<Record<string, unknown>>)[0];
+  const items = ((section.content as Record<string, unknown>).items as Array<Record<string, unknown>>);
+  assert.equal(items[0].title, "Concrete Delivery");
+  assert.equal(items[0].image, "/service.jpg");
+});
+
+test("repairServiceCardImages fills homepage and service page cards without AI regeneration", () => {
+  const site: Record<string, unknown> = {
+    meta: { language: "en" },
+    services: [
+      { title: "Concrete Delivery", summary: "Ready mix delivery.", detailPageId: "service-concrete-delivery" },
+      { title: "Pump Scheduling", summary: "Coordinate a concrete pump.", detailPageId: "service-pump-scheduling" },
+    ],
+    offers: [
+      { title: "Concrete Delivery", description: "Ready mix delivery.", cta: { href: "#service-concrete-delivery" } },
+    ],
+    pages: [
+      {
+        pageId: "home",
+        sections: [
+          {
+            type: "offers",
+            id: "offers-1",
+            content: {
+              items: [
+                { title: "Concrete Delivery", detailPageId: "service-concrete-delivery", image: "" },
+                { title: "Pump Scheduling", detailPageId: "service-pump-scheduling", image: "" },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        pageId: "service-concrete-delivery",
+        sections: [{ type: "hero", id: "service-concrete-delivery-hero", content: { image: "/detail-concrete.jpg" } }],
+      },
+      {
+        pageId: "services",
+        sections: [{ type: "offers", id: "services", content: { items: [{ title: "Concrete Delivery", image: "" }] } }],
+      },
+    ],
+  };
+
+  const result = repairServiceCardImages(site, { photos: [{ photo_reference: "pump" }] });
+  ensureServicesPage(site);
+
+  assert.equal(result.changed, 6);
+  assert.equal((site.services as Array<Record<string, unknown>>)[0].image, "/detail-concrete.jpg");
+  assert.equal((site.services as Array<Record<string, unknown>>)[1].image, "/api/places/photo?reference=pump&maxwidth=960");
+  const homeSection = (((site.pages as Array<Record<string, unknown>>)[0].sections as Array<Record<string, unknown>>)[0].content as Record<string, unknown>);
+  const homeItems = homeSection.items as Array<Record<string, unknown>>;
+  assert.equal(homeItems[0].image, "/detail-concrete.jpg");
+  assert.equal(homeItems[1].image, "/api/places/photo?reference=pump&maxwidth=960");
+  const servicesPage = (site.pages as Array<Record<string, unknown>>).find((page) => page.pageId === "services");
+  const servicesItems = ((((servicesPage?.sections as Array<Record<string, unknown>>)[0].content as Record<string, unknown>).items) as Array<Record<string, unknown>>);
+  assert.equal(servicesItems[0].image, "/detail-concrete.jpg");
+  assert.equal(servicesItems[1].image, "/api/places/photo?reference=pump&maxwidth=960");
 });
 
 test("ensureFeedbackPage creates feedback page without adding header navigation", () => {

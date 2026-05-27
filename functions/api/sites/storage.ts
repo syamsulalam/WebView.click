@@ -190,6 +190,38 @@ export async function uploadJsonToR2(finalJson: Record<string, unknown>, env: Si
   return key;
 }
 
+function isUsableImageUrl(deps: Pick<SiteStorageDeps, "asString">, value: unknown) {
+  const url = deps.asString(value).trim();
+  return Boolean(url && (url.startsWith("http") || url.startsWith("/") || url.startsWith("data:")));
+}
+
+function serviceCardImageSummary(deps: Pick<SiteStorageDeps, "asString">, parsed: Record<string, unknown>) {
+  const visibleCards: Array<Record<string, unknown>> = [];
+  const pages = Array.isArray(parsed.pages) ? parsed.pages as Array<Record<string, unknown>> : [];
+  pages.forEach((page) => {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    sections
+      .filter((section) => deps.asString(section.type) === "offers")
+      .forEach((section) => {
+        const content = section.content && typeof section.content === "object" ? section.content as Record<string, unknown> : {};
+        const items = Array.isArray(content.items) ? content.items as Array<Record<string, unknown>> : [];
+        visibleCards.push(...items);
+      });
+  });
+
+  const fallbackCards = ["products", "services", "offers"].flatMap((key) =>
+    Array.isArray(parsed[key]) ? parsed[key] as Array<Record<string, unknown>> : [],
+  );
+  const cards = visibleCards.length > 0 ? visibleCards : fallbackCards;
+  const meaningfulCards = cards.filter((card) =>
+    deps.asString(card.title, deps.asString(card.label)) ||
+    deps.asString(card.description, deps.asString(card.summary)) ||
+    deps.asString(card.href, deps.asString(card.detailPageId)),
+  );
+  const missing = meaningfulCards.filter((card) => !isUsableImageUrl(deps, card.image)).length;
+  return { total: meaningfulCards.length, missing };
+}
+
 export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, parsed: Record<string, unknown>, businessId: string) {
   const { asString } = deps;
   const meta = parsed.meta && typeof parsed.meta === "object" ? parsed.meta as Record<string, unknown> : {};
@@ -197,6 +229,7 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
   const trust = parsed.trust && typeof parsed.trust === "object" ? parsed.trust as Record<string, unknown> : {};
   const sourceData = parsed.sourceData && typeof parsed.sourceData === "object" ? parsed.sourceData as Record<string, unknown> : {};
   const contact = businessProfile.contact && typeof businessProfile.contact === "object" ? businessProfile.contact as Record<string, unknown> : {};
+  const serviceImageSummary = serviceCardImageSummary(deps, parsed);
   return {
     businessName: asString(meta.businessName, asString(businessProfile.name, businessId)),
     niche: asString(meta.niche, asString(businessProfile.typeLabel, "")),
@@ -209,6 +242,10 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
     generationMode: asString(meta.generationMode),
     aiProvider: asString(meta.aiProvider),
     aiModel: asString(meta.aiModel),
+    serviceCardImageTotal: serviceImageSummary.total,
+    missingServiceCardImageCount: serviceImageSummary.missing,
+    hasMissingServiceCardImages: serviceImageSummary.missing > 0,
+    lastImageRepairAt: asString(meta.lastImageRepairAt),
   };
 }
 

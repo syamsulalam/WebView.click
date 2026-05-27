@@ -50,6 +50,15 @@ export function addUniqueImageUrl(target: string[], value: unknown) {
   target.push(url);
 }
 
+function isUsableImageUrl(value: unknown) {
+  const url = asString(value).trim();
+  return Boolean(url && (url.startsWith("http") || url.startsWith("/") || url.startsWith("data:")));
+}
+
+function firstUsableImage(...values: unknown[]) {
+  return values.map((value) => asString(value).trim()).find(isUsableImageUrl) || "";
+}
+
 export function collectGalleryImages(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord) {
   const images: string[] = [];
   const brand = objectValue(finalJson.brand);
@@ -134,6 +143,113 @@ export function offeringIndexItems(finalJson: GeneratedSiteRecord) {
     .filter((item) => item.title || item.description || item.href || item.detailPageId);
 }
 
+function detailPageImageById(finalJson: GeneratedSiteRecord) {
+  const result = new Map<string, string>();
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  pages.forEach((page) => {
+    const pageId = asString(page.pageId);
+    if (!pageId) return;
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    for (const section of sections) {
+      const content = objectValue(section.content);
+      const image = firstUsableImage(content.image, content.media, content.photo);
+      if (image) {
+        result.set(pageId, image);
+        break;
+      }
+    }
+  });
+  return result;
+}
+
+function availableServiceImages(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord) {
+  const images: string[] = [];
+  const brand = objectValue(finalJson.brand);
+  addUniqueImageUrl(images, brand.preferredHeroImage);
+  addUniqueImageUrl(images, brand.logoImageUrl);
+  collectGalleryImages(finalJson, originData).forEach((image) => addUniqueImageUrl(images, image));
+  return images.filter(isUsableImageUrl);
+}
+
+export function repairServiceCardImages(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord = {}) {
+  const products = Array.isArray(finalJson.products) ? finalJson.products as Array<Record<string, unknown>> : [];
+  const services = Array.isArray(finalJson.services) ? finalJson.services as Array<Record<string, unknown>> : [];
+  const offers = Array.isArray(finalJson.offers) ? finalJson.offers as Array<Record<string, unknown>> : [];
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  const detailImages = detailPageImageById(finalJson);
+  const fallbackImages = availableServiceImages(finalJson, originData);
+  let changed = 0;
+
+  const imageForOffering = (item: Record<string, unknown>, index: number) => {
+    const detailPageId = asString(item.detailPageId);
+    return firstUsableImage(
+      item.image,
+      detailImages.get(detailPageId),
+      fallbackImages[index % Math.max(1, fallbackImages.length)],
+    );
+  };
+
+  const offerings = [...products, ...services];
+  offerings.forEach((item, index) => {
+    const image = imageForOffering(item, index);
+    if (image && item.image !== image) {
+      item.image = image;
+      changed += 1;
+    }
+  });
+
+  const offeringImageById = new Map<string, string>();
+  offerings.forEach((item, index) => {
+    const image = imageForOffering(item, index);
+    const detailPageId = asString(item.detailPageId);
+    if (detailPageId && image) offeringImageById.set(detailPageId, image);
+    const title = asString(item.title).toLowerCase();
+    if (title && image) offeringImageById.set(`title:${title}`, image);
+  });
+
+  offers.forEach((offer, index) => {
+    const detailPageId = asString(offer.detailPageId, asString(objectValue(offer.cta).href).replace(/^#/, ""));
+    const titleKey = `title:${asString(offer.title).toLowerCase()}`;
+    const image = firstUsableImage(
+      offer.image,
+      detailPageId ? offeringImageById.get(detailPageId) : "",
+      offeringImageById.get(titleKey),
+      fallbackImages[index % Math.max(1, fallbackImages.length)],
+    );
+    if (image && offer.image !== image) {
+      offer.image = image;
+      changed += 1;
+    }
+  });
+
+  pages.forEach((page) => {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    sections
+      .filter((section) => asString(section.type) === "offers")
+      .forEach((section) => {
+        const content = objectValue(section.content);
+        const items = Array.isArray(content.items) ? content.items as Array<Record<string, unknown>> : [];
+        items.forEach((item, index) => {
+          const detailPageId = asString(item.detailPageId, asString(objectValue(item.cta).href).replace(/^#/, ""));
+          const titleKey = `title:${asString(item.title).toLowerCase()}`;
+          const image = firstUsableImage(
+            item.image,
+            detailPageId ? offeringImageById.get(detailPageId) : "",
+            offeringImageById.get(titleKey),
+            fallbackImages[index % Math.max(1, fallbackImages.length)],
+          );
+          if (image && item.image !== image) {
+            item.image = image;
+            changed += 1;
+          }
+        });
+        section.content = content;
+      });
+  });
+
+  return { changed, availableImages: fallbackImages.length };
+}
+
 export function ensureServicesPage(finalJson: GeneratedSiteRecord) {
   const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
   const items = offeringIndexItems(finalJson);
@@ -162,6 +278,17 @@ export function ensureServicesPage(finalJson: GeneratedSiteRecord) {
       ],
     });
     finalJson.pages = pages;
+  } else {
+    pages
+      .filter((page) => asString(page.pageId).toLowerCase() === "services")
+      .forEach((page) => {
+        const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+        const offersSection = sections.find((section) => asString(section.type) === "offers");
+        if (!offersSection) return;
+        const content = objectValue(offersSection.content);
+        content.items = items;
+        offersSection.content = content;
+      });
   }
 
   const navigation = objectValue(finalJson.navigation);
@@ -402,6 +529,7 @@ export function ensureContactPage(finalJson: GeneratedSiteRecord, originData: Ge
 }
 
 export function applyGeneratedSitePageInserts(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord = {}) {
+  repairServiceCardImages(finalJson, originData);
   ensureServicesPage(finalJson);
   ensureContactPage(finalJson, originData);
   ensureFeedbackPage(finalJson);

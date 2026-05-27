@@ -506,6 +506,10 @@ Fungsi:
 - Memberi link Google Maps/Google Business listing dari `sourceData.googleMapsUri` atau `businessProfile.contact.directionsUrl` untuk membandingkan hasil generate dengan listing asli.
 - Tombol `Data` membuka snapshot gathered data yang tersimpan di JSON: `sourceData`, `businessProfile`, `location`, `hours`, `trust`, `brand`, dan product/service metadata.
 - Tombol `Brief` membuka `GET /api/sites/:businessId/copy-brief`, yaitu `copyTargetBrief` stored-site yang dipakai untuk debugging bahan copy-only yang dikirim ke AI. Saat regenerate, fresh Google Places details masih bisa menambah fakta baru sebelum AI call.
+- Tombol `Repair service images` memanggil `POST /api/sites/:businessId/repair-service-images` untuk memperbaiki hanya image field di homepage/services offer cards dari saved detail-page images, brand images, dan Google Places photos. Action ini tidak memanggil AI dan tidak regenerate full site.
+- Search bar punya filter `Missing images` yang menampilkan site dengan `missingServiceCardImageCount > 0` dari saved summary, sehingga admin bisa menemukan homepage/services cards tanpa image sebelum membuka preview.
+- Tombol `Repair filtered` menjalankan repair service images untuk maksimal 10 site dari hasil search/filter saat ini, satu per satu, supaya admin bisa membersihkan missing image ringan tanpa membuka tiap preview dan tanpa membuat request paralel berat.
+- Setelah repair image berjalan, row menampilkan badge `Repaired {date}` dari summary `lastImageRepairAt` supaya QA bisa melihat site mana yang sudah dibersihkan dalam production pass.
 - Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini memakai `src/lib/adminSiteGeneration.ts` untuk provider cooldown, AI readiness, refresh Place Details, shared scaffold payload, photo/palette resolution, dan chunked generation steps yang sama dengan `/admin/leads`. Jika AI provider gagal, error ditampilkan dan job ditandai failed agar fallback tidak menyamar sebagai hasil AI.
 - First generate dari `Ready to Generate` juga memakai chunked AI flow untuk step outline/siteCopy/offeringCopy/finalize; mode `Re-gather Google data + resave` tetap memakai save langsung tanpa AI.
 - Fallback JSON dari `/admin/sites` dibuat oleh `src/lib/generatedSiteScaffold.ts`, sama seperti `/admin/leads`, lalu di-post-process untuk page services/contact/feedback/gallery.
@@ -523,12 +527,16 @@ API yang dipakai:
 - `GET /api/ai/readiness?provider=...&model=...`
 - `POST /api/sites/generate`
 - `GET /api/sites/:businessId/copy-brief`
+- `POST /api/sites/:businessId/repair-service-images`
 
 Logic penting:
 - Search lokal bisa mencari nama bisnis, slug, niche, bahasa, dan region.
 - Metadata tampilan diambil dari `meta`, `businessProfile`, dan `trust` di JSON site.
 - List Generated Sites menampilkan badge storage mode: `R2 JSON` jika D1 hanya manifest dan full JSON ada di R2, atau `Legacy D1 JSON` jika row lama masih menyimpan full JSON di D1.
 - List Generated Sites menampilkan badge generation mode: `AI Copy Patch` jika `meta.generationMode=ai_copy_patch`/`generatedWithAi=true`, atau `Fallback Only` jika site dibuat dari gathered-data/scaffold tanpa copy patch AI.
+- List Generated Sites menampilkan badge `Missing N img` jika saved summary mendeteksi homepage/services offer cards tanpa image. Badge ini memakai field summary `serviceCardImageTotal`, `missingServiceCardImageCount`, dan `hasMissingServiceCardImages`; row R2 lama yang belum pernah resave/repair sejak field ini ada mungkin belum punya audit count.
+- Batch `Repair filtered` memakai endpoint single-site `POST /api/sites/:businessId/repair-service-images` secara sequential dan dibatasi 10 row per klik; response toast merangkum jumlah site repaired, image field changed, dan failure count.
+- Field summary `lastImageRepairAt` diisi setiap kali endpoint repair service images berhasil menyimpan JSON, termasuk jika jumlah changed = 0, karena timestamp menandai audit/cleanup pass sudah dijalankan.
 - Pilihan provider/model regenerate disimpan ke localStorage agar refresh halaman tetap memakai model terakhir yang dipilih admin.
 - Pilihan provider/model yang sama dipakai untuk `Generate` prospect gathered di section `Ready to Generate`.
 - First generate dari `Ready to Generate` memakai selected photo/palette yang tersimpan di prospect jika ada; jika tidak ada, flow memilih foto Places fallback dengan prioritas owner-like yang sama seperti `/admin/leads` dan memakai URL proxy `maxwidth=960` untuk visual generated site.
@@ -537,7 +545,7 @@ Logic penting:
 - `AI regenerate` dan `Re-gather Google data + resave` mengirim ulang `brand.paletteOptions` dari site JSON agar pilihan warna yang sudah ada tidak bergantung pada shape lama atau fallback renderer.
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
 - JSON/data modal close action uses shared hover tooltip so the compact X control is named during production QA.
-- Repeated site list actions are intentionally icon-only with hover tooltips and `aria-label`, including page refresh, ready-prospect Maps/Data/Generate, generated-site Preview/Maps/Data/Brief/Regen, and modal close.
+- Repeated site list actions are intentionally icon-only with hover tooltips and `aria-label`, including page refresh, ready-prospect Maps/Data/Generate, generated-site Preview/Maps/Data/Brief/Repair service images/Regen, and modal close.
 - Generated-site rows include a compact `Jobs` action that links to `/admin/jobs?job={latestGenerationJobId}&q={latestGenerationJobId}` and opens the latest generation audit drawer for that site. The action color reflects latest job status: green success, red failed, amber running/unknown. Older rows without job metadata show a disabled action with tooltip.
 - Ready-to-generate and per-site regenerate controls include docs quick links for `Design Guide`, `Niche Style Presets`, and `Font Pairing Guide`.
 - Generate/regenerate/readiness action notices memakai `AdminToast`, sehingga pesan sukses seperti `AI copy patch regenerated ...` tetap floating di kanan atas meski admin sedang melihat bagian bawah list.
@@ -740,9 +748,10 @@ Logic penting:
 - `ensureContactPage(site, originData)` menambahkan page `contact` dengan section `contactForm` dari section contact-like lama, `businessProfile`, `location`, `hours`, `sourceData`, footer, dan origin Google Places.
 - Contact page hours are language-aware and compacted; repeated daily hours become lines like `Daily: 6:00 AM - 11:00 PM`, and Indonesian pages use labels such as `Setiap hari`, `Sen-Sab`, and `Tutup`.
 - `ensureServicesPage(site)` menambahkan aggregate page `services` dari `products`, `services`, atau `offers`, termasuk children nav menuju detail pages jika header navigation sudah tersedia.
+- `repairServiceCardImages(site, originData)` menyinkronkan image field untuk products/services/offers dan setiap offers-section card dari saved detail-page hero/detail images, brand images, dan Google Places photos. Helper ini membuat preview homepage/services grid bisa diperbaiki tanpa AI regenerate.
 - `ensureFeedbackPage(site)` menambahkan page `feedback` tanpa memasukkannya ke header navigation.
 - `ensureGalleryPage(site, originData)` menambahkan page `gallery` jika minimal dua gambar usable tersedia dari brand, products/services/offers, atau Google Places photos.
-- `applyGeneratedSitePageInserts(site, originData)` menjalankan urutan shared `services -> contact -> feedback -> gallery`, dan dipakai oleh Function generation serta `SiteRenderer` runtime normalization.
+- `applyGeneratedSitePageInserts(site, originData)` menjalankan urutan shared `repair service card images -> services -> contact -> feedback -> gallery`, dan dipakai oleh Function generation serta `SiteRenderer` runtime normalization.
 - Gallery nav disisipkan sebelum `#contact` jika contact nav sudah ada.
 - Modul ini DOM-free dan dependency-free supaya aman dipakai dari `functions/api/[[path]].ts`, React renderer, dan fixture tests.
 - Fixture tests ada di `tests/generatedSitePostProcess.test.ts`; jalankan `npm run test:postprocess` saat local dependencies tersedia.
@@ -844,6 +853,7 @@ Endpoint:
 - `GET/POST /api/ai/readiness`
 - `POST /api/sites/generate`
 - `POST /api/sites/migrate-r2`
+- `POST /api/sites/:businessId/repair-service-images`
 - `GET /api/sites`
 - `GET /api/sites/:business_id`
 - `POST /api/payments/checkout`
@@ -923,8 +933,9 @@ Logic Google Places/logo:
 - Jika logo dipilih, Function juga menulis `brand.logoImageUrl`, `brand.photoSource`, `brand.googlePhotoReference`, `brand.photoCaption`, `brand.photoAttributions`, dan `brand.selectedPhotoPriority`.
 
 Logic R2:
-- `/api/sites` route handling lives in `functions/api/sites/handler.ts`: site list/read/copy brief, `POST /api/sites/generate`, final lead/prospect/activity writes, generation job success/failure updates, deterministic visual/font/favicon defaults, and the save path shared by chunked job finalize.
+- `/api/sites` route handling lives in `functions/api/sites/handler.ts`: site list/read/copy brief, no-AI service card image repair, `POST /api/sites/generate`, final lead/prospect/activity writes, generation job success/failure updates, deterministic visual/font/favicon defaults, and the save path shared by chunked job finalize.
 - R2/site storage helpers live in `functions/api/sites/storage.ts`; `functions/api/sites/handler.ts` calls this module for image filename normalization, image asset upload, JSON upload/read, compact manifests, public R2 URLs, and `POST /api/sites/migrate-r2`.
+- `siteSummaryFromJson()` stores service-card image audit fields (`serviceCardImageTotal`, `missingServiceCardImageCount`, `hasMissingServiceCardImages`, `lastImageRepairAt`) so `/api/sites` can badge/filter missing images and show repair pass timestamps from D1 summaries without reading every full R2 JSON.
 - Binding optional: `R2`.
 - Public URL: `R2_PUBLIC_BASE_URL`, default/fallback production `https://assets.webview.click`.
 - Saat `POST /api/sites/generate`, Function:
@@ -938,6 +949,7 @@ Logic R2:
 - `GET /api/sites` memakai `json_summary`/manifest dari D1 untuk list admin, sehingga tidak perlu membaca full JSON R2 untuk setiap row.
 - `GET /api/sites` juga returns `latestGenerationJobId`, `latestGenerationJobStatus`, dan `latestGenerationJobUpdatedAt` dari latest matching `generation_jobs.business_id`, dipakai `/admin/sites` untuk jump langsung ke audit row.
 - `POST /api/sites/migrate-r2` adalah maintenance action untuk row lama: upload full JSON D1 ke R2, update `storage.r2JsonKey`, lalu replace `json_content` dengan compact manifest. Jika R2 belum binding, endpoint gagal eksplisit.
+- `POST /api/sites/:businessId/repair-service-images` membaca full JSON dari R2/D1, menjalankan shared `repairServiceCardImages()` plus post-processing inserts, menulis `meta.lastImageRepairAt`, lalu menyimpan ulang JSON/manifest. Response mengembalikan `changed`, `availableImages`, `lastImageRepairAt`, dan `storageMode` supaya UI bisa menjelaskan apakah ada field yang berubah dan kapan pass terakhir berjalan.
 
 Risiko debug:
 - Jika asset tidak bisa dibuka, cek custom domain R2 `assets.webview.click`, bucket public/custom domain setting, dan env `R2_PUBLIC_BASE_URL`.
