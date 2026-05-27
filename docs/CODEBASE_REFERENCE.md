@@ -71,7 +71,7 @@ Logic penting:
 - Renderer membaca `design.shaderPreset` dan `design.shaderConfig`; registry shader procedural ada di `src/lib/siteStylePresets.ts` dan guide teknis di `docs/SHADERS_GUIDE.md`.
 - Renderer membaca `design.fontPairing` dan `design.fontPairingConfig`; registry Google Font pairing ada di `src/lib/fontPairings.ts` dan ringkasannya di `docs/FONT_PAIRING_GUIDE.md`.
 - Root `#rendered-site` hanya menyimpan CSS variables palette aktif; website client dirender di child `[data-wv-site-canvas]` dengan class `wv-preset-*` dan `wv-visual-*`.
-- Tool UI seperti edit text, `WebsiteActionPanel`, demo inspector, download/domain/setup controls berada di luar `[data-wv-site-canvas]` agar tidak terkena CSS website.
+- Tool UI seperti floating `Edit`, `WebsiteActionPanel`, demo inspector, download/domain/setup controls berada di luar `[data-wv-site-canvas]` agar tidak terkena CSS website. Replace-image overlay berada di image frame saat edit mode dan dibuang dari export dengan `data-export-remove`.
 - Font pairing aktif hanya diterapkan ke `[data-wv-site-canvas]`; panel/tools tetap memakai style app.
 - Shader layer dirender sebagai inert `<div data-wv-site-shader>` di dalam `[data-wv-site-canvas]`; pointer JS hanya mengubah CSS variables `--wv-pointer-x`/`--wv-pointer-y`.
 - Header website diberi `data-wv-site-header` dan CSS kompaktornya sendiri agar style/shader experience layer tidak membuat navbar ikut melebar/meninggi. Variabel seperti `--wv-header-bg`, `--wv-header-shadow`, `--wv-header-submenu-bg`, dan `--wv-header-treatment` didefinisikan di `src/lib/siteStylePresets.ts`.
@@ -89,7 +89,7 @@ Logic penting:
 - Contact form membuat `mailto:` URL berisi nama, email, pesan, dan semua field form yang diisi.
 - Visitor action panel untuk download/setup dirender lewat shared component `WebsiteActionPanel`, bukan logic lokal di renderer.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
-- Text utama di renderer dibungkus dengan shared `EditableText`, tetapi edit mode default off supaya teks normal bisa di-select/copy. Tombol floating `Edit text` di `/demo` dan `/:businessId` mengaktifkan contentEditable; perubahan tersimpan di localStorage per business/page/text key dan ikut masuk ke download HTML.
+- Text utama di renderer dibungkus dengan shared `EditableText`, tetapi edit mode default off supaya teks normal bisa di-select/copy. Tombol floating `Edit` di `/demo` dan `/:businessId` memakai capsule styling yang sama dengan `Download / Setup`, mengaktifkan contentEditable, dan juga membuat image frame bisa diklik untuk replace gambar lokal. Text edits tersimpan di localStorage per business/page/text key; replaced images tersimpan di localStorage per business/image key dan ikut masuk ke download HTML/zip setelah refresh browser.
 
 Risiko debug:
 - Jika UI demo/public berbeda dari ekspektasi, cek mapping section di file ini dulu sebelum mengubah `PublicViewer`.
@@ -105,11 +105,12 @@ Fungsi:
 
 Logic penting:
 - Setiap teks punya key `webview.inlineText.{businessId}.{page}.{field}` di localStorage.
+- Image replacements disimpan sebagai JSON map di `webview.inlineImages.{businessId}`. File lokal owner dikecilkan client-side ke JPEG max-side 1600px sebelum disimpan sebagai `data:` URL, supaya lebih mungkin muat di localStorage, persist setelah refresh, dan tetap dibundel ulang ke `img/` saat export zip.
 - `enabled=false` merender teks biasa yang selectable/copyable; `enabled=true` baru mengaktifkan `contentEditable`, ring edit, dan toolbar.
 - Toolbar kecil mendukung bold, italic, dan underline via browser command.
 - Toolbar diberi `data-wv-format-toolbar` dan `data-wv-format-command` per tombol supaya typography/action button tidak mewarisi font/style website client.
 - Paste dipaksa plain text agar HTML asing tidak ikut masuk.
-- Export HTML membersihkan atribut `contenteditable` dan toolbar lewat `src/lib/exportSiteHtml.ts`, tetapi isi teks hasil edit tetap ikut karena sudah ada di DOM.
+- Export HTML membersihkan atribut `contenteditable`, toolbar, dan replace-image overlay lewat `src/lib/exportSiteHtml.ts`, tetapi isi teks hasil edit tetap ikut karena sudah ada di DOM. Exporter juga mengambil `data:` image hasil replacement owner, menyimpannya ke folder `img/` dalam zip, lalu mengganti `src` HTML ke path file lokal.
 
 Risiko debug:
 - Jika teks tidak ikut download, cek apakah field tersebut sudah dibungkus `EditableText` di `SiteRenderer`.
@@ -681,7 +682,7 @@ Logic penting:
 - Jika JSON site ditemukan, halaman meneruskan data ke `SiteRenderer`.
 - Fetch `GET /api/sites/:businessId` memakai retry singkat dengan cache-busting query dan `cache: "no-store"` sebelum menampilkan error. Ini mengurangi kasus preview public terlihat 404 sesaat setelah generate/regenerate ketika D1/R2/edge masih sync.
 - Error public tidak lagi memakai copy `404 - Not Found`; UI menampilkan pesan "preview is still preparing" plus tombol `Try again`, supaya owner tidak melihat halaman yang terasa rusak saat kondisi sementara.
-- `handleDownloadZip(siteData?)` membuat zip HTML statis dari site data aktif yang dikirim `WebsiteActionPanel`, sehingga palette pilihan di public renderer ikut masuk export.
+- `handleDownloadZip(siteData?)` membuat zip HTML statis dari DOM preview aktif plus site data aktif yang dikirim `WebsiteActionPanel`, sehingga palette pilihan, inline text edits, dan image replacements di public renderer ikut masuk export.
 - Panel prospek dari `SiteRenderer` memakai `WebsiteActionPanel` dengan `variant="public"`, sehingga flow download/setup sama dengan `/demo`.
 - Jika site lama tidak punya `brand.paletteOptions`, `SiteRenderer` membuat fallback option dari `brand.palette`, `meta.brandPalette`, atau `design.themeVariables.colors`.
 - Payment checkout memakai `POST /api/payments/checkout`; payment link basic/premium lama masih bisa dibaca tapi bukan flow utama.

@@ -417,29 +417,54 @@ function ImageFrame({
   className = "",
   attribution = "",
   exportName = "",
+  editMode = false,
+  replacementSrc = "",
+  onReplace,
 }: {
   src?: string;
   label?: string;
   className?: string;
   attribution?: string;
   exportName?: string;
+  editMode?: boolean;
+  replacementSrc?: string;
+  onReplace?: () => void;
 }) {
-  if (isUsableImage(src)) {
-    return (
-      <div className={`relative w-full h-full ${className}`}>
-        <img src={src} alt={label || ""} data-wv-image-role={exportName || undefined} className="w-full h-full object-cover" />
-        {attribution && (
-          <div className="absolute left-2 right-2 bottom-2 rounded bg-black/65 px-2 py-1 text-[11px] leading-snug text-white">
-            {attribution}
-          </div>
-        )}
-      </div>
-    );
-  }
+  const displaySrc = replacementSrc || src;
+  const canReplace = editMode && typeof onReplace === "function";
 
   return (
-    <div className={`w-full h-full bg-slate-100 flex items-center justify-center text-xs text-slate-500 ${className}`}>
-      {label || src || "Image"}
+    <div className={`group relative w-full h-full ${className}`}>
+      {isUsableImage(displaySrc) ? (
+        <img src={displaySrc} alt={label || ""} data-wv-image-role={exportName || undefined} className="w-full h-full object-cover" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-slate-100 text-xs text-slate-500">
+          {label || src || "Image"}
+        </div>
+      )}
+      {attribution && !replacementSrc && (
+        <div className="absolute left-2 right-2 bottom-2 rounded bg-black/65 px-2 py-1 text-[11px] leading-snug text-white">
+          {attribution}
+        </div>
+      )}
+      {canReplace && (
+        <button
+          type="button"
+          data-export-remove="true"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onReplace?.();
+          }}
+          className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/45 text-white opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+          aria-label={`Change image${label ? ` for ${label}` : ""}`}
+        >
+          <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 shadow-xl">
+            <ImageIcon size={16} />
+            Change image
+          </span>
+        </button>
+      )}
     </div>
   );
 }
@@ -472,6 +497,45 @@ function normalizedPaletteOptionsFromBrand(brand: any, siteData: any) {
     });
 }
 
+function imageReplacementStorageKey(businessId: string, metaBusinessId = "") {
+  const safeId = (businessId || metaBusinessId || "demo")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "demo";
+  return `webview.inlineImages.${safeId}`;
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Image file could not be read."));
+    reader.onerror = () => reject(reader.error || new Error("Image file could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function imageFileToStoredDataUrl(file: File) {
+  const originalDataUrl = await readFileAsDataUrl(file);
+  const img = new Image();
+  img.src = originalDataUrl;
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("Image file could not be loaded."));
+  });
+
+  const maxSide = 1600;
+  const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+  const width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+  const height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return originalDataUrl;
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", 0.88);
+}
+
 export default function SiteRenderer({
   siteData,
   publicLinks = { basic: "", premium: "" },
@@ -485,10 +549,23 @@ export default function SiteRenderer({
   const [navSubmenuPosition, setNavSubmenuPosition] = useState({ left: 0, top: 0 });
   const [headerCompact, setHeaderCompact] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [imageReplacements, setImageReplacements] = useState<Record<string, string>>({});
   const [feedbackRating, setFeedbackRating] = useState(0);
   const navCloseTimer = useRef<number | undefined>(undefined);
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingImageKey = useRef("");
 
   const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, sourceData, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const imageReplacementKey = imageReplacementStorageKey(businessId, meta.businessId);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(imageReplacementKey);
+      const parsed = saved ? JSON.parse(saved) : {};
+      setImageReplacements(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
+    } catch {
+      setImageReplacements({});
+    }
+  }, [imageReplacementKey]);
   const fontContext = [
     meta.businessName,
     meta.niche,
@@ -575,6 +652,50 @@ export default function SiteRenderer({
       .filter((part) => part !== undefined && part !== "")
       .map((part) => String(part).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""))
       .join(".");
+  const imageEditKey = (...parts: Array<string | number | undefined>) => editKey("image", ...parts);
+  const chooseReplacementImage = (key: string) => {
+    pendingImageKey.current = key;
+    if (imageFileInputRef.current) {
+      imageFileInputRef.current.value = "";
+      imageFileInputRef.current.click();
+    }
+  };
+  const handleReplacementImageFile = (file?: File) => {
+    const key = pendingImageKey.current;
+    if (!key || !file || !file.type.startsWith("image/")) return;
+    imageFileToStoredDataUrl(file)
+      .then((storedDataUrl) => {
+        setImageReplacements((current) => {
+          const next = { ...current, [key]: storedDataUrl };
+          try {
+            window.localStorage.setItem(imageReplacementKey, JSON.stringify(next));
+          } catch (error) {
+            console.warn("Could not save replacement image in browser storage.", error);
+          }
+          return next;
+        });
+      })
+      .catch((error) => console.warn("Could not prepare replacement image.", error));
+  };
+  const editableImage = (
+    key: string,
+    src: string | undefined,
+    label: string | undefined,
+    attribution = "",
+    exportName = "",
+    className = "",
+  ) => (
+    <ImageFrame
+      src={src}
+      label={label}
+      attribution={attribution}
+      exportName={exportName}
+      className={className}
+      editMode={editMode}
+      replacementSrc={imageReplacements[key] || ""}
+      onReplace={() => chooseReplacementImage(key)}
+    />
+  );
   const editableText = (
     id: string,
     value: string | number | null | undefined,
@@ -1046,7 +1167,7 @@ export default function SiteRenderer({
                         )}
                       </div>
                       <div className="h-[360px] md:h-[520px] rounded-2xl overflow-hidden border border-slate-200 shadow-xl bg-slate-100">
-                        <ImageFrame src={heroImage} label={heroContent.image || meta.businessName} attribution={brandPhotoAttribution(heroImage)} exportName="hero" />
+                        {editableImage(imageEditKey(page.pageId, section.id, "hero"), heroImage, heroContent.image || meta.businessName, brandPhotoAttribution(heroImage), "hero")}
                       </div>
                     </div>
                   </section>
@@ -1137,9 +1258,9 @@ export default function SiteRenderer({
                                   aria-label={`${labels.learnMore}: ${cardLabel}`}
                                 />
                               )}
-                              <div className="relative z-10 pointer-events-none">
+                              <div className={`relative z-10 ${editMode ? "pointer-events-auto" : "pointer-events-none"}`}>
                                 <div className="h-44">
-                                  <ImageFrame src={offer.image} label={offer.title} attribution={brandPhotoAttribution(offer.image)} exportName={`offer-${offer.title || i + 1}`} />
+                                  {editableImage(imageEditKey(page.pageId, section.id, "offer", i), offer.image, offer.title, brandPhotoAttribution(offer.image), `offer-${offer.title || i + 1}`)}
                                 </div>
                                 <div className="p-6 text-center">
                                   {editableText(`${section.id}.offer.${i}.title`, displayTitle, "h3", "text-lg font-bold text-slate-950")}
@@ -1208,7 +1329,7 @@ export default function SiteRenderer({
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
                         <div className="h-56 overflow-hidden rounded-xl bg-slate-200">
-                          <ImageFrame src={detail.image || brand.preferredHeroImage} label={detail.title} attribution={brandPhotoAttribution(detail.image || brand.preferredHeroImage)} exportName={`detail-${detail.title || section.id}`} />
+                          {editableImage(imageEditKey(page.pageId, section.id, "detail"), detail.image || brand.preferredHeroImage, detail.title, brandPhotoAttribution(detail.image || brand.preferredHeroImage), `detail-${detail.title || section.id}`)}
                         </div>
                         {detail.priceHint && editableText(`${section.id}.price`, detail.priceHint, "p", "mt-5 text-lg font-bold", { color: colors.accent })}
                         {included.length > 0 && (
@@ -1352,7 +1473,7 @@ export default function SiteRenderer({
                         <div className="opacity-80 prose max-w-none" dangerouslySetInnerHTML={{ __html: section.content.bodyHtml }} />
                       </div>
                       <div className="flex-1 w-full relative h-[400px] bg-gray-100 rounded-xl overflow-hidden shadow-lg border border-gray-200">
-                        <ImageFrame src={section.content.image} label={section.content.title} attribution={brandPhotoAttribution(section.content.image)} exportName={`section-${section.content.title || section.id}`} />
+                        {editableImage(imageEditKey(page.pageId, section.id, "text-image"), section.content.image, section.content.title, brandPhotoAttribution(section.content.image), `section-${section.content.title || section.id}`)}
                       </div>
                     </div>
                   </section>
@@ -1368,7 +1489,7 @@ export default function SiteRenderer({
                         {section.content.members.map((member: any, i: number) => (
                           <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 text-center pb-6">
                             <div className="h-48 bg-gray-200 mb-4">
-                              <ImageFrame src={member.image} label={member.name} attribution={brandPhotoAttribution(member.image)} exportName={`team-${member.name || i + 1}`} />
+                              {editableImage(imageEditKey(page.pageId, section.id, "member", i), member.image, member.name, brandPhotoAttribution(member.image), `team-${member.name || i + 1}`)}
                             </div>
                             {editableText(`${section.id}.member.${i}.name`, member.name, "h3", "text-lg font-semibold")}
                             {editableText(`${section.id}.member.${i}.role`, member.role, "p", "text-sm opacity-60 font-medium")}
@@ -1392,7 +1513,7 @@ export default function SiteRenderer({
                         {section.content.cards.map((card: any, i: number) => (
                           <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100">
                             <div className="h-48 bg-gray-200">
-                              <ImageFrame src={card.image} label={card.title} attribution={brandPhotoAttribution(card.image)} exportName={`card-${card.title || i + 1}`} />
+                              {editableImage(imageEditKey(page.pageId, section.id, "card", i), card.image, card.title, brandPhotoAttribution(card.image), `card-${card.title || i + 1}`)}
                             </div>
                             <div className="p-6 text-center">
                               {editableText(`${section.id}.card.${i}.title`, card.title, "h3", "text-xl font-bold mb-2")}
@@ -1415,7 +1536,7 @@ export default function SiteRenderer({
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {section.content.images.map((img: string, i: number) => (
                           <div key={i} className="h-64 bg-gray-200 rounded-xl overflow-hidden">
-                            <ImageFrame src={img} label={`Gallery ${i + 1}`} attribution={brandPhotoAttribution(img)} exportName={`gallery-${i + 1}`} />
+                            {editableImage(imageEditKey(page.pageId, section.id, "gallery", i), img, `Gallery ${i + 1}`, brandPhotoAttribution(img), `gallery-${i + 1}`)}
                           </div>
                         ))}
                       </div>
@@ -1694,17 +1815,25 @@ export default function SiteRenderer({
       <div data-export-remove="true" data-wv-tool-ui="inline-edit-panel" className="hide-in-export fixed bottom-20 left-5 z-[210] flex max-w-[calc(100vw-2.5rem)] flex-col items-start gap-2 md:bottom-5">
         {editMode && (
           <div className="max-w-xs rounded-lg border border-indigo-100 bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow-xl backdrop-blur">
-            Click site text to edit it. Changes are saved in this browser and included in the downloaded site.
+            Click text to edit it, or click an image to replace it. Changes are saved in this browser and included in the downloaded site.
           </div>
         )}
+        <input
+          ref={imageFileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(event) => handleReplacementImageFile(event.target.files?.[0])}
+          aria-hidden="true"
+        />
         <button
           type="button"
           onClick={() => setEditMode((value) => !value)}
-          className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold shadow-xl transition ${editMode ? "border-indigo-200 bg-indigo-600 text-white hover:bg-indigo-700" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"}`}
+          className={`inline-flex items-center gap-3 rounded-full border px-6 py-4 text-sm font-semibold shadow-2xl backdrop-blur-md transition ${editMode ? "border-indigo-200 bg-indigo-600 text-white hover:bg-indigo-700" : "border-gray-200 bg-white/90 text-gray-900 hover:bg-white"}`}
           aria-pressed={editMode}
         >
-          {editMode ? <X size={16} /> : <Pencil size={16} />}
-          {editMode ? "Done editing" : "Edit text"}
+          {editMode ? <X size={18} /> : <Pencil size={18} />}
+          {editMode ? "Done" : "Edit"}
         </button>
       </div>
 

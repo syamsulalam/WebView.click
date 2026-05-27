@@ -127,7 +127,7 @@ async function inlineImagesIntoZip(zip: JSZip, clone: HTMLElement, businessId: s
   for (let index = 0; index < images.length; index += 1) {
     const image = images[index];
     const src = image.getAttribute("src") || "";
-    if (!src || src.startsWith("data:") || src.startsWith("blob:")) continue;
+    if (!src) continue;
 
     const absoluteSrc = absoluteUrl(src);
     const existingRelativePath = downloaded.get(absoluteSrc);
