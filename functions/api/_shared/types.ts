@@ -48,6 +48,17 @@ export type Env = {
   PAYPAL_WEBHOOK_ID?: string;
   PAYPAL_IS_PRODUCTION?: string;
   ADMIN_WHATSAPP_NUMBER?: string;
+  DOMAIN_REGISTRAR_PROVIDER?: string;
+  DOMAIN_REGISTRATION_MAX_USD?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
+  NAME_COM_USERNAME?: string;
+  NAME_COM_API_TOKEN?: string;
+  NAME_COM_ENV?: string;
+  DYNADOT_API_KEY?: string;
+  DYNADOT_ENV?: string;
+  SPACESHIP_API_KEY?: string;
+  SPACESHIP_API_SECRET?: string;
 };
 
 export type PagesContext = {

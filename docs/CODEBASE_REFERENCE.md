@@ -1,6 +1,6 @@
 # WebView.click Codebase Reference
 
-Terakhir diperbarui: 26 Mei 2026.
+Terakhir diperbarui: 28 Mei 2026.
 
 Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
 
@@ -15,6 +15,7 @@ Routes utama:
 - `/admin/leads` -> `AdminLeads`
 - `/admin/jobs` -> `AdminJobs`
 - `/admin/sites` -> `AdminSites`
+- `/admin/orders` -> `AdminOrders`
 - `/admin/schema` -> `AdminSchema`
 - `/admin/settings` -> `AdminSettings`
 - `/:businessId` -> `PublicViewer`
@@ -89,7 +90,7 @@ Logic penting:
 - Contact form membuat `mailto:` URL berisi nama, email, pesan, dan semua field form yang diisi.
 - Visitor action panel untuk download/setup dirender lewat shared component `WebsiteActionPanel`, bukan logic lokal di renderer.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
-- Text utama di renderer dibungkus dengan shared `EditableText`, tetapi edit mode default off supaya teks normal bisa di-select/copy. Tombol floating `Edit` di `/demo` dan `/:businessId` memakai capsule styling yang sama dengan `Download / Setup`, mengaktifkan contentEditable, membuat CTA/button labels editable, membuat button icons clickable untuk memilih icon CTA dari searchable picker, dan juga membuat image frame bisa diklik untuk replace gambar lokal atau restore ke original. Text edits tersimpan di localStorage per business/page/text key; button icon overrides tersimpan di localStorage per business/button key; replaced images tersimpan di localStorage per business/image key dan ikut masuk ke download HTML/zip setelah refresh browser.
+- Text utama di renderer dibungkus dengan shared `EditableText`, tetapi edit mode default off supaya teks normal bisa di-select/copy. Tombol floating `Edit` di `/demo` dan `/:businessId` memakai capsule styling yang sama dengan `Download / Setup`, mengaktifkan contentEditable, membuat CTA/button labels editable, membuat semua site icons clickable untuk memilih icon dari searchable picker, dan juga membuat image frame bisa diklik untuk replace gambar lokal atau restore ke original. Text edits tersimpan di localStorage per business/page/text key; icon overrides tersimpan di localStorage per business/icon key; replaced images tersimpan di localStorage per business/image key dan ikut masuk ke download HTML/zip setelah refresh browser.
 
 Risiko debug:
 - Jika UI demo/public berbeda dari ekspektasi, cek mapping section di file ini dulu sebelum mengubah `PublicViewer`.
@@ -105,13 +106,13 @@ Fungsi:
 
 Logic penting:
 - Setiap teks punya key `webview.inlineText.{businessId}.{page}.{field}` di localStorage.
-- Button icon overrides disimpan sebagai JSON map di `webview.inlineButtonIcons.{businessId}`. Picker hanya berisi icon CTA praktis seperti call, email, map, message, schedule, quote, service, review, website, dan check; opsi `Auto` menghapus override agar icon kembali mengikuti label/href.
+- Site icon overrides disimpan sebagai JSON map di `webview.inlineIcons.{businessId}`. Renderer masih membaca legacy `webview.inlineButtonIcons.{businessId}` sebagai fallback supaya pilihan CTA lama tidak hilang. Picker berisi icon praktis untuk site seperti home, info, image/gallery, call, email, map, message, schedule, quote, service, review, social, customer/team, delivery, repair, trust, website, dan check; opsi `Auto` menghapus override agar icon kembali mengikuti label/href/konteks.
 - Image replacements disimpan sebagai JSON map di `webview.inlineImages.{businessId}`. File lokal owner dikecilkan client-side ke JPEG max-side 1600px sebelum disimpan sebagai `data:` URL, supaya lebih mungkin muat di localStorage, persist setelah refresh, dan tetap dibundel ulang ke `img/` saat export zip. Restore original menghapus key image tersebut dari map dan menghapus seluruh storage key jika tidak ada replacement tersisa.
 - `enabled=false` merender teks biasa yang selectable/copyable; `enabled=true` baru mengaktifkan `contentEditable`, ring edit, dan toolbar.
 - Toolbar kecil mendukung bold, italic, dan underline via browser command.
 - Toolbar diberi `data-wv-format-toolbar` dan `data-wv-format-command` per tombol supaya typography/action button tidak mewarisi font/style website client.
 - Paste dipaksa plain text agar HTML asing tidak ikut masuk.
-- Export HTML membersihkan atribut `contenteditable`, toolbar, temporary button-icon edit affordance, dan replace-image overlay lewat `src/lib/exportSiteHtml.ts`, tetapi isi teks hasil edit dan SVG icon pilihan tetap ikut karena sudah ada di DOM. Exporter juga mengambil `data:` image hasil replacement owner, menyimpannya ke folder `img/` dalam zip, lalu mengganti `src` HTML ke path file lokal.
+- Export HTML membersihkan atribut `contenteditable`, toolbar, temporary icon edit affordance, dan replace-image overlay lewat `src/lib/exportSiteHtml.ts`, tetapi isi teks hasil edit dan SVG icon pilihan tetap ikut karena sudah ada di DOM. Exporter juga mengambil `data:` image hasil replacement owner, menyimpannya ke folder `img/` dalam zip, lalu mengganti `src` HTML ke path file lokal.
 
 Risiko debug:
 - Jika teks tidak ikut download, cek apakah field tersebut sudah dibungkus `EditableText` di `SiteRenderer`.
@@ -288,10 +289,11 @@ Risiko debug:
 
 Fungsi:
 - Shared visitor action panel untuk `/demo` dan public preview `/:businessId`.
-- Menangani download free, domain selection, domain availability/ownership pre-check, dan checkout setup `$197/year`.
+- Menangani download free, domain selection, domain availability/ownership pre-check, dan checkout setup `$180/year` hosting plus optional `$17/year` registered-domain fee.
 - Floating trigger text is `Download / Setup` for both demo and public preview; pricing is shown inside the opened panel/checkout flow, not on the collapsed button.
-- Checkout offer shows the `$197/year` value stack: `$17/year` domain allowance, `$180/year` hosting allocation, SSL/DNS/upload/launch, and free setup.
-- Optional add-ons are selected before checkout: `$10` per additional generated page or existing-page edit action, with 10% discount for 5-9 actions and 20% for 10+ actions.
+- Checkout offer shows the value stack as infrastructure: free generated site, `$180/year` managed hosting, `$17/year` domain fee only when WebView.click registers a new domain, SSL/DNS/upload, and setup handled at no extra setup fee. Buyer-facing copy does not mention the underlying hosting provider.
+- Buyer can choose 1-10 year terms before domain/payment. Prepaid terms apply package discounts of 5% at 2 years, +5% per additional year through 9 years, and 50% at 10 years, but the discount applies only to the `$180/year` hosting portion. The `$17/year` domain fee is never discounted and is removed entirely when the buyer chooses an owned domain. `annual_recurring` uses PayPal Subscriptions when PayPal API credentials are active; otherwise non-PayPal/manual rails still record the selected billing preference.
+- Optional add-ons are now a separate branch before domain/payment: buyer first chooses whether they want page add/edit work, then selects counts, then fills exact page names to add and existing pages/notes to edit. `$10` per action still applies, with 10% discount for 5-9 actions and 20% for 10+ actions.
 
 Props penting:
 - `siteData`: dipakai untuk business name/business ID default.
@@ -304,14 +306,18 @@ Props penting:
 
 Logic penting:
 - Domain extension list berasal dari `src/lib/domainExtensions.ts`.
+- New-domain label normalizer menghapus spasi/punctuation dari nama bisnis tanpa menyisipkan hyphen, sehingga suggestion default seperti `Supreme Ready Mix` menjadi `supremereadymix.com`; hyphen yang diketik manual tetap dipertahankan.
 - Domain availability memakai `GET /api/domains/check?domain=...`.
+- Untuk domain baru yang lolos pre-check, panel mencoba `POST /api/domains/quote` untuk menangkap real registrar quote ke state `domainQuote`; jika credential registrar kosong/gagal, checkout tetap bisa lanjut dengan manual confirmation. Buyer-facing UI tetap menampilkan included `$17/year` domain fee, bukan wholesale registrar price.
 - Checkout memakai `POST /api/payments/checkout`.
 - If PayPal is active and API credentials are configured, checkout returns PayPal JS SDK data (`paypalInline`, `paypalClientId`, `paypalOrderId`), renders PayPal's button in-place, and approval calls `POST /api/payments/paypal-capture-order`.
-- Payment payload mengirim `businessId`, `businessName`, `domain`, `domainMode`, domain pre-check result, email, dan add-on counts `{ newPages, editedPages }`; server recomputes pricing so client-side totals are display-only.
-- Checkout modal memakai flow bertahap: pilih domain baru atau domain milik sendiri, cek domain, lalu baru munculkan email untuk setup updates.
+- Payment payload mengirim `businessId`, `businessName`, `domain`, `domainMode`, domain pre-check result, optional `domainQuote`, email, add-on counts `{ newPages, editedPages }`, dan `setupRequest` detail page add/edit. Server recomputes pricing and stores sanitized setup notes/domain quote in `lead_payments.raw_json`. Pricing server-side treats `PAYMENT_USD_AMOUNT` as new-domain annual total, subtracts `PAYMENT_DOMAIN_FEE_USD` to derive hosting, removes the domain fee for owned domains, and applies term discounts to hosting only.
+- Checkout modal memakai flow bertahap dengan tracker `Step X of N`: offer justification -> optional add/edit counts -> add/edit details -> domain mode/check -> email/payment. Base setup skips the add/edit steps.
 - Domain baru memakai compact inline input: label domain, extension selector berkategori, dan tombol check dalam satu baris. Filter extension berada di panel collapsible supaya form tidak terlalu tinggi.
 - Domain milik sendiri memakai input domain penuh, lalu endpoint menampilkan sinyal registrar/nameserver dari RDAP jika tersedia.
-- Untuk domain milik sendiri, user diarahkan mengganti nameserver ke Cloudflare kita atau menambah DNS record yang kita berikan jika ingin tetap memakai nameserver lama.
+- Input domain milik sendiri memakai sanitizer terpisah dari normalizer final agar titik (`.`) tidak hilang saat user mengetik `example.com`; normalisasi final tetap menghapus trailing dot sebelum API check.
+- Domain milik sendiri membutuhkan checkbox konfirmasi bahwa user memang memiliki domain dan bisa update DNS/nameserver atau memberi delegated access sebelum lanjut ke payment.
+- Untuk domain milik sendiri, user diarahkan memakai managed nameservers kita atau menambah DNS record yang kita berikan jika ingin tetap memakai nameserver lama.
 - Indikator hijau pada domain baru berarti `available` dari pre-check; indikator hijau pada domain sendiri berarti domain terdeteksi registered/usable untuk setup DNS, bukan tersedia untuk dibeli.
 - Domain sendiri hanya bisa lanjut jika RDAP/DNS memberi sinyal registered/aktif; hasil inconclusive tetap ditahan sebagai warning.
 - Mode mock checkout tetap mencatat lead `checkout_pending` jika payment processor aktif belum dikonfigurasi atau dipilih `mock`.
@@ -468,6 +474,24 @@ Risiko debug:
 - Canvas palette butuh image same-origin/CORS; karena itu foto harus lewat proxy `/api/places/photo`, bukan langsung URL Google.
 - Audit dan roadmap admin disimpan di `docs/ADMIN_WORKFLOW_AUDIT.md`.
 
+### `src/pages/admin/AdminOrders.tsx`
+
+Fungsi:
+- Halaman admin khusus untuk melihat order done-for-you setup dari checkout/payment ledger.
+- Memakai endpoint existing `GET /api/leads/payments`, bukan tabel baru, supaya payment reconciliation dan fulfillment note tetap satu sumber data.
+
+Logic penting:
+- Membaca `lead_payments.raw_json` dan menampilkan `setupRequest.setupNote`, jumlah page add/edit, business ID, payment status, processor, amount, transaction/reference, payer email, dan link preview.
+- Menampilkan ringkasan billing term, hosting/domain price split, PayPal plan/subscription ID when present, cached-plan marker, dan registrar quote (`domainQuote`) supaya fulfillment bisa melihat provider/internal cost tanpa membuka raw JSON.
+- Tombol `Copy fulfillment note` menyalin business, preview URL, payment status/reference, requested domain/domain mode, customer email, dan setup note supaya admin bisa paste ke work queue atau pesan client.
+- Filter status `all/pending/paid` dan search lokal membantu fulfillment mencari business, email, reference, transaction ID, atau isi setup note.
+- Page add/edit notes berasal dari checkout `WebsiteActionPanel`; jika order lama tidak punya `raw_json.setupRequest`, halaman menampilkan fallback `No setup note recorded`.
+- Domain registrar automation plan lives in `docs/DOMAIN_REGISTRATION_AUTOMATION_PLAN.md` and is available from the admin docs reader on `/admin/orders` and `/admin/settings`.
+
+Risiko debug:
+- Jika order baru tidak menampilkan page notes, cek payload `setupRequest` dari `WebsiteActionPanel` dan raw JSON insert di `/api/payments/checkout`.
+- Jika payment status tidak berubah setelah PayPal capture/manual verify, cek `lead_payments` row yang sama di `/admin/leads` Payment Reconciliation.
+
 ### `public/tools/google-maps-capture-extension`
 
 Fungsi:
@@ -616,7 +640,7 @@ Logic penting:
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - KIE.ai ditampilkan sebagai estimasi diskon karena pricing live berada di dashboard/pricing KIE.
 - Offer & Conversion settings are separate from Payment Setup and cover the base USD amount, page/edit add-on USD fee, USD->IDR rate, package name, and package description.
-- Payment settings sekarang fokus ke active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), Xendit key, Midtrans keys/mode, DOKU keys/mode, PayPal sandbox/live keys/mode, PayPal/Wise/Payoneer/manual fields, legacy Lemon fields, dan nomor WhatsApp admin. The UI shows only the active processor form; PayPal risk guardrails appear only when PayPal is active or already configured.
+- Payment settings sekarang fokus ke active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), Xendit key, Midtrans keys/mode, DOKU keys/mode, PayPal sandbox/live keys/mode, PayPal/Wise/Payoneer/manual fields, legacy Lemon fields, dan nomor WhatsApp admin. The UI shows only the active processor form; PayPal risk guardrails appear only when PayPal is active or already configured. Jika PayPal aktif, Settings juga menampilkan payment smoke checklist dari `/api/settings/payment-smoke`, aggregate `Ready for traffic` badge yang hijau hanya jika semua smoke rows pass, stored controlled-live test reference `PAYPAL_CONTROLLED_LIVE_TEST_REFERENCE`, dan PayPal plan cache viewer dari `/api/settings/paypal-plan-cache`, supaya admin bisa melihat live key/webhook readiness, last paid PayPal evidence, exact pre-traffic test match, dan cached subscription plan combinations tanpa membuka D1.
 - Section `Prospect Scoring` menyimpan preset, default threshold, dan bobot scoring ke D1 settings agar prioritas prospek bisa ditune dari UI tanpa edit kode.
 - Bobot scoring memakai angka positif/negatif. Reset weights mengembalikan default dari `src/lib/prospectScoring.ts`.
 - Tooltip dipasang pada Settings heading, manual save, provider tabs, Google Places, Payment Links, AI cost estimator, AI readiness refresh/result, and scoring controls to clarify which settings affect generation, search, checkout, and estimates.
@@ -1024,7 +1048,7 @@ Logic Owner HTML Export:
 - Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
 - Export menyertakan inline script owner untuk tab navigation, section-anchor fallback seperti `#contact`, fixed overlay submenu hover/positioning, compact-on-scroll header, contact/feedback `mailto:`, feedback rating redirect/form behavior, dan shader pointer CSS variables (`--wv-pointer-x`, `--wv-pointer-y`) agar shader procedural tetap responsif di file HTML statis.
 - Export mengambil gambar yang sedang tampil di DOM, menyimpannya ke folder `/img` di dalam zip, lalu mengubah `<img src>` menjadi path relatif seperti `img/{businessId}-hero.jpg`. Ini termasuk foto Google Business Profile yang sedang diproxy via WebView.click saat tombol download diklik, sehingga HTML owner tidak perlu hotlink ke Google atau Function WebView.click untuk gambar.
-- Export menambahkan `README-FIRST.txt` sebagai ringkasan done-for-you `$197/year`, lalu `SETUP-GUIDE.txt` sebagai panduan teknis self-hosting domain/hosting/DNS/upload/SSL/maintenance.
+- Export menambahkan `README-FIRST.txt` sebagai ringkasan done-for-you setup/hosting/domain offer, lalu `SETUP-GUIDE.txt` sebagai panduan teknis self-hosting domain/hosting/DNS/upload/SSL/maintenance.
 - Kedua file `.txt` tersebut menyertakan URL preview/download asli (`window.location.href`) supaya owner bisa kembali ke halaman tempat zip dibuat.
 - Export menambahkan Tailwind CSS/CDN hotlink, stylesheet production absolute, style tags renderer, favicon dari logo bisnis/fallback SVG, dan mengubah URL relatif non-gambar/link menjadi absolute URL.
 - Export menambahkan JS inline kecil untuk mengaktifkan tabbed navigation pada elemen `data-wv-tab` dan `data-wv-page` karena React handler tidak ikut dalam HTML statis.
@@ -1035,11 +1059,16 @@ Logic Owner HTML Export:
 Logic Payments:
 - `/api/payments/checkout` lives in `functions/api/payments/handler.ts` and reads `PAYMENT_PROCESSOR` from Settings. Mode live yang didukung: Xendit hosted invoice, Midtrans Snap Redirect, DOKU Checkout, PayPal Orders v2 Checkout, Wise link, Payoneer link, dan legacy Lemon Squeezy.
 - Jika processor aktif belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
-- Paket default saat ini: `$197/year` untuk domain allowance + hosting + free setup, dengan `PAYMENT_ADDON_PAGE_USD` untuk page/edit add-ons dan `PAYMENT_USD_TO_IDR_RATE` untuk mengirim amount IDR ke gateway Indonesia.
-- Request checkout menyimpan `domainMode` (`new` atau `owned`), requested domain, amount, add-on pricing, dan processor ke CRM activity; gateway live juga menerima metadata/custom fields jika provider mendukung.
-- PayPal API checkout membuat order dengan `intent=CAPTURE`, `NO_SHIPPING`, `PAY_NOW`, `invoice_id=paymentReference`, dan item breakdown base package/add-ons. PayPal reads mode-specific credentials: sandbox uses `PAYPAL_SANDBOX_CLIENT_ID`/`PAYPAL_SANDBOX_CLIENT_SECRET`, live uses `PAYPAL_LIVE_CLIENT_ID`/`PAYPAL_LIVE_CLIENT_SECRET`, with legacy `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET` as fallback. Webhook signature verification also reads mode-specific webhook IDs: `PAYPAL_SANDBOX_WEBHOOK_ID` or `PAYPAL_LIVE_WEBHOOK_ID`, with legacy `PAYPAL_WEBHOOK_ID` as fallback. Jika order approve berhasil, `/api/payments/paypal-capture-order` capture order lalu update `lead_payments`, `subscriptions`, lead status, dan CRM activity.
+- Paket default saat ini: `$180/year` managed hosting + `$17/year` domain fee hanya untuk domain baru yang WebView.click register; owned-domain checkout membayar hosting saja. `PAYMENT_DOMAIN_FEE_USD` memisahkan domain fee dari `PAYMENT_USD_AMOUNT`, term discount hanya mengurangi hosting, `PAYMENT_ADDON_PAGE_USD` untuk page/edit add-ons, dan `PAYMENT_USD_TO_IDR_RATE` untuk mengirim amount IDR ke gateway Indonesia.
+- Request checkout menyimpan `domainMode` (`new` atau `owned`), requested domain, optional sanitized `domainQuote`, amount, multi-year billing term/cadence, hosting/domain price split, add-on pricing, processor, dan sanitized `setupRequest/setupNote` ke CRM activity serta `lead_payments.raw_json`; gateway live juga menerima metadata/custom fields jika provider mendukung.
+- PayPal API checkout membuat one-time/prepaid order dengan `intent=CAPTURE`, `NO_SHIPPING`, `PAY_NOW`, `invoice_id=paymentReference`, dan item breakdown base package/add-ons. Jika buyer memilih yearly billing (`annual_recurring`), `/api/payments/checkout` mencari cached PayPal plan di `system_settings` dengan key `PAYPAL_SUBSCRIPTION_PLAN__{mode}__{domainMode}__term_{n}__annual_{price}__hosting_{price}__domain_{fee}__setup_{fee}`. Jika ada match exact price/term/domain/setup-fee, checkout reuse plan ID; jika tidak, endpoint membuat PayPal Catalog Product + Billing Plan lalu menyimpan product/plan ID ke cache. Response mengembalikan `paypalSubscriptionPlanId`, dan `WebsiteActionPanel` memuat PayPal JS SDK dengan `vault=true&intent=subscription` lalu memakai `actions.subscription.create({ plan_id, custom_id })`. Setelah buyer approve, `/api/payments/paypal-subscription-approved` lookup subscription, update `lead_payments`, `subscriptions`, lead status, dan CRM activity. PayPal reads mode-specific credentials: sandbox uses `PAYPAL_SANDBOX_CLIENT_ID`/`PAYPAL_SANDBOX_CLIENT_SECRET`, live uses `PAYPAL_LIVE_CLIENT_ID`/`PAYPAL_LIVE_CLIENT_SECRET`, with legacy `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET` as fallback. Webhook signature verification also reads mode-specific webhook IDs: `PAYPAL_SANDBOX_WEBHOOK_ID` or `PAYPAL_LIVE_WEBHOOK_ID`, with legacy `PAYPAL_WEBHOOK_ID` as fallback. Jika one-time order approve berhasil, `/api/payments/paypal-capture-order` capture order lalu update `lead_payments`, `subscriptions`, lead status, dan CRM activity.
+- `GET /api/settings/paypal-plan-cache` returns sanitized cached PayPal plan rows (`mode`, `domainMode`, `termYears`, annual/hosting/domain/setup prices, product/plan IDs, status, updated time). It intentionally hides unrelated settings/secrets and is used only by `/admin/settings`.
+- `GET /api/settings/payment-smoke` returns sanitized recent paid PayPal ledger rows from `lead_payments` for the Settings smoke checklist. It exposes only operational evidence such as amount, transaction/reference, PayPal order/subscription IDs parsed from raw JSON, source, payer email, timestamps, and subscription detection; it does not expose raw webhook JSON or secrets. Settings stores `PAYPAL_CONTROLLED_LIVE_TEST_REFERENCE`, and the checklist gate turns green only when that recorded reference matches a recent paid row candidate.
+- `setupTables()` memastikan `system_settings.updated_at` ada agar PayPal plan cache bisa ditulis/disortir di D1 lama tanpa manual migration.
+- `/api/payments/paypal-webhook` handles `BILLING.SUBSCRIPTION.ACTIVATED` to reconcile approved yearly subscriptions and `PAYMENT.SALE.COMPLETED` with `billing_agreement_id` to record future PayPal subscription billing payments into `lead_payments`.
 - PayPal/Wise/Payoneer manual fallback rails mengembalikan `requiresManualReview=true`, `paymentReference`, dan `paymentInstructions`; `WebsiteActionPanel` menampilkan review step sebelum membuka payment link agar buyer menyertakan business/domain/reference.
 - PayPal setup lives in `/admin/settings#settings-payment`: sandbox/live API segmented toggle, mode-specific API key / Client ID, secret, and webhook ID fields, optional fallback `PAYPAL_BUSINESS_URL`, `PAYPAL_RISK_ACKNOWLEDGED`, active-mode missing credential warning, and a compact guardrails panel. `PAYPAL_PAYMENT_NOTE` and fallback account mode are only shown when a manual PayPal fallback link is configured because API Checkout stores the reference on the PayPal order.
+- Domain registrar setup lives in `/admin/settings#settings-domain-registrar`: default registrar, max internal domain cost, and credential fields for Cloudflare Registrar, Name.com, Dynadot, and Spaceship. Empty registrar credentials are allowed; public checkout falls back to manual domain confirmation.
 - `/api/payments/paypal-webhook` aman sebelum PayPal Business siap: tanpa active-mode PayPal Client ID/Secret/webhook ID, endpoint acknowledge dan ignore event. Jika lengkap, endpoint verify signature PayPal lalu mencatat completed payment yang match ke `lead_payments`, `subscriptions`, status lead, dan CRM activity sebagai backup bila browser capture callback terputus.
 - `lead_payments` menyimpan ledger manual/webhook: processor, status, amount, transaction ID, payer email, payment reference, proof notes, raw webhook JSON, waktu verified, dan verifier.
 - PayPal operating guidance and implementation tracker live in `docs/PAYPAL_RISK_CONTROLS.md` and `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md`.
@@ -1049,6 +1078,9 @@ Logic Domains:
 - Primary provider: RDAP via `rdap.net`.
 - Fallback signal: Google Public DNS SOA lookup.
 - Jika RDAP `200`, response menyertakan `registrar`, `nameservers`, dan `rdapUrl` jika registry menyediakan field tersebut.
+- `GET /api/domains/providers` returns score 7.0+ registrar adapter readiness for Cloudflare Registrar, Name.com, Dynadot, and Spaceship, including active default provider, missing config keys, and `DOMAIN_REGISTRATION_MAX_USD`.
+- `POST /api/domains/quote` is the non-billable registrar quote endpoint. It normalizes to `DomainQuote`, reads provider credentials from Cloudflare env first and D1 settings second, returns `premium`, `withinMaxPrice`, and `supportedForMvp`, and never registers a domain.
+- Registrar quote credentials/settings recognized by the backend: `DOMAIN_REGISTRAR_PROVIDER`, `DOMAIN_REGISTRATION_MAX_USD`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `NAME_COM_USERNAME`, `NAME_COM_API_TOKEN`, `NAME_COM_ENV`, `DYNADOT_API_KEY`, `DYNADOT_ENV`, `SPACESHIP_API_KEY`, and `SPACESHIP_API_SECRET`.
 - Response harus diperlakukan sebagai kandidat availability, bukan jaminan pembelian; final confirmation terjadi saat registrar purchase.
 
 ## Data and Schema
@@ -1096,7 +1128,8 @@ Jika menambah laman atau komponen baru:
 - `docs/NICHE_STYLE_PRESETS.md`: brainstorm dan kontrak `design.stylePreset`.
 - `docs/LEMON_SQUEEZY_INTEGRATION.md`: catatan integrasi checkout Lemon Squeezy.
 - `docs/PAYPAL_RISK_CONTROLS.md`: PayPal Business risk notes, checkout/payment-reference controls, and reconciliation checklist.
-- `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md`: PayPal JS SDK + Orders v2 implementation notes, sandbox QA, and `$197/year` plus add-on pricing structure.
+- `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md`: PayPal JS SDK + Orders v2 / Subscriptions implementation notes, sandbox QA, and hosting/domain plus add-on pricing structure.
 - `docs/DOMAIN_AVAILABILITY_RESEARCH.md`: riset provider gratis/murah untuk cek availability domain.
+- `docs/DOMAIN_REGISTRATION_AUTOMATION_PLAN.md` dan `docs/domain-providers/*.md`: registrar automation scope, score 7.0+ provider summaries, provider-neutral adapter plan, and checklist progress for domain quote/register/connect work.
 - `docs/SITE_BUILDER_UPGRADE_PLAN.md`: rencana upgrade JSON schema dan renderer agar demo/site output lebih modern dan personalized.
 - `docs/ADMIN_WORKFLOW_AUDIT.md`, `docs/ADMIN_JOBS_USER_GUIDE.md`, and `docs/ADMIN_UI_TOOLTIP_COLLAPSE_AUDIT.md`: admin QA/workflow notes and practical Jobs usage guide exposed through the in-app docs reader.

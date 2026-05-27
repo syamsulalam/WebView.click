@@ -210,26 +210,20 @@ function attributionText(src?: string, attributions: string[] = [], source = "",
   return cleanAttributions.length ? `${base}: ${cleanAttributions.join(", ")}` : base;
 }
 
-function menuIcon(label = "", href = "") {
-  const key = `${label} ${href}`.toLowerCase();
-  if (key.includes("home") || key.includes("beranda")) return <Home size={16} />;
-  if (key.includes("about") || key.includes("tentang")) return <Info size={16} />;
-  if (key.includes("service") || key.includes("layanan") || key.includes("menu")) return <Briefcase size={16} />;
-  if (key.includes("gallery") || key.includes("galeri")) return <Images size={16} />;
-  if (key.includes("contact") || key.includes("kontak")) return <Mail size={16} />;
-  return <ImageIcon size={16} />;
+function inferMenuIconId(key = "") {
+  if (key.includes("home") || key.includes("beranda")) return "home";
+  if (key.includes("about") || key.includes("tentang")) return "info";
+  if (key.includes("service") || key.includes("layanan") || key.includes("menu")) return "service";
+  if (key.includes("gallery") || key.includes("galeri")) return "gallery";
+  if (key.includes("contact") || key.includes("kontak")) return "mail";
+  return "image";
 }
 
-function socialIcon(platform = "") {
-  const key = platform.toLowerCase();
-  if (key.includes("instagram")) return <Instagram size={18} />;
-  if (key.includes("facebook")) return <Facebook size={18} />;
-  if (key.includes("linkedin")) return <Linkedin size={18} />;
-  if (key.includes("whatsapp")) return <MessageCircle size={18} />;
-  return <Globe size={18} />;
-}
-
-const ctaIconOptions = [
+const siteIconOptions = [
+  { id: "home", label: "Home", keywords: "home beranda main" },
+  { id: "info", label: "Info", keywords: "about info detail learn" },
+  { id: "image", label: "Image", keywords: "image photo picture visual" },
+  { id: "gallery", label: "Gallery", keywords: "gallery photos images galeri" },
   { id: "phone", label: "Call", keywords: "phone call tel telepon hubungi whatsapp quote estimate" },
   { id: "mail", label: "Email", keywords: "email mail contact kontak inquiry message" },
   { id: "map", label: "Map", keywords: "map directions location lokasi alamat address visit" },
@@ -238,6 +232,13 @@ const ctaIconOptions = [
   { id: "quote", label: "Quote", keywords: "quote estimate pricing price proposal request" },
   { id: "service", label: "Services", keywords: "service product layanan produk package offer" },
   { id: "star", label: "Review", keywords: "review rating star testimonial trust" },
+  { id: "facebook", label: "Facebook", keywords: "facebook social page" },
+  { id: "instagram", label: "Instagram", keywords: "instagram social photo" },
+  { id: "linkedin", label: "LinkedIn", keywords: "linkedin social professional" },
+  { id: "users", label: "Customers", keywords: "customers users team staff people client" },
+  { id: "truck", label: "Delivery", keywords: "truck delivery concrete transport" },
+  { id: "wrench", label: "Repair", keywords: "repair install service fix maintenance" },
+  { id: "shield", label: "Trust", keywords: "trust safe shield reliable professional" },
   { id: "globe", label: "Website", keywords: "website site online learn more visit" },
   { id: "check", label: "Check", keywords: "check confirm submit done start" },
 ];
@@ -258,6 +259,10 @@ function inferCtaIconId(label = "", href = "") {
 
 function renderCtaIcon(iconId: string, size = 16, className = "") {
   const iconProps = { size, className: className || undefined };
+  if (iconId === "home") return <Home {...iconProps} />;
+  if (iconId === "info") return <Info {...iconProps} />;
+  if (iconId === "image") return <ImageIcon {...iconProps} />;
+  if (iconId === "gallery") return <Images {...iconProps} />;
   if (iconId === "phone") return <PhoneCall {...iconProps} />;
   if (iconId === "mail") return <Mail {...iconProps} />;
   if (iconId === "map") return <MapPin {...iconProps} />;
@@ -265,24 +270,15 @@ function renderCtaIcon(iconId: string, size = 16, className = "") {
   if (iconId === "calendar") return <Clock {...iconProps} />;
   if (iconId === "quote") return <ClipboardCheck {...iconProps} />;
   if (iconId === "service") return <Briefcase {...iconProps} />;
-  if (iconId === "star") return <Star {...iconProps} />;
+  if (iconId === "star") return <Star {...iconProps} fill="currentColor" />;
+  if (iconId === "facebook") return <Facebook {...iconProps} />;
+  if (iconId === "instagram") return <Instagram {...iconProps} />;
+  if (iconId === "linkedin") return <Linkedin {...iconProps} />;
+  if (iconId === "users") return <Users {...iconProps} />;
+  if (iconId === "truck") return <Truck {...iconProps} />;
+  if (iconId === "wrench") return <Wrench {...iconProps} />;
+  if (iconId === "shield") return <ShieldCheck {...iconProps} />;
   if (iconId === "globe") return <Globe {...iconProps} />;
-  return <CheckCircle2 {...iconProps} />;
-}
-
-function renderCopyIcon(icon: string, size = 16, className = "") {
-  const iconProps = { size, className: className || undefined };
-  if (icon === "phone") return <PhoneCall {...iconProps} />;
-  if (icon === "mail") return <Mail {...iconProps} />;
-  if (icon === "map") return <MapPin {...iconProps} />;
-  if (icon === "clock") return <Clock {...iconProps} />;
-  if (icon === "star") return <Star {...iconProps} />;
-  if (icon === "users") return <Users {...iconProps} />;
-  if (icon === "truck") return <Truck {...iconProps} />;
-  if (icon === "clipboard") return <ClipboardCheck {...iconProps} />;
-  if (icon === "wrench") return <Wrench {...iconProps} />;
-  if (icon === "shield") return <ShieldCheck {...iconProps} />;
-  if (icon === "briefcase") return <Briefcase {...iconProps} />;
   return <CheckCircle2 {...iconProps} />;
 }
 
@@ -305,11 +301,20 @@ function copyIconCandidates(label = "", description = "") {
   return Array.from(new Set(candidates));
 }
 
-function copyIcon(label = "", description = "", size = 16, className = "", usedIcons?: Set<string>) {
+function copyIconId(label = "", description = "", usedIcons?: Set<string>) {
   const fallback = ["check", "shield", "clipboard", "users", "briefcase", "clock", "map", "phone", "star", "truck", "wrench", "mail"];
   const icon = [...copyIconCandidates(label, description), ...fallback].find((item) => !usedIcons?.has(item)) || "check";
   usedIcons?.add(icon);
-  return renderCopyIcon(icon, size, className);
+  return icon === "clock" ? "calendar" : icon === "clipboard" ? "quote" : icon === "briefcase" ? "service" : icon;
+}
+
+function inferSocialIconId(platform = "") {
+  const key = platform.toLowerCase();
+  if (key.includes("instagram")) return "instagram";
+  if (key.includes("facebook")) return "facebook";
+  if (key.includes("linkedin")) return "linkedin";
+  if (key.includes("whatsapp")) return "message";
+  return "globe";
 }
 
 function phoneHref(value = "") {
@@ -559,7 +564,15 @@ function imageReplacementStorageKey(businessId: string, metaBusinessId = "") {
   return `webview.inlineImages.${safeId}`;
 }
 
-function buttonIconStorageKey(businessId: string, metaBusinessId = "") {
+function siteIconStorageKey(businessId: string, metaBusinessId = "") {
+  const safeId = (businessId || metaBusinessId || "demo")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "demo";
+  return `webview.inlineIcons.${safeId}`;
+}
+
+function legacyButtonIconStorageKey(businessId: string, metaBusinessId = "") {
   const safeId = (businessId || metaBusinessId || "demo")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -612,7 +625,7 @@ export default function SiteRenderer({
   const [headerCompact, setHeaderCompact] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [imageReplacements, setImageReplacements] = useState<Record<string, string>>({});
-  const [buttonIconOverrides, setButtonIconOverrides] = useState<Record<string, string>>({});
+  const [siteIconOverrides, setSiteIconOverrides] = useState<Record<string, string>>({});
   const [activeIconPickerKey, setActiveIconPickerKey] = useState("");
   const [iconPickerQuery, setIconPickerQuery] = useState("");
   const [feedbackRating, setFeedbackRating] = useState(0);
@@ -622,7 +635,8 @@ export default function SiteRenderer({
 
   const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, sourceData, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const imageReplacementKey = imageReplacementStorageKey(businessId, meta.businessId);
-  const buttonIconKey = buttonIconStorageKey(businessId, meta.businessId);
+  const iconStorageKey = siteIconStorageKey(businessId, meta.businessId);
+  const legacyIconStorageKey = legacyButtonIconStorageKey(businessId, meta.businessId);
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(imageReplacementKey);
@@ -634,13 +648,19 @@ export default function SiteRenderer({
   }, [imageReplacementKey]);
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(buttonIconKey);
+      const saved = window.localStorage.getItem(iconStorageKey);
+      const legacy = window.localStorage.getItem(legacyIconStorageKey);
       const parsed = saved ? JSON.parse(saved) : {};
-      setButtonIconOverrides(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
+      const legacyParsed = legacy ? JSON.parse(legacy) : {};
+      const next = {
+        ...(legacyParsed && typeof legacyParsed === "object" && !Array.isArray(legacyParsed) ? legacyParsed : {}),
+        ...(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}),
+      };
+      setSiteIconOverrides(next);
     } catch {
-      setButtonIconOverrides({});
+      setSiteIconOverrides({});
     }
-  }, [buttonIconKey]);
+  }, [iconStorageKey, legacyIconStorageKey]);
   const fontContext = [
     meta.businessName,
     meta.niche,
@@ -807,33 +827,32 @@ export default function SiteRenderer({
       {value ?? ""}
     </EditableText>
   );
-  const saveButtonIconOverride = (key: string, iconId: string) => {
-    setButtonIconOverrides((current) => {
+  const saveSiteIconOverride = (key: string, iconId: string) => {
+    setSiteIconOverrides((current) => {
       const next = { ...current };
       if (iconId) next[key] = iconId;
       else delete next[key];
       try {
         if (Object.keys(next).length > 0) {
-          window.localStorage.setItem(buttonIconKey, JSON.stringify(next));
+          window.localStorage.setItem(iconStorageKey, JSON.stringify(next));
         } else {
-          window.localStorage.removeItem(buttonIconKey);
+          window.localStorage.removeItem(iconStorageKey);
         }
       } catch (error) {
-        console.warn("Could not save button icon selection in browser storage.", error);
+        console.warn("Could not save site icon selection in browser storage.", error);
       }
       return next;
     });
   };
-  const editableButtonIcon = (key: string, label = "", href = "", size = 16, className = "") => {
-    const fallbackIcon = inferCtaIconId(label, href);
-    const iconId = buttonIconOverrides[key] || fallbackIcon;
+  const editableSiteIcon = (key: string, fallbackIcon: string, size = 16, className = "") => {
+    const iconId = siteIconOverrides[key] || fallbackIcon;
     return (
       <span
-        data-wv-button-icon={editMode ? "true" : undefined}
+        data-wv-edit-icon={editMode ? "true" : undefined}
         className={`inline-flex shrink-0 items-center justify-center ${editMode ? "rounded-full ring-1 ring-white/70 ring-offset-2 ring-offset-transparent" : ""}`}
         role={editMode ? "button" : undefined}
         tabIndex={editMode ? 0 : undefined}
-        title={editMode ? "Choose button icon" : undefined}
+        title={editMode ? "Choose icon" : undefined}
         onClick={editMode ? (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -853,6 +872,8 @@ export default function SiteRenderer({
       </span>
     );
   };
+  const editableButtonIcon = (key: string, label = "", href = "", size = 16, className = "") =>
+    editableSiteIcon(key, inferCtaIconId(label, href), size, className);
   const editableButtonText = (id: string, value: string | number | null | undefined, className = "") =>
     editableText(`button.${id}`, value, "span", className);
   const normalizedAnchorId = (value = "") => String(value || "").replace(/^#/, "").trim().toLowerCase();
@@ -1134,7 +1155,7 @@ export default function SiteRenderer({
       window.location.href = googleReviewHref;
     }
   };
-  const visibleCtaIconOptions = ctaIconOptions.filter((option) => {
+  const visibleSiteIconOptions = siteIconOptions.filter((option) => {
     const query = iconPickerQuery.trim().toLowerCase();
     if (!query) return true;
     return `${option.label} ${option.keywords}`.toLowerCase().includes(query);
@@ -1188,7 +1209,7 @@ export default function SiteRenderer({
                   data-wv-tab={pageId}
                   className={`${headerCompact ? "h-8" : "h-10"} text-sm font-medium leading-none hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
                 >
-                  {menuIcon(menu.label, menu.href)}
+                  {editableSiteIcon(`nav.${idx}`, inferMenuIconId(`${menu.label} ${menu.href}`), 16)}
                   {menu.label}
                   {children.length > 0 && <span className="text-xs opacity-80">▾</span>}
                 </button>
@@ -1240,7 +1261,7 @@ export default function SiteRenderer({
                   onClick={() => changeTab(childPageId)}
                   className="flex w-full gap-2 px-3 py-2 text-left"
                 >
-                  <span className="mt-0.5 shrink-0 text-slate-500">{menuIcon(child.label, child.href)}</span>
+                  <span className="mt-0.5 shrink-0 text-slate-500">{editableSiteIcon(`nav.${submenu.menuKey}.child.${child.href || child.label}`, inferMenuIconId(`${child.label} ${child.href}`), 16)}</span>
                   <span>
                     <span className="block text-sm font-semibold">{titleCaseLabel(child.label)}</span>
                     {child.description && <span className="mt-0.5 block text-xs text-slate-500">{child.description}</span>}
@@ -1313,10 +1334,10 @@ export default function SiteRenderer({
                         </div>
                         {(trust.rating > 0 || displayPhone) && (
                           <div className="mt-8 flex flex-wrap gap-4 text-sm text-slate-600">
-                            {trust.rating > 0 && <span className="inline-flex items-center gap-2"><Star size={16} fill={colors.accent} color={colors.accent} /> {trust.rating.toFixed(1)} {isIndonesian ? "dari" : "from"} {trust.reviewCount || labels.manyReviews} {labels.reviews}</span>}
+                            {trust.rating > 0 && <span className="inline-flex items-center gap-2"><span style={{ color: colors.accent }}>{editableSiteIcon("hero.rating", "star", 16)}</span> {trust.rating.toFixed(1)} {isIndonesian ? "dari" : "from"} {trust.reviewCount || labels.manyReviews} {labels.reviews}</span>}
                             {displayPhone && (
                               <a href={phoneHref(primaryPhone || displayPhone)} className="inline-flex items-center gap-2 hover:underline">
-                                <Phone size={16} /> {displayPhone}
+                                {editableSiteIcon("hero.phone", "phone", 16)} {displayPhone}
                               </a>
                             )}
                           </div>
@@ -1343,7 +1364,7 @@ export default function SiteRenderer({
                       {items.map((item: any, i: number) => (
                         <div key={i} className="flex flex-col items-center justify-center gap-2 rounded-lg bg-white border border-slate-200 px-4 py-4 text-center">
                           <span data-wv-qa-icon="trustBar" className="inline-flex" style={{ color: colors.primary }}>
-                            {copyIcon(item.label || item.icon || "", item.value || "", 30, "shrink-0", usedTrustIcons)}
+                            {editableSiteIcon(`${page.pageId}.${section.id}.trust.${i}`, copyIconId(item.label || item.icon || "", item.value || "", usedTrustIcons), 30, "shrink-0")}
                           </span>
                           <div>
                             {editableText(`${section.id}.trust.${i}.value`, item.value, "p", "text-xl font-bold text-slate-950")}
@@ -1367,7 +1388,7 @@ export default function SiteRenderer({
                         {items.map((item: any, i: number) => (
                           <div key={i} className="bg-white p-7 rounded-xl shadow-sm hover:shadow-md transition border border-slate-100 text-center">
                             <span data-wv-qa-icon="features" className="mx-auto mb-4 inline-flex text-[2.25rem]" style={{ color: colors.accent }}>
-                              {copyIcon(item.title || item.label || "", item.description || "", 36, "shrink-0", usedFeatureIcons)}
+                              {editableSiteIcon(`${page.pageId}.${section.id}.feature.${i}`, copyIconId(item.title || item.label || "", item.description || "", usedFeatureIcons), 36, "shrink-0")}
                             </span>
                             {editableText(`${section.id}.item.${i}.title`, item.title, "h3", "text-xl font-semibold mb-2")}
                             {editableText(`${section.id}.item.${i}.description`, item.description, "p", "opacity-70", undefined, true)}
@@ -1498,7 +1519,7 @@ export default function SiteRenderer({
                           <div className="mt-5">
                             <p className="font-semibold text-slate-950">{isIndonesian ? "Yang termasuk" : "What's included"}</p>
                             <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                              {included.map((item: string, i: number) => <li key={item} className="flex gap-2"><CheckCircle2 size={16} className="mt-0.5 shrink-0" style={{ color: colors.accent }} />{editableText(`${section.id}.included.${i}`, item, "span")}</li>)}
+                              {included.map((item: string, i: number) => <li key={item} className="flex gap-2"><span className="mt-0.5 shrink-0" style={{ color: colors.accent }}>{editableSiteIcon(`${page.pageId}.${section.id}.included.${i}`, "check", 16)}</span>{editableText(`${section.id}.included.${i}`, item, "span")}</li>)}
                             </ul>
                           </div>
                         )}
@@ -1533,7 +1554,7 @@ export default function SiteRenderer({
                         {reviews.map((review: any, i: number) => (
                           <div key={i} className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
                             <div className="mb-4 flex justify-center gap-1" style={{ color: colors.accent }}>
-                              {Array.from({ length: Math.round(review.rating || 5) }).map((_, idx) => <Star key={idx} size={16} fill="currentColor" />)}
+                              {Array.from({ length: Math.round(review.rating || 5) }).map((_, idx) => <span key={idx}>{editableSiteIcon(`${page.pageId}.${section.id}.review.${i}.star.${idx}`, "star", 16)}</span>)}
                             </div>
                             <div className="text-slate-700">
                               <span aria-hidden="true" className="wv-heading block text-left text-5xl font-bold leading-[0.72]" style={{ color: colors.accent }}>"</span>
@@ -1561,7 +1582,7 @@ export default function SiteRenderer({
                     <div data-wv-hours-location-grid="true" className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
                         <div data-wv-hours-location-heading="true" className="mb-5 flex items-center gap-3 text-2xl">
-                          <Clock data-wv-qa-icon="hoursLocation" className="h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }} />
+                          <span data-wv-qa-icon="hoursLocation" className="inline-flex h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }}>{editableSiteIcon(`${page.pageId}.${section.id}.hoursIcon`, "calendar", 20)}</span>
                           {editableText(`${section.id}.hoursTitle`, hoursTitle, "h2", "text-2xl font-bold text-slate-950", { ["--wv-title-chars" as any]: String(hoursTitle).length } as CSSProperties)}
                         </div>
                         {todayHours && (
@@ -1584,14 +1605,14 @@ export default function SiteRenderer({
                       </div>
                       <div className="rounded-xl border border-slate-200 p-8 bg-white">
                         <div data-wv-hours-location-heading="true" className="mb-5 flex items-center gap-3 text-2xl">
-                          <MapPin data-wv-qa-icon="hoursLocation" className="h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }} />
+                          <span data-wv-qa-icon="hoursLocation" className="inline-flex h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }}>{editableSiteIcon(`${page.pageId}.${section.id}.locationIcon`, "map", 20)}</span>
                           {editableText(`${section.id}.locationTitle`, labels.locationTitle, "h2", "text-2xl font-bold text-slate-950", { ["--wv-title-chars" as any]: labels.locationTitle.length } as CSSProperties)}
                         </div>
                         {editableText(`${section.id}.address`, section.content?.address || location.formattedAddress || businessProfile.address?.formatted || "Alamat belum tersedia.", "p", "text-slate-700", undefined, true)}
                         {(section.content?.phone || displayPhone) && !isPlaceholderPhone(section.content?.phone || displayPhone) && (
                           <div className="mt-3">
                             <a href={phoneHref(section.content?.phone || primaryPhone || displayPhone)} className="inline-flex w-fit items-center gap-2 font-semibold text-slate-950 hover:underline">
-                              <Phone size={16} /> {section.content?.phone || displayPhone}
+                              {editableSiteIcon(`${page.pageId}.${section.id}.phoneIcon`, "phone", 16)} {section.content?.phone || displayPhone}
                             </a>
                           </div>
                         )}
@@ -1737,11 +1758,12 @@ export default function SiteRenderer({
                             data-wv-feedback-rating={rating}
                             onClick={() => chooseFeedbackRating(rating)}
                             className={`inline-flex h-12 w-12 items-center justify-center rounded-full border text-slate-500 transition hover:-translate-y-0.5 hover:bg-slate-50 ${feedbackRating >= rating ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}
+                            style={feedbackRating >= rating ? { color: colors.accent } : undefined}
                             aria-label={`${rating} star${rating === 1 ? "" : "s"}`}
                             aria-checked={feedbackRating === rating}
                             role="radio"
                           >
-                            <Star size={24} fill={feedbackRating >= rating ? colors.accent : "none"} color={feedbackRating >= rating ? colors.accent : "currentColor"} />
+                            {editableSiteIcon(`${page.pageId}.${section.id}.feedbackRating.${rating}`, "star", 24)}
                           </button>
                         ))}
                       </div>
@@ -1810,13 +1832,13 @@ export default function SiteRenderer({
                           {contactPhone && (
                             <p>
                               <strong>{labels.phone}:</strong><br />
-                              <a href={phoneHref(contactPhone)} className="inline-flex items-center gap-2 hover:underline"><Phone size={15} />{contactPhone}</a>
+                              <a href={phoneHref(contactPhone)} className="inline-flex items-center gap-2 hover:underline">{editableSiteIcon(`${page.pageId}.${section.id}.contactPhoneIcon`, "phone", 15)}{contactPhone}</a>
                             </p>
                           )}
                           {contactEmail && (
                             <p>
                               <strong>Email:</strong><br />
-                              <a href={mailHref(contactEmail)} className="inline-flex items-center gap-2 hover:underline"><Mail size={15} />{contactEmail}</a>
+                              <a href={mailHref(contactEmail)} className="inline-flex items-center gap-2 hover:underline">{editableSiteIcon(`${page.pageId}.${section.id}.contactEmailIcon`, "mail", 15)}{contactEmail}</a>
                             </p>
                           )}
                           <div>
@@ -1895,7 +1917,7 @@ export default function SiteRenderer({
             <div className="mt-5 flex gap-2">
               {footerSocials.map((social: any) => (
                 <a key={social.platform} href={social.href || "#"} className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20" aria-label={social.platform}>
-                  {socialIcon(social.platform)}
+                  {editableSiteIcon(`footer.social.${social.platform}`, inferSocialIconId(social.platform), 18)}
                 </a>
               ))}
             </div>
@@ -1903,9 +1925,9 @@ export default function SiteRenderer({
           <div>
             <p className="wv-heading mb-4 text-[1.05rem] font-semibold leading-tight">{labels.pages}</p>
             <div className="space-y-2 opacity-85">
-              {footerPageMenu.map((menu: any) => (
+              {footerPageMenu.map((menu: any, i: number) => (
                 <button key={menu.href} type="button" data-wv-tab={menu.href.replace("#", "")} onClick={() => changeTab(menu.href.replace("#", ""))} className="flex items-center gap-2 hover:opacity-100">
-                  {menuIcon(menu.label, menu.href)}
+                  {editableSiteIcon(`footer.nav.${i}.${menu.href || menu.label}`, inferMenuIconId(`${menu.label} ${menu.href}`), 16)}
                   {menu.label}
                 </button>
               ))}
@@ -1937,7 +1959,7 @@ export default function SiteRenderer({
             <div className="space-y-3 opacity-85">
               {(displayPhone || globalConfig.header.ctaButton?.href) && (
                 <p className="flex gap-2">
-                  <Phone size={16} className="mt-0.5 shrink-0" />
+                  <span className="mt-0.5 shrink-0">{editableSiteIcon("footer.phone", "phone", 16)}</span>
                   {phoneHref(primaryPhone || displayPhone || globalConfig.header.ctaButton.href) ? (
                     <a href={phoneHref(primaryPhone || displayPhone || globalConfig.header.ctaButton.href)} className="hover:underline">{displayPhone || globalConfig.header.ctaButton.href}</a>
                   ) : (
@@ -1947,15 +1969,15 @@ export default function SiteRenderer({
               )}
               {displayEmail && (
                 <p className="flex gap-2">
-                  <Mail size={16} className="mt-0.5 shrink-0" />
+                  <span className="mt-0.5 shrink-0">{editableSiteIcon("footer.email", "mail", 16)}</span>
                   <a href={mailHref(displayEmail)} className="hover:underline">{displayEmail}</a>
                 </p>
               )}
               {(location.formattedAddress || businessProfile.address?.formatted) && (
-                <p className="flex gap-2"><MapPin size={16} className="mt-0.5 shrink-0" /> <span>{location.formattedAddress || businessProfile.address.formatted}</span></p>
+                <p className="flex gap-2"><span className="mt-0.5 shrink-0">{editableSiteIcon("footer.address", "map", 16)}</span> <span>{location.formattedAddress || businessProfile.address.formatted}</span></p>
               )}
               {footerHours.length > 0 && (
-                <div className="flex gap-2"><Clock size={16} className="mt-0.5 shrink-0" /> <div>{footerHours.map((item: string) => <p key={item}>{item}</p>)}</div></div>
+                <div className="flex gap-2"><span className="mt-0.5 shrink-0">{editableSiteIcon("footer.hours", "calendar", 16)}</span> <div>{footerHours.map((item: string) => <p key={item}>{item}</p>)}</div></div>
               )}
             </div>
           </div>
@@ -1997,7 +2019,7 @@ export default function SiteRenderer({
           className="hide-in-export fixed bottom-24 left-5 z-[230] w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl md:bottom-24"
         >
           <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold text-slate-950">Button icon</p>
+            <p className="text-sm font-semibold text-slate-950">Site icon</p>
             <button type="button" onClick={() => setActiveIconPickerKey("")} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close icon picker">
               <X size={16} />
             </button>
@@ -2008,7 +2030,7 @@ export default function SiteRenderer({
               value={iconPickerQuery}
               onChange={(event) => setIconPickerQuery(event.target.value)}
               className="min-w-0 flex-1 bg-transparent outline-none"
-              placeholder="Search CTA icons..."
+              placeholder="Search site icons..."
               autoFocus
             />
           </label>
@@ -2016,7 +2038,7 @@ export default function SiteRenderer({
             <button
               type="button"
               onClick={() => {
-                saveButtonIconOverride(activeIconPickerKey, "");
+                saveSiteIconOverride(activeIconPickerKey, "");
                 setActiveIconPickerKey("");
               }}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
@@ -2024,16 +2046,16 @@ export default function SiteRenderer({
               {renderCtaIcon("check", 16)}
               Auto
             </button>
-            {visibleCtaIconOptions.map((option) => (
+            {visibleSiteIconOptions.map((option) => (
               <button
                 key={option.id}
                 type="button"
                 onClick={() => {
-                  saveButtonIconOverride(activeIconPickerKey, option.id);
+                  saveSiteIconOverride(activeIconPickerKey, option.id);
                   setActiveIconPickerKey("");
                 }}
                 className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold hover:bg-indigo-50 ${
-                  buttonIconOverrides[activeIconPickerKey] === option.id ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 text-slate-700"
+                  siteIconOverrides[activeIconPickerKey] === option.id ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 text-slate-700"
                 }`}
               >
                 {renderCtaIcon(option.id, 16)}
@@ -2047,7 +2069,7 @@ export default function SiteRenderer({
       <div data-export-remove="true" data-wv-tool-ui="inline-edit-panel" className="hide-in-export fixed bottom-20 left-5 z-[210] flex max-w-[calc(100vw-2.5rem)] flex-col items-start gap-2 md:bottom-5">
         {editMode && (
           <div className="max-w-xs rounded-lg border border-indigo-100 bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow-xl backdrop-blur">
-            Click text or button labels to edit them. Click button icons to choose a CTA icon. Click images to replace or restore them. Changes are saved in this browser and included in the downloaded site.
+            Click text or button labels to edit them. Click site icons to choose a different icon. Click images to replace or restore them. Changes are saved in this browser and included in the downloaded site.
           </div>
         )}
         <input

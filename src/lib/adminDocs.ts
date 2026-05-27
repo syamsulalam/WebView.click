@@ -19,7 +19,7 @@ export const adminDocs: AdminDoc[] = [
     file: "docs/CODEBASE_REFERENCE.md",
     category: "System",
     summary: "Main map for pages, APIs, data flow, debugging notes, and current behavior.",
-    adminPages: ["/admin", "/admin/leads", "/admin/jobs", "/admin/sites", "/admin/schema", "/admin/settings"],
+    adminPages: ["/admin", "/admin/leads", "/admin/jobs", "/admin/sites", "/admin/orders", "/admin/schema", "/admin/settings"],
     loadContent: md(() => import("../../docs/CODEBASE_REFERENCE.md?raw")),
   },
   {
@@ -158,12 +158,21 @@ export const adminDocs: AdminDoc[] = [
     loadContent: md(() => import("../../docs/DOMAIN_AVAILABILITY_RESEARCH.md?raw")),
   },
   {
+    id: "domain-registration-automation-plan",
+    title: "Domain Registration Automation Plan",
+    file: "docs/DOMAIN_REGISTRATION_AUTOMATION_PLAN.md",
+    category: "Checkout",
+    summary: "Provider comparison and phased plan for registrar API quotes, domain purchase, owned-domain checks, and Cloudflare Pages connection.",
+    adminPages: ["/admin/orders", "/admin/settings"],
+    loadContent: md(() => import("../../docs/DOMAIN_REGISTRATION_AUTOMATION_PLAN.md?raw")),
+  },
+  {
     id: "payment-positioning-strategy",
     title: "Payment Positioning Strategy",
     file: "docs/PAYMENT_POSITIONING_STRATEGY.md",
     category: "Payments",
     summary: "Offer framing for the paid setup package and conversion-oriented payment copy.",
-    adminPages: ["/admin", "/admin/leads", "/admin/settings"],
+    adminPages: ["/admin", "/admin/leads", "/admin/orders", "/admin/settings"],
     loadContent: md(() => import("../../docs/PAYMENT_POSITIONING_STRATEGY.md?raw")),
   },
   {
@@ -172,7 +181,7 @@ export const adminDocs: AdminDoc[] = [
     file: "docs/PAYMENT_PROCESSOR_RESEARCH.md",
     category: "Payments",
     summary: "Payment rail comparison and current setup decisions.",
-    adminPages: ["/admin", "/admin/leads", "/admin/settings"],
+    adminPages: ["/admin", "/admin/leads", "/admin/orders", "/admin/settings"],
     loadContent: md(() => import("../../docs/PAYMENT_PROCESSOR_RESEARCH.md?raw")),
   },
   {
@@ -190,7 +199,7 @@ export const adminDocs: AdminDoc[] = [
     file: "docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md",
     category: "Payments",
     summary: "PayPal JS SDK + Orders v2 implementation, add-ons, and sandbox QA.",
-    adminPages: ["/admin/leads", "/admin/settings"],
+    adminPages: ["/admin/leads", "/admin/orders", "/admin/settings"],
     loadContent: md(() => import("../../docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md?raw")),
   },
   {

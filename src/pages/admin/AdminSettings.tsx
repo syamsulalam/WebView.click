@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, ChevronDown, Copy, Loader2, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, Copy, Loader2, RefreshCw, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { aiModelPrices, defaultInputTokens, defaultOutputTokens, estimateCostUsd, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { clearAiReadinessCache } from "../../lib/aiReadiness";
@@ -49,10 +49,11 @@ const initialSettings: Record<string, string> = {
   GOOGLE_PLACES_API_KEY: "",
   PAYMENT_PROCESSOR: "mock",
   PAYMENT_USD_AMOUNT: "197",
+  PAYMENT_DOMAIN_FEE_USD: "17",
   PAYMENT_ADDON_PAGE_USD: "10",
   PAYMENT_USD_TO_IDR_RATE: "16000",
   PAYMENT_PACKAGE_NAME: "WebView.click Done-for-you Website Setup",
-  PAYMENT_PACKAGE_DESCRIPTION: "$197/year: domain allowance, annual hosting, SSL, DNS/upload, generated site launch, and free setup.",
+  PAYMENT_PACKAGE_DESCRIPTION: "$180/year managed hosting, plus $17/year domain fee only when WebView.click registers the domain; SSL, DNS/upload, generated site launch, and free setup included.",
   XENDIT_SECRET_KEY: "",
   MIDTRANS_SERVER_KEY: "",
   MIDTRANS_CLIENT_KEY: "",
@@ -73,6 +74,7 @@ const initialSettings: Record<string, string> = {
   PAYPAL_LIVE_CLIENT_SECRET: "",
   PAYPAL_LIVE_WEBHOOK_ID: "",
   PAYPAL_WEBHOOK_ID: "",
+  PAYPAL_CONTROLLED_LIVE_TEST_REFERENCE: "",
   PAYPAL_IS_PRODUCTION: "false",
   WISE_PAYMENT_URL: "",
   PAYONEER_PAYMENT_URL: "",
@@ -86,6 +88,17 @@ const initialSettings: Record<string, string> = {
   SCORING_MIN_SCORE_DEFAULT: "0",
   SCORING_WEIGHTS_JSON: serializeProspectScoreWeights(defaultProspectScoreWeights),
   AI_SERVICE_COPY_PROVIDER_MODES_JSON: "",
+  DOMAIN_REGISTRAR_PROVIDER: "cloudflare_registrar",
+  DOMAIN_REGISTRATION_MAX_USD: "17",
+  CLOUDFLARE_ACCOUNT_ID: "",
+  CLOUDFLARE_API_TOKEN: "",
+  NAME_COM_USERNAME: "",
+  NAME_COM_API_TOKEN: "",
+  NAME_COM_ENV: "production",
+  DYNADOT_API_KEY: "",
+  DYNADOT_ENV: "production",
+  SPACESHIP_API_KEY: "",
+  SPACESHIP_API_SECRET: "",
 };
 
 const providerOptions: Array<{
@@ -156,7 +169,7 @@ const paymentProcessorOptions = [
   { value: "xendit", label: "Xendit hosted invoice", helper: "Recommended first live option for an Indonesia merchant accepting cards and local methods." },
   { value: "midtrans", label: "Midtrans Snap", helper: "Indonesia-local gateway with broad local methods and card checkout." },
   { value: "doku", label: "DOKU Checkout", helper: "Indonesia-local hosted checkout with Client ID + Secret Key HMAC signing." },
-  { value: "paypal", label: "PayPal Business Checkout", helper: "Inline PayPal Checkout when active API keys are filled; fallback link remains available." },
+  { value: "paypal", label: "PayPal Business Checkout", helper: "Inline PayPal one-time checkout and yearly subscriptions when active API keys are filled; fallback link remains available." },
   { value: "wise", label: "Wise payment/request link", helper: "Manual invoice/bank-transfer style fallback for larger B2B clients." },
   { value: "payoneer", label: "Payoneer payment request", helper: "Manual payment request fallback for clients who prefer Payoneer." },
   { value: "lemon_squeezy_legacy", label: "Lemon Squeezy legacy", helper: "Legacy only. Lemon Squeezy prohibits web development/services for this offer." },
@@ -166,7 +179,8 @@ const offerConversionGroup = {
   title: "Offer and conversion",
   description: "Shown as USD to US clients, then converted to IDR for Indonesia-local gateways.",
   fields: [
-    { key: "PAYMENT_USD_AMOUNT", label: "USD amount", type: "number", placeholder: "197", tooltip: "Customer-facing USD price for the done-for-you setup offer. Local Indonesia gateways receive an IDR conversion." },
+    { key: "PAYMENT_USD_AMOUNT", label: "New-domain annual total USD", type: "number", placeholder: "197", tooltip: "Customer-facing yearly total when WebView.click registers the domain. The domain fee is separated below so owned-domain buyers pay hosting only." },
+    { key: "PAYMENT_DOMAIN_FEE_USD", label: "Domain fee USD", type: "number", placeholder: "17", tooltip: "Yearly domain fee charged only when WebView.click registers the domain. Term discounts apply to hosting only, never this domain fee." },
     { key: "PAYMENT_ADDON_PAGE_USD", label: "Page/edit add-on USD", type: "number", placeholder: "10", tooltip: "Flat fee per additional generated page or edit action before bulk discount. Current checkout applies 10% off for 5-9 actions and 20% off for 10+ actions." },
     { key: "PAYMENT_USD_TO_IDR_RATE", label: "USD to IDR rate", type: "number", placeholder: "16000", tooltip: "Manual conversion rate used before sending IDR amount to Xendit, Midtrans, or DOKU. Update this if exchange rates move." },
     { key: "PAYMENT_PACKAGE_NAME", label: "Package name", placeholder: "WebView.click Done-for-you Website Setup", tooltip: "Name sent to hosted checkout/invoice providers." },
@@ -271,6 +285,72 @@ const paymentFieldGroups: Array<{
   },
 ];
 
+const domainRegistrarOptions = [
+  { value: "cloudflare_registrar", label: "Cloudflare Registrar", requiredKeys: ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"] },
+  { value: "name_com", label: "Name.com", requiredKeys: ["NAME_COM_USERNAME", "NAME_COM_API_TOKEN"] },
+  { value: "dynadot", label: "Dynadot", requiredKeys: ["DYNADOT_API_KEY"] },
+  { value: "spaceship", label: "Spaceship", requiredKeys: ["SPACESHIP_API_KEY", "SPACESHIP_API_SECRET"] },
+];
+
+const fallbackDomainRegistrarOption = {
+  value: "cloudflare_registrar",
+  label: "Cloudflare Registrar",
+  requiredKeys: ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
+};
+
+const domainRegistrarFieldGroups: Array<{
+  title: string;
+  description: string;
+  providers?: string[];
+  fields: Array<{ key: string; label: string; type?: "text" | "password" | "number" | "select"; placeholder?: string; tooltip: string; options?: Array<{ value: string; label: string }> }>;
+}> = [
+  {
+    title: "Quote behavior",
+    description: "Controls the non-billable registrar quote captured before payment. Empty provider credentials do not block checkout.",
+    fields: [
+      { key: "DOMAIN_REGISTRAR_PROVIDER", label: "Default registrar", type: "select", tooltip: "Provider used by /api/domains/quote when the buyer checks a new domain. Only score 7.0+ registrars are available.", options: domainRegistrarOptions.map((option) => ({ value: option.value, label: option.label })) },
+      { key: "DOMAIN_REGISTRATION_MAX_USD", label: "Max internal domain cost", type: "number", placeholder: "17", tooltip: "Internal guardrail for registrar quote. Buyers still see the included $17/year domain fee; this protects margin and flags expensive or premium domains." },
+    ],
+  },
+  {
+    title: "Cloudflare Registrar",
+    description: "Preferred registrar when your Cloudflare account has Registrar API access.",
+    providers: ["cloudflare_registrar"],
+    fields: [
+      { key: "CLOUDFLARE_ACCOUNT_ID", label: "Account ID", placeholder: "Cloudflare account ID", tooltip: "Cloudflare account ID used by the server-side Registrar API quote adapter." },
+      { key: "CLOUDFLARE_API_TOKEN", label: "API token", type: "password", placeholder: "Cloudflare API token", tooltip: "Server-side token with scoped Registrar permissions. Leave empty until the account is ready; checkout still works with manual domain confirmation." },
+    ],
+  },
+  {
+    title: "Name.com",
+    description: "JSON API fallback with sandbox/production separation.",
+    providers: ["name_com"],
+    fields: [
+      { key: "NAME_COM_ENV", label: "Mode", type: "select", tooltip: "Use sandbox for test quotes, production for live registrar quote capture.", options: [{ value: "production", label: "Production" }, { value: "sandbox", label: "Sandbox" }] },
+      { key: "NAME_COM_USERNAME", label: "Username", placeholder: "Name.com username", tooltip: "Name.com API username for server-side quote checks." },
+      { key: "NAME_COM_API_TOKEN", label: "API token", type: "password", placeholder: "Name.com API token", tooltip: "Name.com API token. Leave empty until ready; checkout still saves orders without registrar quotes." },
+    ],
+  },
+  {
+    title: "Dynadot",
+    description: "Fallback registrar adapter using the Dynadot search API with price output.",
+    providers: ["dynadot"],
+    fields: [
+      { key: "DYNADOT_ENV", label: "Mode", type: "select", tooltip: "Use sandbox while testing; production checks the live Dynadot account.", options: [{ value: "production", label: "Production" }, { value: "sandbox", label: "Sandbox" }] },
+      { key: "DYNADOT_API_KEY", label: "API key", type: "password", placeholder: "Dynadot API key", tooltip: "Dynadot API key for server-side quote checks. Empty credentials keep checkout in manual-confirmation mode." },
+    ],
+  },
+  {
+    title: "Spaceship",
+    description: "Lower-cost registrar fallback to test after primary providers.",
+    providers: ["spaceship"],
+    fields: [
+      { key: "SPACESHIP_API_KEY", label: "API key", type: "password", placeholder: "Spaceship API key", tooltip: "Spaceship API key for server-side quote checks." },
+      { key: "SPACESHIP_API_SECRET", label: "API secret", type: "password", placeholder: "Spaceship API secret", tooltip: "Spaceship API secret. Keep it server-side only; leave empty until ready." },
+    ],
+  },
+];
+
 function cooldownEventLabel(eventType = "") {
   if (eventType === "set") return "Cooldown set";
   if (eventType === "clear") return "Cooldown cleared";
@@ -282,6 +362,42 @@ function cooldownEventClass(eventType = "") {
   if (eventType === "clear") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (eventType === "blocked") return "border-red-200 bg-red-50 text-red-800";
   return "border-amber-200 bg-amber-50 text-amber-900";
+}
+
+type PaypalPlanCacheRow = {
+  key: string;
+  mode: string;
+  domainMode: string;
+  termYears: number;
+  annualUsd: number;
+  hostingAfterDiscountUsd: number;
+  domainAnnualUsd: number;
+  setupFeeUsd: number;
+  planId: string;
+  productId: string;
+  planStatus: string;
+  updatedAt: string;
+};
+
+type PaymentSmokeEvent = {
+  processor: string;
+  status: string;
+  amountUsd: number;
+  transactionId: string;
+  paymentReference: string;
+  payerEmail: string;
+  proofNotes: string;
+  source: string;
+  paypalOrderId: string;
+  paypalSubscriptionId: string;
+  referenceCandidates: string[];
+  verifiedAt: string;
+  updatedAt: string;
+  isSubscription: boolean;
+};
+
+function moneyLabel(value: number) {
+  return `$${Number(value || 0).toFixed(2)}`;
 }
 
 export default function AdminSettings() {
@@ -298,6 +414,11 @@ export default function AdminSettings() {
   const [outputTokens, setOutputTokens] = useState(defaultOutputTokens);
   const [cooldownEvents, setCooldownEvents] = useState<ProviderCooldownEvent[]>([]);
   const [cooldownEventsLoading, setCooldownEventsLoading] = useState(false);
+  const [paypalPlanCache, setPaypalPlanCache] = useState<PaypalPlanCacheRow[]>([]);
+  const [paypalPlanCacheLoading, setPaypalPlanCacheLoading] = useState(false);
+  const [copiedPaypalPlanId, setCopiedPaypalPlanId] = useState("");
+  const [paymentSmokeEvents, setPaymentSmokeEvents] = useState<PaymentSmokeEvent[]>([]);
+  const [paymentSmokeLoading, setPaymentSmokeLoading] = useState(false);
   const [openSettingSections, setOpenSettingSections] = useLocalStorageState<Record<string, boolean>>(
     "webview.adminSettings.openSections",
     {},
@@ -370,8 +491,43 @@ export default function AdminSettings() {
     }
   };
 
+  const fetchPaypalPlanCache = () => {
+    setPaypalPlanCacheLoading(true);
+    fetch("/api/settings/paypal-plan-cache")
+      .then((response) => response.ok ? response.json() : { plans: [] })
+      .then((data) => setPaypalPlanCache(Array.isArray(data?.plans) ? data.plans : []))
+      .catch(() => setPaypalPlanCache([]))
+      .finally(() => setPaypalPlanCacheLoading(false));
+  };
+
+  const fetchPaymentSmoke = () => {
+    setPaymentSmokeLoading(true);
+    fetch("/api/settings/payment-smoke")
+      .then((response) => response.ok ? response.json() : { events: [] })
+      .then((data) => setPaymentSmokeEvents(Array.isArray(data?.events) ? data.events : []))
+      .catch(() => setPaymentSmokeEvents([]))
+      .finally(() => setPaymentSmokeLoading(false));
+  };
+
+  const copyPaypalPlanId = async (planId: string) => {
+    if (!planId) return;
+    try {
+      await navigator.clipboard.writeText(planId);
+      setCopiedPaypalPlanId(planId);
+      setMessage("PayPal plan ID copied.");
+      window.setTimeout(() => {
+        setCopiedPaypalPlanId((current) => current === planId ? "" : current);
+        setMessage((current) => current === "PayPal plan ID copied." ? "" : current);
+      }, 1600);
+    } catch {
+      setMessage("Could not copy PayPal plan ID. Select it manually.");
+    }
+  };
+
   useEffect(() => {
     fetchCooldownHistory();
+    fetchPaypalPlanCache();
+    fetchPaymentSmoke();
     window.addEventListener("focus", fetchCooldownHistory);
     window.addEventListener(providerCooldownEvent, fetchCooldownHistory);
     return () => {
@@ -521,6 +677,11 @@ export default function AdminSettings() {
     handleChange(AI_SERVICE_COPY_PROVIDER_MODES_KEY, JSON.stringify(nextModes, null, 2));
   };
   const activePaymentProcessor = settings.PAYMENT_PROCESSOR || "mock";
+  const activeDomainRegistrar = settings.DOMAIN_REGISTRAR_PROVIDER || "cloudflare_registrar";
+  const activeDomainRegistrarOption = domainRegistrarOptions.find((option) => option.value === activeDomainRegistrar) || fallbackDomainRegistrarOption;
+  const visibleDomainRegistrarFieldGroups = domainRegistrarFieldGroups.filter((group) => !group.providers || group.providers.includes(activeDomainRegistrar));
+  const missingDomainRegistrarKeys = activeDomainRegistrarOption.requiredKeys.filter((key) => !String(settings[key] || "").trim());
+  const domainRegistrarConfigured = missingDomainRegistrarKeys.length === 0;
   const visiblePaymentFieldGroups = paymentFieldGroups.filter((group) => !group.processors || group.processors.includes(activePaymentProcessor));
   const paypalSelected = activePaymentProcessor === "paypal";
   const paypalLink = String(settings.PAYPAL_BUSINESS_URL || "").trim();
@@ -545,6 +706,44 @@ export default function AdminSettings() {
   const paypalGuardrailMessage = paypalLooksPersonal
     ? "Personal/PayPal.me fallback detected. Prefer Business Checkout, keep proof of delivery, and avoid Friends and Family."
     : "Keep delivery records and payment references. New PayPal sellers can still see holds or reviews.";
+  const paypalLiveClientIdReady = Boolean(String(settings.PAYPAL_LIVE_CLIENT_ID || settings.PAYPAL_CLIENT_ID || "").trim());
+  const paypalLiveClientSecretReady = Boolean(String(settings.PAYPAL_LIVE_CLIENT_SECRET || settings.PAYPAL_CLIENT_SECRET || "").trim());
+  const paypalLiveWebhookReady = Boolean(String(settings.PAYPAL_LIVE_WEBHOOK_ID || settings.PAYPAL_WEBHOOK_ID || "").trim());
+  const paypalLiveClientIdDetail = settings.PAYPAL_LIVE_CLIENT_ID ? "Present" : settings.PAYPAL_CLIENT_ID ? "Present via legacy fallback" : "Missing";
+  const paypalLiveClientSecretDetail = settings.PAYPAL_LIVE_CLIENT_SECRET ? "Present" : settings.PAYPAL_CLIENT_SECRET ? "Present via legacy fallback" : "Missing";
+  const paypalLiveWebhookDetail = settings.PAYPAL_LIVE_WEBHOOK_ID ? "Present" : settings.PAYPAL_WEBHOOK_ID ? "Present via legacy fallback" : "Missing";
+  const paypalPlanCacheReady = paypalPlanCache.some((plan) => plan.mode === "live");
+  const lastPaypalSuccess = paymentSmokeEvents[0];
+  const lastPaypalSubscriptionSuccess = paymentSmokeEvents.find((event) => event.isSubscription);
+  const controlledLiveTestReference = String(settings.PAYPAL_CONTROLLED_LIVE_TEST_REFERENCE || "").trim();
+  const normalizedControlledLiveTestReference = controlledLiveTestReference.toLowerCase();
+  const controlledLiveTestMatch = normalizedControlledLiveTestReference
+    ? paymentSmokeEvents.find((event) => {
+      const candidates = [
+        event.transactionId,
+        event.paymentReference,
+        event.paypalOrderId,
+        event.paypalSubscriptionId,
+        ...(Array.isArray(event.referenceCandidates) ? event.referenceCandidates : []),
+      ];
+      return candidates.some((candidate) => String(candidate || "").trim().toLowerCase() === normalizedControlledLiveTestReference);
+    })
+    : null;
+  const controlledLiveTestDetail = !controlledLiveTestReference
+    ? "Paste the order, capture, subscription, or WebView.click reference used for the controlled live test"
+    : controlledLiveTestMatch
+      ? `Matched paid row · ${controlledLiveTestMatch.updatedAt ? new Date(controlledLiveTestMatch.updatedAt).toLocaleString() : "no date"}`
+      : "Recorded, but not found in recent paid PayPal rows";
+  const paymentSmokeItems = [
+    { label: "Live client ID", ok: paypalLiveClientIdReady, detail: paypalLiveClientIdDetail },
+    { label: "Live client secret", ok: paypalLiveClientSecretReady, detail: paypalLiveClientSecretDetail },
+    { label: "Live webhook ID", ok: paypalLiveWebhookReady, detail: paypalLiveWebhookDetail },
+    { label: "Live plan cache", ok: paypalPlanCacheReady, detail: paypalPlanCacheReady ? `${paypalPlanCache.filter((plan) => plan.mode === "live").length} live plan${paypalPlanCache.filter((plan) => plan.mode === "live").length === 1 ? "" : "s"}` : "No live plans yet" },
+    { label: "Successful PayPal payment", ok: Boolean(lastPaypalSuccess), detail: lastPaypalSuccess ? `${moneyLabel(lastPaypalSuccess.amountUsd)} · ${lastPaypalSuccess.updatedAt ? new Date(lastPaypalSuccess.updatedAt).toLocaleString() : "no date"}` : "No paid PayPal row yet" },
+    { label: "Successful subscription event", ok: Boolean(lastPaypalSubscriptionSuccess), detail: lastPaypalSubscriptionSuccess ? `${lastPaypalSubscriptionSuccess.transactionId || "subscription"} · ${lastPaypalSubscriptionSuccess.updatedAt ? new Date(lastPaypalSubscriptionSuccess.updatedAt).toLocaleString() : "no date"}` : "No subscription success yet" },
+    { label: "Controlled live test reference", ok: Boolean(controlledLiveTestMatch), detail: controlledLiveTestDetail },
+  ];
+  const paymentSmokeReadyForTraffic = paymentSmokeItems.every((item) => item.ok);
 
   if (loading) {
     return <div className="p-8 flex items-center justify-center">Loading settings...</div>;
@@ -725,7 +924,7 @@ export default function AdminSettings() {
                 <HelpTooltip text="Pricing and package copy shown to buyers and sent to checkout providers. Keep this separate from gateway credentials so payment setup stays focused." />
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-gray-500">
-                ${settings.PAYMENT_USD_AMOUNT || "197"}/year base offer, ${settings.PAYMENT_ADDON_PAGE_USD || "10"} page/edit add-ons, IDR rate {settings.PAYMENT_USD_TO_IDR_RATE || "16000"}.
+                ${settings.PAYMENT_USD_AMOUNT || "197"}/year new-domain total, ${settings.PAYMENT_DOMAIN_FEE_USD || "17"}/year domain fee, ${settings.PAYMENT_ADDON_PAGE_USD || "10"} page/edit add-ons, IDR rate {settings.PAYMENT_USD_TO_IDR_RATE || "16000"}.
               </p>
             </div>
             <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-500 transition ${settingsSectionOpen("offerConversion") ? "rotate-180" : ""}`} />
@@ -931,10 +1130,244 @@ export default function AdminSettings() {
                 </div>
               </section>
             ))}
+            {paypalSelected && (
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                        Payment smoke test
+                        <HelpTooltip text="Small pre-live checklist. It does not prove the payment flow is perfect; it shows whether live PayPal keys, webhook ID, cached plans, and recent successful PayPal rows exist." widthClass="w-80" />
+                      </p>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${paymentSmokeReadyForTraffic ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                        {paymentSmokeReadyForTraffic ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
+                        {paymentSmokeReadyForTraffic ? "Ready for traffic" : "Not ready for traffic"}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-500">Use this before sending buyer traffic to the checkout page.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchPaypalPlanCache();
+                      fetchPaymentSmoke();
+                    }}
+                    disabled={paymentSmokeLoading || paypalPlanCacheLoading}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                  >
+                    <RefreshCw size={14} className={paymentSmokeLoading || paypalPlanCacheLoading ? "animate-spin" : ""} />
+                    Refresh
+                  </button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {paymentSmokeItems.map((item) => (
+                    <div key={item.label} className={`rounded-lg border p-3 ${item.ok ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+                      <div className="flex items-start gap-2">
+                        {item.ok ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-700" /> : <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-700" />}
+                        <div className="min-w-0">
+                          <p className={`text-xs font-semibold ${item.ok ? "text-emerald-950" : "text-amber-950"}`}>{item.label}</p>
+                          <p className={`mt-0.5 break-words text-xs ${item.ok ? "text-emerald-800" : "text-amber-800"}`}>{item.detail}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className={`mt-3 rounded-lg border p-3 ${controlledLiveTestMatch ? "border-emerald-200 bg-white" : "border-amber-200 bg-white"}`}>
+                  <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <label htmlFor="paypal-controlled-live-test-reference" className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-900">
+                      Controlled live payment reference
+                      <HelpTooltip text="Paste the exact PayPal order/capture/subscription ID or WebView.click payment reference from your own controlled live test. The checklist only goes green when it matches a recent paid PayPal ledger row." widthClass="w-80" />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleChange("PAYPAL_CONTROLLED_LIVE_TEST_REFERENCE", lastPaypalSuccess?.transactionId || lastPaypalSuccess?.paypalSubscriptionId || lastPaypalSuccess?.paypalOrderId || lastPaypalSuccess?.paymentReference || "")}
+                      disabled={!lastPaypalSuccess}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Use last paid row
+                    </button>
+                  </div>
+                  <input
+                    id="paypal-controlled-live-test-reference"
+                    type="text"
+                    value={settings.PAYPAL_CONTROLLED_LIVE_TEST_REFERENCE || ""}
+                    onChange={(event) => handleChange("PAYPAL_CONTROLLED_LIVE_TEST_REFERENCE", event.target.value)}
+                    placeholder="Example: WebView.click payment reference, PayPal capture ID, order ID, or subscription ID"
+                    className="w-full rounded-lg border border-slate-300 bg-white p-2.5 font-mono text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <p className={`mt-2 text-xs ${controlledLiveTestMatch ? "text-emerald-700" : "text-amber-800"}`}>{controlledLiveTestDetail}</p>
+                </div>
+                {lastPaypalSuccess && (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600">
+                    <p className="font-semibold text-slate-900">Last successful PayPal row</p>
+                    <p className="mt-1 break-all">
+                      {lastPaypalSuccess.transactionId || "No transaction ID"} · {lastPaypalSuccess.source || lastPaypalSuccess.proofNotes || "paypal"} · {lastPaypalSuccess.paymentReference || "no reference"}
+                    </p>
+                  </div>
+                )}
+                <p className="mt-3 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs leading-relaxed text-amber-900">
+                  This checklist is not a substitute for a controlled live or sandbox payment. It only confirms configuration and recent ledger evidence.
+                </p>
+              </section>
+            )}
+            {paypalSelected && (
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                      PayPal plan cache
+                      <HelpTooltip text="Read-only list of cached PayPal subscription plans. Checkout reuses a plan only when mode, term, domain mode, annual price, hosting price, domain fee, and setup fee are an exact match." widthClass="w-80" />
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">Cached plans prevent a new PayPal Product/Plan for every yearly-billing checkout.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchPaypalPlanCache}
+                    disabled={paypalPlanCacheLoading}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                  >
+                    <RefreshCw size={14} className={paypalPlanCacheLoading ? "animate-spin" : ""} />
+                    Refresh
+                  </button>
+                </div>
+                {paypalPlanCache.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-500">
+                    No cached PayPal subscription plans yet. The first yearly-billing checkout for a price/term combination will create and cache one.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                    <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Mode</th>
+                          <th className="px-3 py-2 font-semibold">Term</th>
+                          <th className="px-3 py-2 font-semibold">Domain</th>
+                          <th className="px-3 py-2 font-semibold">Annual</th>
+                          <th className="px-3 py-2 font-semibold">Setup</th>
+                          <th className="px-3 py-2 font-semibold">Plan</th>
+                          <th className="px-3 py-2 font-semibold">Updated</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {paypalPlanCache.map((plan) => (
+                          <tr key={plan.key} className="align-top">
+                            <td className="px-3 py-2 font-semibold capitalize text-slate-800">{plan.mode || "-"}</td>
+                            <td className="px-3 py-2 text-slate-700">{plan.termYears || "-"}y</td>
+                            <td className="px-3 py-2 text-slate-700">{plan.domainMode === "owned" ? "Owned" : "New"}</td>
+                            <td className="px-3 py-2 text-slate-700">
+                              <span className="block font-semibold">{moneyLabel(plan.annualUsd)}</span>
+                              <span className="block text-slate-500">hosting {moneyLabel(plan.hostingAfterDiscountUsd)}{plan.domainAnnualUsd ? ` + domain ${moneyLabel(plan.domainAnnualUsd)}` : ""}</span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">{moneyLabel(plan.setupFeeUsd)}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-start gap-1.5">
+                                <code className="block max-w-[180px] break-all rounded bg-slate-100 px-1.5 py-1 text-[11px] text-slate-800">{plan.planId || "-"}</code>
+                                {plan.planId && (
+                                  <HoverTooltip text="Copy PayPal plan ID for dashboard comparison.">
+                                    <button
+                                      type="button"
+                                      onClick={() => copyPaypalPlanId(plan.planId)}
+                                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
+                                      aria-label="Copy PayPal plan ID"
+                                    >
+                                      {copiedPaypalPlanId === plan.planId ? <CheckCircle2 size={13} /> : <Copy size={13} />}
+                                    </button>
+                                  </HoverTooltip>
+                                )}
+                              </div>
+                              <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">{plan.planStatus || "cached"}</span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-500">{plan.updatedAt ? new Date(plan.updatedAt).toLocaleString() : "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            )}
           </div>
           </div>
           )}
         </div>
+      </div>
+
+      <div id="settings-domain-registrar" className="mt-6 scroll-mt-24 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <button
+          type="button"
+          onClick={() => toggleSettingsSection("domainRegistrar")}
+          className="flex w-full items-start justify-between gap-4 text-left"
+        >
+          <div>
+            <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+              Domain Registrar
+              <HelpTooltip text="Optional automation for real registrar quote capture. If credentials are empty, public checkout still works and the order remains manual-confirmation friendly." widthClass="w-80" />
+            </h2>
+            <p className="text-xs leading-relaxed text-gray-500">
+              Active registrar: {activeDomainRegistrarOption.label}. Buyer-facing checkout still shows the included $17/year domain fee.
+            </p>
+            {!domainRegistrarConfigured && (
+              <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                <AlertCircle size={13} />
+                Registrar quote not configured
+              </p>
+            )}
+          </div>
+          <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-500 transition ${settingsSectionOpen("domainRegistrar") ? "rotate-180" : ""}`} />
+        </button>
+
+        {settingsSectionOpen("domainRegistrar") && (
+          <div className="mt-4 space-y-5">
+            {!domainRegistrarConfigured && (
+              <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-700" />
+                <div>
+                  <p className="font-semibold">Domain quotes are optional until credentials are filled</p>
+                  <p className="mt-1 text-xs leading-relaxed">
+                    Missing keys: {missingDomainRegistrarKeys.join(", ")}. Buyers can still check domains and pay; admin fulfillment will confirm final registrar price manually.
+                  </p>
+                </div>
+              </div>
+            )}
+            {visibleDomainRegistrarFieldGroups.map((group) => (
+              <section key={group.title} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3">
+                  <p className="text-sm font-semibold text-slate-900">{group.title}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{group.description}</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {group.fields.map((field) => (
+                    <label key={field.key} className="text-sm">
+                      <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
+                        {field.label}
+                        <HelpTooltip text={field.tooltip} widthClass="w-72" />
+                      </span>
+                      {field.type === "select" ? (
+                        <select
+                          value={settings[field.key] || field.options?.[0]?.value || ""}
+                          onChange={(e) => handleChange(field.key, e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          {(field.options || []).map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={field.type || "text"}
+                          value={settings[field.key] || ""}
+                          onChange={(e) => handleChange(field.key, e.target.value)}
+                          placeholder={field.placeholder}
+                          className="w-full rounded-lg border border-gray-300 bg-white p-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">

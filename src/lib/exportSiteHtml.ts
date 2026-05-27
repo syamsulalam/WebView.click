@@ -92,9 +92,9 @@ function cleanHtmlClone() {
     element.removeAttribute("data-wv-edit-key");
     element.classList.remove("cursor-text", "hover:ring-2", "hover:ring-indigo-200", "focus:ring-2", "focus:ring-indigo-500", "focus:ring-offset-2");
   });
-  clone.querySelectorAll("[data-wv-button-icon='true']").forEach((node) => {
+  clone.querySelectorAll("[data-wv-edit-icon='true']").forEach((node) => {
     const element = node as HTMLElement;
-    element.removeAttribute("data-wv-button-icon");
+    element.removeAttribute("data-wv-edit-icon");
     element.removeAttribute("role");
     element.removeAttribute("tabindex");
     element.removeAttribute("title");

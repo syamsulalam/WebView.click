@@ -41,7 +41,7 @@ export function normalizeDomainLabel(value: string) {
     .replace(/^www\./, "")
     .split("/")[0]
     .split(".")[0]
-    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/[^a-z0-9-]+/g, "")
     .replace(/^-+|-+$/g, "")
     .slice(0, 63);
 }

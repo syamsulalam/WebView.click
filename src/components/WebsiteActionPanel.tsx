@@ -17,7 +17,10 @@ type WebsiteActionPanelProps = {
 };
 
 type DomainMode = "new" | "owned";
-type SetupStep = "choice" | "domain" | "payment";
+type SetupMode = "base" | "addons";
+type SetupStep = "offer" | "plan" | "addons-count" | "addons-details" | "domain" | "payment";
+type BillingCadence = "upfront" | "annual_recurring";
+type EditPageRequest = { pageId: string; notes: string };
 
 declare global {
   interface Window {
@@ -39,13 +42,18 @@ function InfoTooltip({ text, light = false }: { text: string; light?: boolean })
 }
 
 function normalizeFullDomain(value: string) {
+  return sanitizeOwnedDomainInput(value)
+    .replace(/\.+$/g, "");
+}
+
+function sanitizeOwnedDomainInput(value: string) {
   return value
     .toLowerCase()
     .replace(/^https?:\/\//, "")
     .replace(/^www\./, "")
     .split("/")[0]
     .replace(/[^a-z0-9.-]+/g, "")
-    .replace(/^\.+|\.+$/g, "");
+    .replace(/^\.+/g, "");
 }
 
 function addOnDiscountRate(totalPageActions: number) {
@@ -54,23 +62,64 @@ function addOnDiscountRate(totalPageActions: number) {
   return 0;
 }
 
-function checkoutEstimate(newPages: number, editedPages: number) {
-  const base = 197;
+function termDiscountRate(years: number) {
+  if (years >= 10) return 0.5;
+  if (years >= 2) return Math.min(0.4, (years - 1) * 0.05);
+  return 0;
+}
+
+function checkoutEstimate(newPages: number, editedPages: number, termYears = 1, billingCadence: BillingCadence = "upfront", domainMode: DomainMode = "new") {
+  const hostingAnnual = 180;
+  const domainAnnual = domainMode === "new" ? 17 : 0;
+  const baseAnnual = hostingAnnual + domainAnnual;
   const unit = 10;
+  const years = Math.max(1, Math.min(10, Math.floor(termYears) || 1));
+  const planDiscountRate = termDiscountRate(years);
+  const hostingAfterDiscount = Math.round(hostingAnnual * (1 - planDiscountRate) * 100) / 100;
+  const annualAfterDiscount = hostingAfterDiscount + domainAnnual;
+  const packageDueToday = billingCadence === "annual_recurring" ? annualAfterDiscount : annualAfterDiscount * years;
+  const packageTermTotal = annualAfterDiscount * years;
+  const packageSavings = Math.round((hostingAnnual * years - hostingAfterDiscount * years) * 100) / 100;
   const totalPageActions = Math.max(0, newPages) + Math.max(0, editedPages);
   const discountRate = addOnDiscountRate(totalPageActions);
   const addOnGross = totalPageActions * unit;
   const addOnDiscount = Math.round(addOnGross * discountRate * 100) / 100;
   const addOnTotal = addOnGross - addOnDiscount;
   return {
-    base,
+    base: baseAnnual,
+    baseAnnual,
+    hostingAnnual,
+    hostingAfterDiscount,
+    domainAnnual,
+    termYears: years,
+    billingCadence,
+    termDiscountRate: planDiscountRate,
+    annualAfterDiscount,
+    packageDueToday,
+    packageTermTotal,
+    packageSavings,
     unit,
     totalPageActions,
     discountRate,
     addOnTotal,
     addOnDiscount,
-    total: base + addOnTotal,
+    total: packageDueToday + addOnTotal,
   };
+}
+
+function resizeStringList(values: string[], length: number) {
+  return Array.from({ length }, (_, index) => values[index] || "");
+}
+
+function resizeEditRequests(values: EditPageRequest[], length: number, fallbackPageId: string) {
+  return Array.from({ length }, (_, index) => ({
+    pageId: values[index]?.pageId || fallbackPageId,
+    notes: values[index]?.notes || "",
+  }));
+}
+
+function pageLabel(page: any, index: number) {
+  return String(page?.title || page?.label || page?.name || page?.pageTitle || page?.pageId || `Page ${index + 1}`);
 }
 
 function PageCountStepper({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
@@ -90,6 +139,10 @@ function PageCountStepper({ label, value, onChange }: { label: string; value: nu
   );
 }
 
+function formatUsd(value: number) {
+  return `$${Number(value || 0).toFixed(Number.isInteger(value) ? 0 : 2)}`;
+}
+
 export default function WebsiteActionPanel({
   siteData,
   businessId = "demo-site",
@@ -104,7 +157,10 @@ export default function WebsiteActionPanel({
 }: WebsiteActionPanelProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [setupStep, setSetupStep] = useState<SetupStep>("choice");
+  const [setupMode, setSetupMode] = useState<SetupMode>("base");
+  const [setupStep, setSetupStep] = useState<SetupStep>("offer");
+  const [termYears, setTermYears] = useState(1);
+  const [billingCadence, setBillingCadence] = useState<BillingCadence>("upfront");
   const [domainMode, setDomainMode] = useState<DomainMode>("new");
   const [domainLabel, setDomainLabel] = useState(normalizeDomainLabel(siteData?.meta?.businessName || businessId));
   const [ownedDomain, setOwnedDomain] = useState("");
@@ -118,10 +174,39 @@ export default function WebsiteActionPanel({
   const [paypalRenderedKey, setPaypalRenderedKey] = useState("");
   const [domainCheckLoading, setDomainCheckLoading] = useState(false);
   const [domainCheck, setDomainCheck] = useState<any>(null);
+  const [domainQuoteLoading, setDomainQuoteLoading] = useState(false);
+  const [domainQuote, setDomainQuote] = useState<any>(null);
+  const [domainQuoteStatus, setDomainQuoteStatus] = useState("");
+  const [ownedDomainConfirmed, setOwnedDomainConfirmed] = useState(false);
   const [newPages, setNewPages] = useState(0);
   const [editedPages, setEditedPages] = useState(0);
+  const [newPageRequests, setNewPageRequests] = useState<string[]>([]);
+  const [editPageRequests, setEditPageRequests] = useState<EditPageRequest[]>([]);
   const paypalButtonsRef = useRef<HTMLDivElement | null>(null);
 
+  const existingPageOptions = useMemo(() => {
+    const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
+    const options = pages.map((page: any, index: number) => ({
+      id: String(page?.pageId || `page-${index + 1}`),
+      label: pageLabel(page, index),
+    }));
+    return options.length ? options : [{ id: "home", label: "Home" }];
+  }, [siteData?.pages]);
+  const setupSteps: SetupStep[] = setupMode === "addons"
+    ? ["offer", "plan", "addons-count", "addons-details", "domain", "payment"]
+    : ["offer", "plan", "domain", "payment"];
+  const setupStepIndex = Math.max(0, setupSteps.indexOf(setupStep));
+  const backStep = setupStep === "payment"
+    ? "domain"
+    : setupStep === "domain"
+      ? (setupMode === "addons" ? "addons-details" : "plan")
+      : setupStep === "addons-count"
+        ? "plan"
+      : setupStep === "addons-details"
+        ? "addons-count"
+        : setupStep === "plan"
+          ? "offer"
+        : "offer";
   const selectedDomain = domainMode === "owned" ? normalizeFullDomain(ownedDomain) : buildDomain(domainLabel, selectedTld);
   const filteredExtensions = domainExtensions.filter((extension) => {
     const query = extensionQuery.toLowerCase().replace(/^\./, "");
@@ -139,23 +224,42 @@ export default function WebsiteActionPanel({
     domainCheck?.fallback?.status === "dns_exists"
   );
   const newDomainLooksAvailable = domainMode === "new" && domainCheck?.available === true;
+  const domainQuoteBlocksCheckout = domainMode === "new" && domainQuote?.supportedForMvp === false;
   const domainReady = ownedDomainLooksUsable || newDomainLooksAvailable;
   const canContinue = domainMode === "owned"
-    ? Boolean(selectedDomain && ownedDomainLooksUsable)
-    : newDomainLooksAvailable;
-  const estimate = useMemo(() => checkoutEstimate(newPages, editedPages), [newPages, editedPages]);
+    ? Boolean(selectedDomain && ownedDomainLooksUsable && ownedDomainConfirmed)
+    : Boolean(newDomainLooksAvailable && !domainQuoteLoading && !domainQuoteBlocksCheckout);
+  const estimate = useMemo(() => checkoutEstimate(newPages, editedPages, termYears, billingCadence, domainMode), [newPages, editedPages, termYears, billingCadence, domainMode]);
+  const addOnDetailsComplete = newPageRequests.every((value) => value.trim())
+    && editPageRequests.every((request) => request.pageId && request.notes.trim());
+  const setupRequest = useMemo(() => ({
+    newPages,
+    editedPages,
+    newPageRequests: newPageRequests.map((title, index) => ({ index: index + 1, title: title.trim() })),
+    editPageRequests: editPageRequests.map((request, index) => ({
+      index: index + 1,
+      pageId: request.pageId,
+      pageLabel: existingPageOptions.find((page) => page.id === request.pageId)?.label || request.pageId,
+      notes: request.notes.trim(),
+    })),
+  }), [newPages, editedPages, newPageRequests, editPageRequests, existingPageOptions]);
 
   const resetCheck = () => {
     setDomainCheck(null);
+    setDomainQuote(null);
+    setDomainQuoteStatus("");
+    setDomainQuoteLoading(false);
     setCheckoutStatus("");
     setCheckoutDetails(null);
   };
 
-  const openSetup = (mode: DomainMode) => {
-    setDomainMode(mode);
-    setSetupStep("domain");
-    resetCheck();
-  };
+  useEffect(() => {
+    setNewPageRequests((current) => resizeStringList(current, newPages));
+  }, [newPages]);
+
+  useEffect(() => {
+    setEditPageRequests((current) => resizeEditRequests(current, editedPages, existingPageOptions[0]?.id || "home"));
+  }, [editedPages, existingPageOptions]);
 
   const handleCheckout = async () => {
     setCheckoutLoading(true);
@@ -170,14 +274,33 @@ export default function WebsiteActionPanel({
           domain: selectedDomain,
           domainMode,
           domainCheck,
+          domainQuote: domainMode === "new" ? domainQuote : null,
           email,
           addOns: {
             newPages,
             editedPages,
           },
+          setupRequest,
+          billingPlan: {
+            termYears,
+            billingCadence,
+            termDiscountRate: estimate.termDiscountRate,
+            annualAfterDiscountUsd: estimate.annualAfterDiscount,
+            hostingAnnualUsd: estimate.hostingAnnual,
+            hostingAfterDiscountUsd: estimate.hostingAfterDiscount,
+            domainAnnualUsd: estimate.domainAnnual,
+            packageTermTotalUsd: estimate.packageTermTotal,
+            packageDueTodayUsd: estimate.packageDueToday,
+          },
         }),
       });
       const data = await response.json();
+      if (data.paypalInline) {
+        setCheckoutDetails(data);
+        setSetupStep("payment");
+        setCheckoutStatus("");
+        return;
+      }
       if (data.checkoutUrl && !data.requiresManualReview) {
         window.location.href = data.checkoutUrl;
         return;
@@ -199,14 +322,25 @@ export default function WebsiteActionPanel({
   };
 
   useEffect(() => {
-    if (setupStep !== "payment" || !checkoutDetails?.paypalInline || !checkoutDetails?.paypalClientId || !checkoutDetails?.paypalOrderId) return;
-    const renderKey = `${checkoutDetails.paypalClientId}:${checkoutDetails.paypalOrderId}`;
+    if (setupStep !== "payment" || !checkoutDetails?.paypalInline || !checkoutDetails?.paypalClientId) return;
+    const isSubscription = Boolean(checkoutDetails.paypalSubscriptionPlanId);
+    const paypalTargetId = isSubscription ? checkoutDetails.paypalSubscriptionPlanId : checkoutDetails.paypalOrderId;
+    if (!paypalTargetId) return;
+    const renderKey = `${checkoutDetails.paypalClientId}:${isSubscription ? "subscription" : "order"}:${paypalTargetId}`;
     if (paypalRenderedKey === renderKey) return;
     let cancelled = false;
     const loadPayPal = async () => {
       setPaypalLoading(true);
       setCheckoutStatus("Loading secure PayPal checkout...");
-      const sdkUrl = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(checkoutDetails.paypalClientId)}&currency=USD&intent=capture&components=buttons`;
+      const sdkUrl = isSubscription
+        ? `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(checkoutDetails.paypalClientId)}&currency=USD&components=buttons&vault=true&intent=subscription`
+        : `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(checkoutDetails.paypalClientId)}&currency=USD&intent=capture&components=buttons`;
+      document.querySelectorAll<HTMLScriptElement>('script[src^="https://www.paypal.com/sdk/js"]').forEach((script) => {
+        if (script.src !== sdkUrl) {
+          script.remove();
+          window.paypal = undefined;
+        }
+      });
       if (!document.querySelector(`script[src="${sdkUrl}"]`)) {
         await new Promise<void>((resolve, reject) => {
           const script = document.createElement("script");
@@ -221,15 +355,27 @@ export default function WebsiteActionPanel({
       paypalButtonsRef.current.innerHTML = "";
       await window.paypal.Buttons({
         style: { layout: "vertical", shape: "rect", label: "paypal" },
-        createOrder: () => checkoutDetails.paypalOrderId,
+        ...(isSubscription ? {
+          createSubscription: (_data: unknown, actions: any) => actions.subscription.create({
+            plan_id: checkoutDetails.paypalSubscriptionPlanId,
+            custom_id: checkoutDetails.paymentReference,
+            subscriber: email ? { email_address: email } : undefined,
+          }),
+        } : {
+          createOrder: () => checkoutDetails.paypalOrderId,
+        }),
         onApprove: async (data: any) => {
           setPaypalLoading(true);
-          setCheckoutStatus("Capturing PayPal payment...");
+          setCheckoutStatus(isSubscription ? "Activating PayPal yearly billing..." : "Capturing PayPal payment...");
           try {
-            const response = await fetch("/api/payments/paypal-capture-order", {
+            const response = await fetch(isSubscription ? "/api/payments/paypal-subscription-approved" : "/api/payments/paypal-capture-order", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
+              body: JSON.stringify(isSubscription ? {
+                subscriptionId: data.subscriptionID,
+                paymentReference: checkoutDetails.paymentReference,
+                businessId: siteData?.meta?.businessId || businessId,
+              } : {
                 orderId: data.orderID || checkoutDetails.paypalOrderId,
                 paymentReference: checkoutDetails.paymentReference,
                 businessId: siteData?.meta?.businessId || businessId,
@@ -240,7 +386,7 @@ export default function WebsiteActionPanel({
               throw new Error(capture.error || capture.message || "PayPal capture failed.");
             }
             setCheckoutDetails((current: any) => ({ ...current, captured: true, capture }));
-            setCheckoutStatus("Payment captured. We will start the domain, hosting, DNS, and launch setup.");
+            setCheckoutStatus(isSubscription ? "Yearly billing is active. We will start the domain, hosting, DNS, and launch setup." : "Payment captured. We will start the domain, hosting, DNS, and launch setup.");
           } finally {
             setPaypalLoading(false);
           }
@@ -267,7 +413,7 @@ export default function WebsiteActionPanel({
     return () => {
       cancelled = true;
     };
-  }, [setupStep, checkoutDetails?.paypalInline, checkoutDetails?.paypalClientId, checkoutDetails?.paypalOrderId, checkoutDetails?.paymentReference, paypalRenderedKey, siteData?.meta?.businessId, businessId]);
+  }, [setupStep, checkoutDetails?.paypalInline, checkoutDetails?.paypalClientId, checkoutDetails?.paypalOrderId, checkoutDetails?.paypalSubscriptionPlanId, checkoutDetails?.paymentReference, paypalRenderedKey, siteData?.meta?.businessId, businessId, email]);
 
   const copyPaymentReference = async () => {
     const reference = String(checkoutDetails?.paymentReference || "");
@@ -283,9 +429,38 @@ export default function WebsiteActionPanel({
   const handleCheckDomain = async () => {
     setDomainCheckLoading(true);
     setDomainCheck(null);
+    setDomainQuote(null);
+    setDomainQuoteStatus("");
     try {
       const response = await fetch(`/api/domains/check?domain=${encodeURIComponent(selectedDomain)}`);
-      setDomainCheck(await response.json());
+      const check = await response.json();
+      setDomainCheck(check);
+      if (domainMode === "new" && check?.available === true) {
+        setDomainQuoteLoading(true);
+        try {
+          const quoteResponse = await fetch("/api/domains/quote", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ domain: selectedDomain }),
+          });
+          const quote = await quoteResponse.json().catch(() => ({}));
+          if (quoteResponse.ok) {
+            setDomainQuote(quote);
+            setDomainQuoteStatus(quote.supportedForMvp === false
+              ? "This domain needs manual review before checkout because the registrar price or status does not fit the included $17/year domain fee."
+              : "Domain pre-check completed. The included $17/year domain fee still applies.");
+          } else if (quoteResponse.status === 409) {
+            setDomainQuoteStatus("You can continue; we will confirm the domain manually during setup.");
+          } else {
+            setDomainQuoteStatus("You can continue; we will confirm the domain manually during setup.");
+          }
+        } catch (quoteError) {
+          console.error(quoteError);
+          setDomainQuoteStatus("You can continue; we will confirm the domain manually during setup.");
+        } finally {
+          setDomainQuoteLoading(false);
+        }
+      }
     } catch (error) {
       console.error(error);
       setDomainCheck({ status: "error", available: null, message: "Domain check failed. We can still confirm availability during setup." });
@@ -376,19 +551,21 @@ export default function WebsiteActionPanel({
                 type="button"
                 onClick={() => {
                   setCheckoutOpen(true);
-                  setSetupStep("choice");
+                  setSetupMode("base");
+                  setSetupStep("offer");
                   setCheckoutDetails(null);
                   setPaypalRenderedKey("");
                   setCheckoutStatus("");
+                  setOwnedDomainConfirmed(false);
                 }}
                 className="flex w-full items-center justify-between rounded-xl bg-indigo-600 px-4 py-3 text-left text-white hover:bg-indigo-700"
               >
                 <span>
                   <span className="flex items-center gap-1.5 font-semibold">
                     Done-for-you website setup
-                    <InfoTooltip light text="We handle domain purchase, hosting purchase, site upload, DNS pointing, and setup. The $197/year includes a $17/year domain allowance and $180/year hosting." />
+                    <InfoTooltip light text="We handle domain purchase when needed, managed hosting, site upload, DNS pointing, SSL, and launch setup. If you already own the domain, the $17/year domain fee is removed." />
                   </span>
-                  <span className="block text-xs text-indigo-100">$197/year: domain + hosting + setup handled for you.</span>
+                  <span className="block text-xs text-indigo-100">$180/year hosting, plus $17/year only if we register the domain.</span>
                 </span>
                 <ArrowRight size={18} />
               </button>
@@ -409,41 +586,181 @@ export default function WebsiteActionPanel({
 
       {checkoutOpen && (
         <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-wv-tool-ui="website-checkout-modal">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+          <div className="max-h-[min(92vh,760px)] w-full max-w-md overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <p className="font-semibold text-slate-950">Done-for-you website setup</p>
-                <p className="text-xs text-slate-500">$197/year total. We buy/connect the domain, hosting, and site.</p>
+                <p className="text-xs text-slate-500">Step {setupStepIndex + 1} of {setupSteps.length}: managed hosting, domain, SSL, and setup handled for you.</p>
               </div>
               <button type="button" onClick={() => setCheckoutOpen(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100">
                 <X size={18} />
               </button>
             </div>
             <div className="space-y-4 p-5">
-              {setupStep === "choice" && (
+              {setupStep === "offer" && (
                 <>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                    <p><strong>$17/year domain allowance</strong> if we register a new domain.</p>
-                    <p><strong>$180/year hosting</strong> ($15/month x 12 months).</p>
-                    <p><strong>Free setup</strong>: upload site, connect DNS, SSL, and point hosting.</p>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <p className="font-semibold text-slate-950">Your website is free. You only pay the yearly infrastructure.</p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-white p-3">
+                        <p className="font-bold text-slate-950">$17/year</p>
+                        <p className="mt-1 text-slate-500">Domain fee for any extension we register.</p>
+                      </div>
+                      <div className="rounded-lg bg-white p-3">
+                        <p className="font-bold text-slate-950">$180/year</p>
+                        <p className="mt-1 text-slate-500">Managed hosting with SSL, fast global delivery, and uptime-focused setup.</p>
+                      </div>
+                    </div>
+                    <p className="mt-3"><strong>Total is $197/year with a new domain, or $180/year when you already own the domain.</strong> We handle upload, DNS, SSL, and launch setup at no extra setup fee.</p>
                     <a href="/terms-refund" target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-indigo-700 hover:underline">
                       Terms and refund policy
                     </a>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSetupMode("addons");
+                      setSetupStep("plan");
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left hover:bg-indigo-100"
+                  >
+                    <span>
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
+                        Want us to add / edit your pages?
+                        <InfoTooltip text="$10 per additional generated page or existing-page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
+                      </span>
+                      <span className="block text-xs text-slate-600">Tell us the exact pages before payment so the order note is clear.</span>
+                    </span>
+                    <ArrowRight size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSetupMode("base");
+                      setNewPages(0);
+                      setEditedPages(0);
+                      setNewPageRequests([]);
+                      setEditPageRequests([]);
+                      setSetupStep("plan");
+                      resetCheck();
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl bg-indigo-600 px-4 py-3 text-left text-white hover:bg-indigo-700"
+                  >
+                    <span>
+                      <span className="block font-semibold">Continue to payment</span>
+                      <span className="block text-xs text-indigo-100">Use the generated site as-is. Domain choice is next.</span>
+                    </span>
+                    <ArrowRight size={18} />
+                  </button>
+                </>
+              )}
+
+              {setupStep === "plan" && (
+                <>
+                  <button type="button" onClick={() => setSetupStep("offer")} className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-900">
+                    <ArrowLeft size={16} />
+                    Back
+                  </button>
+                  <div className="space-y-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                        Choose your term
+                        <InfoTooltip text="Longer terms reduce only the managed hosting price. The $17/year domain fee still applies when we register a new domain. Page add/edit work is one-time and not multiplied by years." />
+                      </p>
+                      <div className="mt-3 grid grid-cols-5 gap-2">
+                        {Array.from({ length: 10 }, (_, index) => index + 1).map((years) => {
+                          const discount = termDiscountRate(years);
+                          const active = termYears === years;
+                          return (
+                            <button
+                              key={years}
+                              type="button"
+                              onClick={() => setTermYears(years)}
+                              className={`rounded-xl border px-2 py-2 text-center text-xs font-semibold ${
+                                active ? "border-indigo-300 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              <span className="block">{years}y</span>
+                              <span className="block text-[11px] opacity-75">{discount ? `${Math.round(discount * 100)}% off` : "standard"}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-slate-950">Billing</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setBillingCadence("upfront")}
+                          className={`rounded-xl border px-3 py-2 text-left text-sm ${billingCadence === "upfront" ? "border-indigo-300 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+                        >
+                          <span className="block font-semibold">Pay once</span>
+                          <span className="block text-xs opacity-75">Best value, full term today.</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBillingCadence("annual_recurring")}
+                          className={`rounded-xl border px-3 py-2 text-left text-sm ${billingCadence === "annual_recurring" ? "border-indigo-300 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+                        >
+                          <span className="block font-semibold">Yearly billing</span>
+                          <span className="block text-xs opacity-75">First discounted year today.</span>
+                        </button>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        <p className="font-semibold text-slate-950">
+                          Due today: {formatUsd(estimate.total)}
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                          {termYears > 1
+                            ? `${termYears}-year term at ${Math.round(estimate.termDiscountRate * 100)}% off hosting: ${formatUsd(estimate.hostingAfterDiscount)}/year hosting${estimate.domainAnnual ? ` + ${formatUsd(estimate.domainAnnual)}/year domain fee` : ""}. ${billingCadence === "upfront" ? `Total package term cost: ${formatUsd(estimate.packageTermTotal)}.` : `PayPal auto-bills ${formatUsd(estimate.annualAfterDiscount)}/year for ${termYears} year${termYears === 1 ? "" : "s"} before any page work.`}`
+                            : `1-year plan at ${formatUsd(estimate.hostingAnnual)}/year hosting${estimate.domainAnnual ? ` + ${formatUsd(estimate.domainAnnual)}/year domain fee` : ""}.`}
+                        </p>
+                        {estimate.packageSavings > 0 && (
+                          <p className="mt-1 text-xs font-semibold text-emerald-700">
+                            Hosting savings across the term: {formatUsd(estimate.packageSavings)}.
+                          </p>
+                        )}
+                        <p className="mt-1 text-xs text-slate-500">
+                          If you choose "I own one" on the domain step, the $17/year domain fee is removed.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSetupStep(setupMode === "addons" ? "addons-count" : "domain");
+                      resetCheck();
+                    }}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
+                  >
+                    <ArrowRight size={18} />
+                    Continue
+                  </button>
+                </>
+              )}
+
+              {setupStep === "addons-count" && (
+                <>
+                  <button type="button" onClick={() => setSetupStep("plan")} className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-900">
+                    <ArrowLeft size={16} />
+                    Back
+                  </button>
                   <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-950">
-                          Need extra changes?
+                          Page work
                           <InfoTooltip text="$10 per additional generated page or page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
                         </p>
-                        <p className="mt-1 text-xs text-slate-600">Add only what you need before checkout.</p>
+                        <p className="mt-1 text-xs text-slate-600">Choose how many page requests you want us to include.</p>
                       </div>
-                      <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-indigo-700">${estimate.total}</span>
+                      <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-indigo-700">{formatUsd(estimate.total)}</span>
                     </div>
                     <div className="mt-3 space-y-2">
-                      <PageCountStepper label="New pages" value={newPages} onChange={setNewPages} />
-                      <PageCountStepper label="Edit pages" value={editedPages} onChange={setEditedPages} />
+                      <PageCountStepper label="Pages to add" value={newPages} onChange={setNewPages} />
+                      <PageCountStepper label="Pages to edit" value={editedPages} onChange={setEditedPages} />
                     </div>
                     {estimate.totalPageActions > 0 && (
                       <p className="mt-2 text-xs text-slate-600">
@@ -452,29 +769,124 @@ export default function WebsiteActionPanel({
                       </p>
                     )}
                   </div>
-                  <button type="button" onClick={() => openSetup("new")} className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-left hover:bg-slate-50">
-                    <span>
-                      <span className="block font-semibold text-slate-950">Register a new domain</span>
-                      <span className="block text-xs text-slate-500">Choose an extension, check availability, then continue.</span>
-                    </span>
+                  <button
+                    type="button"
+                    onClick={() => setSetupStep("addons-details")}
+                    disabled={estimate.totalPageActions < 1}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
                     <ArrowRight size={18} />
+                    Continue to page details
                   </button>
-                  <button type="button" onClick={() => openSetup("owned")} className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-left hover:bg-slate-50">
-                    <span>
-                      <span className="block font-semibold text-slate-950">I already own a domain</span>
-                      <span className="block text-xs text-slate-500">Enter your domain. We will help point it to Cloudflare/hosting.</span>
-                    </span>
+                </>
+              )}
+
+              {setupStep === "addons-details" && (
+                <>
+                  <button type="button" onClick={() => setSetupStep("addons-count")} className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-900">
+                    <ArrowLeft size={16} />
+                    Back
+                  </button>
+                  <div className="space-y-3">
+                    {newPageRequests.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-semibold text-slate-950">Pages to add</p>
+                        {newPageRequests.map((value, index) => (
+                          <label key={`new-page-${index}`} className="block">
+                            <span className="mb-1 block text-xs font-semibold text-slate-500">Page to add #{index + 1}</span>
+                            <input
+                              value={value}
+                              onChange={(event) => setNewPageRequests((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
+                              placeholder="Example: Financing, Fleet Services, Service Areas"
+                              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {editPageRequests.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-semibold text-slate-950">Pages to edit</p>
+                        {editPageRequests.map((request, index) => (
+                          <div key={`edit-page-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <label className="block">
+                              <span className="mb-1 block text-xs font-semibold text-slate-500">Page to edit #{index + 1}</span>
+                              <select
+                                value={request.pageId}
+                                onChange={(event) => setEditPageRequests((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, pageId: event.target.value } : item))}
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                              >
+                                {existingPageOptions.map((page) => (
+                                  <option key={page.id} value={page.id}>{page.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="mt-2 block">
+                              <span className="mb-1 block text-xs font-semibold text-slate-500">What should we edit?</span>
+                              <textarea
+                                value={request.notes}
+                                onChange={(event) => setEditPageRequests((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, notes: event.target.value } : item))}
+                                rows={3}
+                                placeholder="Example: update pricing, replace headline, add service area details"
+                                className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                              />
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                    Total today: <strong>{formatUsd(estimate.total)}</strong>. Your page instructions will be saved in the order note for admin fulfillment.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSetupStep("domain");
+                      resetCheck();
+                    }}
+                    disabled={!addOnDetailsComplete}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
                     <ArrowRight size={18} />
+                    Continue to domain
                   </button>
                 </>
               )}
 
               {setupStep === "domain" && (
                 <>
-                  <button type="button" onClick={() => setSetupStep("choice")} className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-900">
+                  <button type="button" onClick={() => setSetupStep(backStep)} className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-900">
                     <ArrowLeft size={16} />
                     Back
                   </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDomainMode("new");
+                        setOwnedDomainConfirmed(false);
+                        resetCheck();
+                      }}
+                      className={`rounded-xl border px-3 py-2 text-left text-sm ${domainMode === "new" ? "border-indigo-300 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+                    >
+                      <span className="block font-semibold">New domain</span>
+                      <span className="block text-xs opacity-75">$17/year domain fee</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDomainMode("owned");
+                        setOwnedDomainConfirmed(false);
+                        resetCheck();
+                      }}
+                      className={`rounded-xl border px-3 py-2 text-left text-sm ${domainMode === "owned" ? "border-indigo-300 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+                    >
+                      <span className="block font-semibold">I own one</span>
+                      <span className="block text-xs opacity-75">We help point DNS</span>
+                    </button>
+                  </div>
 
                   {domainMode === "new" ? (
                     <div className="space-y-3">
@@ -529,7 +941,8 @@ export default function WebsiteActionPanel({
                       <input
                         value={ownedDomain}
                         onChange={(event) => {
-                          setOwnedDomain(normalizeFullDomain(event.target.value));
+                          setOwnedDomain(sanitizeOwnedDomainInput(event.target.value));
+                          setOwnedDomainConfirmed(false);
                           resetCheck();
                         }}
                         placeholder="yourdomain.com"
@@ -538,6 +951,17 @@ export default function WebsiteActionPanel({
                       <button type="button" onClick={handleCheckDomain} disabled={domainCheckLoading || !selectedDomain} className="rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-50">
                         {domainCheckLoading ? "..." : "Check"}
                       </button>
+                      <label className="col-span-2 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={ownedDomainConfirmed}
+                          onChange={(event) => setOwnedDomainConfirmed(event.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>
+                          I confirm this is my domain and I can update DNS records, change nameservers, or give WebView.click delegated access for setup.
+                        </span>
+                      </label>
                     </div>
                   )}
 
@@ -565,13 +989,35 @@ export default function WebsiteActionPanel({
                         )}
                         {domainMode === "owned" && domainCheck.available !== true && (
                           <p className="mt-2 text-xs">
-                            During setup, we will ask you to change nameservers to our Cloudflare nameservers, or add DNS records we provide if you prefer keeping your current nameservers.
+                            During setup, we will ask you to use our managed nameservers, or add DNS records we provide if you prefer keeping your current nameservers.
                           </p>
                         )}
                         {domainCheck.registrar && <p className="mt-1 text-xs opacity-80">Registrar signal: {domainCheck.registrar}</p>}
                         {Array.isArray(domainCheck.nameservers) && domainCheck.nameservers.length > 0 && (
                           <p className="mt-1 text-xs opacity-80">Current nameservers: {domainCheck.nameservers.slice(0, 3).join(", ")}</p>
                         )}
+                        {domainMode === "owned" && ownedDomainLooksUsable && !ownedDomainConfirmed && (
+                          <p className="mt-2 text-xs">
+                            Confirm ownership above so we know you can update DNS or provide access during setup.
+                          </p>
+                        )}
+                        {domainMode === "new" && (
+                          <p className="mt-2 text-xs">
+                            Domain fee: $17/year. Hosting discounts do not change the domain fee.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {domainMode === "new" && (domainQuoteLoading || domainQuoteStatus) && (
+                      <div className={`mt-3 rounded-lg border p-3 text-xs ${
+                        domainQuote?.supportedForMvp === false
+                          ? "border-amber-200 bg-amber-50 text-amber-900"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+                      }`}>
+                        <p className="font-semibold">
+                          {domainQuoteLoading ? "Checking registrar quote..." : domainQuoteStatus}
+                        </p>
+                        <p className="mt-1 opacity-80">Your setup team will verify the final domain details before launch.</p>
                       </div>
                     )}
                   </div>
@@ -585,7 +1031,7 @@ export default function WebsiteActionPanel({
                         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                        Total today: <strong>${estimate.total}</strong>. Secure checkout opens when the selected payment processor is configured. Until then this records a mock checkout request for follow-up.
+                        Total today: <strong>{formatUsd(estimate.total)}</strong>. Secure checkout opens when the selected payment processor is configured. Until then this records a mock checkout request for follow-up.
                       </div>
                       {checkoutStatus && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{checkoutStatus}</div>}
                       <button
@@ -613,17 +1059,28 @@ export default function WebsiteActionPanel({
                       <div>
                         <p className="font-semibold text-slate-950">Order total</p>
                         <p className="mt-1 text-xs leading-relaxed">
-                          $197/year includes domain allowance, annual hosting, SSL, DNS/upload, generated site launch, and setup.
+                          Managed hosting: {formatUsd(estimate.hostingAfterDiscount)}/year{estimate.termDiscountRate ? ` after ${Math.round(estimate.termDiscountRate * 100)}% term discount` : ""}{estimate.domainAnnual ? `, plus ${formatUsd(estimate.domainAnnual)}/year domain fee` : ", with no domain fee because you own the domain"}. Includes SSL, DNS/upload, generated site launch, and setup.
                         </p>
                         {checkoutDetails.pricing?.totalPageActions > 0 && (
                           <p className="mt-1 text-xs leading-relaxed">
                             Additional page/edit work: {checkoutDetails.pricing.totalPageActions} action{checkoutDetails.pricing.totalPageActions === 1 ? "" : "s"} for ${Number(checkoutDetails.pricing.addOnUsd || 0).toFixed(2)}.
                           </p>
                         )}
+                        {billingCadence === "annual_recurring" && (
+                          <p className="mt-1 text-xs leading-relaxed">
+                            Yearly PayPal billing selected. PayPal will auto-bill the yearly package for the selected {termYears}-year term.
+                          </p>
+                        )}
                       </div>
                       <span className="rounded-full bg-white px-3 py-1 text-sm font-bold text-indigo-700">${Number(checkoutDetails.amountUsd || estimate.total).toFixed(2)}</span>
                     </div>
                   </div>
+                  {checkoutDetails.setupNote && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                      <p className="font-semibold text-slate-950">Order note</p>
+                      <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-slate-600">{checkoutDetails.setupNote}</p>
+                    </div>
+                  )}
                   {!checkoutDetails.paypalInline && (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                       <p className="font-semibold">{checkoutDetails.processor === "paypal" ? "PayPal payment note" : "Manual payment note"}</p>

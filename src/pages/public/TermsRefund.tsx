@@ -21,7 +21,7 @@ export default function TermsRefund() {
         <section className="mt-8 space-y-3">
           <h2 className="text-xl font-semibold text-slate-950">Managed Launch Support</h2>
           <p className="text-sm leading-relaxed">
-            Managed launch support may include help connecting a domain, hosting, DNS, upload, SSL, and handoff for the generated static website package. The standard $197/year package includes a domain allowance, annual hosting allocation, and launch setup. Scope is limited to launching the generated package and does not include open-ended custom design, custom application development, ongoing consulting, or unlimited changes.
+            Managed launch support may include help connecting a domain, hosting, DNS, upload, SSL, and handoff for the generated static website package. The standard $197/year package includes a $17/year domain fee, $180/year hosting paid yearly, and launch setup. Scope is limited to launching the generated package and does not include open-ended custom design, custom application development, ongoing consulting, or unlimited changes.
           </p>
           <p className="text-sm leading-relaxed">
             Optional additional generated pages or existing-page edit actions can be purchased for a flat fee shown at checkout, with bulk discounts when available. Each add-on covers a defined page or edit action, not unlimited revisions.

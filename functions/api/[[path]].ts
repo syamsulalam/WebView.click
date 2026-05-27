@@ -63,6 +63,8 @@ const providerCooldownDeps: ProviderCooldownDeps = {
 const domainsDeps: DomainsDeps = {
   json,
   errorJson,
+  readJsonBody,
+  getSetting: getSetting as DomainsDeps["getSetting"],
 };
 
 const paymentsDeps: PaymentsDeps = {
@@ -292,8 +294,8 @@ async function route(context: PagesContext): Promise<Response> {
       return handlePayments(paymentsDeps, request, db, env, segments);
     }
 
-    if (request.method === "GET" && segments[0] === "domains") {
-      return handleDomains(domainsDeps, url, segments);
+    if (segments[0] === "domains") {
+      return handleDomains(domainsDeps, request, db, env, url, segments);
     }
 
     return errorJson("Not Found", 404);

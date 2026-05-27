@@ -146,6 +146,7 @@ export async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "lead_payments", "verified_at", "DATETIME");
   await addColumnIfMissing(db, "lead_payments", "verified_by", "TEXT");
   await addColumnIfMissing(db, "lead_payments", "updated_at", "DATETIME");
+  await addColumnIfMissing(db, "system_settings", "updated_at", "DATETIME");
   await addColumnIfMissing(db, "json_sites", "updated_at", "DATETIME");
   await addColumnIfMissing(db, "json_sites", "r2_json_key", "TEXT");
   await addColumnIfMissing(db, "json_sites", "r2_json_url", "TEXT");
