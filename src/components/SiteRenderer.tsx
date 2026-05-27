@@ -420,6 +420,7 @@ function ImageFrame({
   editMode = false,
   replacementSrc = "",
   onReplace,
+  onRestore,
 }: {
   src?: string;
   label?: string;
@@ -429,9 +430,11 @@ function ImageFrame({
   editMode?: boolean;
   replacementSrc?: string;
   onReplace?: () => void;
+  onRestore?: () => void;
 }) {
   const displaySrc = replacementSrc || src;
   const canReplace = editMode && typeof onReplace === "function";
+  const canRestore = editMode && Boolean(replacementSrc) && typeof onRestore === "function";
 
   return (
     <div className={`group relative w-full h-full ${className}`}>
@@ -448,22 +451,41 @@ function ImageFrame({
         </div>
       )}
       {canReplace && (
-        <button
-          type="button"
+        <div
           data-export-remove="true"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onReplace?.();
-          }}
-          className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/45 text-white opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-          aria-label={`Change image${label ? ` for ${label}` : ""}`}
+          className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/45 text-white opacity-0 transition group-hover:opacity-100 focus-within:opacity-100"
         >
-          <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 shadow-xl">
-            <ImageIcon size={16} />
-            Change image
-          </span>
-        </button>
+          <div className="flex flex-wrap items-center justify-center gap-2 px-3">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onReplace?.();
+              }}
+              className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 shadow-xl"
+              aria-label={`Change image${label ? ` for ${label}` : ""}`}
+            >
+              <ImageIcon size={16} />
+              Change image
+            </button>
+            {canRestore && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onRestore?.();
+                }}
+                className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-white shadow-xl"
+                aria-label={`Restore original image${label ? ` for ${label}` : ""}`}
+              >
+                <X size={16} />
+                Restore original
+              </button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -677,6 +699,22 @@ export default function SiteRenderer({
       })
       .catch((error) => console.warn("Could not prepare replacement image.", error));
   };
+  const restoreOriginalImage = (key: string) => {
+    setImageReplacements((current) => {
+      const next = { ...current };
+      delete next[key];
+      try {
+        if (Object.keys(next).length > 0) {
+          window.localStorage.setItem(imageReplacementKey, JSON.stringify(next));
+        } else {
+          window.localStorage.removeItem(imageReplacementKey);
+        }
+      } catch (error) {
+        console.warn("Could not update replacement image browser storage.", error);
+      }
+      return next;
+    });
+  };
   const editableImage = (
     key: string,
     src: string | undefined,
@@ -694,6 +732,7 @@ export default function SiteRenderer({
       editMode={editMode}
       replacementSrc={imageReplacements[key] || ""}
       onReplace={() => chooseReplacementImage(key)}
+      onRestore={() => restoreOriginalImage(key)}
     />
   );
   const editableText = (
@@ -1815,7 +1854,7 @@ export default function SiteRenderer({
       <div data-export-remove="true" data-wv-tool-ui="inline-edit-panel" className="hide-in-export fixed bottom-20 left-5 z-[210] flex max-w-[calc(100vw-2.5rem)] flex-col items-start gap-2 md:bottom-5">
         {editMode && (
           <div className="max-w-xs rounded-lg border border-indigo-100 bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow-xl backdrop-blur">
-            Click text to edit it, or click an image to replace it. Changes are saved in this browser and included in the downloaded site.
+            Click text to edit it, or click an image to replace it. Replaced images can be restored to original. Changes are saved in this browser and included in the downloaded site.
           </div>
         )}
         <input
