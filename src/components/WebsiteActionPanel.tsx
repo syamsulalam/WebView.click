@@ -312,12 +312,9 @@ export default function WebsiteActionPanel({
             <div className="space-y-3 p-4">
               {fontPairings.length > 1 && onFontPairingChange && (
                 <label className="block rounded-xl border border-slate-200 bg-white p-3">
-                  <span className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-950">
-                    Font style
-                    <InfoTooltip text="Choose an industry-matched font pairing before download. The exported HTML keeps the selected look." />
-                  </span>
                   <div className="flex items-center gap-2">
-                    <span className="w-20 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">Style</span>
+                    <InfoTooltip text="Choose an industry-matched font pairing before download. The exported HTML keeps the selected look." />
+                    <span className="w-24 shrink-0 text-sm font-semibold text-slate-950">Font style</span>
                     <select
                       value={selectedFontPairing}
                       onChange={(event) => onFontPairingChange(event.target.value)}
@@ -337,12 +334,9 @@ export default function WebsiteActionPanel({
               )}
               {paletteOptions.length > 1 && onPaletteOptionChange && (
                 <label className="block rounded-xl border border-slate-200 bg-white p-3">
-                  <span className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-950">
-                    Color palette
-                    <InfoTooltip text="Choose a palette extracted from business photos before download. The exported HTML keeps the selected colors." />
-                  </span>
                   <div className="flex items-center gap-2">
-                    <span className="w-20 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">Palette</span>
+                    <InfoTooltip text="Choose a palette extracted from business photos before download. The exported HTML keeps the selected colors." />
+                    <span className="w-24 shrink-0 text-sm font-semibold text-slate-950">Color palette</span>
                     <select
                       value={selectedPaletteOption}
                       onChange={(event) => onPaletteOptionChange(event.target.value)}
