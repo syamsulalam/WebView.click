@@ -89,7 +89,7 @@ Logic penting:
 - Contact form membuat `mailto:` URL berisi nama, email, pesan, dan semua field form yang diisi.
 - Visitor action panel untuk download/setup dirender lewat shared component `WebsiteActionPanel`, bukan logic lokal di renderer.
 - Fallback section unknown tampil sebagai label `[Section: type]`, supaya schema baru tidak membuat halaman blank.
-- Text utama di renderer dibungkus dengan shared `EditableText`, tetapi edit mode default off supaya teks normal bisa di-select/copy. Tombol floating `Edit` di `/demo` dan `/:businessId` memakai capsule styling yang sama dengan `Download / Setup`, mengaktifkan contentEditable, dan juga membuat image frame bisa diklik untuk replace gambar lokal atau restore ke original. Text edits tersimpan di localStorage per business/page/text key; replaced images tersimpan di localStorage per business/image key dan ikut masuk ke download HTML/zip setelah refresh browser.
+- Text utama di renderer dibungkus dengan shared `EditableText`, tetapi edit mode default off supaya teks normal bisa di-select/copy. Tombol floating `Edit` di `/demo` dan `/:businessId` memakai capsule styling yang sama dengan `Download / Setup`, mengaktifkan contentEditable, membuat CTA/button labels editable, membuat button icons clickable untuk memilih icon CTA dari searchable picker, dan juga membuat image frame bisa diklik untuk replace gambar lokal atau restore ke original. Text edits tersimpan di localStorage per business/page/text key; button icon overrides tersimpan di localStorage per business/button key; replaced images tersimpan di localStorage per business/image key dan ikut masuk ke download HTML/zip setelah refresh browser.
 
 Risiko debug:
 - Jika UI demo/public berbeda dari ekspektasi, cek mapping section di file ini dulu sebelum mengubah `PublicViewer`.
@@ -105,12 +105,13 @@ Fungsi:
 
 Logic penting:
 - Setiap teks punya key `webview.inlineText.{businessId}.{page}.{field}` di localStorage.
+- Button icon overrides disimpan sebagai JSON map di `webview.inlineButtonIcons.{businessId}`. Picker hanya berisi icon CTA praktis seperti call, email, map, message, schedule, quote, service, review, website, dan check; opsi `Auto` menghapus override agar icon kembali mengikuti label/href.
 - Image replacements disimpan sebagai JSON map di `webview.inlineImages.{businessId}`. File lokal owner dikecilkan client-side ke JPEG max-side 1600px sebelum disimpan sebagai `data:` URL, supaya lebih mungkin muat di localStorage, persist setelah refresh, dan tetap dibundel ulang ke `img/` saat export zip. Restore original menghapus key image tersebut dari map dan menghapus seluruh storage key jika tidak ada replacement tersisa.
 - `enabled=false` merender teks biasa yang selectable/copyable; `enabled=true` baru mengaktifkan `contentEditable`, ring edit, dan toolbar.
 - Toolbar kecil mendukung bold, italic, dan underline via browser command.
 - Toolbar diberi `data-wv-format-toolbar` dan `data-wv-format-command` per tombol supaya typography/action button tidak mewarisi font/style website client.
 - Paste dipaksa plain text agar HTML asing tidak ikut masuk.
-- Export HTML membersihkan atribut `contenteditable`, toolbar, dan replace-image overlay lewat `src/lib/exportSiteHtml.ts`, tetapi isi teks hasil edit tetap ikut karena sudah ada di DOM. Exporter juga mengambil `data:` image hasil replacement owner, menyimpannya ke folder `img/` dalam zip, lalu mengganti `src` HTML ke path file lokal.
+- Export HTML membersihkan atribut `contenteditable`, toolbar, temporary button-icon edit affordance, dan replace-image overlay lewat `src/lib/exportSiteHtml.ts`, tetapi isi teks hasil edit dan SVG icon pilihan tetap ikut karena sudah ada di DOM. Exporter juga mengambil `data:` image hasil replacement owner, menyimpannya ke folder `img/` dalam zip, lalu mengganti `src` HTML ke path file lokal.
 
 Risiko debug:
 - Jika teks tidak ikut download, cek apakah field tersebut sudah dibungkus `EditableText` di `SiteRenderer`.

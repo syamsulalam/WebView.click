@@ -18,6 +18,7 @@ import {
   Pencil,
   Phone,
   PhoneCall,
+  Search,
   ShieldCheck,
   Star,
   Truck,
@@ -228,13 +229,44 @@ function socialIcon(platform = "") {
   return <Globe size={18} />;
 }
 
-function buttonIcon(label = "", href = "", size = 16, className = "") {
+const ctaIconOptions = [
+  { id: "phone", label: "Call", keywords: "phone call tel telepon hubungi whatsapp quote estimate" },
+  { id: "mail", label: "Email", keywords: "email mail contact kontak inquiry message" },
+  { id: "map", label: "Map", keywords: "map directions location lokasi alamat address visit" },
+  { id: "message", label: "Message", keywords: "message chat whatsapp sms text ask consultation" },
+  { id: "calendar", label: "Schedule", keywords: "schedule booking appointment calendar time hours" },
+  { id: "quote", label: "Quote", keywords: "quote estimate pricing price proposal request" },
+  { id: "service", label: "Services", keywords: "service product layanan produk package offer" },
+  { id: "star", label: "Review", keywords: "review rating star testimonial trust" },
+  { id: "globe", label: "Website", keywords: "website site online learn more visit" },
+  { id: "check", label: "Check", keywords: "check confirm submit done start" },
+];
+
+function inferCtaIconId(label = "", href = "") {
   const key = `${label} ${href}`.toLowerCase();
+  if (key.includes("tel:") || key.includes("phone") || key.includes("telepon") || key.includes("call") || key.includes("hubungi")) return "phone";
+  if (key.includes("mailto:") || key.includes("email") || key.includes("contact") || key.includes("kontak")) return "mail";
+  if (key.includes("map") || key.includes("direction") || key.includes("lokasi") || key.includes("address")) return "map";
+  if (key.includes("message") || key.includes("sms") || key.includes("whatsapp") || key.includes("chat")) return "message";
+  if (key.includes("schedule") || key.includes("book") || key.includes("appointment")) return "calendar";
+  if (key.includes("estimate") || key.includes("quote") || key.includes("pricing") || key.includes("price")) return "quote";
+  if (key.includes("service") || key.includes("product") || key.includes("layanan") || key.includes("produk")) return "service";
+  if (key.includes("review") || key.includes("rating")) return "star";
+  if (key.includes("website") || key.includes("learn")) return "globe";
+  return "check";
+}
+
+function renderCtaIcon(iconId: string, size = 16, className = "") {
   const iconProps = { size, className: className || undefined };
-  if (key.includes("tel:") || key.includes("phone") || key.includes("telepon") || key.includes("call") || key.includes("hubungi")) return <PhoneCall {...iconProps} />;
-  if (key.includes("mailto:") || key.includes("email") || key.includes("contact") || key.includes("kontak")) return <Mail {...iconProps} />;
-  if (key.includes("map") || key.includes("direction") || key.includes("lokasi")) return <MapPin {...iconProps} />;
-  if (key.includes("service") || key.includes("product") || key.includes("layanan") || key.includes("produk")) return <Briefcase {...iconProps} />;
+  if (iconId === "phone") return <PhoneCall {...iconProps} />;
+  if (iconId === "mail") return <Mail {...iconProps} />;
+  if (iconId === "map") return <MapPin {...iconProps} />;
+  if (iconId === "message") return <MessageCircle {...iconProps} />;
+  if (iconId === "calendar") return <Clock {...iconProps} />;
+  if (iconId === "quote") return <ClipboardCheck {...iconProps} />;
+  if (iconId === "service") return <Briefcase {...iconProps} />;
+  if (iconId === "star") return <Star {...iconProps} />;
+  if (iconId === "globe") return <Globe {...iconProps} />;
   return <CheckCircle2 {...iconProps} />;
 }
 
@@ -527,6 +559,14 @@ function imageReplacementStorageKey(businessId: string, metaBusinessId = "") {
   return `webview.inlineImages.${safeId}`;
 }
 
+function buttonIconStorageKey(businessId: string, metaBusinessId = "") {
+  const safeId = (businessId || metaBusinessId || "demo")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "demo";
+  return `webview.inlineButtonIcons.${safeId}`;
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -572,6 +612,9 @@ export default function SiteRenderer({
   const [headerCompact, setHeaderCompact] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [imageReplacements, setImageReplacements] = useState<Record<string, string>>({});
+  const [buttonIconOverrides, setButtonIconOverrides] = useState<Record<string, string>>({});
+  const [activeIconPickerKey, setActiveIconPickerKey] = useState("");
+  const [iconPickerQuery, setIconPickerQuery] = useState("");
   const [feedbackRating, setFeedbackRating] = useState(0);
   const navCloseTimer = useRef<number | undefined>(undefined);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -579,6 +622,7 @@ export default function SiteRenderer({
 
   const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, sourceData, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const imageReplacementKey = imageReplacementStorageKey(businessId, meta.businessId);
+  const buttonIconKey = buttonIconStorageKey(businessId, meta.businessId);
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(imageReplacementKey);
@@ -588,6 +632,15 @@ export default function SiteRenderer({
       setImageReplacements({});
     }
   }, [imageReplacementKey]);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(buttonIconKey);
+      const parsed = saved ? JSON.parse(saved) : {};
+      setButtonIconOverrides(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
+    } catch {
+      setButtonIconOverrides({});
+    }
+  }, [buttonIconKey]);
   const fontContext = [
     meta.businessName,
     meta.niche,
@@ -754,6 +807,54 @@ export default function SiteRenderer({
       {value ?? ""}
     </EditableText>
   );
+  const saveButtonIconOverride = (key: string, iconId: string) => {
+    setButtonIconOverrides((current) => {
+      const next = { ...current };
+      if (iconId) next[key] = iconId;
+      else delete next[key];
+      try {
+        if (Object.keys(next).length > 0) {
+          window.localStorage.setItem(buttonIconKey, JSON.stringify(next));
+        } else {
+          window.localStorage.removeItem(buttonIconKey);
+        }
+      } catch (error) {
+        console.warn("Could not save button icon selection in browser storage.", error);
+      }
+      return next;
+    });
+  };
+  const editableButtonIcon = (key: string, label = "", href = "", size = 16, className = "") => {
+    const fallbackIcon = inferCtaIconId(label, href);
+    const iconId = buttonIconOverrides[key] || fallbackIcon;
+    return (
+      <span
+        data-wv-button-icon={editMode ? "true" : undefined}
+        className={`inline-flex shrink-0 items-center justify-center ${editMode ? "rounded-full ring-1 ring-white/70 ring-offset-2 ring-offset-transparent" : ""}`}
+        role={editMode ? "button" : undefined}
+        tabIndex={editMode ? 0 : undefined}
+        title={editMode ? "Choose button icon" : undefined}
+        onClick={editMode ? (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setActiveIconPickerKey(key);
+          setIconPickerQuery("");
+        } : undefined}
+        onKeyDown={editMode ? (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+            setActiveIconPickerKey(key);
+            setIconPickerQuery("");
+          }
+        } : undefined}
+      >
+        {renderCtaIcon(iconId, size, className)}
+      </span>
+    );
+  };
+  const editableButtonText = (id: string, value: string | number | null | undefined, className = "") =>
+    editableText(`button.${id}`, value, "span", className);
   const normalizedAnchorId = (value = "") => String(value || "").replace(/^#/, "").trim().toLowerCase();
   const sectionMatchesTarget = (section: any, targetId: string) => {
     const target = normalizedAnchorId(targetId);
@@ -1027,11 +1128,17 @@ export default function SiteRenderer({
     window.location.href = targetHref;
   };
   const chooseFeedbackRating = (rating: number) => {
+    if (editMode) return;
     setFeedbackRating(rating);
     if (rating >= 4 && googleReviewHref) {
       window.location.href = googleReviewHref;
     }
   };
+  const visibleCtaIconOptions = ctaIconOptions.filter((option) => {
+    const query = iconPickerQuery.trim().toLowerCase();
+    if (!query) return true;
+    return `${option.label} ${option.keywords}`.toLowerCase().includes(query);
+  });
 
   return (
     <div style={customStyles} id="rendered-site">
@@ -1093,6 +1200,10 @@ export default function SiteRenderer({
           href={globalConfig.header.ctaButton.href}
           data-wv-tab={tabPageIdForHref(String(globalConfig.header.ctaButton.href || "")) || undefined}
           onClick={(event) => {
+            if (editMode) {
+              event.preventDefault();
+              return;
+            }
             const href = String(globalConfig.header.ctaButton.href || "");
             if (href.startsWith("#")) {
               event.preventDefault();
@@ -1102,8 +1213,8 @@ export default function SiteRenderer({
           style={{ backgroundColor: colors.accent }}
           className={`${headerCompact ? "h-9" : "h-11"} justify-self-end shrink-0 px-4 py-0 rounded-lg text-white font-medium hover:opacity-90 transition text-sm leading-none inline-flex items-center gap-2`}
         >
-          {buttonIcon(globalConfig.header.ctaButton.text, globalConfig.header.ctaButton.href)}
-          {globalConfig.header.ctaButton.text}
+          {editableButtonIcon("header.cta", globalConfig.header.ctaButton.text, globalConfig.header.ctaButton.href)}
+          {editableButtonText("header.cta", globalConfig.header.ctaButton.text)}
         </a>
       </header>
       {navSubmenus.map((submenu: any) => {
@@ -1186,10 +1297,16 @@ export default function SiteRenderer({
                                   border: `1px solid ${btn.style === "primary" ? colors.accent : "#CBD5E1"}`,
                                 }}
                                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-semibold transition hover:translate-y-[-1px]"
-                                onClick={() => navigateSiteHref(href)}
+                                onClick={(event) => {
+                                  if (editMode) {
+                                    event.preventDefault();
+                                    return;
+                                  }
+                                  navigateSiteHref(href);
+                                }}
                               >
-                                {buttonIcon(btn.text, href)}
-                                {btn.text || labels.learnMore}
+                                {editableButtonIcon(`${page.pageId}.${section.id}.hero.${i}`, btn.text || labels.learnMore, href)}
+                                {editableButtonText(`${page.pageId}.${section.id}.hero.${i}`, btn.text || labels.learnMore)}
                               </button>
                             );
                           })}
@@ -1319,16 +1436,22 @@ export default function SiteRenderer({
                                       editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "p", "mt-4 text-sm font-semibold", { color: colors.accent })
                                     )
                                   )}
-                                  {ctaHref && ctaText && !editMode && !ctaDuplicatesCard && (
+                                  {ctaHref && ctaText && !ctaDuplicatesCard && (
                                     <a
                                       href={ctaHref}
                                       {...tabPropsForHref(ctaHref)}
-                                      onClick={(event) => handleSiteHrefClick(ctaHref, event)}
+                                      onClick={(event) => {
+                                        if (editMode) {
+                                          event.preventDefault();
+                                          return;
+                                        }
+                                        handleSiteHrefClick(ctaHref, event);
+                                      }}
                                       className="pointer-events-auto mt-5 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
                                       style={{ backgroundColor: colors.primary }}
                                     >
-                                      {buttonIcon(ctaText, ctaHref, 15)}
-                                      {ctaText}
+                                      {editableButtonIcon(`${page.pageId}.${section.id}.offer.${i}.cta`, ctaText, ctaHref, 15)}
+                                      {editableButtonText(`${page.pageId}.${section.id}.offer.${i}.cta`, ctaText)}
                                     </a>
                                   )}
                                 </div>
@@ -1473,9 +1596,14 @@ export default function SiteRenderer({
                           </div>
                         )}
                         {(section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl) && (
-                          <a href={section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl} className="mt-5 inline-flex w-fit items-center gap-2 px-5 py-3 rounded-lg text-white font-semibold" style={{ backgroundColor: colors.primary }}>
-                            <MapPin size={16} />
-                            {labels.openMaps}
+                          <a
+                            href={section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl}
+                            onClick={editMode ? (event) => event.preventDefault() : undefined}
+                            className="mt-5 inline-flex w-fit items-center gap-2 px-5 py-3 rounded-lg text-white font-semibold"
+                            style={{ backgroundColor: colors.primary }}
+                          >
+                            {editableButtonIcon(`${page.pageId}.${section.id}.directions`, labels.openMaps, section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl, 16)}
+                            {editableButtonText(`${page.pageId}.${section.id}.directions`, labels.openMaps)}
                           </a>
                         )}
                       </div>
@@ -1634,6 +1762,7 @@ export default function SiteRenderer({
                           data-wv-subject={feedbackSubject}
                           onSubmit={(event) => {
                             event.preventDefault();
+                            if (editMode) return;
                             const formData = new FormData(event.currentTarget);
                             const message = String(formData.get("feedback") || "").trim();
                             const rating = String(formData.get("rating") || feedbackRating || "");
@@ -1651,8 +1780,8 @@ export default function SiteRenderer({
                           />
                           {!feedbackEmail && <p className="text-xs font-medium text-amber-700">{labels.feedbackNoEmail}</p>}
                           <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: colors.primary }}>
-                            <Mail size={16} />
-                            {labels.feedbackSend}
+                            {editableButtonIcon(`${page.pageId}.${section.id}.feedbackSubmit`, labels.feedbackSend, `mailto:${feedbackEmail}`, 16)}
+                            {editableButtonText(`${page.pageId}.${section.id}.feedbackSubmit`, labels.feedbackSend)}
                           </button>
                         </form>
                       </div>
@@ -1706,6 +1835,7 @@ export default function SiteRenderer({
                           data-wv-business={meta.businessName}
                           onSubmit={(e) => {
                             e.preventDefault();
+                            if (editMode) return;
                             const formData = new FormData(e.currentTarget);
                             const entries = Array.from(formData.entries()).map(([key, value]) => `${key}: ${String(value)}`);
                             const name = String(formData.get("name") || "");
@@ -1737,8 +1867,8 @@ export default function SiteRenderer({
                             );
                           })}
                           <button type="submit" style={{ backgroundColor: colors.accent, color: "#fff" }} className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium hover:opacity-90 transition pt-2">
-                            <Mail size={16} />
-                            {formConfig.buttonText || (isIndonesian ? "Kirim Pesan" : "Send Message")}
+                            {editableButtonIcon(`${page.pageId}.${section.id}.contactSubmit`, formConfig.buttonText || (isIndonesian ? "Kirim Pesan" : "Send Message"), `mailto:${contactEmail}`, 16)}
+                            {editableButtonText(`${page.pageId}.${section.id}.contactSubmit`, formConfig.buttonText || (isIndonesian ? "Kirim Pesan" : "Send Message"))}
                           </button>
                         </form>
                       </div>
@@ -1837,24 +1967,87 @@ export default function SiteRenderer({
 
       {conversion.stickyMobileCta && (
         <div className="md:hidden fixed bottom-0 inset-x-0 z-[110] bg-white border-t border-slate-200 p-3 flex gap-2">
-          <a href={conversion.primaryCta?.href || globalConfig.header.ctaButton.href} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 text-white font-semibold" style={{ backgroundColor: colors.accent }}>
-            {buttonIcon(conversion.primaryCta?.text || globalConfig.header.ctaButton.text, conversion.primaryCta?.href || globalConfig.header.ctaButton.href)}
-            {conversion.primaryCta?.text || globalConfig.header.ctaButton.text}
+          <a
+            href={conversion.primaryCta?.href || globalConfig.header.ctaButton.href}
+            onClick={editMode ? (event) => event.preventDefault() : undefined}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 text-white font-semibold"
+            style={{ backgroundColor: colors.accent }}
+          >
+            {editableButtonIcon("sticky.primary", conversion.primaryCta?.text || globalConfig.header.ctaButton.text, conversion.primaryCta?.href || globalConfig.header.ctaButton.href)}
+            {editableButtonText("sticky.primary", conversion.primaryCta?.text || globalConfig.header.ctaButton.text)}
           </a>
           {conversion.secondaryCta?.href && (
-            <a href={conversion.secondaryCta.href} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 font-semibold border border-slate-300 text-slate-800">
-              {buttonIcon(conversion.secondaryCta.text, conversion.secondaryCta.href)}
-              {conversion.secondaryCta.text || (isIndonesian ? "Lokasi" : "Location")}
+            <a
+              href={conversion.secondaryCta.href}
+              onClick={editMode ? (event) => event.preventDefault() : undefined}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 font-semibold border border-slate-300 text-slate-800"
+            >
+              {editableButtonIcon("sticky.secondary", conversion.secondaryCta.text || (isIndonesian ? "Lokasi" : "Location"), conversion.secondaryCta.href)}
+              {editableButtonText("sticky.secondary", conversion.secondaryCta.text || (isIndonesian ? "Lokasi" : "Location"))}
             </a>
           )}
         </div>
       )}
       </div>
 
+      {editMode && activeIconPickerKey && (
+        <div
+          data-export-remove="true"
+          data-wv-tool-ui="button-icon-picker"
+          className="hide-in-export fixed bottom-24 left-5 z-[230] w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl md:bottom-24"
+        >
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-slate-950">Button icon</p>
+            <button type="button" onClick={() => setActiveIconPickerKey("")} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close icon picker">
+              <X size={16} />
+            </button>
+          </div>
+          <label className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600">
+            <Search size={15} />
+            <input
+              value={iconPickerQuery}
+              onChange={(event) => setIconPickerQuery(event.target.value)}
+              className="min-w-0 flex-1 bg-transparent outline-none"
+              placeholder="Search CTA icons..."
+              autoFocus
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                saveButtonIconOverride(activeIconPickerKey, "");
+                setActiveIconPickerKey("");
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {renderCtaIcon("check", 16)}
+              Auto
+            </button>
+            {visibleCtaIconOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  saveButtonIconOverride(activeIconPickerKey, option.id);
+                  setActiveIconPickerKey("");
+                }}
+                className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold hover:bg-indigo-50 ${
+                  buttonIconOverrides[activeIconPickerKey] === option.id ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 text-slate-700"
+                }`}
+              >
+                {renderCtaIcon(option.id, 16)}
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div data-export-remove="true" data-wv-tool-ui="inline-edit-panel" className="hide-in-export fixed bottom-20 left-5 z-[210] flex max-w-[calc(100vw-2.5rem)] flex-col items-start gap-2 md:bottom-5">
         {editMode && (
           <div className="max-w-xs rounded-lg border border-indigo-100 bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow-xl backdrop-blur">
-            Click text to edit it, or click an image to replace it. Replaced images can be restored to original. Changes are saved in this browser and included in the downloaded site.
+            Click text or button labels to edit them. Click button icons to choose a CTA icon. Click images to replace or restore them. Changes are saved in this browser and included in the downloaded site.
           </div>
         )}
         <input

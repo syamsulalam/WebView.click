@@ -92,6 +92,14 @@ function cleanHtmlClone() {
     element.removeAttribute("data-wv-edit-key");
     element.classList.remove("cursor-text", "hover:ring-2", "hover:ring-indigo-200", "focus:ring-2", "focus:ring-indigo-500", "focus:ring-offset-2");
   });
+  clone.querySelectorAll("[data-wv-button-icon='true']").forEach((node) => {
+    const element = node as HTMLElement;
+    element.removeAttribute("data-wv-button-icon");
+    element.removeAttribute("role");
+    element.removeAttribute("tabindex");
+    element.removeAttribute("title");
+    element.classList.remove("rounded-full", "ring-1", "ring-white/70", "ring-offset-2", "ring-offset-transparent");
+  });
 
   clone.querySelectorAll("img[src], source[src], video[src], audio[src], iframe[src]").forEach((node) => {
     const element = node as HTMLElement;
