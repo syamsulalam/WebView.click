@@ -14,6 +14,7 @@ import {
   postChunkedGenerateSite,
   postGenerateSite,
   resolveLeadGeneratePhotoSelection,
+  runChunkedGenerationJob,
 } from "../../lib/adminSiteGeneration";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
@@ -160,6 +161,10 @@ function isMapsQueryPlaceholder(prospect: ProspectRow) {
   return mapsQueryPlaceholder(prospect);
 }
 
+function needsAboutNavRepair(site: SiteRow) {
+  return site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false;
+}
+
 export default function AdminSites() {
   const { showApiError, showToast } = useAdminToast();
   const [sites, setSites] = useState<SiteRow[]>([]);
@@ -176,12 +181,16 @@ export default function AdminSites() {
   const [batchRefreshingVisualVariation, setBatchRefreshingVisualVariation] = useState(false);
   const [batchAiFillingAboutNav, setBatchAiFillingAboutNav] = useState(false);
   const [generatingProspectId, setGeneratingProspectId] = useState("");
-  const [generationProgress, setGenerationProgress] = useState<Record<string, { step: string; text: string; retryInSeconds?: number }>>({});
+  const [generationProgress, setGenerationProgress] = useState<Record<string, { step: string; text: string; shortText?: string; message?: string; retryInSeconds?: number }>>({});
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
   const [regenerateModel, setRegenerateModel] = useLocalStorageState("webview.adminSites.regenerateModel", "~anthropic/claude-sonnet-latest");
+  const showAboutNavRepairOverride = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("repair") === "about-nav";
+  }, []);
   const notifyAction = (
     kind: "success" | "error" | "warning" | "info",
     title: string,
@@ -207,7 +216,7 @@ export default function AdminSites() {
   const updateGenerationProgress = (
     key: string,
     step: string,
-    progress?: { status?: string; retryInSeconds?: number },
+    progress?: { status?: string; retryInSeconds?: number; message?: string },
   ) => {
     const labels: Record<string, string> = {
       outline: "Inferring service/product pages",
@@ -223,10 +232,29 @@ export default function AdminSites() {
         : progress?.status === "complete"
           ? " - done"
           : "";
-    setGenerationProgress((current) => ({
-      ...current,
-      [key]: { step, text: `${labels[step] || "Generating"}${suffix}`, retryInSeconds: progress?.retryInSeconds },
-    }));
+    setGenerationProgress((current) => {
+      const previous = current[key];
+      const progressMessage = progress?.message || (previous?.step === step ? previous.message : "");
+      let shortText = labels[step] || "Generating";
+      if (step === "siteCopy") shortText = "About copy";
+      if (step === "offeringCopy") {
+        const match = progressMessage.match(/(\d+)\s*\/\s*(\d+)/);
+        shortText = match ? `Nav ${match[1]}/${match[2]}` : "Nav labels";
+      }
+      if (step === "finalize") shortText = "Finalize";
+      if (progress?.status === "retry_wait") shortText = `Retry ${progress.retryInSeconds}s`;
+      if (progress?.status === "retrying") shortText = "Retrying";
+      return {
+        ...current,
+        [key]: {
+          step,
+          text: `${labels[step] || "Generating"}${progressMessage ? ` - ${progressMessage}` : ""}${suffix}`,
+          shortText,
+          message: progressMessage,
+          retryInSeconds: progress?.retryInSeconds,
+        },
+      };
+    });
   };
   const clearGenerationProgress = (key: string) => {
     setGenerationProgress((current) => {
@@ -289,7 +317,7 @@ export default function AdminSites() {
     const issueFilteredSites = siteIssueFilter === "images"
       ? sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0)
       : siteIssueFilter === "content"
-        ? sites.filter((site) => site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false)
+        ? sites.filter(needsAboutNavRepair)
       : sites;
     if (!needle) return issueFilteredSites;
     return issueFilteredSites.filter((site) => [
@@ -299,7 +327,7 @@ export default function AdminSites() {
       site.language,
       site.region,
       site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0 ? "missing duplicate service images" : "",
-      site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false ? "missing about nav labels ai fill content" : "",
+      needsAboutNavRepair(site) ? "missing about nav labels ai fill content" : "",
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [query, siteIssueFilter, sites]);
 
@@ -309,7 +337,7 @@ export default function AdminSites() {
   );
 
   const missingAboutNavSiteCount = useMemo(
-    () => sites.filter((site) => site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false).length,
+    () => sites.filter(needsAboutNavRepair).length,
     [sites],
   );
 
@@ -319,9 +347,16 @@ export default function AdminSites() {
   );
 
   const filteredMissingAboutNavSites = useMemo(
-    () => filteredSites.filter((site) => site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false),
+    () => filteredSites.filter(needsAboutNavRepair),
     [filteredSites],
   );
+
+  const activeBatchAboutNavProgress = batchAiFillingAboutNav && regeneratingId
+    ? generationProgress[regeneratingId]
+    : undefined;
+  const batchAboutNavButtonText = batchAiFillingAboutNav
+    ? activeBatchAboutNavProgress?.shortText || "Starting"
+    : "Generate About/nav";
 
   const filteredGatheredProspects = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -680,6 +715,19 @@ export default function AdminSites() {
     }
   };
 
+  const runAboutNavAiFillSite = async (site: SiteRow, label: string) => {
+    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/ai-fill-about-nav-start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: activeRegenerateProvider,
+        model: activeRegenerateModel,
+      }),
+    });
+    const start = await readApiJson<Record<string, unknown>>(response, `${label} start`);
+    await runChunkedGenerationJob(start, label, (step, progress) => updateGenerationProgress(site.businessId, step, progress));
+  };
+
   const handleRegenerate = async (site: SiteRow, mode: RegenerateMode) => {
     setRegeneratingId(site.businessId);
     try {
@@ -718,6 +766,37 @@ export default function AdminSites() {
     }
   };
 
+  const handleAboutNavAiFillSite = async (site: SiteRow) => {
+    setRegeneratingId(site.businessId);
+    try {
+      await ensureAiGenerationReady({
+        provider: activeRegenerateProvider,
+        model: activeRegenerateModel,
+        action: "sites_ai_fill_about_nav",
+        businessId: site.businessId,
+        businessName: site.businessName,
+        readinessMessage: "AI provider/model is not ready. Check /admin/settings before filling About/nav.",
+        cooldownMessage: (cooldown) => `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`,
+      });
+      await runAboutNavAiFillSite(site, "AI fill About/nav");
+      notifyAction(
+        "success",
+        "About/nav filled",
+        `Generated About page copy and short service menu labels for ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`,
+      );
+      fetchSites();
+    } catch (err) {
+      if (isAdminGenerationBlockedError(err) && err.kind === "cooldown") {
+        showToast({ kind: "warning", title: err.title || `${activeRegenerateProvider} cooldown active`, message: err.message, actions: err.actions });
+      } else {
+        showApiError(err, { source: "AI fill About/nav", provider: activeRegenerateProvider, model: activeRegenerateModel });
+      }
+    } finally {
+      setRegeneratingId("");
+      clearGenerationProgress(site.businessId);
+    }
+  };
+
   const handleAiFillFilteredAboutNav = async () => {
     const targets = filteredMissingAboutNavSites.slice(0, ABOUT_NAV_AI_BATCH_LIMIT);
     if (targets.length === 0) {
@@ -742,7 +821,7 @@ export default function AdminSites() {
         const site = targets[index];
         setRegeneratingId(site.businessId);
         try {
-          await runRegenerateSite(site, "ai", "Batch AI fill About/nav");
+          await runAboutNavAiFillSite(site, "Batch AI fill About/nav");
           completed += 1;
         } catch (error) {
           failures.push(`${site.businessName}: ${error instanceof Error ? error.message : String(error)}`);
@@ -982,7 +1061,7 @@ export default function AdminSites() {
             <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingServiceImageSiteCount}</span>
           </button>
         </HoverTooltip>
-        <HoverTooltip text="Show generated sites missing a saved About page, missing AI-written short service submenu labels, or missing the new About/nav audit. Use the Regen menu's AI fill action on these rows.">
+        <HoverTooltip text="Show generated sites missing a saved About page, missing AI-written short service submenu labels, or missing the new About/nav audit. Use Generate About/nav on each row or the batch button on these rows.">
           <button
             type="button"
             onClick={() => setSiteIssueFilter(siteIssueFilter === "content" ? "all" : "content")}
@@ -998,7 +1077,7 @@ export default function AdminSites() {
             <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingAboutNavSiteCount}</span>
           </button>
         </HoverTooltip>
-        <HoverTooltip text={`AI fill About page copy and short service submenu labels for up to ${ABOUT_NAV_AI_BATCH_LIMIT} rows in the current filtered list. Runs one site at a time and each site uses separate chunked AI requests so the batch is less likely to hit request timeouts.`}>
+        <HoverTooltip text={`AI fill About page copy and short service submenu labels for up to ${ABOUT_NAV_AI_BATCH_LIMIT} rows in the current filtered list. Each site starts server-side, then runs an About-only AI request, one nav-label AI request per service, and finalize.`}>
           <button
             type="button"
             onClick={handleAiFillFilteredAboutNav}
@@ -1011,7 +1090,7 @@ export default function AdminSites() {
             ) : (
               <Brain size={14} />
             )}
-            AI fill filtered
+            {batchAboutNavButtonText}
             <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-700">
               {Math.min(filteredMissingAboutNavSites.length, ABOUT_NAV_AI_BATCH_LIMIT)}
             </span>
@@ -1180,7 +1259,7 @@ export default function AdminSites() {
                 {Number(prospect.rating || 0).toFixed(1)} / {Number(prospect.user_ratings_total || prospect.userRatingCount || 0)}
               </span>
               <span className="text-xs text-gray-500">{prospect.detailsLoadedAt ? new Date(prospect.detailsLoadedAt).toLocaleString() : "-"}</span>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 {(prospect.url || prospect.googleMapsUri) && (
                   <HoverTooltip text="Open the source Google Maps listing.">
                     <a
@@ -1292,10 +1371,10 @@ export default function AdminSites() {
                       </span>
                     </HoverTooltip>
                   )}
-                  {(site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false) && (
+                  {needsAboutNavRepair(site) && (
                     <HoverTooltip text={site.aboutNavAuditKnown === false
-                      ? "This saved summary predates the About/nav audit. Use AI fill to save the About page and short service submenu labels, or resave to refresh the audit."
-                      : `${site.hasAboutPage ? "About page exists" : "About page is missing"}; ${site.missingServiceNavLabelCount ?? "unknown"} of ${site.serviceNavLabelTotal ?? "unknown"} service nav labels are missing. Use AI fill from Regen.`
+                      ? "This saved summary predates the About/nav audit. Use Generate About/nav to save the About page and short service submenu labels, or resave to refresh the audit."
+                      : `${site.hasAboutPage ? "About page exists" : "About page is missing"}; ${site.missingServiceNavLabelCount ?? "unknown"} of ${site.serviceNavLabelTotal ?? "unknown"} service nav labels are missing. Use Generate About/nav.`
                     }>
                       <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
                         <FileText size={11} />
@@ -1383,6 +1462,27 @@ export default function AdminSites() {
                     <FileText size={14} />
                   </button>
                 </HoverTooltip>
+                {(needsAboutNavRepair(site) || showAboutNavRepairOverride) && (
+                  <HoverTooltip text={needsAboutNavRepair(site)
+                    ? "Generate this site's missing About page copy and short service menu labels only. Runs server-side as small chunked AI calls: About copy, one nav label per service, then finalize."
+                    : "Repair override is enabled by ?repair=about-nav. Run the About/nav fill again for this site even though the saved summary is not currently flagged."
+                  }>
+                    <button
+                      type="button"
+                      onClick={() => handleAboutNavAiFillSite(site)}
+                      disabled={!activeRegenerateModel || Boolean(regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
+                      className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-indigo-200 px-2.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                      aria-label="Generate missing About page copy and short service menu labels"
+                    >
+                      {regeneratingId === site.businessId ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                      ) : (
+                        <Brain size={14} />
+                      )}
+                      {regeneratingId === site.businessId ? generationProgress[site.businessId]?.shortText || "Running" : "Generate About/nav"}
+                    </button>
+                  </HoverTooltip>
+                )}
                 {(site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0) && (
                   <HoverTooltip text="Repair only homepage/services grid card images when cards are missing images or repeat the same image. No AI call and no full site regeneration.">
                     <button

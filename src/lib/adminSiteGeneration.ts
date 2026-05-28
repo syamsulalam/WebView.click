@@ -405,6 +405,17 @@ export async function postChunkedGenerateSite(
   const jobId = start.id;
   if (!jobId) throw new Error("Chunked generation did not return a job id.");
 
+  return runChunkedGenerationJob(start, label, onStep);
+}
+
+export async function runChunkedGenerationJob(
+  start: Record<string, unknown>,
+  label = "Generate site",
+  onStep?: (step: string, progress?: ChunkedGenerateProgress) => void,
+) {
+  const jobId = String(start.id || "");
+  if (!jobId) throw new Error("Chunked generation did not return a job id.");
+
   let result: any = start;
   const steps = ["outline", "siteCopy", "offeringCopy", "finalize"];
   const firstStepIndex = Math.max(0, steps.indexOf(String(start.nextStep || "outline")));

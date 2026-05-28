@@ -305,7 +305,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
       status: "running",
       metadata_json: JSON.stringify(metadata),
     });
-    return deps.json({ success: true, id, nextStep: "outline" });
+    return deps.json({ success: true, id, nextStep: metadata.nextStep });
   }
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "run-step") {
@@ -349,8 +349,9 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
 
       if (requestedStep === "copy" || requestedStep === "siteCopy") {
         const { finalJson } = chunkedGenerationJsonWithOutline(deps, metadata);
-        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson, { focus: "site" });
-        const copyPatchResult = await deps.generateAiCopyPatch(db, env, { ...payload, copyPatchFocus: "site" }, finalJson);
+        const siteCopyFocus = deps.asString(payload.siteCopyFocus, "site");
+        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson, { focus: siteCopyFocus });
+        const copyPatchResult = await deps.generateAiCopyPatch(db, env, { ...payload, copyPatchFocus: siteCopyFocus }, finalJson);
         if (!copyPatchResult) {
           throw new Error("AI site copy patch did not return JSON for chunked generation.");
         }
@@ -394,7 +395,10 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         const total = offerings.length;
         const previousCursor = Number(metadata.offeringCopyCursor);
         const cursor = resetOfferingCopy ? 0 : Math.min(total, Math.max(0, Number.isFinite(previousCursor) ? Math.floor(previousCursor) : 0));
-        const serviceCopyMode = await resolveServiceCopyMode(deps, db, env, payload);
+        const offeringCopyFocus = deps.asString(payload.offeringCopyFocus, "offerings");
+        const serviceCopyMode = offeringCopyFocus === "navLabels"
+          ? { serviceCopyBatchSize: 1, rawMode: "nav_labels" }
+          : await resolveServiceCopyMode(deps, db, env, payload);
         const batchSize = Math.min(serviceCopyMode.serviceCopyBatchSize, Math.max(1, total - cursor));
         if (!total || cursor >= total) {
           const combinedPatch = mergeCopyPatch(sitePatch, objectPatch(metadata.offeringCopyPatch));
@@ -422,10 +426,10 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
           ? stringValue(currentOffering.title) || `Offering ${cursor + 1}`
           : `${batchSize} services (${cursor + 1}-${cursor + batchSize})`;
         const previousOfferingPatch = resetOfferingCopy ? null : objectPatch(metadata.offeringCopyPatch);
-        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson, { focus: "offerings", offeringIndex: cursor, offeringBatchSize: batchSize });
+        const copyAuditTargets = deps.collectAiCopyAuditTargets(finalJson, { focus: offeringCopyFocus, offeringIndex: cursor, offeringBatchSize: batchSize });
         const offeringPatchResult = await deps.generateAiCopyPatch(db, env, {
           ...payload,
-          copyPatchFocus: "offerings",
+          copyPatchFocus: offeringCopyFocus,
           copyPatchOfferingIndex: cursor,
           copyPatchOfferingBatchSize: batchSize,
           copyPatchOfferingTotal: total,

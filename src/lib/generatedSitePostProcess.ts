@@ -172,6 +172,20 @@ function shortOfferingMenuLabel(item: Record<string, unknown>) {
   return compact.length <= 34 ? compact : compact.slice(0, 31).replace(/\s+\S*$/, "").trim() || source.slice(0, 28).trim();
 }
 
+export function repairOfferingNavLabels(finalJson: GeneratedSiteRecord) {
+  const products = Array.isArray(finalJson.products) ? finalJson.products as Array<Record<string, unknown>> : [];
+  const services = Array.isArray(finalJson.services) ? finalJson.services as Array<Record<string, unknown>> : [];
+  let changed = 0;
+  [...products, ...services].forEach((item) => {
+    if (safeCopyText(item.navLabel || item.shortLabel, 34)) return;
+    const label = shortOfferingMenuLabel(item);
+    if (!label) return;
+    item.navLabel = label;
+    changed += 1;
+  });
+  return { changed };
+}
+
 export function ensureAboutPage(finalJson: GeneratedSiteRecord) {
   const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
   const hasAboutPage = pages.some((page) => asString(page.pageId).toLowerCase() === "about");
@@ -697,6 +711,7 @@ export function ensureContactPage(finalJson: GeneratedSiteRecord, originData: Ge
 
 export function applyGeneratedSitePageInserts(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord = {}) {
   repairServiceCardImages(finalJson, originData);
+  repairOfferingNavLabels(finalJson);
   ensureServicesPage(finalJson);
   ensureAboutPage(finalJson);
   ensureContactPage(finalJson, originData);

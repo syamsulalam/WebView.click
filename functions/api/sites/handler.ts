@@ -1,4 +1,4 @@
-import { applyGeneratedSitePageInserts, repairServiceCardImages } from "../../../src/lib/generatedSitePostProcess";
+import { applyGeneratedSitePageInserts, repairOfferingNavLabels, repairServiceCardImages } from "../../../src/lib/generatedSitePostProcess";
 import { fontPairingsForText, fontPairingVariantForText } from "../../../src/lib/fontPairings";
 import {
   applyAiCopyPatch,
@@ -373,6 +373,119 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
 
   if (request.method === "POST" && segments.length === 2 && segments[1] === "migrate-r2") {
     return migrateOldSiteJsonRowsToR2(siteStorageDeps, request, db, env);
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "ai-fill-about-nav-start") {
+    const businessId = segments[1];
+    const body = await readJsonBody(request).catch(() => ({}));
+    const provider = asString(body.provider);
+    const model = asString(body.model);
+    await ensureRequiredColumns(db, [
+      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+      { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
+      { table: "json_sites", column: "json_summary", definition: "TEXT" },
+      { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+    ]);
+    const columns = await tableColumns(db, "json_sites");
+    const selectedColumns = [
+      "business_id",
+      "json_content",
+      columns.has("r2_json_key") ? "r2_json_key" : "",
+    ].filter(Boolean);
+    const row = await db
+      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
+      .bind(businessId)
+      .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+    if (!row?.json_content) return errorJson("Site not found", 404);
+
+    const siteJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
+    if (!siteJson || typeof siteJson !== "object" || Array.isArray(siteJson)) {
+      return errorJson("Saved site JSON is not an object and cannot start About/nav AI fill.", 422);
+    }
+    const beforeSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
+    const originData = siteJson.sourceData && typeof siteJson.sourceData === "object" ? siteJson.sourceData as Record<string, unknown> : {};
+    const navRepair = repairOfferingNavLabels(siteJson);
+    applyGeneratedSitePageInserts(siteJson, originData);
+    const aboutNavFillStartedAt = new Date().toISOString();
+    const meta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
+    siteJson.meta = { ...meta, lastAboutNavFillStartedAt: aboutNavFillStartedAt };
+    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
+    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
+    let r2JsonUrl = asString(storage.r2JsonUrl);
+    if (r2JsonKey || env.R2) {
+      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
+      if (nextKey) {
+        r2JsonKey = nextKey;
+        r2JsonUrl = publicR2Url(env, nextKey);
+        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
+        await uploadJsonToR2(siteJson, env, businessId);
+      }
+    }
+    const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
+    const d1JsonContent = r2JsonKey
+      ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
+      : JSON.stringify(siteJson);
+    await saveJsonSiteRecord(db, businessId, d1JsonContent, {
+      r2_json_key: r2JsonKey || null,
+      r2_json_url: r2JsonUrl || null,
+      json_summary: JSON.stringify(jsonSummary),
+    });
+
+    const profile = siteJson.businessProfile && typeof siteJson.businessProfile === "object" ? siteJson.businessProfile as Record<string, unknown> : {};
+    const updatedMeta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
+    const businessName = asString(updatedMeta.businessName, asString(profile.name, businessId));
+    const contact = profile.contact && typeof profile.contact === "object" ? profile.contact as Record<string, unknown> : {};
+    const jobId = crypto.randomUUID();
+    const payload = {
+      requireAi: true,
+      skipAiOfferingOutline: true,
+      siteCopyFocus: "about",
+      offeringCopyFocus: "navLabels",
+      provider,
+      model,
+      jsonContent: siteJson,
+      businessId,
+      businessName,
+      phone: asString(contact.phoneInternational, asString(contact.phoneNational)),
+      originData,
+      brandPalette: siteJson.meta && typeof siteJson.meta === "object" ? (siteJson.meta as Record<string, unknown>).brandPalette || [] : [],
+      paletteOptions: siteJson.brand && typeof siteJson.brand === "object" ? (siteJson.brand as Record<string, unknown>).paletteOptions || [] : [],
+    };
+    const metadata = {
+      businessName,
+      generationMode: "chunked_ai_generation",
+      chunked: true,
+      step: "outline_complete",
+      nextStep: "siteCopy",
+      payload,
+      copyPatchApplied: false,
+      offeringOutlineSkipped: true,
+      createdFor: "about_nav_ai_fill_retryable_flow",
+      aboutNavDeterministicRepair: {
+        before: beforeSummary,
+        after: jsonSummary,
+        navLabelsChanged: navRepair.changed,
+        startedAt: aboutNavFillStartedAt,
+      },
+      checkedAt: aboutNavFillStartedAt,
+    };
+    await ensureRequiredColumns(db, generateRequiredColumns);
+    await createGenerationJob(db, {
+      id: jobId,
+      business_id: businessId,
+      place_id: asString(originData.placeId, asString(originData.place_id)),
+      provider,
+      model,
+      status: "running",
+      metadata_json: JSON.stringify(metadata),
+    });
+    return json({
+      success: true,
+      id: jobId,
+      nextStep: "siteCopy",
+      deterministic: metadata.aboutNavDeterministicRepair,
+      storageMode: r2JsonKey ? "r2" : "legacy_d1",
+    });
   }
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "repair-service-images") {
