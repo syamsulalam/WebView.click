@@ -144,6 +144,7 @@ export function offeringIndexItems(finalJson: GeneratedSiteRecord) {
   return sourceItems
     .map((item) => ({
       title: item.title || item.label,
+      navLabel: item.navLabel || item.shortLabel,
       description: item.summary || item.description,
       priceHint: item.priceHint,
       image: item.image,
@@ -152,6 +153,115 @@ export function offeringIndexItems(finalJson: GeneratedSiteRecord) {
       cta: item.cta,
     }))
     .filter((item) => item.title || item.description || item.href || item.detailPageId);
+}
+
+function shortOfferingMenuLabel(item: Record<string, unknown>) {
+  const explicit = safeCopyText(item.navLabel || item.shortLabel, 34);
+  if (explicit) return explicit;
+  const raw = safeCopyText(item.title || item.label, 90);
+  if (!raw) return "";
+  const cleaned = raw
+    .replace(/\b(services?|products?|solutions?|packages?|programs?)\b/gi, "")
+    .replace(/\b(for|and|with|from|by|near me)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const source = cleaned || raw;
+  if (source.length <= 28) return source;
+  const words = source.split(/\s+/).filter(Boolean);
+  const compact = words.slice(0, 3).join(" ");
+  return compact.length <= 34 ? compact : compact.slice(0, 31).replace(/\s+\S*$/, "").trim() || source.slice(0, 28).trim();
+}
+
+export function ensureAboutPage(finalJson: GeneratedSiteRecord) {
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  const hasAboutPage = pages.some((page) => asString(page.pageId).toLowerCase() === "about");
+  const meta = objectValue(finalJson.meta);
+  const businessProfile = objectValue(finalJson.businessProfile);
+  const brand = objectValue(finalJson.brand);
+  const trust = objectValue(finalJson.trust);
+  const location = objectValue(finalJson.location);
+  const isIndonesian = asString(meta.language).toLowerCase().startsWith("id");
+  const businessName = asString(meta.businessName, asString(businessProfile.name, isIndonesian ? "Bisnis ini" : "This business"));
+  const niche = asString(businessProfile.typeLabel, asString(businessProfile.primaryType, asString(meta.niche)));
+  const address = asString(location.formattedAddress, asString(objectValue(businessProfile.address).formatted));
+  const shortPitch = safeCopyText(businessProfile.shortPitch || meta.seoDescription, 420);
+  const image = firstUsableImage(brand.preferredHeroImage, brand.logoImageUrl);
+
+  if (!hasAboutPage) {
+    pages.splice(Math.min(1, pages.length), 0, {
+      pageId: "about",
+      pageTitle: isIndonesian ? "Tentang" : "About",
+      sections: [
+        {
+          type: "hero",
+          id: "about-hero",
+          content: {
+            headline: isIndonesian ? `Tentang ${businessName}` : `About ${businessName}`,
+            subheadline: shortPitch || (isIndonesian
+              ? `Kami membantu pelanggan lokal memahami layanan, lokasi, dan langkah berikutnya untuk ${niche || "kebutuhan ini"}.`
+              : `We help local customers understand our ${niche || "services"}, location, and next step before they contact us.`),
+            buttons: [
+              { text: isIndonesian ? "Lihat layanan" : "View services", href: "#services", style: "primary" },
+              { text: isIndonesian ? "Hubungi kami" : "Contact us", href: "#contact", style: "outline" },
+            ],
+            image,
+          },
+        },
+        {
+          type: "features",
+          id: "about-values",
+          content: {
+            title: isIndonesian ? "Cara kami membantu pelanggan" : "How we help customers",
+            description: isIndonesian
+              ? "Halaman ini memberi konteks singkat tentang bisnis, pendekatan layanan, dan alasan pelanggan menghubungi kami."
+              : "This page gives visitors quick context about the business, service approach, and reasons to get in touch.",
+            items: [
+              {
+                title: isIndonesian ? "Fokus lokal" : "Local focus",
+                description: address || (isIndonesian ? "Dibuat untuk pelanggan di area sekitar." : "Built around customers in the local service area."),
+              },
+              {
+                title: isIndonesian ? "Langkah jelas" : "Clear next steps",
+                description: isIndonesian ? "Pengunjung dapat melihat layanan, membuka maps, atau menghubungi langsung." : "Visitors can review services, open maps, or contact the business directly.",
+              },
+              {
+                title: isIndonesian ? "Bukti kepercayaan" : "Trust context",
+                description: Number(trust.rating || 0) > 0
+                  ? (isIndonesian ? `Rating Google ${Number(trust.rating).toFixed(1)} ditampilkan sebagai konteks kepercayaan.` : `A ${Number(trust.rating).toFixed(1)} Google rating is included as trust context.`)
+                  : (isIndonesian ? "Profil bisnis dapat dilengkapi dengan ulasan dan bukti sosial." : "The business profile can be completed with reviews and social proof."),
+              },
+            ],
+          },
+        },
+        {
+          type: "gridCards",
+          id: "about-approach",
+          content: {
+            title: isIndonesian ? "Yang bisa diharapkan" : "What visitors can expect",
+            description: isIndonesian
+              ? "Konten dapat disesuaikan setelah pemilik bisnis meninjau detail layanan."
+              : "The copy can be refined after the business owner reviews the service details.",
+            cards: [
+              { title: isIndonesian ? "Informasi layanan" : "Service information", description: isIndonesian ? "Ringkasan layanan utama dan halaman detail tersedia." : "Core service summaries and detail pages are included.", image },
+              { title: isIndonesian ? "Kontak mudah" : "Easy contact", description: isIndonesian ? "Tombol panggilan, formulir, dan arah maps disiapkan." : "Call buttons, inquiry form, and directions are ready.", image },
+              { title: isIndonesian ? "Siap dikembangkan" : "Ready to refine", description: isIndonesian ? "Pemilik bisa menyesuaikan teks, gambar, dan halaman tambahan." : "The owner can refine copy, images, and added pages.", image },
+            ],
+          },
+        },
+      ],
+    });
+    finalJson.pages = pages;
+  }
+
+  const navigation = objectValue(finalJson.navigation);
+  const headerMenu = Array.isArray(navigation.headerMenu) ? navigation.headerMenu as Array<Record<string, unknown>> : [];
+  if (headerMenu.length > 0 && !headerMenu.some((item) => asString(item.href) === "#about")) {
+    const aboutItem = { label: isIndonesian ? "Tentang" : "About", href: "#about" };
+    const homeIndex = headerMenu.findIndex((item) => asString(item.href) === "#home");
+    headerMenu.splice(homeIndex >= 0 ? homeIndex + 1 : Math.min(1, headerMenu.length), 0, aboutItem);
+    navigation.headerMenu = headerMenu;
+    finalJson.navigation = navigation;
+  }
 }
 
 function detailPageImageById(finalJson: GeneratedSiteRecord) {
@@ -351,13 +461,16 @@ export function ensureServicesPage(finalJson: GeneratedSiteRecord) {
     headerMenu.push({
       label: isIndonesian ? "Layanan" : "Services",
       href: "#services",
-      children: items
-        .map((item) => ({
-          label: item.title,
-          href: item.detailPageId ? `#${item.detailPageId}` : asString(item.href, asString(objectValue(item.cta).href)),
-        }))
-        .filter((item) => item.label && item.href),
     });
+  }
+  const servicesMenu = headerMenu.find((item) => asString(item.href) === "#services");
+  if (servicesMenu) {
+    servicesMenu.children = items
+      .map((item) => ({
+        label: shortOfferingMenuLabel(item),
+        href: item.detailPageId ? `#${item.detailPageId}` : asString(item.href, asString(objectValue(item.cta).href)),
+      }))
+      .filter((item) => item.label && item.href);
     navigation.headerMenu = headerMenu;
     finalJson.navigation = navigation;
   }
@@ -585,6 +698,7 @@ export function ensureContactPage(finalJson: GeneratedSiteRecord, originData: Ge
 export function applyGeneratedSitePageInserts(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord = {}) {
   repairServiceCardImages(finalJson, originData);
   ensureServicesPage(finalJson);
+  ensureAboutPage(finalJson);
   ensureContactPage(finalJson, originData);
   ensureFeedbackPage(finalJson);
   ensureGalleryPage(finalJson, originData);

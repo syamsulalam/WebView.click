@@ -551,18 +551,18 @@ export default function GenerationJobsTable({
                               )}
                               {copyRetryMode && (
                                 <HoverTooltip text={copyRetryMode === "offerings"
-                                  ? `${copyRetryServiceCopyContext?.estimate || ""} Retry only the offering-copy chunk, then finalize to save service page copy. Uses the chunked parent job when this row is a final save job.`
-                                  : `${copyRetryServiceCopyContext?.estimate || ""} Retry site-copy and offering-copy chunks, then finalize. This avoids rerunning the outline step.`
+                                  ? `${copyRetryServiceCopyContext?.estimate || ""} Retry only the offering-copy chunk, then finalize to save service page copy and short submenu labels. Uses the chunked parent job when this row is a final save job.`
+                                  : `${copyRetryServiceCopyContext?.estimate || ""} Retry site-copy and offering-copy chunks, then finalize. This fills missing About-page copy and service submenu labels without rerunning the outline step.`
                                 } widthClass="w-80">
                                   <button
                                     type="button"
                                     onClick={() => retryCopyOnly(job, copyRetryMode)}
                                     disabled={Boolean(retryingJobId || retryingChunkStep || retryingCopyOnlyJobId)}
                                     className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
-                                    aria-label={copyRetryMode === "offerings" ? "Retry service copy only" : "Retry copy chunks"}
+                                    aria-label={copyRetryMode === "offerings" ? "Retry service copy and submenu labels" : "Retry missing copy chunks"}
                                   >
                                     {retryingCopyOnlyJobId === copyRetryKey ? <Loader2 className="animate-spin" size={13} /> : <RotateCw size={13} />}
-                                    {copyRetryMode === "offerings" ? "Improve services" : "Retry copy chunks"}
+                                    {copyRetryMode === "offerings" ? "Improve services" : "Fill missing copy"}
                                   </button>
                                 </HoverTooltip>
                               )}

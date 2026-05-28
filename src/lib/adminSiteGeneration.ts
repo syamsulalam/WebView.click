@@ -406,7 +406,9 @@ export async function postChunkedGenerateSite(
   if (!jobId) throw new Error("Chunked generation did not return a job id.");
 
   let result: any = start;
-  for (const step of ["outline", "siteCopy", "offeringCopy", "finalize"]) {
+  const steps = ["outline", "siteCopy", "offeringCopy", "finalize"];
+  const firstStepIndex = Math.max(0, steps.indexOf(String(start.nextStep || "outline")));
+  for (const step of steps.slice(firstStepIndex)) {
     for (let itemAttempt = 0; itemAttempt < 24; itemAttempt += 1) {
       let attempt = 1;
       while (attempt <= 2) {

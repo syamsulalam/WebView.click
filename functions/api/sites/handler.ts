@@ -316,6 +316,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
               parsed.hasMissingServiceCardImages === undefined ||
               parsed.duplicateServiceCardImageCount === undefined ||
               parsed.needsServiceCardImageRepair === undefined ||
+              parsed.needsAboutNavRepair === undefined ||
               parsed.lastImageRepairAt === undefined ||
               parsed.lastVisualVariationAt === undefined
             ) &&
@@ -352,6 +353,11 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         hasMissingServiceCardImages: summary.hasMissingServiceCardImages === true,
         hasDuplicateServiceCardImages: summary.hasDuplicateServiceCardImages === true,
         needsServiceCardImageRepair: summary.needsServiceCardImageRepair === true,
+        hasAboutPage: summary.hasAboutPage === true,
+        serviceNavLabelTotal: typeof summary.serviceNavLabelTotal === "number" ? summary.serviceNavLabelTotal : null,
+        missingServiceNavLabelCount: typeof summary.missingServiceNavLabelCount === "number" ? summary.missingServiceNavLabelCount : null,
+        needsAboutNavRepair: summary.needsAboutNavRepair === true || summary.needsAboutNavRepair === undefined,
+        aboutNavAuditKnown: summary.needsAboutNavRepair !== undefined,
         lastImageRepairAt: asString(summary.lastImageRepairAt, ""),
         fontPairing: asString(summary.fontPairing, ""),
         fontPairingLabel: asString(summary.fontPairingLabel, ""),
@@ -674,6 +680,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         console.error("AI offering outline failed, continuing with scaffold offerings:", error);
       }
     }
+    applyGeneratedSitePageInserts(finalJson, originData);
     const copyBrief = buildAiCopyTargetBrief(finalJson, originData, businessName);
     const copyAuditTargets = collectAiCopyAuditTargets(finalJson);
     const currentCopyBriefHash = await sha256Json(copyBrief);

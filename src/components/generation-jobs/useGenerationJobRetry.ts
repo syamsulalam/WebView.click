@@ -268,6 +268,7 @@ export function useGenerationJobRetry({
           ? {
               copyOnlyRetryCoverageDelta: {
                 mode,
+                repairedTargets: mode === "offerings" ? ["serviceCopy", "serviceNavLabels"] : ["aboutPage", "serviceCopy", "serviceNavLabels"],
                 sourceJobId: job.id,
                 parentGenerationJobId: chunkedJob.id,
                 before: previousCoverage,
@@ -317,8 +318,8 @@ export function useGenerationJobRetry({
         setSelectedJob((currentJob: any) => currentJob?.id === refreshedJob.id ? { ...currentJob, ...refreshedJob } : currentJob);
       }
       setMessage(mode === "offerings"
-        ? `Retried service copy for ${job.businessId || chunkedJob.businessId || job.id} and opened the final save job.`
-        : `Retried site and service copy for ${job.businessId || chunkedJob.businessId || job.id} and opened the final save job.`
+        ? `Retried service copy and submenu labels for ${job.businessId || chunkedJob.businessId || job.id} and opened the final save job.`
+        : `Filled missing About copy plus service copy/submenu labels for ${job.businessId || chunkedJob.businessId || job.id} and opened the final save job.`
       );
       void refreshJobs();
     } catch (error) {

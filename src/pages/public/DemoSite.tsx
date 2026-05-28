@@ -5,6 +5,7 @@ import SiteRenderer from "../../components/SiteRenderer";
 import WebsiteActionPanel from "../../components/WebsiteActionPanel";
 import { downloadOwnerSiteZip } from "../../lib/exportSiteHtml";
 import { fontPairingsForText, getFontPairing } from "../../lib/fontPairings";
+import { applyGeneratedSitePageInserts } from "../../lib/generatedSitePostProcess";
 import { getShaderPreset, siteShaderPresets, siteStylePresets } from "../../lib/siteStylePresets";
 
 function emptyVisualQa() {
@@ -143,7 +144,9 @@ export default function DemoSite() {
       paletteOptions: orderedPaletteOptions,
     },
   };
-  const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
+  const panelSiteData = structuredClone(siteData);
+  applyGeneratedSitePageInserts(panelSiteData, panelSiteData.sourceData || {});
+  const pages = Array.isArray(panelSiteData?.pages) ? panelSiteData.pages : [];
   const sections = pages.flatMap((page: any) =>
     Array.isArray(page.sections) ? page.sections.map((section: any) => `${page.pageId}:${section.type}`) : [],
   );
@@ -156,8 +159,8 @@ export default function DemoSite() {
     !Array.isArray(siteData?.pages) ? "pages[]" : "",
   ].filter(Boolean);
 
-  const handleDownloadZip = async () => {
-    await downloadOwnerSiteZip(siteData, siteData.meta?.businessId || "webview-demo");
+  const handleDownloadZip = async (downloadSiteData = panelSiteData) => {
+    await downloadOwnerSiteZip(downloadSiteData, downloadSiteData?.meta?.businessId || "webview-demo");
   };
 
   useEffect(() => {
@@ -464,7 +467,7 @@ export default function DemoSite() {
         showProspectPanel={false}
       />
       <WebsiteActionPanel
-        siteData={siteData}
+        siteData={panelSiteData}
         businessId={siteData.meta.businessId}
         variant="demo"
         onDownloadZip={handleDownloadZip}

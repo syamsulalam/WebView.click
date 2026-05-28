@@ -203,6 +203,7 @@ function pagePurpose(page: any, index: number) {
   const label = pageLabel(page, index);
   const sectionTypes = Array.isArray(page?.sections) ? page.sections.map((section: any) => String(section?.type || "")) : [];
   if (id === "home") return "Main landing page for first impressions, calls, trust signals, and service overview.";
+  if (id === "about") return "About page that explains the business story, service approach, local trust context, and why visitors should contact you.";
   if (id === "services") return "Overview page that organizes products or services so visitors can quickly choose what they need.";
   if (id === "gallery") return "Portfolio/photo gallery that helps visitors see the real business before contacting you.";
   if (id === "contact") return "Contact page with phone, address, hours, map/directions, and inquiry form.";
@@ -249,6 +250,7 @@ function freeSitePages(siteData: any, businessId: string): FreeSitePageSummary[]
       rawPages.some((page: any) => (Array.isArray(page?.sections) ? page.sections : []).some((section: any) => section?.type === "imageGallery")),
   );
   if (offerings.length > 0) addVirtualPage("services", "Services", "Service overview page with cards and links to individual service details.");
+  addVirtualPage("about", "About", "Business story and service approach page for visitors who want trust context before contacting you.");
   if (hasGalleryData) addVirtualPage("gallery", "Gallery", "Portfolio/photo gallery using available business images.");
   if (hasContactData) addVirtualPage("contact", "Contact", "Contact page with business details, inquiry form, and call/directions actions.");
   addVirtualPage("feedback", "Feedback", "Review/feedback page for routing happy customers to Google reviews and collecting private feedback.");
@@ -287,6 +289,12 @@ function freeSiteFeatures(siteData: any) {
       detail: sections.some((section: any) => section?.type === "faq") || sections.some((section: any) => section?.type === "offeringDetail")
         ? "FAQ/service detail sections answer common questions before a visitor calls."
         : "Service detail structure is included for generated offerings.",
+    },
+    {
+      title: "About page",
+      detail: sections.some((section: any) => section?.id === "about-hero" || section?.id === "about-values" || section?.id === "about-approach")
+        ? "The package includes an About page with business context, service approach, and trust-building copy."
+        : "An About page is supported so the business story and service approach can be included.",
     },
     {
       title: "Individual service pages",

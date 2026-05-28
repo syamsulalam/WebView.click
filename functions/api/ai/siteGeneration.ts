@@ -121,6 +121,21 @@ function applyTextIfPresent(target: Record<string, unknown>, key: string, source
   if (value) target[key] = value;
 }
 
+function shortOfferingMenuLabel(value: unknown) {
+  const raw = safeCopyText(value, 90);
+  if (!raw) return "";
+  const cleaned = raw
+    .replace(/\b(services?|products?|solutions?|packages?|programs?)\b/gi, "")
+    .replace(/\b(for|and|with|from|by|near me)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const source = cleaned || raw;
+  if (source.length <= 28) return source;
+  const words = source.split(/\s+/).filter(Boolean);
+  const compact = words.slice(0, 3).join(" ");
+  return compact.length <= 34 ? compact : compact.slice(0, 31).replace(/\s+\S*$/, "").trim() || source.slice(0, 28).trim();
+}
+
 type AiCopyAuditTarget = {
   path: Array<string | number>;
   pathLabel: string;
@@ -184,7 +199,11 @@ function collectSectionCopyAuditTargets(
     pushCopyAuditTarget(targets, [...path, "content", field], `${sectionName} ${field}`, content[field]);
   });
 
-  const items = Array.isArray(content.items) ? content.items as Array<Record<string, unknown>> : [];
+  const items = Array.isArray(content.items)
+    ? content.items as Array<Record<string, unknown>>
+    : Array.isArray(content.cards)
+      ? content.cards as Array<Record<string, unknown>>
+      : [];
   items.slice(0, 8).forEach((item, index) => {
     (["title", "label", "value", "description", "question", "answer"] as const).forEach((field) => {
       pushCopyAuditTarget(targets, [...path, "content", "items", index, field], `${sectionName} item ${index + 1} ${field}`, item[field]);
@@ -255,7 +274,7 @@ export function collectAiCopyAuditTargets(siteJson: Record<string, unknown>, opt
     const offering = row.item;
     const rootPath = row.rootPath;
     const name = asString(offering.title, `offering ${row.index + 1}`);
-    (["title", "summary", "description", "priceHint"] as const).forEach((field) => {
+    (["title", "navLabel", "summary", "description", "priceHint"] as const).forEach((field) => {
       pushCopyAuditTarget(targets, [...rootPath, field], `${name} ${field}`, offering[field]);
     });
     (["bestFor", "included", "relatedReviewKeywords"] as const).forEach((field) => {
@@ -347,6 +366,12 @@ function applySectionCopyPatch(section: Record<string, unknown>, patch: Record<s
     applyTextIfPresent(target, "question", itemPatch, "question", 140);
     applyTextIfPresent(target, "answer", itemPatch, "answer", 360);
   });
+  const contentCards = Array.isArray(content.cards) ? content.cards as Array<Record<string, unknown>> : [];
+  itemsPatch.slice(0, contentCards.length).forEach((itemPatch, index) => {
+    const target = objectValue(contentCards[index]);
+    applyTextIfPresent(target, "title", itemPatch, "title", 90);
+    applyTextIfPresent(target, "description", itemPatch, "description", 260);
+  });
 
   if (Array.isArray(patch.highlights)) content.highlights = safeCopyPairs(patch.highlights, 4);
   if (Array.isArray(patch.included)) content.included = safeCopyArray(patch.included, 8, 100);
@@ -366,6 +391,9 @@ function applyOfferingCopyPatch(siteJson: Record<string, unknown>, patch: Record
   const offering = findOffering(siteJson, patch);
   if (!offering) return;
   applyTextIfPresent(offering, "title", patch, "title", 120);
+  applyTextIfPresent(offering, "navLabel", patch, "navLabel", 34);
+  applyTextIfPresent(offering, "navLabel", patch, "shortLabel", 34);
+  if (!safeCopyText(offering.navLabel, 34)) offering.navLabel = shortOfferingMenuLabel(offering.title);
   applyTextIfPresent(offering, "summary", patch, "summary", 360);
   applyTextIfPresent(offering, "description", patch, "description", 700);
   applyTextIfPresent(offering, "priceHint", patch, "priceHint", 80);
@@ -496,7 +524,7 @@ function sectionCopyTarget(section: Record<string, unknown>) {
     headline: safeCopyText(content.headline, 160),
     subheadline: safeCopyText(content.subheadline, 520),
     description: safeCopyText(content.description || content.summary, 360),
-    items: textItemsFromArray(content.items || content.highlights || content.buttons, 6),
+    items: textItemsFromArray(content.items || content.cards || content.highlights || content.buttons, 6),
   };
 }
 
@@ -540,6 +568,7 @@ function normalizeAiOfferingOutline(siteJson: Record<string, unknown>, outline: 
         id,
         type,
         title,
+        navLabel: safeCopyText(item.navLabel || item.shortLabel || existingItem.navLabel || existingItem.shortLabel, 34) || shortOfferingMenuLabel(title),
         summary: safeCopyText(item.summary || item.customerIntent || existingItem.summary || existingItem.description, 260),
         description: safeCopyText(item.description || item.customerIntent || existingItem.description || existingItem.summary, 520),
         priceHint: safeCopyText(item.priceHint || existingItem.priceHint, 80) || "Contact for estimate",
@@ -649,6 +678,7 @@ export function applyAiOfferingOutline(siteJson: Record<string, unknown>, outlin
   siteJson.services = services;
   siteJson.offers = offerings.map((item) => ({
     title: item.title,
+    navLabel: item.navLabel,
     description: item.summary || item.description,
     priceHint: item.priceHint,
     image: item.image,
@@ -690,7 +720,7 @@ export function applyAiOfferingOutline(siteJson: Record<string, unknown>, outlin
   const serviceMenu = {
     label: strategy.navbarGroupLabel,
     href: "#services",
-    children: offerings.map((item) => ({ label: item.title, href: `#${item.detailPageId}` })),
+    children: offerings.map((item) => ({ label: safeCopyText(item.navLabel, 34) || shortOfferingMenuLabel(item.title), href: `#${item.detailPageId}` })),
   };
   const menuIndex = headerMenu.findIndex((item) => asString(item.href) === "#services" || /service|layanan|product|produk/i.test(asString(item.label)));
   if (menuIndex >= 0) headerMenu[menuIndex] = serviceMenu;
@@ -797,6 +827,7 @@ export function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, origin
       type: asString(item.type),
       detailPageId: asString(item.detailPageId),
       title: safeCopyText(item.title, 120),
+      navLabel: safeCopyText(item.navLabel || item.shortLabel, 34),
       summary: safeCopyText(item.summary, 360),
       description: safeCopyText(item.description, 520),
       priceHint: safeCopyText(item.priceHint, 80),
@@ -1011,6 +1042,7 @@ export async function generateAiOfferingOutline(
     offerings: [{
       type: "service | product",
       title: "Distinct Title Case high-intent offering customers search for",
+      navLabel: "Short 1-3 word submenu label, max 24 chars",
       customerIntent: "The exact customer problem or buying situation this offering addresses.",
       summary: "One complete sentence, specific and non-thin.",
       description: "Two complete sentences explaining problem, solution, and result without unsupported claims.",
@@ -1025,6 +1057,7 @@ export async function generateAiOfferingOutline(
     "You create a compact service/product outline for a local business website. Return only valid JSON matching this schema, with no markdown and no extra keys:\n" +
     `${JSON.stringify(schema)}\n\n` +
     "Rules: create 4-12 offerings unless the niche clearly needs fewer. Use the customer's likely search intent, not generic labels like Consultation unless it is truly the service. " +
+    "For every offering, include navLabel as a short submenu label that fits a dropdown; use 1-3 words, not the full page title. " +
     "Use verified facts for identity, location, rating, reviews, and phone. Use conservative industry knowledge only for common problems/outcomes in the niche. " +
     "Every title must be distinct, specific, and plausible for the business category. Do not create pages, hrefs, IDs, images, JSON site sections, CSS, or navigation. " +
     "For US businesses write English. For Indonesian businesses write Indonesian. Plain text only.";
@@ -1172,6 +1205,7 @@ export async function generateAiCopyPatch(
     offerings: [{
       id: "existing product/service id from scaffold",
       title: "Title Case offering name",
+      navLabel: "Short 1-3 word submenu label, max 24 chars.",
       summary: "Specific non-thin summary focused on a real customer need.",
       description: "Longer service/product copy explaining problem, solution, and result.",
       priceHint: "Contact for estimate",
@@ -1204,6 +1238,7 @@ export async function generateAiCopyPatch(
     offerings: [{
       id: "existing product/service id from brief",
       title: "Title Case offering name",
+      navLabel: "Short 1-3 word submenu label, max 24 chars.",
       summary: "Specific non-thin summary focused on a real customer need.",
       description: "Longer service/product copy explaining problem, solution, and result.",
       priceHint: "Contact for estimate",
@@ -1240,6 +1275,7 @@ export async function generateAiCopyPatch(
     "Use review themes as trust-building customer benefits, not as a detached report. Do not repeat rating/review count in every section; use it where it naturally helps trust. " +
     "Do not merely summarize the Google profile. Expand from the niche/business name into buyer-aware copy: identify the real problems customers are trying to solve, explain how the service helps, mention local conditions only when they are plausible from the city/region, and make the benefit clear. For example, concrete copy should discuss cracks, uneven surfaces, driveways, walkways, patios, garage floors, retaining walls, durability, safety, curb appeal, soil/weather stress, and long-lasting repair or installation outcomes when relevant. Apply this same reasoning to every niche. " +
     "For offers and offerings, infer likely service/product lines from the industry, business name, category, and existing scaffold titles. Replace generic scaffold names with distinct, high-intent services customers would search for. Keep every offering plausible for the business category and avoid duplicate services. " +
+    "For each offering, also return navLabel: a short, natural submenu label that fits a narrow dropdown. Use 1-3 words, avoid repeating generic words like Services, and do not use the full detail-page headline. " +
     "Homepage feature sections should answer why a visitor should choose the business: experience/skill, local fit, materials/process quality, communication, reliability, safety, durability, convenience, and satisfaction. Use only claims that can be stated generally or supported by reviews/facts. " +
     "About-style or text-image copy should explain what the company helps customers accomplish, why the work matters in the local market, and how the team approaches quality, prevention, communication, and long-term value. " +
     "Make the copy much less templated: mention the actual business name, exact city/area when available, category/type, rating/review count when available, phone if available, operating status, hours if useful, and review themes if reviews exist. " +

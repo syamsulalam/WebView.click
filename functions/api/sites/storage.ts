@@ -228,6 +228,27 @@ function serviceCardImageSummary(deps: Pick<SiteStorageDeps, "asString">, parsed
   return { total: meaningfulCards.length, missing, duplicate };
 }
 
+function aboutNavSummary(deps: Pick<SiteStorageDeps, "asString">, parsed: Record<string, unknown>) {
+  const pages = Array.isArray(parsed.pages) ? parsed.pages as Array<Record<string, unknown>> : [];
+  const hasAboutPage = pages.some((page) => deps.asString(page.pageId).toLowerCase() === "about");
+  const offerings = ["products", "services"].flatMap((key) =>
+    Array.isArray(parsed[key]) ? parsed[key] as Array<Record<string, unknown>> : [],
+  ).filter((item) =>
+    deps.asString(item.title, deps.asString(item.label)).trim() ||
+    deps.asString(item.detailPageId).trim(),
+  );
+  const missingNavLabels = offerings.filter((item) => !(
+    deps.asString(item.navLabel).trim() ||
+    deps.asString(item.shortLabel).trim()
+  )).length;
+  return {
+    hasAboutPage,
+    serviceNavLabelTotal: offerings.length,
+    missingServiceNavLabelCount: missingNavLabels,
+    needsAboutNavRepair: !hasAboutPage || missingNavLabels > 0,
+  };
+}
+
 export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, parsed: Record<string, unknown>, businessId: string) {
   const { asString } = deps;
   const meta = parsed.meta && typeof parsed.meta === "object" ? parsed.meta as Record<string, unknown> : {};
@@ -238,6 +259,7 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
   const fontPairingConfig = design.fontPairingConfig && typeof design.fontPairingConfig === "object" ? design.fontPairingConfig as Record<string, unknown> : {};
   const contact = businessProfile.contact && typeof businessProfile.contact === "object" ? businessProfile.contact as Record<string, unknown> : {};
   const serviceImageSummary = serviceCardImageSummary(deps, parsed);
+  const contentSummary = aboutNavSummary(deps, parsed);
   return {
     businessName: asString(meta.businessName, asString(businessProfile.name, businessId)),
     niche: asString(meta.niche, asString(businessProfile.typeLabel, "")),
@@ -256,6 +278,10 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
     hasMissingServiceCardImages: serviceImageSummary.missing > 0,
     hasDuplicateServiceCardImages: serviceImageSummary.duplicate > 0,
     needsServiceCardImageRepair: serviceImageSummary.missing > 0 || serviceImageSummary.duplicate > 0,
+    hasAboutPage: contentSummary.hasAboutPage,
+    serviceNavLabelTotal: contentSummary.serviceNavLabelTotal,
+    missingServiceNavLabelCount: contentSummary.missingServiceNavLabelCount,
+    needsAboutNavRepair: contentSummary.needsAboutNavRepair,
     lastImageRepairAt: asString(meta.lastImageRepairAt),
     fontPairing: asString(design.fontPairing),
     fontPairingLabel: asString(fontPairingConfig.label),

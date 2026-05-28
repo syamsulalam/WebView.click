@@ -211,6 +211,20 @@ function titleCaseLabel(value = "") {
     .join(" ");
 }
 
+function shortOfferingMenuLabel(value = "") {
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  const cleaned = raw
+    .replace(/\b(services?|products?|solutions?|packages?|programs?)\b/gi, "")
+    .replace(/\b(for|and|with|from|by|near me)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const source = cleaned || raw;
+  if (source.length <= 28) return source;
+  const words = source.split(/\s+/).filter(Boolean);
+  const compact = words.slice(0, 3).join(" ");
+  return compact.length <= 34 ? compact : compact.slice(0, 31).replace(/\s+\S*$/, "").trim() || source.slice(0, 28).trim();
+}
+
 function inferredServiceTitles(place: any, typeLabel: string, isEnglish: boolean, fallbackQuery = "") {
   const key = [place.name, typeLabel, fallbackQuery, ...(Array.isArray(place.types) ? place.types : [])].join(" ").toLowerCase();
   if (!isEnglish) return ["Layanan Utama", "Konsultasi Cepat", "Perencanaan Kebutuhan", "Dukungan Lokal"];
@@ -265,6 +279,7 @@ function buildOfferings(place: any, isEnglish: boolean, mode: string, imageUrl: 
       id,
       type: "service",
       title,
+      navLabel: shortOfferingMenuLabel(title),
       summary: isEnglish ? `Practical help for ${title.toLowerCase()} needs.` : `Bantuan praktis untuk kebutuhan ${title.toLowerCase()}.`,
       description: isEnglish
         ? `A focused service page for customers comparing options, timing, scope, and next steps for ${title.toLowerCase()}.`
@@ -287,6 +302,7 @@ function buildOfferings(place: any, isEnglish: boolean, mode: string, imageUrl: 
       id,
       type: "product",
       title,
+      navLabel: shortOfferingMenuLabel(title),
       summary: isEnglish ? `A practical option for customers comparing ${title.toLowerCase()}.` : `Pilihan praktis untuk pelanggan yang membandingkan ${title.toLowerCase()}.`,
       description: isEnglish ? "A product-led page for customers who want to understand availability, fit, and ordering steps before visiting or buying." : "Halaman produk untuk pelanggan yang ingin memahami ketersediaan, kecocokan, dan cara pesan sebelum membeli.",
       priceHint: isEnglish ? "Ask for current price" : "Tanya harga terbaru",
@@ -367,7 +383,7 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
     attribution: "Google",
   }));
   const offeringMenuChildren = offerings.map((item) => ({
-    label: item.title,
+    label: item.navLabel || item.title,
     href: `#${item.detailPageId}`,
     description: item.type === "product"
       ? (isEnglish ? "Product detail" : "Detail produk")
@@ -534,7 +550,7 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
     },
     products,
     services,
-    offers: offerings.map((item) => ({ title: item.title, description: item.summary, priceHint: item.priceHint, image: item.image, cta: { text: isEnglish ? "View details" : "Lihat detail", href: `#${item.detailPageId}` } })),
+    offers: offerings.map((item) => ({ title: item.title, navLabel: item.navLabel, description: item.summary, priceHint: item.priceHint, image: item.image, cta: { text: isEnglish ? "View details" : "Lihat detail", href: `#${item.detailPageId}` } })),
     capabilities: [
       { label: isEnglish ? "Local business" : "Bisnis lokal", enabled: true, source: "google_places.types", description: isEnglish ? "Business profile data is gathered from Google Places." : "Profil bisnis diambil dari data Google Places." },
       { label: "Google rating", enabled: rating > 0, source: "google_places.rating", description: reviewCount ? (isEnglish ? `${reviewCount} reviews available.` : `${reviewCount} review tersedia.`) : (isEnglish ? "Rating is not available yet." : "Rating belum tersedia.") },

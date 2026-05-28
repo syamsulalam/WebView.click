@@ -49,6 +49,11 @@ type SiteRow = {
   hasMissingServiceCardImages?: boolean;
   hasDuplicateServiceCardImages?: boolean;
   needsServiceCardImageRepair?: boolean;
+  hasAboutPage?: boolean;
+  serviceNavLabelTotal?: number | null;
+  missingServiceNavLabelCount?: number | null;
+  needsAboutNavRepair?: boolean;
+  aboutNavAuditKnown?: boolean;
   lastImageRepairAt?: string;
   fontPairing?: string;
   fontPairingLabel?: string;
@@ -62,6 +67,7 @@ type RegenerateMode = "resave" | "ai";
 
 const SERVICE_IMAGE_BATCH_REPAIR_LIMIT = 10;
 const VISUAL_VARIATION_BATCH_LIMIT = 10;
+const ABOUT_NAV_AI_BATCH_LIMIT = 5;
 
 function generationBadge(site: SiteRow) {
   if (site.generationMode === "ai_copy_patch" || site.generatedWithAi) {
@@ -161,13 +167,14 @@ export default function AdminSites() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [siteImageFilter, setSiteImageFilter] = useState<"all" | "missing">("all");
+  const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "images" | "content">("all");
   const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
   const [regeneratingId, setRegeneratingId] = useState("");
   const [repairingServiceImagesId, setRepairingServiceImagesId] = useState("");
   const [batchRepairingServiceImages, setBatchRepairingServiceImages] = useState(false);
   const [refreshingVisualVariationId, setRefreshingVisualVariationId] = useState("");
   const [batchRefreshingVisualVariation, setBatchRefreshingVisualVariation] = useState(false);
+  const [batchAiFillingAboutNav, setBatchAiFillingAboutNav] = useState(false);
   const [generatingProspectId, setGeneratingProspectId] = useState("");
   const [generationProgress, setGenerationProgress] = useState<Record<string, { step: string; text: string; retryInSeconds?: number }>>({});
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
@@ -279,27 +286,40 @@ export default function AdminSites() {
 
   const filteredSites = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const imageFilteredSites = siteImageFilter === "missing"
+    const issueFilteredSites = siteIssueFilter === "images"
       ? sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0)
+      : siteIssueFilter === "content"
+        ? sites.filter((site) => site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false)
       : sites;
-    if (!needle) return imageFilteredSites;
-    return imageFilteredSites.filter((site) => [
+    if (!needle) return issueFilteredSites;
+    return issueFilteredSites.filter((site) => [
       site.businessName,
       site.businessId,
       site.niche,
       site.language,
       site.region,
       site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0 ? "missing duplicate service images" : "",
+      site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false ? "missing about nav labels ai fill content" : "",
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
-  }, [query, siteImageFilter, sites]);
+  }, [query, siteIssueFilter, sites]);
 
   const missingServiceImageSiteCount = useMemo(
     () => sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0).length,
     [sites],
   );
 
+  const missingAboutNavSiteCount = useMemo(
+    () => sites.filter((site) => site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false).length,
+    [sites],
+  );
+
   const filteredMissingServiceImageSites = useMemo(
     () => filteredSites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0),
+    [filteredSites],
+  );
+
+  const filteredMissingAboutNavSites = useMemo(
+    () => filteredSites.filter((site) => site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false),
     [filteredSites],
   );
 
@@ -595,6 +615,71 @@ export default function AdminSites() {
     }
   };
 
+  const buildRegeneratePayload = async (site: SiteRow, mode: RegenerateMode) => {
+    const siteJson = await fetchSiteJson(site);
+    const sourceData = siteJson?.sourceData || {};
+    let originData: any = {
+      name: site.businessName,
+      place_id: sourceData.placeId || "",
+      url: sourceData.googleMapsUri || site.googleMapsUrl || "",
+      website: sourceData.websiteUri || "",
+      rating: site.rating || undefined,
+      user_ratings_total: site.reviewCount || undefined,
+    };
+    let detailsGathered = false;
+    let detailsError = "";
+    const sourcePlaceId = String(sourceData.placeId || "");
+
+    if (sourcePlaceId && !mapsQueryPlaceId(sourcePlaceId)) {
+      try {
+        originData = { ...originData, ...await fetchGooglePlaceDetails(sourcePlaceId) };
+        detailsGathered = true;
+      } catch (err) {
+        detailsError = err instanceof Error ? err.message : "Place Details failed.";
+      }
+    } else if (sourcePlaceId) {
+      detailsError = "Saved sourceData.placeId is a Maps search/query placeholder, not a specific business listing.";
+    }
+
+    if (mode === "resave" && !sourcePlaceId) {
+      throw new Error("Site lama ini belum punya sourceData.placeId, jadi Google Places tidak bisa di-gather ulang.");
+    }
+    if (mode === "resave" && !detailsGathered) {
+      throw new Error(detailsError || "Google Places details belum berhasil di-gather ulang.");
+    }
+
+    const contact = siteJson?.businessProfile?.contact || {};
+    const provider = mode === "ai" ? activeRegenerateProvider : "";
+    const model = mode === "ai" ? activeRegenerateModel : "";
+    return {
+      requireAi: mode === "ai",
+      skipAiOfferingOutline: mode === "ai",
+      provider,
+      model,
+      jsonContent: siteJson,
+      businessId: site.businessId,
+      businessName: site.businessName,
+      phone: contact.phoneInternational || contact.phoneNational || "",
+      originData,
+      brandPalette: siteJson?.meta?.brandPalette || siteJson?.brand?.palette || [],
+      paletteOptions: siteJson?.brand?.paletteOptions || [],
+      selectedLogoImageUrl: siteJson?.brand?.logoImageUrl || "",
+      selectedLogoReference: siteJson?.brand?.googlePhotoReference || "",
+      selectedLogoSource: siteJson?.brand?.photoSource || "",
+      selectedLogoAttributions: siteJson?.brand?.photoAttributions || [],
+      selectedLogoPriority: siteJson?.brand?.selectedPhotoPriority || "",
+    };
+  };
+
+  const runRegenerateSite = async (site: SiteRow, mode: RegenerateMode, label: string) => {
+    const regeneratePayload = await buildRegeneratePayload(site, mode);
+    if (mode === "ai") {
+      await postChunkedGenerateSite(regeneratePayload, label, (step, progress) => updateGenerationProgress(site.businessId, step, progress));
+    } else {
+      await postGenerateSite(regeneratePayload, label);
+    }
+  };
+
   const handleRegenerate = async (site: SiteRow, mode: RegenerateMode) => {
     setRegeneratingId(site.businessId);
     try {
@@ -610,70 +695,14 @@ export default function AdminSites() {
         });
       }
 
-      const siteJson = await fetchSiteJson(site);
-      const sourceData = siteJson?.sourceData || {};
-      let originData: any = {
-        name: site.businessName,
-        place_id: sourceData.placeId || "",
-        url: sourceData.googleMapsUri || site.googleMapsUrl || "",
-        website: sourceData.websiteUri || "",
-        rating: site.rating || undefined,
-        user_ratings_total: site.reviewCount || undefined,
-      };
-      let detailsGathered = false;
-      let detailsError = "";
-      const sourcePlaceId = String(sourceData.placeId || "");
-
-      if (sourcePlaceId && !mapsQueryPlaceId(sourcePlaceId)) {
-        try {
-          originData = { ...originData, ...await fetchGooglePlaceDetails(sourcePlaceId) };
-          detailsGathered = true;
-        } catch (err) {
-          detailsError = err instanceof Error ? err.message : "Place Details failed.";
-        }
-      } else if (sourcePlaceId) {
-        detailsError = "Saved sourceData.placeId is a Maps search/query placeholder, not a specific business listing.";
-      }
-
-      if (mode === "resave" && !sourcePlaceId) {
-        throw new Error("Site lama ini belum punya sourceData.placeId, jadi Google Places tidak bisa di-gather ulang.");
-      }
-      if (mode === "resave" && !detailsGathered) {
-        throw new Error(detailsError || "Google Places details belum berhasil di-gather ulang.");
-      }
-
-      const contact = siteJson?.businessProfile?.contact || {};
-      const provider = mode === "ai" ? activeRegenerateProvider : "";
-      const model = mode === "ai" ? activeRegenerateModel : "";
-      const regeneratePayload = {
-        requireAi: mode === "ai",
-        provider,
-        model,
-        jsonContent: siteJson,
-        businessId: site.businessId,
-        businessName: site.businessName,
-        phone: contact.phoneInternational || contact.phoneNational || "",
-        originData,
-        brandPalette: siteJson?.meta?.brandPalette || siteJson?.brand?.palette || [],
-        paletteOptions: siteJson?.brand?.paletteOptions || [],
-        selectedLogoImageUrl: siteJson?.brand?.logoImageUrl || "",
-        selectedLogoReference: siteJson?.brand?.googlePhotoReference || "",
-        selectedLogoSource: siteJson?.brand?.photoSource || "",
-        selectedLogoAttributions: siteJson?.brand?.photoAttributions || [],
-        selectedLogoPriority: siteJson?.brand?.selectedPhotoPriority || "",
-      };
-      if (mode === "ai") {
-        await postChunkedGenerateSite(regeneratePayload, "AI regenerate", (step, progress) => updateGenerationProgress(site.businessId, step, progress));
-      } else {
-        await postGenerateSite(regeneratePayload, "Re-gather Google data");
-      }
+      await runRegenerateSite(site, mode, mode === "ai" ? "AI fill missing/copy" : "Re-gather Google data");
       const successMessage =
         mode === "ai"
-          ? `AI copy patch regenerated ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`
+          ? `AI filled missing copy for ${site.businessName} with ${activeRegenerateProvider} / ${activeRegenerateModelLabel}.`
           : `Re-gathered Google data and resaved ${site.businessName} without an AI call.`;
       notifyAction(
         "success",
-        mode === "ai" ? "AI copy patch regenerated" : "Google data resaved",
+        mode === "ai" ? "AI fill completed" : "Google data resaved",
         successMessage,
       );
       fetchSites();
@@ -686,6 +715,72 @@ export default function AdminSites() {
     } finally {
       setRegeneratingId("");
       clearGenerationProgress(site.businessId);
+    }
+  };
+
+  const handleAiFillFilteredAboutNav = async () => {
+    const targets = filteredMissingAboutNavSites.slice(0, ABOUT_NAV_AI_BATCH_LIMIT);
+    if (targets.length === 0) {
+      notifyAction("info", "No About/nav targets", "The current filtered list has no generated sites missing About/nav content.");
+      return;
+    }
+
+    setBatchAiFillingAboutNav(true);
+    let completed = 0;
+    const failures: string[] = [];
+    try {
+      await ensureAiGenerationReady({
+        provider: activeRegenerateProvider,
+        model: activeRegenerateModel,
+        action: "sites_batch_ai_fill_about_nav",
+        businessName: `${targets.length} filtered About/nav site${targets.length === 1 ? "" : "s"}`,
+        readinessMessage: "AI provider/model is not ready. Check /admin/settings before running the filtered About/nav fill.",
+        cooldownMessage: (cooldown) => `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`,
+      });
+
+      for (let index = 0; index < targets.length; index += 1) {
+        const site = targets[index];
+        setRegeneratingId(site.businessId);
+        try {
+          await runRegenerateSite(site, "ai", "Batch AI fill About/nav");
+          completed += 1;
+        } catch (error) {
+          failures.push(`${site.businessName}: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          clearGenerationProgress(site.businessId);
+          setRegeneratingId("");
+        }
+        if (index < targets.length - 1) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 1200));
+        }
+      }
+
+      const cappedMessage = filteredMissingAboutNavSites.length > targets.length
+        ? ` Capped at ${ABOUT_NAV_AI_BATCH_LIMIT}; ${filteredMissingAboutNavSites.length - targets.length} filtered row${filteredMissingAboutNavSites.length - targets.length === 1 ? "" : "s"} remain.`
+        : "";
+      if (failures.length > 0) {
+        notifyAction(
+          completed > 0 ? "warning" : "error",
+          completed > 0 ? "About/nav batch partially completed" : "About/nav batch failed",
+          `AI filled ${completed} site${completed === 1 ? "" : "s"} through chunked siteCopy/offeringCopy/finalize calls. ${failures.length} failed.${cappedMessage}`,
+        );
+      } else {
+        notifyAction(
+          "success",
+          "About/nav batch completed",
+          `AI filled ${completed} filtered site${completed === 1 ? "" : "s"} through separate chunked calls per site.${cappedMessage}`,
+        );
+      }
+      fetchSites();
+    } catch (err) {
+      if (isAdminGenerationBlockedError(err) && err.kind === "cooldown") {
+        showToast({ kind: "warning", title: err.title || `${activeRegenerateProvider} cooldown active`, message: err.message, actions: err.actions });
+      } else {
+        showApiError(err, { source: "Batch AI fill About/nav", provider: activeRegenerateProvider, model: activeRegenerateModel });
+      }
+    } finally {
+      setRegeneratingId("");
+      setBatchAiFillingAboutNav(false);
     }
   };
 
@@ -874,24 +969,59 @@ export default function AdminSites() {
         <HoverTooltip text="Show only generated sites whose saved summary says homepage/services offer cards are missing images or repeat the same image. Rows generated before this audit exists may appear after repair or resave.">
           <button
             type="button"
-            onClick={() => setSiteImageFilter(siteImageFilter === "missing" ? "all" : "missing")}
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "images" ? "all" : "images")}
             className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
-              siteImageFilter === "missing"
+              siteIssueFilter === "images"
                 ? "border-sky-300 bg-sky-50 text-sky-800"
                 : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
             }`}
-            aria-pressed={siteImageFilter === "missing"}
+            aria-pressed={siteIssueFilter === "images"}
           >
             <ImageIcon size={14} />
             Image issues
             <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingServiceImageSiteCount}</span>
           </button>
         </HoverTooltip>
+        <HoverTooltip text="Show generated sites missing a saved About page, missing AI-written short service submenu labels, or missing the new About/nav audit. Use the Regen menu's AI fill action on these rows.">
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "content" ? "all" : "content")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "content"
+                ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "content"}
+          >
+            <FileText size={14} />
+            About/nav
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingAboutNavSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text={`AI fill About page copy and short service submenu labels for up to ${ABOUT_NAV_AI_BATCH_LIMIT} rows in the current filtered list. Runs one site at a time and each site uses separate chunked AI requests so the batch is less likely to hit request timeouts.`}>
+          <button
+            type="button"
+            onClick={handleAiFillFilteredAboutNav}
+            disabled={batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || regeneratingId !== "" || !activeRegenerateModel || filteredMissingAboutNavSites.length === 0}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            aria-label="AI fill filtered About and navigation label issues"
+          >
+            {batchAiFillingAboutNav ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <Brain size={14} />
+            )}
+            AI fill filtered
+            <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-700">
+              {Math.min(filteredMissingAboutNavSites.length, ABOUT_NAV_AI_BATCH_LIMIT)}
+            </span>
+          </button>
+        </HoverTooltip>
         <HoverTooltip text={`Repair missing or repeated service card images for up to ${SERVICE_IMAGE_BATCH_REPAIR_LIMIT} sites in the current filtered list. Runs one site at a time, uses no AI, and does not regenerate copy.`}>
           <button
             type="button"
             onClick={handleRepairFilteredServiceImages}
-            disabled={batchRepairingServiceImages || batchRefreshingVisualVariation || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
+            disabled={batchRepairingServiceImages || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50"
             aria-label="Repair filtered service image issues"
           >
@@ -910,7 +1040,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleRefreshFilteredVisualVariation}
-            disabled={batchRefreshingVisualVariation || batchRepairingServiceImages || regeneratingId !== "" || filteredSites.length === 0}
+            disabled={batchRefreshingVisualVariation || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId !== "" || filteredSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50"
             aria-label="Refresh filtered visual variation"
           >
@@ -1079,7 +1209,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleGenerateProspect(prospect)}
-                      disabled={!activeRegenerateModel || mapsQueryPlaceholder || Boolean(generatingProspectId || regeneratingId)}
+                      disabled={!activeRegenerateModel || mapsQueryPlaceholder || Boolean(generatingProspectId || regeneratingId || batchAiFillingAboutNav)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                       aria-label="Generate site for prospect"
                     >
@@ -1159,6 +1289,17 @@ export default function AdminSites() {
                       <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
                         <ImageIcon size={11} />
                         Fix {Number(site.missingServiceCardImageCount || 0) + Number(site.duplicateServiceCardImageCount || 0)} img
+                      </span>
+                    </HoverTooltip>
+                  )}
+                  {(site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false) && (
+                    <HoverTooltip text={site.aboutNavAuditKnown === false
+                      ? "This saved summary predates the About/nav audit. Use AI fill to save the About page and short service submenu labels, or resave to refresh the audit."
+                      : `${site.hasAboutPage ? "About page exists" : "About page is missing"}; ${site.missingServiceNavLabelCount ?? "unknown"} of ${site.serviceNavLabelTotal ?? "unknown"} service nav labels are missing. Use AI fill from Regen.`
+                    }>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
+                        <FileText size={11} />
+                        About/nav
                       </span>
                     </HoverTooltip>
                   )}
@@ -1247,7 +1388,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleRepairServiceImages(site)}
-                      disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || regeneratingId)}
+                      disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
                       aria-label="Repair service card images"
                     >
@@ -1263,7 +1404,7 @@ export default function AdminSites() {
                   <button
                     type="button"
                     onClick={() => handleRefreshVisualVariation(site)}
-                    disabled={Boolean(refreshingVisualVariationId || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || regeneratingId)}
+                    disabled={Boolean(refreshingVisualVariationId || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId)}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
                     aria-label="Refresh visual variation"
                   >
@@ -1301,7 +1442,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => setOpenRegenerateMenu(openRegenerateMenu === site.businessId ? "" : site.businessId)}
-                      disabled={Boolean(regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation)}
+                      disabled={Boolean(regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       aria-label="Open regenerate menu"
                     >
@@ -1340,7 +1481,7 @@ export default function AdminSites() {
                             />
                           </div>
                         </div>
-                        <p className="mt-1 text-[11px] leading-4 text-gray-500">Re-gather fixes stale Google data like fallback Maps URLs. AI regenerate only requests a copy patch; protected structure stays deterministic.</p>
+                        <p className="mt-1 text-[11px] leading-4 text-gray-500">Re-gather fixes stale Google data like fallback Maps URLs. AI regenerate asks for copy patches, including missing About copy and short service submenu labels; protected structure stays deterministic.</p>
                       </div>
 
                       <div className="mb-3 grid grid-cols-1 gap-2">
@@ -1391,11 +1532,11 @@ export default function AdminSites() {
                               setOpenRegenerateMenu("");
                               handleRegenerate(site, "ai");
                             }}
-                            disabled={!activeRegenerateModel || Boolean(regeneratingId)}
+                            disabled={!activeRegenerateModel || Boolean(regeneratingId || batchAiFillingAboutNav)}
                             className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                           >
                             <Brain size={14} />
-                            AI regenerate with selected model
+                            AI fill missing/copy with selected model
                           </button>
                           <AdminAiReadinessBadge
                             provider={activeRegenerateProvider}
@@ -1413,7 +1554,7 @@ export default function AdminSites() {
                               setOpenRegenerateMenu("");
                               handleRegenerate(site, "resave");
                             }}
-                            disabled={Boolean(regeneratingId)}
+                            disabled={Boolean(regeneratingId || batchAiFillingAboutNav)}
                             className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                           >
                             <RotateCw size={14} />

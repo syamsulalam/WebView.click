@@ -726,8 +726,26 @@ export default function SiteRenderer({
         secondary: activePalette[2] || baseColors.secondary,
       }
     : baseColors;
-  const actionPanelSiteData = {
+  const normalizedSiteData = {
     ...siteData,
+    meta,
+    brand,
+    businessProfile,
+    trust,
+    offers,
+    products,
+    services,
+    capabilities,
+    sourceData,
+    location,
+    hours,
+    conversion,
+    global: globalConfig,
+    navigation,
+    pages,
+  };
+  const actionPanelSiteData = {
+    ...normalizedSiteData,
     design: {
       ...(siteData?.design || {}),
       themeVariables: {
@@ -736,7 +754,7 @@ export default function SiteRenderer({
       },
     },
     brand: {
-      ...(siteData?.brand || {}),
+      ...(brand || {}),
       palette: activePalette.length > 0 ? activePalette : Array.isArray(brand.palette) ? brand.palette : [],
       paletteOptions,
     },

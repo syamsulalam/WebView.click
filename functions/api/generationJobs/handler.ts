@@ -1,3 +1,5 @@
+import { applyGeneratedSitePageInserts } from "../../../src/lib/generatedSitePostProcess";
+
 export type GenerationJobsDeps = {
   templateSchema: Record<string, unknown>;
   json: (data: unknown, status?: number) => Response;
@@ -49,10 +51,14 @@ function chunkedGenerationBaseJson(deps: GenerationJobsDeps, payload: Record<str
 function chunkedGenerationJsonWithOutline(deps: GenerationJobsDeps, metadata: Record<string, unknown>) {
   const payload = chunkedGenerationPayload(metadata);
   const finalJson = chunkedGenerationBaseJson(deps, payload);
+  const originData = payload.originData && typeof payload.originData === "object" && !Array.isArray(payload.originData)
+    ? payload.originData as Record<string, unknown>
+    : {};
   const outline = metadata.offeringOutline && typeof metadata.offeringOutline === "object" && !Array.isArray(metadata.offeringOutline)
     ? metadata.offeringOutline as Record<string, unknown>
     : null;
   if (outline) deps.applyAiOfferingOutline(finalJson, outline);
+  applyGeneratedSitePageInserts(finalJson, originData);
   return { payload, finalJson };
 }
 
@@ -276,14 +282,16 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
     const model = deps.asString(body.model);
     const placeId = deps.placeIdFromPlace(originData);
     const id = crypto.randomUUID();
+    const skipOfferingOutline = body.skipAiOfferingOutline === true;
     const metadata = {
       businessName,
       generationMode: "chunked_ai_generation",
       chunked: true,
-      step: "outline_pending",
-      nextStep: "outline",
+      step: skipOfferingOutline ? "outline_complete" : "outline_pending",
+      nextStep: skipOfferingOutline ? "siteCopy" : "outline",
       payload: body,
       copyPatchApplied: false,
+      offeringOutlineSkipped: skipOfferingOutline,
       createdFor: "outline_site_offering_finalize_retryable_flow",
       checkedAt: new Date().toISOString(),
     };
