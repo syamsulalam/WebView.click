@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Copy, Download, ExternalLink, Globe2, Loader2, Minus, Plus, X } from "lucide-react";
 import { buildDomain, domainExtensions, normalizeDomainLabel } from "../lib/domainExtensions";
 import type { FontPairing } from "../lib/fontPairings";
@@ -31,12 +32,68 @@ declare global {
 }
 
 function InfoTooltip({ text, light = false }: { text: string; light?: boolean }) {
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const tooltipRef = useRef<HTMLSpanElement | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [position, setPosition] = useState({ left: 0, top: 0, placement: "top" as "top" | "bottom" });
+
+  const updatePosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const tooltipWidth = tooltipRef.current?.offsetWidth || 256;
+    const tooltipHeight = tooltipRef.current?.offsetHeight || 96;
+    const sideMargin = 12;
+    const minLeft = tooltipWidth / 2 + sideMargin;
+    const maxLeft = window.innerWidth - tooltipWidth / 2 - sideMargin;
+    const anchorCenter = rect.left + rect.width / 2;
+    const hasRoomAbove = rect.top > tooltipHeight + 12;
+    const placement = hasRoomAbove ? "top" : "bottom";
+
+    setPosition({
+      left: Math.min(Math.max(anchorCenter, minLeft), Math.max(minLeft, maxLeft)),
+      top: placement === "top" ? rect.top - 8 : rect.bottom + 8,
+      placement,
+    });
+  }, []);
+
+  const show = () => {
+    updatePosition();
+    setVisible(true);
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    updatePosition();
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [visible, updatePosition]);
+
   return (
-    <span className="group relative inline-flex">
+    <span
+      ref={anchorRef}
+      className="inline-flex"
+      onMouseEnter={show}
+      onMouseLeave={() => setVisible(false)}
+      onFocus={show}
+      onBlur={() => setVisible(false)}
+    >
       <CircleHelp size={15} className={light ? "text-indigo-100" : "text-slate-400"} />
-      <span className="pointer-events-none absolute bottom-full right-0 z-20 mb-2 w-64 rounded-xl bg-slate-950 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-xl transition group-hover:opacity-100">
-        {text}
-      </span>
+      {visible && typeof document !== "undefined" && createPortal(
+        <span
+          ref={tooltipRef}
+          role="tooltip"
+          className={`pointer-events-none fixed z-[100001] w-64 -translate-x-1/2 rounded-xl bg-slate-950 px-3 py-2 text-xs leading-relaxed text-white opacity-100 shadow-2xl ${position.placement === "top" ? "-translate-y-full" : ""}`}
+          style={{ left: position.left, top: position.top }}
+        >
+          {text}
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }
@@ -192,14 +249,17 @@ export default function WebsiteActionPanel({
     }));
     return options.length ? options : [{ id: "home", label: "Home" }];
   }, [siteData?.pages]);
+  const hasPageActions = newPages + editedPages > 0;
   const setupSteps: SetupStep[] = setupMode === "addons"
-    ? ["offer", "plan", "addons-count", "addons-details", "domain", "payment"]
+    ? (hasPageActions
+      ? ["offer", "plan", "addons-count", "addons-details", "domain", "payment"]
+      : ["offer", "plan", "addons-count", "domain", "payment"])
     : ["offer", "plan", "domain", "payment"];
   const setupStepIndex = Math.max(0, setupSteps.indexOf(setupStep));
   const backStep = setupStep === "payment"
     ? "domain"
     : setupStep === "domain"
-      ? (setupMode === "addons" ? "addons-details" : "plan")
+      ? (setupMode === "addons" ? (hasPageActions ? "addons-details" : "addons-count") : "plan")
       : setupStep === "addons-count"
         ? "plan"
       : setupStep === "addons-details"
@@ -754,7 +814,7 @@ export default function WebsiteActionPanel({
                           Page work
                           <InfoTooltip text="$10 per additional generated page or page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
                         </p>
-                        <p className="mt-1 text-xs text-slate-600">Choose how many page requests you want us to include.</p>
+                        <p className="mt-1 text-xs text-slate-600">Optional. Leave both at 0 if you only want domain, hosting, and setup for the generated site.</p>
                       </div>
                       <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-indigo-700">{formatUsd(estimate.total)}</span>
                     </div>
@@ -771,12 +831,18 @@ export default function WebsiteActionPanel({
                   </div>
                   <button
                     type="button"
-                    onClick={() => setSetupStep("addons-details")}
-                    disabled={estimate.totalPageActions < 1}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    onClick={() => {
+                      if (estimate.totalPageActions > 0) {
+                        setSetupStep("addons-details");
+                        return;
+                      }
+                      setSetupStep("domain");
+                      resetCheck();
+                    }}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
                   >
                     <ArrowRight size={18} />
-                    Continue to page details
+                    {estimate.totalPageActions > 0 ? "Continue to page details" : "Continue to domain"}
                   </button>
                 </>
               )}
