@@ -308,8 +308,8 @@ const domainRegistrarFieldGroups: Array<{
     title: "Quote behavior",
     description: "Controls the non-billable registrar quote captured before payment. Empty provider credentials do not block checkout.",
     fields: [
-      { key: "DOMAIN_REGISTRAR_PROVIDER", label: "Default registrar", type: "select", tooltip: "Provider used by /api/domains/quote when the buyer checks a new domain. Only score 7.0+ registrars are available.", options: domainRegistrarOptions.map((option) => ({ value: option.value, label: option.label })) },
-      { key: "DOMAIN_REGISTRATION_MAX_USD", label: "Max internal domain cost", type: "number", placeholder: "17", tooltip: "Internal guardrail for registrar quote. Buyers still see the included $17/year domain fee; this protects margin and flags expensive or premium domains." },
+      { key: "DOMAIN_REGISTRAR_PROVIDER", label: "Default registrar", type: "select", tooltip: "Provider used by /api/domains/quote when the buyer checks a new domain. Only the researched score 7.0+ registrars are selectable here.", options: domainRegistrarOptions.map((option) => ({ value: option.value, label: option.label })) },
+      { key: "DOMAIN_REGISTRATION_MAX_USD", label: "Max internal domain cost", type: "number", placeholder: "17", tooltip: "Internal margin guardrail for registrar quotes. Buyers still see the simple $17/year domain fee; this value flags domains whose wholesale/internal cost is too high or premium-priced." },
     ],
   },
   {
@@ -317,8 +317,8 @@ const domainRegistrarFieldGroups: Array<{
     description: "Preferred registrar when your Cloudflare account has Registrar API access.",
     providers: ["cloudflare_registrar"],
     fields: [
-      { key: "CLOUDFLARE_ACCOUNT_ID", label: "Account ID", placeholder: "Cloudflare account ID", tooltip: "Cloudflare account ID used by the server-side Registrar API quote adapter." },
-      { key: "CLOUDFLARE_API_TOKEN", label: "API token", type: "password", placeholder: "Cloudflare API token", tooltip: "Server-side token with scoped Registrar permissions. Leave empty until the account is ready; checkout still works with manual domain confirmation." },
+      { key: "CLOUDFLARE_ACCOUNT_ID", label: "Account ID", placeholder: "Cloudflare account ID", tooltip: "This is the Cloudflare Account ID, not an API key. Find it in Cloudflare Dashboard by selecting the account; it appears in the dashboard URL after dash.cloudflare.com/ and in Account Home / account details. Used as the {account_id} for Registrar API calls." },
+      { key: "CLOUDFLARE_API_TOKEN", label: "API token", type: "password", placeholder: "Cloudflare API token", tooltip: "Use a Cloudflare user API token scoped to this account, not the Global API Key and not an R2 access key. Create it from My Profile > API Tokens > Create Token; if your account exposes Account API Tokens, an account-scoped token with the same registrar/domain permissions is also fine. Leave empty until ready; checkout still works manually." },
     ],
   },
   {
@@ -326,9 +326,9 @@ const domainRegistrarFieldGroups: Array<{
     description: "JSON API fallback with sandbox/production separation.",
     providers: ["name_com"],
     fields: [
-      { key: "NAME_COM_ENV", label: "Mode", type: "select", tooltip: "Use sandbox for test quotes, production for live registrar quote capture.", options: [{ value: "production", label: "Production" }, { value: "sandbox", label: "Sandbox" }] },
-      { key: "NAME_COM_USERNAME", label: "Username", placeholder: "Name.com username", tooltip: "Name.com API username for server-side quote checks." },
-      { key: "NAME_COM_API_TOKEN", label: "API token", type: "password", placeholder: "Name.com API token", tooltip: "Name.com API token. Leave empty until ready; checkout still saves orders without registrar quotes." },
+      { key: "NAME_COM_ENV", label: "Mode", type: "select", tooltip: "Production uses your normal Name.com API credentials. Sandbox uses Name.com's test environment; Name.com test usernames usually append -test to the username.", options: [{ value: "production", label: "Production" }, { value: "sandbox", label: "Sandbox" }] },
+      { key: "NAME_COM_USERNAME", label: "Username", placeholder: "Name.com username", tooltip: "Your Name.com API username. For production, use your normal Name.com account username. For sandbox/test, use the test username shown by Name.com, commonly your username with -test appended." },
+      { key: "NAME_COM_API_TOKEN", label: "API token", type: "password", placeholder: "Name.com API token", tooltip: "Generate this in Name.com API Token Management / API settings. The Core API authenticates with username + API token, not account password. Leave empty until ready; checkout still saves orders without registrar quotes." },
     ],
   },
   {
@@ -336,8 +336,8 @@ const domainRegistrarFieldGroups: Array<{
     description: "Fallback registrar adapter using the Dynadot search API with price output.",
     providers: ["dynadot"],
     fields: [
-      { key: "DYNADOT_ENV", label: "Mode", type: "select", tooltip: "Use sandbox while testing; production checks the live Dynadot account.", options: [{ value: "production", label: "Production" }, { value: "sandbox", label: "Sandbox" }] },
-      { key: "DYNADOT_API_KEY", label: "API key", type: "password", placeholder: "Dynadot API key", tooltip: "Dynadot API key for server-side quote checks. Empty credentials keep checkout in manual-confirmation mode." },
+      { key: "DYNADOT_ENV", label: "Mode", type: "select", tooltip: "Production checks the live Dynadot account. Sandbox should use Dynadot's sandbox/test key if your account has one.", options: [{ value: "production", label: "Production" }, { value: "sandbox", label: "Sandbox" }] },
+      { key: "DYNADOT_API_KEY", label: "API key", type: "password", placeholder: "Dynadot API key", tooltip: "Find this in Dynadot account API settings after enabling API access. Use the Domain API key for commands such as search/tld_price; do not paste your account password. Empty credentials keep checkout in manual-confirmation mode." },
     ],
   },
   {
@@ -345,8 +345,8 @@ const domainRegistrarFieldGroups: Array<{
     description: "Lower-cost registrar fallback to test after primary providers.",
     providers: ["spaceship"],
     fields: [
-      { key: "SPACESHIP_API_KEY", label: "API key", type: "password", placeholder: "Spaceship API key", tooltip: "Spaceship API key for server-side quote checks." },
-      { key: "SPACESHIP_API_SECRET", label: "API secret", type: "password", placeholder: "Spaceship API secret", tooltip: "Spaceship API secret. Keep it server-side only; leave empty until ready." },
+      { key: "SPACESHIP_API_KEY", label: "API key", type: "password", placeholder: "Spaceship API key", tooltip: "Create this in Spaceship API Manager with New API key. Spaceship uses a key + secret pair; this field is the X-Api-Key value, not your login email/password." },
+      { key: "SPACESHIP_API_SECRET", label: "API secret", type: "password", placeholder: "Spaceship API secret", tooltip: "Spaceship API Manager shows this with the API key. This is the X-Api-Secret value. Keep it server-side only and rotate it if it is ever exposed." },
     ],
   },
 ];
@@ -956,6 +956,7 @@ export default function AdminSettings() {
           )}
         </div>
 
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
         <div id="settings-payment" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
           <div className="flex w-full items-start justify-between gap-3">
             <button
@@ -1290,9 +1291,8 @@ export default function AdminSettings() {
           </div>
           )}
         </div>
-      </div>
 
-      <div id="settings-domain-registrar" className="mt-6 scroll-mt-24 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div id="settings-domain-registrar" className="scroll-mt-24 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         <button
           type="button"
           onClick={() => toggleSettingsSection("domainRegistrar")}
@@ -1340,7 +1340,7 @@ export default function AdminSettings() {
                     <label key={field.key} className="text-sm">
                       <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
                         {field.label}
-                        <HelpTooltip text={field.tooltip} widthClass="w-72" />
+                        <HelpTooltip text={field.tooltip} widthClass="w-80" />
                       </span>
                       {field.type === "select" ? (
                         <select
@@ -1368,6 +1368,7 @@ export default function AdminSettings() {
             ))}
           </div>
         )}
+      </div>
       </div>
 
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
