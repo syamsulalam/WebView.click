@@ -646,7 +646,7 @@ export default function WebsiteActionPanel({
 
       {checkoutOpen && (
         <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-wv-tool-ui="website-checkout-modal">
-          <div className="max-h-[min(92vh,760px)] w-full max-w-md overflow-y-auto rounded-2xl bg-white shadow-2xl">
+          <div className="max-h-[min(92vh,780px)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <p className="font-semibold text-slate-950">Done-for-you website setup</p>
@@ -659,40 +659,35 @@ export default function WebsiteActionPanel({
             <div className="space-y-4 p-5">
               {setupStep === "offer" && (
                 <>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-950">Your website is free. You only pay the yearly infrastructure.</p>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-lg bg-white p-3">
-                        <p className="font-bold text-slate-950">$17/year</p>
-                        <p className="mt-1 text-slate-500">Domain fee for any extension we register.</p>
+                  <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-5 text-center text-sm leading-6 text-slate-700">
+                    <div>
+                      <p className="text-base font-semibold leading-6 text-slate-950">Your generated website is free.</p>
+                      <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-slate-600">
+                        Pay only for the yearly infrastructure and setup work needed to put it online for your business.
+                      </p>
+                    </div>
+                    <div className="grid gap-2 text-left sm:grid-cols-2">
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <p className="text-lg font-bold leading-none text-slate-950">$180/year</p>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">Managed hosting, SSL, fast global delivery, upload, and launch setup.</p>
                       </div>
-                      <div className="rounded-lg bg-white p-3">
-                        <p className="font-bold text-slate-950">$180/year</p>
-                        <p className="mt-1 text-slate-500">Managed hosting with SSL, fast global delivery, and uptime-focused setup.</p>
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <p className="text-lg font-bold leading-none text-slate-950">$17/year</p>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">Domain fee only when we register a new domain for you.</p>
                       </div>
                     </div>
-                    <p className="mt-3"><strong>Total is $197/year with a new domain, or $180/year when you already own the domain.</strong> We handle upload, DNS, SSL, and launch setup at no extra setup fee.</p>
-                    <a href="/terms-refund" target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-indigo-700 hover:underline">
+                    <div className="rounded-xl border border-indigo-100 bg-white px-4 py-3">
+                      <p className="text-sm font-semibold leading-6 text-slate-950">
+                        $197/year with a new domain, or $180/year when you already own one.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        Domain choice and any optional page work come after you pick the billing term.
+                      </p>
+                    </div>
+                    <a href="/terms-refund" target="_blank" rel="noreferrer" className="inline-flex justify-center text-xs font-semibold text-indigo-700 hover:underline">
                       Terms and refund policy
                     </a>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSetupMode("addons");
-                      setSetupStep("plan");
-                    }}
-                    className="flex w-full items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left hover:bg-indigo-100"
-                  >
-                    <span>
-                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
-                        Want us to add / edit your pages?
-                        <InfoTooltip text="$10 per additional generated page or existing-page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
-                      </span>
-                      <span className="block text-xs text-slate-600">Tell us the exact pages before payment so the order note is clear.</span>
-                    </span>
-                    <ArrowRight size={18} />
-                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -704,12 +699,9 @@ export default function WebsiteActionPanel({
                       setSetupStep("plan");
                       resetCheck();
                     }}
-                    className="flex w-full items-center justify-between rounded-xl bg-indigo-600 px-4 py-3 text-left text-white hover:bg-indigo-700"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
                   >
-                    <span>
-                      <span className="block font-semibold">Continue to payment</span>
-                      <span className="block text-xs text-indigo-100">Use the generated site as-is. Domain choice is next.</span>
-                    </span>
+                    Pick your term / discount
                     <ArrowRight size={18} />
                   </button>
                 </>
@@ -787,17 +779,44 @@ export default function WebsiteActionPanel({
                       </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSetupStep(setupMode === "addons" ? "addons-count" : "domain");
-                      resetCheck();
-                    }}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
-                  >
-                    <ArrowRight size={18} />
-                    Continue
-                  </button>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSetupMode("base");
+                        setNewPages(0);
+                        setEditedPages(0);
+                        setNewPageRequests([]);
+                        setEditPageRequests([]);
+                        setSetupStep("domain");
+                        resetCheck();
+                      }}
+                      className="flex min-h-[78px] items-center justify-between gap-3 rounded-xl bg-indigo-600 px-4 py-3 text-left text-white hover:bg-indigo-700"
+                    >
+                      <span>
+                        <span className="block font-semibold leading-5">Continue to domain</span>
+                        <span className="mt-1 block text-xs leading-5 text-indigo-100">No extra page work right now.</span>
+                      </span>
+                      <ArrowRight size={18} className="shrink-0" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSetupMode("addons");
+                        setSetupStep("addons-count");
+                      }}
+                      className="flex min-h-[78px] items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-slate-900 hover:bg-indigo-100"
+                    >
+                      <span>
+                        <span className="inline-flex items-center gap-1.5 font-semibold leading-5">
+                          Add / edit pages
+                          <InfoTooltip text="$10 per additional generated page or existing-page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-slate-600">Optional page instructions before domain.</span>
+                      </span>
+                      <ArrowRight size={18} className="shrink-0" />
+                    </button>
+                  </div>
                 </>
               )}
 
