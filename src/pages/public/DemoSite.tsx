@@ -270,7 +270,7 @@ export default function DemoSite() {
   return (
     <div className="relative">
       {boundaryQaOpen && (
-        <style>{`
+        <style data-export-remove="true">{`
           [data-wv-site-canvas] {
             outline: 3px solid rgba(16, 185, 129, 0.85) !important;
             outline-offset: -3px !important;

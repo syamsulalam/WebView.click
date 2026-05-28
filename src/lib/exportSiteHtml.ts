@@ -110,6 +110,7 @@ function cleanHtmlClone() {
   clone.querySelectorAll("script").forEach((node) => node.remove());
   clone.querySelectorAll(".hide-in-export").forEach((node) => node.remove());
   clone.querySelectorAll("[data-export-remove='true']").forEach((node) => node.remove());
+  clone.querySelectorAll("[data-wv-tool-ui]").forEach((node) => node.remove());
   clone.querySelectorAll("[data-wv-editable='true']").forEach((node) => {
     const element = node as HTMLElement;
     element.removeAttribute("contenteditable");

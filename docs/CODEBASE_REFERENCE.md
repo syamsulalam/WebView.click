@@ -1048,7 +1048,7 @@ Logic Generation Jobs:
 
 Logic Owner HTML Export:
 - `src/lib/exportSiteHtml.ts` membuat zip owner berisi hanya `index.html`.
-- Export menghapus `<script>` internal, `.hide-in-export`, dan `[data-export-remove="true"]`.
+- Export menghapus `<script>` internal, `.hide-in-export`, `[data-export-remove="true"]`, dan semua `[data-wv-tool-ui]` seperti download/setup panel, free-package modal, checkout modal, inspector, icon picker, tooltip WebView.click, dan style QA boundary demo.
 - Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
 - Export menyertakan inline script owner untuk tab navigation, section-anchor fallback seperti `#contact`, fixed overlay submenu hover/positioning, compact-on-scroll header, contact/feedback `mailto:`, feedback rating redirect/form behavior, dan shader pointer CSS variables (`--wv-pointer-x`, `--wv-pointer-y`) agar shader procedural tetap responsif di file HTML statis.
 - Export mengambil gambar yang sedang tampil di DOM, menyimpannya ke folder `/img` di dalam zip, lalu mengubah `<img src>` menjadi path relatif seperti `img/{businessId}-hero.jpg`. Ini termasuk foto Google Business Profile yang sedang diproxy via WebView.click saat tombol download diklik, sehingga HTML owner tidak perlu hotlink ke Google atau Function WebView.click untuk gambar.

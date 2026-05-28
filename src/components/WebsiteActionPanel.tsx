@@ -88,6 +88,8 @@ function InfoTooltip({ text, light = false }: { text: string; light?: boolean })
         <span
           ref={tooltipRef}
           role="tooltip"
+          data-export-remove="true"
+          data-wv-tool-ui="website-action-tooltip"
           className={`pointer-events-none fixed z-[100001] w-64 -translate-x-1/2 rounded-xl bg-slate-950 px-3 py-2 text-xs leading-relaxed text-white opacity-100 shadow-2xl ${position.placement === "top" ? "-translate-y-full" : ""}`}
           style={{ left: position.left, top: position.top }}
         >
@@ -666,7 +668,7 @@ export default function WebsiteActionPanel({
 
   return (
     <>
-      <div className={panelPosition} data-wv-tool-ui="website-action-panel">
+      <div className={panelPosition} data-export-remove="true" data-wv-tool-ui="website-action-panel">
         {panelOpen && (
           <div className="mb-3 w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -779,7 +781,7 @@ export default function WebsiteActionPanel({
       </div>
 
       {downloadInfoOpen && onDownloadZip && (
-        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-wv-tool-ui="website-download-modal">
+        <div className="hide-in-export fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-export-remove="true" data-wv-tool-ui="website-download-modal">
           <div className="max-h-[min(92vh,820px)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
@@ -895,7 +897,7 @@ export default function WebsiteActionPanel({
       )}
 
       {checkoutOpen && (
-        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-wv-tool-ui="website-checkout-modal">
+        <div className="hide-in-export fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-export-remove="true" data-wv-tool-ui="website-checkout-modal">
           <div className="max-h-[min(92vh,780px)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
