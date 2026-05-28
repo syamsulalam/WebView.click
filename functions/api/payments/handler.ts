@@ -1197,7 +1197,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     : "mock";
   const basePaymentAmountUsd = Math.max(1, Number(paymentAmountUsdSetting || 197) || 197);
   const domainFeeUsd = Math.max(0, Number(paymentDomainFeeUsdSetting || 17) || 17);
-  const addOnPageUsd = Math.max(0, Number(paymentAddOnPageUsdSetting || 10) || 10);
+  const addOnPageUsd = Math.max(50, Number(paymentAddOnPageUsdSetting || 50) || 50);
   const pricing = checkoutPricing(basePaymentAmountUsd, domainFeeUsd, addOnPageUsd, domainMode, body.addOns, body.billingPlan);
   const setupRequest = checkoutSetupRequest(pricing, body.setupRequest);
   const domainQuote = checkoutDomainQuote(domainMode, requestedDomain, body.domainQuote);

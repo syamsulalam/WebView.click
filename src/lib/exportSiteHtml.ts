@@ -20,6 +20,14 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
+function escapeXml(value: string) {
+  return escapeHtml(value).replace(/'/g, "&apos;");
+}
+
+function safeJsonForScript(value: any) {
+  return JSON.stringify(value, null, 2).replace(/</g, "\\u003c");
+}
+
 function sanitizeFilePart(value: string, fallback = "image") {
   const cleaned = String(value || "")
     .toLowerCase()
@@ -28,6 +36,25 @@ function sanitizeFilePart(value: string, fallback = "image") {
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
   return cleaned || fallback;
+}
+
+function normalizeStringList(value: any) {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[,;\n]+/) : value ? [value] : [];
+  const seen = new Set<string>();
+  return values
+    .map((item: any) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object") return String(item.name || item.city || item.label || item.area || item.description || "").trim();
+      return "";
+    })
+    .filter((item: string) => {
+      if (!item) return false;
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
 }
 
 function imageExtension(contentType: string, url = "") {
@@ -174,6 +201,15 @@ async function inlineImagesIntoZip(zip: JSZip, clone: HTMLElement, businessId: s
       image.setAttribute("src", absoluteSrc);
     }
   }
+
+  clone.querySelectorAll<HTMLElement>("[style*='url(']").forEach((element) => {
+    const style = element.getAttribute("style") || "";
+    const nextStyle = style.replace(/url\((['"]?)([^'")]+)\1\)/g, (match, _quote, rawUrl) => {
+      const relativePath = downloaded.get(absoluteUrl(String(rawUrl || "")));
+      return relativePath ? `url("${relativePath}")` : match;
+    });
+    if (nextStyle !== style) element.setAttribute("style", nextStyle);
+  });
 }
 
 function ownerInlineScript() {
@@ -342,10 +378,12 @@ That includes domain purchase, hosting purchase, DNS setup, file upload, SSL che
 WHAT IS INSIDE THIS ZIP
 
 - index.html: the website page
+- sitemap.xml: basic search-engine sitemap for the exported website
+- robots.txt: basic crawler instruction file that points to sitemap.xml
 - img/: website images used by the page
 - SETUP-GUIDE.txt: this guide
 
-Keep index.html and the img folder together. If you move index.html without the img folder, images may break.
+Keep index.html, sitemap.xml, robots.txt, and the img folder together. If you move index.html without the img folder, images may break.
 
 TECHNICAL SELF-HOSTING GUIDE
 
@@ -373,7 +411,7 @@ For a simple static HTML website, static hosting is usually enough.
 
 3. Upload the website files
 
-Upload index.html and the full img folder to the public web root of your hosting.
+Upload index.html, sitemap.xml, robots.txt, and the full img folder to the public web root of your hosting.
 
 Common public web root folders:
 - public_html
@@ -385,6 +423,8 @@ The final structure should look like this:
 
 public_html/
   index.html
+  sitemap.xml
+  robots.txt
   img/
     image-files-here.jpg
 
@@ -485,6 +525,8 @@ ${downloadPageUrl || "Not available in this export environment."}
 
 If you want to handle everything yourself, open SETUP-GUIDE.txt and follow the technical steps for buying a domain, buying hosting, connecting DNS, uploading files, enabling SSL, and maintaining the website.
 
+The zip also includes sitemap.xml, robots.txt, basic LocalBusiness structured data in index.html, and local image files so the site is ready for a normal static hosting upload.
+
 If you do not want to deal with the technical setup, we can handle it for you.
 
 DONE-FOR-YOU OPTION
@@ -509,6 +551,106 @@ For done-for-you setup, use the setup option from the website preview page where
 `;
 }
 
+function exportBaseUrl(siteData: any) {
+  const raw =
+    siteData?.seo?.canonicalUrl ||
+    siteData?.meta?.canonicalUrl ||
+    siteData?.meta?.siteUrl ||
+    (typeof window !== "undefined" ? window.location.href : "");
+  try {
+    const base = typeof window !== "undefined" ? window.location.origin : "https://your-domain.example";
+    const url = new URL(raw || "https://your-domain.example/", base);
+    url.hash = "";
+    url.search = "";
+    return url.toString().replace(/\/(?:index\.html)?$/i, "/");
+  } catch {
+    return "https://your-domain.example/";
+  }
+}
+
+function sitemapXml(siteData: any) {
+  const baseUrl = exportBaseUrl(siteData);
+  const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
+  const urls = [
+    { loc: baseUrl, priority: "1.0" },
+    ...pages
+      .slice(1)
+      .map((page: any) => String(page?.pageId || "").trim())
+      .filter(Boolean)
+      .map((pageId: string) => ({ loc: `${baseUrl}#${encodeURIComponent(pageId)}`, priority: pageId === "contact" ? "0.8" : "0.7" })),
+  ];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.map((item) => `  <url>
+    <loc>${escapeXml(item.loc)}</loc>
+    <changefreq>monthly</changefreq>
+    <priority>${item.priority}</priority>
+  </url>`).join("\n")}
+</urlset>
+`;
+}
+
+function robotsTxt(siteData: any) {
+  const baseUrl = exportBaseUrl(siteData);
+  return `User-agent: *
+Allow: /
+
+Sitemap: ${baseUrl}sitemap.xml
+`;
+}
+
+function localBusinessStructuredData(siteData: any) {
+  const meta = siteData?.meta || {};
+  const businessProfile = siteData?.businessProfile || {};
+  const contact = businessProfile.contact || {};
+  const location = siteData?.location || {};
+  const address = businessProfile.address || {};
+  const trust = siteData?.trust || {};
+  const sourceData = siteData?.sourceData || {};
+  const brand = siteData?.brand || {};
+  const socials = Array.isArray(siteData?.global?.footer?.socials) ? siteData.global.footer.socials : [];
+  const servedAreas = normalizeStringList(
+    siteData?.locationServed ||
+      siteData?.locationsServed ||
+      location.servedAreas ||
+      location.serviceAreas ||
+      businessProfile.serviceAreas ||
+      sourceData.serviceAreas ||
+      sourceData.servedAreas ||
+      sourceData.locationServed,
+  );
+  const name = String(meta.businessName || businessProfile.name || "").trim();
+  if (!name) return null;
+  const sameAs = [
+    sourceData.googleMapsUri,
+    ...socials.map((item: any) => item?.href),
+  ].filter((item: any) => typeof item === "string" && /^https?:\/\//i.test(item));
+  const jsonLd: any = {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    name,
+    url: exportBaseUrl(siteData),
+  };
+  const description = String(siteData?.seo?.description || meta.seoDescription || businessProfile.shortPitch || "").trim();
+  const phone = String(contact.phoneInternational || contact.phoneNational || businessProfile.phone || "").trim();
+  const image = String(brand.preferredHeroImage || brand.logoImageUrl || "").trim();
+  const formattedAddress = String(location.formattedAddress || address.formatted || sourceData.formattedAddress || "").trim();
+  if (description) jsonLd.description = description;
+  if (phone) jsonLd.telephone = phone;
+  if (image) jsonLd.image = absoluteUrl(image);
+  if (formattedAddress) jsonLd.address = { "@type": "PostalAddress", streetAddress: formattedAddress };
+  if (servedAreas.length > 0) jsonLd.areaServed = servedAreas.map((area) => ({ "@type": "City", name: area }));
+  if (Number(trust.rating || trust.googleRating || 0) > 0) {
+    jsonLd.aggregateRating = {
+      "@type": "AggregateRating",
+      ratingValue: Number(trust.rating || trust.googleRating || 0),
+      reviewCount: Number(trust.reviewCount || 0) || undefined,
+    };
+  }
+  if (sameAs.length > 0) jsonLd.sameAs = sameAs;
+  return jsonLd;
+}
+
 export async function downloadOwnerSiteZip(siteData: any, businessId = "website") {
   const clone = cleanHtmlClone();
   const zip = new JSZip();
@@ -521,6 +663,7 @@ export async function downloadOwnerSiteZip(siteData: any, businessId = "website"
     .join("\n");
   const bodyHtml = clone.querySelector("body")?.innerHTML || clone.innerHTML;
   const styleTags = Array.from(clone.querySelectorAll("style")).map((style) => style.outerHTML).join("\n");
+  const jsonLd = localBusinessStructuredData(siteData);
   const html = `<!doctype html>
 <html lang="${lang}">
 <head>
@@ -533,6 +676,7 @@ export async function downloadOwnerSiteZip(siteData: any, businessId = "website"
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <script src="https://cdn.tailwindcss.com"></script>
   ${stylesheetLinks}
+  ${jsonLd ? `<script type="application/ld+json">${safeJsonForScript(jsonLd)}</script>` : ""}
   ${styleTags}
 </head>
 <body>
@@ -542,6 +686,8 @@ ${ownerInlineScript()}
 </html>`;
 
   zip.file("index.html", html);
+  zip.file("sitemap.xml", sitemapXml(siteData));
+  zip.file("robots.txt", robotsTxt(siteData));
   zip.file("README-FIRST.txt", ownerReadmeFirst(siteData));
   zip.file("SETUP-GUIDE.txt", ownerSetupGuide(siteData, businessId));
   const blob = await zip.generateAsync({ type: "blob" });

@@ -129,7 +129,7 @@ function checkoutEstimate(newPages: number, editedPages: number, termYears = 1, 
   const hostingAnnual = 180;
   const domainAnnual = domainMode === "new" ? 17 : 0;
   const baseAnnual = hostingAnnual + domainAnnual;
-  const unit = 10;
+  const unit = 50;
   const years = Math.max(1, Math.min(10, Math.floor(termYears) || 1));
   const planDiscountRate = termDiscountRate(years);
   const hostingAfterDiscount = Math.round(hostingAnnual * (1 - planDiscountRate) * 100) / 100;
@@ -810,7 +810,7 @@ export default function WebsiteActionPanel({
                       <span>
                         <span className="inline-flex items-center gap-1.5 font-semibold leading-5">
                           Add / edit pages
-                          <InfoTooltip text="$10 per additional generated page or existing-page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
+                          <InfoTooltip text="$50 per additional generated page or existing-page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
                         </span>
                         <span className="mt-1 block text-xs leading-5 text-slate-600">Optional page instructions before domain.</span>
                       </span>
@@ -831,7 +831,7 @@ export default function WebsiteActionPanel({
                       <div>
                         <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-950">
                           Page work
-                          <InfoTooltip text="$10 per additional generated page or page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
+                          <InfoTooltip text="$50 per additional generated page or page edit. 5-9 actions get 10% off; 10+ actions get 20% off." />
                         </p>
                         <p className="mt-1 text-xs text-slate-600">Optional. Leave both at 0 if you only want domain, hosting, and setup for the generated site.</p>
                       </div>

@@ -62,7 +62,7 @@ This makes PayPal payments easier to match against CRM activity and reduces uncl
 - [x] `/api/payments/checkout` creates a PayPal Orders v2 order when Business API credentials are configured.
 - [x] Public `/demo` and `/:businessId` render the PayPal JavaScript SDK button inside the checkout modal for API-backed PayPal checkout.
 - [x] `/api/payments/paypal-capture-order` captures approved PayPal orders and records paid ledger/subscription/lead status.
-- [x] Checkout supports optional `$10` page/edit add-ons with 10% bulk discount at 5-9 actions and 20% at 10+ actions.
+- [x] Checkout supports optional `$50` page/edit add-ons with 10% bulk discount at 5-9 actions and 20% at 10+ actions.
 - [x] PayPal API checkout returns `requiresManualReview=false` and captures in-place; manual fallback links still return `requiresManualReview=true`.
 - [x] Public `/demo` and `/:businessId` checkout modal shows payment note instructions and copyable payment reference for manual fallback rails; API-backed PayPal stores the reference on the PayPal order.
 - [x] Admin Settings shows fallback account mode only when a manual PayPal fallback link is configured or an old `personal_bridge` value is present.

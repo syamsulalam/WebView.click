@@ -50,7 +50,7 @@ const initialSettings: Record<string, string> = {
   PAYMENT_PROCESSOR: "mock",
   PAYMENT_USD_AMOUNT: "197",
   PAYMENT_DOMAIN_FEE_USD: "17",
-  PAYMENT_ADDON_PAGE_USD: "10",
+  PAYMENT_ADDON_PAGE_USD: "50",
   PAYMENT_USD_TO_IDR_RATE: "16000",
   PAYMENT_PACKAGE_NAME: "WebView.click Done-for-you Website Setup",
   PAYMENT_PACKAGE_DESCRIPTION: "$180/year managed hosting, plus $17/year domain fee only when WebView.click registers the domain; SSL, DNS/upload, generated site launch, and free setup included.",
@@ -181,7 +181,7 @@ const offerConversionGroup = {
   fields: [
     { key: "PAYMENT_USD_AMOUNT", label: "New-domain annual total USD", type: "number", placeholder: "197", tooltip: "Customer-facing yearly total when WebView.click registers the domain. The domain fee is separated below so owned-domain buyers pay hosting only." },
     { key: "PAYMENT_DOMAIN_FEE_USD", label: "Domain fee USD", type: "number", placeholder: "17", tooltip: "Yearly domain fee charged only when WebView.click registers the domain. Term discounts apply to hosting only, never this domain fee." },
-    { key: "PAYMENT_ADDON_PAGE_USD", label: "Page/edit add-on USD", type: "number", placeholder: "10", tooltip: "Flat fee per additional generated page or edit action before bulk discount. Current checkout applies 10% off for 5-9 actions and 20% off for 10+ actions." },
+    { key: "PAYMENT_ADDON_PAGE_USD", label: "Page/edit add-on USD", type: "number", placeholder: "50", tooltip: "Flat fee per additional generated page or edit action before bulk discount. Recommended starting point is $50/action so custom page work is not priced like a fully automated task. Checkout enforces $50 minimum, then applies 10% off for 5-9 actions and 20% off for 10+ actions." },
     { key: "PAYMENT_USD_TO_IDR_RATE", label: "USD to IDR rate", type: "number", placeholder: "16000", tooltip: "Manual conversion rate used before sending IDR amount to Xendit, Midtrans, or DOKU. Update this if exchange rates move." },
     { key: "PAYMENT_PACKAGE_NAME", label: "Package name", placeholder: "WebView.click Done-for-you Website Setup", tooltip: "Name sent to hosted checkout/invoice providers." },
     { key: "PAYMENT_PACKAGE_DESCRIPTION", label: "Package description", placeholder: "$197 total...", tooltip: "Description sent to checkout providers and useful for payment dispute clarity." },
@@ -588,7 +588,9 @@ export default function AdminSettings() {
         return response.json();
       })
       .then((data) => {
-        setSettings((prev) => ({ ...prev, ...data }));
+        const normalizedData = { ...data };
+        if (Number(normalizedData.PAYMENT_ADDON_PAGE_USD || 0) < 50) normalizedData.PAYMENT_ADDON_PAGE_USD = "50";
+        setSettings((prev) => ({ ...prev, ...normalizedData }));
         setLoading(false);
       })
       .catch((err) => {
@@ -920,7 +922,7 @@ export default function AdminSettings() {
         )}
       </div>
 
-      <div className={`mt-6 grid gap-6 ${pairedSettingsGridClass("googlePlaces", "offerConversion")}`}>
+      <div className={`mt-6 grid items-start gap-6 ${pairedSettingsGridClass("googlePlaces", "offerConversion")}`}>
         <div id="settings-google-places" className={pairedSettingsCardClass("googlePlaces", ["googlePlaces", "offerConversion"])}>
           <button
             type="button"
@@ -966,7 +968,7 @@ export default function AdminSettings() {
                 <HelpTooltip text="Pricing and package copy shown to buyers and sent to checkout providers. Keep this separate from gateway credentials so payment setup stays focused." />
               </h2>
               <p className={`${pairedSettingsCollapsed("offerConversion", ["googlePlaces", "offerConversion"]) ? "hidden" : ""} mt-1 text-xs leading-relaxed text-gray-500`}>
-                ${settings.PAYMENT_USD_AMOUNT || "197"}/year new-domain total, ${settings.PAYMENT_DOMAIN_FEE_USD || "17"}/year domain fee, ${settings.PAYMENT_ADDON_PAGE_USD || "10"} page/edit add-ons, IDR rate {settings.PAYMENT_USD_TO_IDR_RATE || "16000"}.
+                ${settings.PAYMENT_USD_AMOUNT || "197"}/year new-domain total, ${settings.PAYMENT_DOMAIN_FEE_USD || "17"}/year domain fee, ${settings.PAYMENT_ADDON_PAGE_USD || "50"} page/edit add-ons, IDR rate {settings.PAYMENT_USD_TO_IDR_RATE || "16000"}.
               </p>
             </div>
             <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-500 transition ${settingsSectionOpen("offerConversion") ? "rotate-180" : ""}`} />
@@ -999,7 +1001,7 @@ export default function AdminSettings() {
         </div>
       </div>
 
-      <div className={`mt-6 grid gap-6 ${pairedSettingsGridClass("payment", "domainRegistrar")}`}>
+      <div className={`mt-6 grid items-start gap-6 ${pairedSettingsGridClass("payment", "domainRegistrar")}`}>
         <div id="settings-payment" className={pairedSettingsCardClass("payment", ["payment", "domainRegistrar"])}>
           <div className="flex w-full items-start justify-between gap-3">
             <button

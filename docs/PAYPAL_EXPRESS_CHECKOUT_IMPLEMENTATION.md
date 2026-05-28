@@ -22,7 +22,7 @@ Server-side pricing derives:
 - Owned domain: `$180/year hosting + no domain fee = $180/year`.
 - Multi-year term discounts apply only to hosting.
 - Domain fee is never discounted.
-- Page/edit add-ons are one-time setup fees using `PAYMENT_ADDON_PAGE_USD`, default `$10`.
+- Page/edit add-ons are one-time setup fees using `PAYMENT_ADDON_PAGE_USD`, default `$50`.
 
 Term discount:
 
@@ -125,7 +125,7 @@ Important keys:
 - `PAYMENT_PROCESSOR=paypal`
 - `PAYMENT_USD_AMOUNT=197`
 - `PAYMENT_DOMAIN_FEE_USD=17`
-- `PAYMENT_ADDON_PAGE_USD=10`
+- `PAYMENT_ADDON_PAGE_USD=50`
 - `PAYPAL_IS_PRODUCTION=false` for sandbox, `true` for live
 - `PAYPAL_SANDBOX_CLIENT_ID`
 - `PAYPAL_SANDBOX_CLIENT_SECRET`

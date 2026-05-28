@@ -72,6 +72,70 @@ function inferLocaleFromPlace(place: any) {
   return { language: "en", region: "US" };
 }
 
+function normalizeStringList(value: any) {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[,;\n]+/) : value ? [value] : [];
+  const seen = new Set<string>();
+  return values
+    .map((item: any) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object") return String(item.name || item.city || item.label || item.area || item.description || item.text || "").trim();
+      return "";
+    })
+    .filter((item: string) => {
+      if (!item) return false;
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
+function placeAddressComponents(place: any) {
+  const components = place.address_components || place.addressComponents || [];
+  return Array.isArray(components) ? components : [];
+}
+
+function componentLongName(component: any) {
+  return String(component?.long_name || component?.longText || component?.short_name || component?.shortText || "").trim();
+}
+
+function placeServedAreas(place: any, searchQuery = "") {
+  const directAreas = normalizeStringList(
+    place.locationServed ||
+      place.locationsServed ||
+      place.servedAreas ||
+      place.serviceAreas ||
+      place.service_area?.places ||
+      place.serviceArea?.places ||
+      place.serviceAreaBusiness?.places,
+  );
+  if (directAreas.length > 0) return directAreas;
+
+  const components = placeAddressComponents(place);
+  const componentAreas = components
+    .filter((component: any) => {
+      const types = Array.isArray(component?.types) ? component.types : [];
+      return types.includes("locality") || types.includes("postal_town") || types.includes("administrative_area_level_2");
+    })
+    .map(componentLongName)
+    .filter(Boolean);
+  const queryText = String(searchQuery || "");
+  const queryArea = /\bnear\b|\bin\b|,/i.test(queryText)
+    ? queryText
+        .split(/\bnear\b|\bin\b|,/i)
+        .map((part) => part.trim())
+        .filter((part) => /[a-z]/i.test(part))
+        .slice(-1)
+    : [];
+  const formattedAddressArea = String(place.formatted_address || place.formattedAddress || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => /[a-z]/i.test(part))
+    .slice(-3, -2);
+  return normalizeStringList([...componentAreas, ...queryArea, ...formattedAddressArea]).slice(0, 6);
+}
+
 export function placeDisplayName(place: any) {
   const displayName = place.displayName;
   if (typeof displayName === "string") return displayName;
@@ -285,6 +349,7 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
   const typeLabel = meaningfulTypeLabel(place, isEnglish, options.searchQuery);
   const businessStatus = place.business_status || place.businessStatus || "";
   const websiteUrl = place.website || place.websiteUri || "";
+  const servedAreas = placeServedAreas(place, options.searchQuery || place.searchQuery || "");
   const products = offerings.filter((item) => item.type === "product");
   const services = offerings.filter((item) => item.type === "service");
   const photoUrls = Array.isArray(place.photos)
@@ -451,6 +516,7 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
       categories: Array.isArray(place.types) ? place.types : [],
       shortPitch: isEnglish ? `A trusted ${typeLabel} serving customers around ${address || "the local area"}.` : `Layanan lokal terpercaya di ${address || "area sekitar"}.`,
       address: { formatted: address },
+      serviceAreas: servedAreas,
       contact: { phoneNational: phone, phoneInternational: phone, directionsUrl: mapsUrl },
     },
     trust: {
@@ -474,7 +540,8 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
       { label: "Google rating", enabled: rating > 0, source: "google_places.rating", description: reviewCount ? (isEnglish ? `${reviewCount} reviews available.` : `${reviewCount} review tersedia.`) : (isEnglish ? "Rating is not available yet." : "Rating belum tersedia.") },
       { label: isEnglish ? "Direct contact" : "Kontak langsung", enabled: Boolean(phone), source: "google_places.phone", description: isEnglish ? "CTA points to the business contact when available." : "CTA diarahkan ke kontak bisnis." },
     ],
-    location: { formattedAddress: address, directionsUrl: mapsUrl, isServiceAreaBusiness: Boolean(place.pureServiceAreaBusiness) },
+    location: { formattedAddress: address, directionsUrl: mapsUrl, isServiceAreaBusiness: Boolean(place.pureServiceAreaBusiness), servedAreas },
+    locationServed: servedAreas,
     hours: { timezone: "", openNow: Boolean(place.opening_hours?.open_now), regular: Array.isArray(place.opening_hours?.weekday_text) ? place.opening_hours.weekday_text : [], current: [] },
     conversion: {
       primaryCta: { text: isEnglish ? "Call Now" : "Hubungi Sekarang", href: phone ? `tel:${phone}` : "#contact" },

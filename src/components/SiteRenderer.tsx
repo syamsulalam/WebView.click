@@ -94,6 +94,19 @@ function normalizeSiteData(siteData: any) {
     ? normalizedNavigation.headerMenu
     : normalizedPages.map((page: any) => ({ label: page.pageTitle || page.pageId, href: `#${page.pageId}` }));
   const headerMenu = baseHeaderMenu.filter((item: any) => String(item?.href || "") !== "#feedback");
+  const servedAreas = normalizeStringList(
+    siteData?.locationServed ||
+      siteData?.locationsServed ||
+      location.servedAreas ||
+      location.serviceAreas ||
+      businessProfile.serviceAreas ||
+      sourceData.serviceAreas ||
+      sourceData.servedAreas ||
+      sourceData.locationServed,
+  );
+  const headerMenuWithAreas = servedAreas.length > 0 && !headerMenu.some((item: any) => String(item?.href || "") === "#areas-served")
+    ? [...headerMenu, { label: isIndonesian ? "Area Layanan" : "Areas Served", href: "#areas-served" }]
+    : headerMenu;
 
   return {
     meta: {
@@ -155,6 +168,7 @@ function normalizeSiteData(siteData: any) {
     capabilities,
     sourceData,
     location,
+    servedAreas,
     hours,
     conversion: {
       primaryCta: conversion.primaryCta || header.ctaButton || { text: "Hubungi Kami", href: "#contact" },
@@ -178,7 +192,7 @@ function normalizeSiteData(siteData: any) {
       },
     },
     navigation: {
-      headerMenu,
+      headerMenu: headerMenuWithAreas,
     },
     pages: normalizedPages,
   };
@@ -203,6 +217,25 @@ function isGooglePlacesImage(src?: string) {
   }
 }
 
+function normalizeStringList(value: any) {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[,;\n]+/) : value ? [value] : [];
+  const seen = new Set<string>();
+  return values
+    .map((item: any) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object") return String(item.name || item.city || item.label || item.area || item.description || "").trim();
+      return "";
+    })
+    .filter((item: string) => {
+      if (!item) return false;
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
 function attributionText(src?: string, attributions: string[] = [], source = "", caption = "") {
   if (source !== "google_places" && !isGooglePlacesImage(src)) return "";
   const cleanAttributions = attributions.map((item) => String(item).replace(/<[^>]*>/g, "").trim()).filter(Boolean);
@@ -215,6 +248,7 @@ function inferMenuIconId(key = "") {
   if (key.includes("about") || key.includes("tentang")) return "info";
   if (key.includes("service") || key.includes("layanan") || key.includes("menu")) return "service";
   if (key.includes("gallery") || key.includes("galeri")) return "gallery";
+  if (key.includes("area") || key.includes("city") || key.includes("lokasi")) return "map";
   if (key.includes("contact") || key.includes("kontak")) return "mail";
   return "image";
 }
@@ -633,7 +667,7 @@ export default function SiteRenderer({
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingImageKey = useRef("");
 
-  const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, sourceData, location, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, sourceData, location, servedAreas, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const imageReplacementKey = imageReplacementStorageKey(businessId, meta.businessId);
   const iconStorageKey = siteIconStorageKey(businessId, meta.businessId);
   const legacyIconStorageKey = legacyButtonIconStorageKey(businessId, meta.businessId);
@@ -731,6 +765,11 @@ export default function SiteRenderer({
     phone: isIndonesian ? "Telepon" : "Phone",
     businessHours: isIndonesian ? "Jam Operasional" : "Business Hours",
     openMaps: isIndonesian ? "Buka Google Maps" : "Open Google Maps",
+    areasServedEyebrow: isIndonesian ? "Area layanan" : "Areas served",
+    areasServedTitle: isIndonesian ? "Melayani pelanggan di sekitar wilayah ini" : "Serving nearby local customers",
+    areasServedDescription: isIndonesian
+      ? "Hubungi kami untuk memastikan jadwal, rute, dan ketersediaan layanan di lokasi Anda."
+      : "Contact us to confirm scheduling, routing, and service availability for your location.",
     feedbackTitle: isIndonesian ? "Bagaimana pengalaman Anda?" : "How was your experience?",
     feedbackDescription: isIndonesian ? "Pilih rating setelah memakai layanan ini." : "Choose a rating after using this service.",
     feedbackSatisfied: isIndonesian ? "Terima kasih. Kami akan membuka Google Review." : "Thanks. We will open Google Reviews.",
@@ -1191,7 +1230,7 @@ export default function SiteRenderer({
           {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
           {editableText("header.businessName", meta.businessName, "span", "min-w-0 truncate leading-tight")}
         </button>
-        <nav className="hidden min-w-0 justify-self-center md:flex items-center justify-center gap-5">
+        <nav className="hidden min-w-0 justify-self-center md:flex items-center justify-center gap-4">
           {navigation.headerMenu.map((menu: any, idx: number) => {
             const pageId = menu.href.replace("#", "");
             const children = Array.isArray(menu.children) ? menu.children : [];
@@ -1207,7 +1246,7 @@ export default function SiteRenderer({
                 <button
                   onClick={() => changeTab(pageId)}
                   data-wv-tab={pageId}
-                  className={`${headerCompact ? "h-8" : "h-10"} text-sm font-medium leading-none hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
+                  className={`${headerCompact ? "h-8" : "h-10"} text-[11px] font-bold uppercase tracking-[0.14em] leading-none hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
                 >
                   {editableSiteIcon(`nav.${idx}`, inferMenuIconId(`${menu.label} ${menu.href}`), 16)}
                   {menu.label}
@@ -1291,9 +1330,23 @@ export default function SiteRenderer({
                   : heroContent.headline || labels.heroFallback;
                 const heroSubheadline = tidyDanglingCopy(heroContent.subheadline || businessProfile.shortPitch);
                 return (
-                  <section key={section.id} data-wv-hero-section="true" className="px-6 py-16 md:py-24 bg-white">
-                    <div className="max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center">
-                      <div>
+                  <section
+                    key={section.id}
+                    data-wv-hero-section="true"
+                    className="relative overflow-hidden px-6 py-16 md:py-24 bg-white"
+                  >
+                    {isUsableImage(heroImage) && (
+                      <>
+                        <div
+                          aria-hidden="true"
+                          className="absolute inset-0 bg-cover bg-center opacity-20 blur-sm scale-105"
+                          style={{ backgroundImage: `url("${String(heroImage).replace(/"/g, "%22")}")` }}
+                        />
+                        <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-r from-white via-white/90 to-white/70" />
+                      </>
+                    )}
+                    <div className="relative z-10 max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center">
+                      <div className="rounded-2xl border border-white/70 bg-white/90 p-6 shadow-xl shadow-slate-900/10 backdrop-blur md:p-8">
                         <p className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: colors.accent }}>
                           {editableText(`${section.id}.eyebrow`, businessProfile.typeLabel, "span")}
                         </p>
@@ -1901,6 +1954,27 @@ export default function SiteRenderer({
 
               return <div key={section.id} className="py-20 text-center opacity-50">[Section: {section.type}]</div>;
             })}
+            {page.pageId === homePageId && servedAreas.length > 0 && (
+              <section id="areas-served" data-wv-section="areas-served" className="px-6 py-14 bg-white">
+                <div className="mx-auto grid max-w-6xl gap-6 rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm md:grid-cols-[0.85fr_1.15fr] md:p-8">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: colors.accent }}>
+                      {editableText("areasServed.eyebrow", labels.areasServedEyebrow, "span")}
+                    </p>
+                    {editableText("areasServed.title", labels.areasServedTitle, "h2", "mt-2 text-2xl font-bold text-slate-950 md:text-3xl")}
+                    {editableText("areasServed.description", labels.areasServedDescription, "p", "mt-3 text-sm leading-6 text-slate-600", undefined, true)}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {servedAreas.map((area: string, i: number) => (
+                      <span key={area} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm">
+                        <span className="shrink-0" style={{ color: colors.accent }}>{editableSiteIcon(`areasServed.${i}`, "map", 15)}</span>
+                        {editableText(`areasServed.area.${i}`, area, "span")}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
           </div>
         ))}
       </main>
