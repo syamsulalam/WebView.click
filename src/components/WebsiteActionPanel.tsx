@@ -784,7 +784,7 @@ export default function WebsiteActionPanel({
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <p className="font-semibold text-slate-950">Your free website package</p>
-                <p className="text-xs text-slate-500">Review what is included before downloading the ZIP.</p>
+                <p className="text-xs text-slate-500">Review what is included before downloading your site.</p>
               </div>
               <button type="button" onClick={() => setDownloadInfoOpen(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close download details">
                 <X size={18} />
@@ -794,7 +794,7 @@ export default function WebsiteActionPanel({
               <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-center">
                 <p className="text-lg font-bold text-slate-950">The generated website files are free.</p>
                 <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                  The ZIP includes a static website you can host yourself, plus starter SEO files and setup notes. You can also ask WebView.click to host, connect a domain, or add custom pages for you.
+                  Your download includes the website files you can host yourself, plus starter SEO files and setup notes. You can also ask WebView.click to host, connect a domain, or add custom pages for you.
                 </p>
               </div>
 
@@ -818,7 +818,7 @@ export default function WebsiteActionPanel({
               <div>
                 <p className="text-sm font-semibold text-slate-950">Pages included</p>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  These are the preview URLs for the generated pages. In the downloaded ZIP, the same page links work from index.html using the matching section/page anchors.
+                  These are the preview URLs for the generated pages. After downloading your site, the same page links work inside your website files.
                 </p>
                 <div className="mt-3 space-y-2">
                   {downloadPages.map((page) => (
@@ -887,7 +887,7 @@ export default function WebsiteActionPanel({
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white hover:bg-slate-800"
               >
                 <Download size={18} />
-                Download ZIP for free
+                Download your site for free
               </button>
             </div>
           </div>
