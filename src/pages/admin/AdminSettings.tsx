@@ -955,6 +955,7 @@ export default function AdminSettings() {
           </div>
           )}
         </div>
+      </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
         <div id="settings-payment" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
