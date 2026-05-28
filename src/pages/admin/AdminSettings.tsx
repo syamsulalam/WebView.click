@@ -431,6 +431,48 @@ export default function AdminSettings() {
       [sectionKey]: !prev[sectionKey],
     }));
   };
+  const toggleSettingsSectionInRow = (sectionKey: string, rowKeys: string[]) => {
+    setOpenSettingSections((prev) => {
+      const next = { ...prev };
+      const willOpen = !prev[sectionKey];
+      rowKeys.forEach((key) => {
+        if (key !== sectionKey) next[key] = false;
+      });
+      next[sectionKey] = willOpen;
+      return next;
+    });
+  };
+  const pairedSettingsGridClass = (leftKey: string, rightKey: string) => {
+    const leftOpen = settingsSectionOpen(leftKey);
+    const rightOpen = settingsSectionOpen(rightKey);
+    if (leftOpen && !rightOpen) return "md:grid-cols-[minmax(0,3fr)_minmax(180px,1fr)]";
+    if (rightOpen && !leftOpen) return "md:grid-cols-[minmax(180px,1fr)_minmax(0,3fr)]";
+    return "md:grid-cols-2";
+  };
+  const pairedSettingsCardClass = (sectionKey: string, rowKeys: string[], extraClass = "") => {
+    const rowHasOpen = rowKeys.some((key) => settingsSectionOpen(key));
+    const expanded = settingsSectionOpen(sectionKey);
+    return `scroll-mt-24 rounded-2xl border border-gray-200 bg-white shadow-sm transition-all ${rowHasOpen && !expanded ? "p-4" : "p-6"} ${extraClass}`;
+  };
+  const pairedSettingsCollapsed = (sectionKey: string, rowKeys: string[]) => (
+    rowKeys.some((key) => settingsSectionOpen(key)) && !settingsSectionOpen(sectionKey)
+  );
+
+  useEffect(() => {
+    setOpenSettingSections((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      if (next.googlePlaces && next.offerConversion) {
+        next.offerConversion = false;
+        changed = true;
+      }
+      if (next.payment && next.domainRegistrar) {
+        next.domainRegistrar = false;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, []);
 
   const selectedProviderConfig = useMemo(
     () => providerOptions.find((provider) => provider.key === selectedProvider) || providerOptions[0],
@@ -878,11 +920,11 @@ export default function AdminSettings() {
         )}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6 mt-6">
-        <div id="settings-google-places" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+      <div className={`mt-6 grid gap-6 ${pairedSettingsGridClass("googlePlaces", "offerConversion")}`}>
+        <div id="settings-google-places" className={pairedSettingsCardClass("googlePlaces", ["googlePlaces", "offerConversion"])}>
           <button
             type="button"
-            onClick={() => toggleSettingsSection("googlePlaces")}
+            onClick={() => toggleSettingsSectionInRow("googlePlaces", ["googlePlaces", "offerConversion"])}
             className="flex w-full items-center justify-between gap-4 text-left"
           >
             <div>
@@ -890,7 +932,7 @@ export default function AdminSettings() {
                 Google Places
                 <HelpTooltip text="Server-side key used for Places search, details, reviews, and photo proxy calls. It should be API-restricted, not HTTP-referrer restricted." />
               </h2>
-              <p className="text-xs text-gray-500">
+              <p className={`${pairedSettingsCollapsed("googlePlaces", ["googlePlaces", "offerConversion"]) ? "hidden" : ""} text-xs text-gray-500`}>
                 Dipakai dari Cloudflare Pages Function. Expand only when rotating the Places key.
               </p>
             </div>
@@ -912,10 +954,10 @@ export default function AdminSettings() {
           )}
         </div>
 
-        <div id="settings-offer-conversion" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div id="settings-offer-conversion" className={pairedSettingsCardClass("offerConversion", ["googlePlaces", "offerConversion"])}>
           <button
             type="button"
-            onClick={() => toggleSettingsSection("offerConversion")}
+            onClick={() => toggleSettingsSectionInRow("offerConversion", ["googlePlaces", "offerConversion"])}
             className="flex w-full items-start justify-between gap-4 text-left"
           >
             <div>
@@ -923,7 +965,7 @@ export default function AdminSettings() {
                 Offer & Conversion
                 <HelpTooltip text="Pricing and package copy shown to buyers and sent to checkout providers. Keep this separate from gateway credentials so payment setup stays focused." />
               </h2>
-              <p className="mt-1 text-xs leading-relaxed text-gray-500">
+              <p className={`${pairedSettingsCollapsed("offerConversion", ["googlePlaces", "offerConversion"]) ? "hidden" : ""} mt-1 text-xs leading-relaxed text-gray-500`}>
                 ${settings.PAYMENT_USD_AMOUNT || "197"}/year new-domain total, ${settings.PAYMENT_DOMAIN_FEE_USD || "17"}/year domain fee, ${settings.PAYMENT_ADDON_PAGE_USD || "10"} page/edit add-ons, IDR rate {settings.PAYMENT_USD_TO_IDR_RATE || "16000"}.
               </p>
             </div>
@@ -957,12 +999,12 @@ export default function AdminSettings() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
-        <div id="settings-payment" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+      <div className={`mt-6 grid gap-6 ${pairedSettingsGridClass("payment", "domainRegistrar")}`}>
+        <div id="settings-payment" className={pairedSettingsCardClass("payment", ["payment", "domainRegistrar"])}>
           <div className="flex w-full items-start justify-between gap-3">
             <button
               type="button"
-              onClick={() => toggleSettingsSection("payment")}
+              onClick={() => toggleSettingsSectionInRow("payment", ["payment", "domainRegistrar"])}
               className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
             >
               <div>
@@ -970,7 +1012,7 @@ export default function AdminSettings() {
                   Payment Setup
                   <HelpTooltip text="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up." />
                 </h2>
-                <p className="text-xs leading-relaxed text-gray-500">
+                <p className={`${pairedSettingsCollapsed("payment", ["payment", "domainRegistrar"]) ? "hidden" : ""} text-xs leading-relaxed text-gray-500`}>
                   Active processor: {paymentProcessorOptions.find((option) => option.value === activePaymentProcessor)?.label || activePaymentProcessor}
                 </p>
                 {paypalActiveCredentialsMissing && (
@@ -1293,10 +1335,10 @@ export default function AdminSettings() {
           )}
         </div>
 
-      <div id="settings-domain-registrar" className="scroll-mt-24 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div id="settings-domain-registrar" className={pairedSettingsCardClass("domainRegistrar", ["payment", "domainRegistrar"])}>
         <button
           type="button"
-          onClick={() => toggleSettingsSection("domainRegistrar")}
+          onClick={() => toggleSettingsSectionInRow("domainRegistrar", ["payment", "domainRegistrar"])}
           className="flex w-full items-start justify-between gap-4 text-left"
         >
           <div>
@@ -1304,7 +1346,7 @@ export default function AdminSettings() {
               Domain Registrar
               <HelpTooltip text="Optional automation for real registrar quote capture. If credentials are empty, public checkout still works and the order remains manual-confirmation friendly." widthClass="w-80" />
             </h2>
-            <p className="text-xs leading-relaxed text-gray-500">
+            <p className={`${pairedSettingsCollapsed("domainRegistrar", ["payment", "domainRegistrar"]) ? "hidden" : ""} text-xs leading-relaxed text-gray-500`}>
               Active registrar: {activeDomainRegistrarOption.label}. Buyer-facing checkout still shows the included $17/year domain fee.
             </p>
             {!domainRegistrarConfigured && (
