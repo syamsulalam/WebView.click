@@ -22,6 +22,7 @@ type SetupMode = "base" | "addons";
 type SetupStep = "offer" | "plan" | "addons-count" | "addons-details" | "domain" | "payment";
 type BillingCadence = "upfront" | "annual_recurring";
 type EditPageRequest = { pageId: string; notes: string };
+type FreeSitePageSummary = { id: string; label: string; url: string; purpose: string };
 
 declare global {
   interface Window {
@@ -179,6 +180,133 @@ function pageLabel(page: any, index: number) {
   return String(page?.title || page?.label || page?.name || page?.pageTitle || page?.pageId || `Page ${index + 1}`);
 }
 
+function normalizedPageId(value: string, fallback = "page") {
+  return String(value || fallback)
+    .toLowerCase()
+    .replace(/^#/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || fallback;
+}
+
+function pageUrlFor(pageId: string, businessId: string) {
+  const slug = normalizedPageId(businessId, "website");
+  const id = normalizedPageId(pageId, "home");
+  const path = `/${slug}${id === "home" ? "" : `#${id}`}`;
+  if (typeof window === "undefined") return path;
+  return `${window.location.origin}${path}`;
+}
+
+function pagePurpose(page: any, index: number) {
+  const id = normalizedPageId(String(page?.pageId || ""), `page-${index + 1}`);
+  const label = pageLabel(page, index);
+  const sectionTypes = Array.isArray(page?.sections) ? page.sections.map((section: any) => String(section?.type || "")) : [];
+  if (id === "home") return "Main landing page for first impressions, calls, trust signals, and service overview.";
+  if (id === "services") return "Overview page that organizes products or services so visitors can quickly choose what they need.";
+  if (id === "gallery") return "Portfolio/photo gallery that helps visitors see the real business before contacting you.";
+  if (id === "contact") return "Contact page with phone, address, hours, map/directions, and inquiry form.";
+  if (id === "feedback") return "Customer feedback page that routes happy customers toward Google reviews and captures private complaints.";
+  if (sectionTypes.includes("offeringDetail")) return `Dedicated detail page for ${label}, with benefits, FAQs, proof, and a clear contact action.`;
+  if (sectionTypes.includes("faq")) return "FAQ page/section that answers common buyer questions before they call.";
+  return "Supporting website page included in the downloaded static site.";
+}
+
+function freeSitePages(siteData: any, businessId: string): FreeSitePageSummary[] {
+  const rawPages = Array.isArray(siteData?.pages) ? siteData.pages : [];
+  const pages = rawPages.map((page: any, index: number) => {
+    const id = normalizedPageId(String(page?.pageId || ""), `page-${index + 1}`);
+    return {
+      id,
+      label: pageLabel(page, index),
+      url: pageUrlFor(id, businessId),
+      purpose: pagePurpose(page, index),
+    };
+  });
+  const seen = new Set(pages.map((page) => page.id));
+  const addVirtualPage = (id: string, label: string, purpose: string) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    pages.push({ id, label, url: pageUrlFor(id, businessId), purpose });
+  };
+  addVirtualPage("home", "Home", "Main landing page for first impressions, calls, trust signals, and service overview.");
+  const offerings = [
+    ...(Array.isArray(siteData?.products) ? siteData.products : []),
+    ...(Array.isArray(siteData?.services) ? siteData.services : []),
+    ...(Array.isArray(siteData?.offers) ? siteData.offers : []),
+  ];
+  const hasContactData = Boolean(
+    siteData?.businessProfile?.contact?.phoneNational ||
+      siteData?.businessProfile?.contact?.phoneInternational ||
+      siteData?.businessProfile?.contact?.email ||
+      siteData?.businessProfile?.email ||
+      siteData?.location?.formattedAddress,
+  );
+  const hasGalleryData = Boolean(
+    siteData?.brand?.preferredHeroImage ||
+      siteData?.brand?.logoImageUrl ||
+      offerings.some((item: any) => item?.image) ||
+      rawPages.some((page: any) => (Array.isArray(page?.sections) ? page.sections : []).some((section: any) => section?.type === "imageGallery")),
+  );
+  if (offerings.length > 0) addVirtualPage("services", "Services", "Service overview page with cards and links to individual service details.");
+  if (hasGalleryData) addVirtualPage("gallery", "Gallery", "Portfolio/photo gallery using available business images.");
+  if (hasContactData) addVirtualPage("contact", "Contact", "Contact page with business details, inquiry form, and call/directions actions.");
+  addVirtualPage("feedback", "Feedback", "Review/feedback page for routing happy customers to Google reviews and collecting private feedback.");
+  return pages.slice(0, 16);
+}
+
+function freeSiteFeatures(siteData: any) {
+  const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
+  const sections = pages.flatMap((page: any) => Array.isArray(page?.sections) ? page.sections : []);
+  const offerings = [
+    ...(Array.isArray(siteData?.products) ? siteData.products : []),
+    ...(Array.isArray(siteData?.services) ? siteData.services : []),
+    ...(Array.isArray(siteData?.offers) ? siteData.offers : []),
+  ];
+  return [
+    {
+      title: "Google review flow",
+      detail: siteData?.sourceData?.placeId || sections.some((section: any) => section?.type === "feedback")
+        ? "Happy customers can be routed to Google reviews; lower ratings can send private feedback."
+        : "Feedback page included so review routing can be connected when Google review data is available.",
+    },
+    {
+      title: "Google Maps and directions",
+      detail: siteData?.sourceData?.googleMapsUri || siteData?.location?.directionsUrl || siteData?.businessProfile?.contact?.directionsUrl
+        ? "Directions links point visitors to the business location/map."
+        : "Directions-ready layout included for map links when location data is available.",
+    },
+    {
+      title: "Business hours",
+      detail: Array.isArray(siteData?.hours?.regular) && siteData.hours.regular.length > 0
+        ? "Hours from the business profile are displayed for visitors."
+        : "Business-hours section is supported and ready for owner updates.",
+    },
+    {
+      title: "FAQ and service details",
+      detail: sections.some((section: any) => section?.type === "faq") || sections.some((section: any) => section?.type === "offeringDetail")
+        ? "FAQ/service detail sections answer common questions before a visitor calls."
+        : "Service detail structure is included for generated offerings.",
+    },
+    {
+      title: "Individual service pages",
+      detail: offerings.length > 0
+        ? `${offerings.length} service/product item${offerings.length === 1 ? "" : "s"} can be shown with detail pages or cards.`
+        : "The site supports service pages when products/services are present.",
+    },
+    {
+      title: "Portfolio gallery",
+      detail: "Gallery/photo sections use available business images so visitors can inspect real work or location photos.",
+    },
+    {
+      title: "Contact form page",
+      detail: "The included form opens an email draft with visitor details, so the static site can capture inquiries without a backend.",
+    },
+    {
+      title: "SEO starter files",
+      detail: "The download includes index.html, sitemap.xml, robots.txt, image files, setup guide, and LocalBusiness structured data.",
+    },
+  ];
+}
+
 function PageCountStepper({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
     <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -213,6 +341,7 @@ export default function WebsiteActionPanel({
   onPaletteOptionChange,
 }: WebsiteActionPanelProps) {
   const [panelOpen, setPanelOpen] = useState(false);
+  const [downloadInfoOpen, setDownloadInfoOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [setupMode, setSetupMode] = useState<SetupMode>("base");
   const [setupStep, setSetupStep] = useState<SetupStep>("offer");
@@ -240,6 +369,8 @@ export default function WebsiteActionPanel({
   const [newPageRequests, setNewPageRequests] = useState<string[]>([]);
   const [editPageRequests, setEditPageRequests] = useState<EditPageRequest[]>([]);
   const paypalButtonsRef = useRef<HTMLDivElement | null>(null);
+  const downloadPages = useMemo(() => freeSitePages(siteData, siteData?.meta?.businessId || businessId), [siteData, businessId]);
+  const downloadFeatures = useMemo(() => freeSiteFeatures(siteData), [siteData]);
 
   const existingPageOptions = useMemo(() => {
     const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
@@ -594,7 +725,10 @@ export default function WebsiteActionPanel({
               {onDownloadZip && (
                 <button
                   type="button"
-                  onClick={() => onDownloadZip(siteData)}
+                  onClick={() => {
+                    setDownloadInfoOpen(true);
+                    setPanelOpen(false);
+                  }}
                   className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:bg-slate-100"
                 >
                   <span>
@@ -643,6 +777,122 @@ export default function WebsiteActionPanel({
           Download / Setup
         </button>
       </div>
+
+      {downloadInfoOpen && onDownloadZip && (
+        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-wv-tool-ui="website-download-modal">
+          <div className="max-h-[min(92vh,820px)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="font-semibold text-slate-950">Your free website package</p>
+                <p className="text-xs text-slate-500">Review what is included before downloading the ZIP.</p>
+              </div>
+              <button type="button" onClick={() => setDownloadInfoOpen(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close download details">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-5 p-5">
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-center">
+                <p className="text-lg font-bold text-slate-950">The generated website files are free.</p>
+                <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                  The ZIP includes a static website you can host yourself, plus starter SEO files and setup notes. You can also ask WebView.click to host, connect a domain, or add custom pages for you.
+                </p>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Included website features</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {downloadFeatures.map((feature) => (
+                    <div key={feature.title} className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="flex items-start gap-2">
+                        <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-600" size={16} />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">{feature.title}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">{feature.detail}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Pages included</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  These are the preview URLs for the generated pages. In the downloaded ZIP, the same page links work from index.html using the matching section/page anchors.
+                </p>
+                <div className="mt-3 space-y-2">
+                  {downloadPages.map((page) => (
+                    <div key={`${page.id}-${page.url}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-950">{page.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-600">{page.purpose}</p>
+                        </div>
+                        <code className="shrink-0 break-all rounded-lg bg-white px-2 py-1 text-[11px] text-slate-600 sm:max-w-[230px]">{page.url}</code>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDownloadInfoOpen(false);
+                    setCheckoutOpen(true);
+                    setSetupMode("base");
+                    setSetupStep("offer");
+                    setCheckoutDetails(null);
+                    setPaypalRenderedKey("");
+                    setCheckoutStatus("");
+                    setOwnedDomainConfirmed(false);
+                  }}
+                  className="flex min-h-[76px] items-center justify-between gap-3 rounded-xl bg-indigo-600 px-4 py-3 text-left text-white hover:bg-indigo-700"
+                >
+                  <span>
+                    <span className="block font-semibold leading-5">Host it for me</span>
+                    <span className="mt-1 block text-xs leading-5 text-indigo-100">We handle hosting, domain/DNS, SSL, upload, and launch.</span>
+                  </span>
+                  <ArrowRight size={18} className="shrink-0" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDownloadInfoOpen(false);
+                    setCheckoutOpen(true);
+                    setSetupMode("addons");
+                    setSetupStep("plan");
+                    setCheckoutDetails(null);
+                    setPaypalRenderedKey("");
+                    setCheckoutStatus("");
+                    setOwnedDomainConfirmed(false);
+                  }}
+                  className="flex min-h-[76px] items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-slate-900 hover:bg-indigo-100"
+                >
+                  <span>
+                    <span className="block font-semibold leading-5">Add custom pages</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-600">$50/page action with bulk discounts before payment.</span>
+                  </span>
+                  <ArrowRight size={18} className="shrink-0" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onDownloadZip(siteData);
+                  setDownloadInfoOpen(false);
+                }}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white hover:bg-slate-800"
+              >
+                <Download size={18} />
+                Download ZIP for free
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {checkoutOpen && (
         <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-wv-tool-ui="website-checkout-modal">

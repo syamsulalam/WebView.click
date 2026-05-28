@@ -294,6 +294,7 @@ Fungsi:
 - Checkout offer shows the value stack as infrastructure: free generated site, `$180/year` managed hosting, `$17/year` domain fee only when WebView.click registers a new domain, SSL/DNS/upload, and setup handled at no extra setup fee. Buyer-facing copy does not mention the underlying hosting provider.
 - Buyer can choose 1-10 year terms before domain/payment. Prepaid terms apply package discounts of 5% at 2 years, +5% per additional year through 9 years, and 50% at 10 years, but the discount applies only to the `$180/year` hosting portion. The `$17/year` domain fee is never discounted and is removed entirely when the buyer chooses an owned domain. `annual_recurring` uses PayPal Subscriptions when PayPal API credentials are active; otherwise non-PayPal/manual rails still record the selected billing preference.
 - Optional add-ons are now a separate branch before domain/payment: buyer first chooses whether they want page add/edit work, then selects counts, then fills exact page names to add and existing pages/notes to edit. `$50` per action applies, with 10% discount for 5-9 actions and 20% for 10+ actions.
+- Free download no longer immediately saves the ZIP from the compact panel. It first opens a shared modal explaining the free package value, included features, generated page URLs/purposes, optional hosting/custom-page CTAs, and then shows the real `Download ZIP for free` button.
 
 Props penting:
 - `siteData`: dipakai untuk business name/business ID default.
@@ -325,6 +326,7 @@ Logic penting:
 - Jika font pairing selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti pilihan yang aktif saat download.
 - Jika palette selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti warna yang aktif saat download.
 - `onDownloadZip(siteData)` menerima site data aktif dari panel; ini menjaga public preview `/:businessId` mengekspor palette/font yang sedang dipilih di renderer, bukan JSON awal dari fetch.
+- Free download modal derives buyer-facing feature/page summaries from current `siteData`: review flow, Google Maps, hours, FAQ/service details, individual service pages, gallery, contact form, SEO starter files, and page links using `/:businessId#pageId` anchors. It also adds virtual standard pages like services/gallery/contact/feedback when the renderer can provide them from available business data.
 
 Risiko debug:
 - Jika ada perubahan pada flow download/setup, ubah komponen ini agar `/demo` dan `/:businessId` tetap sinkron.
