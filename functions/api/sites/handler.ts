@@ -376,6 +376,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
   }
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "ai-fill-about-nav-start") {
+    const startStartedMs = Date.now();
     const businessId = segments[1];
     const body = await readJsonBody(request).catch(() => ({}));
     const provider = asString(body.provider);
@@ -467,6 +468,18 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         navLabelsChanged: navRepair.changed,
         startedAt: aboutNavFillStartedAt,
       },
+      aboutNavTiming: {
+        start: {
+          status: "complete",
+          attempts: 1,
+          totalDurationMs: Math.max(0, Date.now() - startStartedMs),
+          lastDurationMs: Math.max(0, Date.now() - startStartedMs),
+          lastStartedAt: new Date(startStartedMs).toISOString(),
+          lastCompletedAt: new Date().toISOString(),
+          storageMode: r2JsonKey ? "r2" : "legacy_d1",
+          navLabelsChanged: navRepair.changed,
+        },
+      },
       checkedAt: aboutNavFillStartedAt,
     };
     await ensureRequiredColumns(db, generateRequiredColumns);
@@ -484,6 +497,83 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       id: jobId,
       nextStep: "siteCopy",
       deterministic: metadata.aboutNavDeterministicRepair,
+      storageMode: r2JsonKey ? "r2" : "legacy_d1",
+    });
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "ai-fill-about-nav-finalize") {
+    const finalizeStartedMs = Date.now();
+    const businessId = segments[1];
+    const body = await readJsonBody(request).catch(() => ({}));
+    const copyPatchSource = body.copyPatch || body.prepatchedCopyPatch;
+    const copyPatch = copyPatchSource && typeof copyPatchSource === "object" && !Array.isArray(copyPatchSource)
+      ? copyPatchSource as Record<string, unknown>
+      : null;
+    await ensureRequiredColumns(db, [
+      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+      { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
+      { table: "json_sites", column: "json_summary", definition: "TEXT" },
+      { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+    ]);
+    const columns = await tableColumns(db, "json_sites");
+    const selectedColumns = [
+      "business_id",
+      "json_content",
+      columns.has("r2_json_key") ? "r2_json_key" : "",
+    ].filter(Boolean);
+    const row = await db
+      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
+      .bind(businessId)
+      .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+    if (!row?.json_content) return errorJson("Site not found", 404);
+
+    const siteJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
+    if (!siteJson || typeof siteJson !== "object" || Array.isArray(siteJson)) {
+      return errorJson("Saved site JSON is not an object and cannot finalize About/nav AI fill.", 422);
+    }
+    const originData = siteJson.sourceData && typeof siteJson.sourceData === "object" ? siteJson.sourceData as Record<string, unknown> : {};
+    applyGeneratedSitePageInserts(siteJson, originData);
+    if (copyPatch) applyAiCopyPatch(siteJson, copyPatch);
+
+    const finalizedAt = new Date().toISOString();
+    const meta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
+    siteJson.meta = {
+      ...meta,
+      generatedWithAi: true,
+      generationMode: "ai_copy_patch",
+      aiProvider: asString(body.provider, asString(meta.aiProvider)),
+      aiModel: asString(body.model, asString(meta.aiModel)),
+      lastAboutNavFillAt: finalizedAt,
+      lastAboutNavFillJobId: asString(body.parentGenerationJobId),
+    };
+
+    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
+    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
+    let r2JsonUrl = asString(storage.r2JsonUrl);
+    if (r2JsonKey || env.R2) {
+      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
+      if (nextKey) {
+        r2JsonKey = nextKey;
+        r2JsonUrl = publicR2Url(env, nextKey);
+        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
+        await uploadJsonToR2(siteJson, env, businessId);
+      }
+    }
+    const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
+    const d1JsonContent = r2JsonKey
+      ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
+      : JSON.stringify(siteJson);
+    await saveJsonSiteRecord(db, businessId, d1JsonContent, {
+      r2_json_key: r2JsonKey || null,
+      r2_json_url: r2JsonUrl || null,
+      json_summary: JSON.stringify(jsonSummary),
+    });
+    return json({
+      success: true,
+      businessId,
+      finalizedAt,
+      finalizeDurationMs: Math.max(0, Date.now() - finalizeStartedMs),
+      summary: jsonSummary,
       storageMode: r2JsonKey ? "r2" : "legacy_d1",
     });
   }

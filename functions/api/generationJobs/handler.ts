@@ -66,6 +66,52 @@ function objectPatch(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
+function isAboutNavPayload(deps: GenerationJobsDeps, payload: Record<string, unknown>) {
+  return deps.asString(payload.siteCopyFocus) === "about" && deps.asString(payload.offeringCopyFocus) === "navLabels";
+}
+
+function recordAboutNavTiming(
+  metadata: Record<string, unknown>,
+  stage: string,
+  startedMs: number,
+  status: "complete" | "failed",
+  extra: Record<string, unknown> = {},
+  error = "",
+) {
+  const completedAt = new Date().toISOString();
+  const durationMs = Math.max(0, Date.now() - startedMs);
+  const timing = objectPatch(metadata.aboutNavTiming) || {};
+  const previous = objectPatch(timing[stage]) || {};
+  const attempts = Number(previous.attempts || 0) + 1;
+  const totalDurationMs = Number(previous.totalDurationMs || 0) + durationMs;
+  const nextRecord: Record<string, unknown> = {
+    ...previous,
+    ...extra,
+    status,
+    attempts,
+    totalDurationMs,
+    lastDurationMs: durationMs,
+    lastStartedAt: new Date(startedMs).toISOString(),
+    lastCompletedAt: completedAt,
+    averageDurationMs: Math.round(totalDurationMs / Math.max(1, attempts)),
+  };
+  if (error) nextRecord.error = error;
+  if (stage === "offeringCopy") {
+    const history = Array.isArray(previous.history) ? previous.history as unknown[] : [];
+    nextRecord.history = [...history, {
+      status,
+      durationMs,
+      startedAt: new Date(startedMs).toISOString(),
+      completedAt,
+      ...extra,
+      ...(error ? { error } : {}),
+    }].slice(-32);
+  }
+  timing[stage] = nextRecord;
+  metadata.aboutNavTiming = timing;
+  metadata.aboutNavCurrentStep = null;
+}
+
 function mergeOfferingPatchArray(existingValue: unknown, incomingValue: unknown) {
   const merged = Array.isArray(existingValue)
     ? existingValue.filter((item) => item && typeof item === "object" && !Array.isArray(item)).map((item) => ({ ...(item as Record<string, unknown>) }))
@@ -323,6 +369,15 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
     if (!Object.keys(payload).length) return deps.errorJson("Chunked generation payload is missing.", 400);
     const businessName = deps.asString(payload.businessName, deps.asString(metadata.businessName, row.business_id || "Untitled Business"));
     const requestedStep = deps.asString(body.step, deps.asString(metadata.nextStep, "outline"));
+    const aboutNavJob = isAboutNavPayload(deps, payload);
+    const stepStartedMs = Date.now();
+    if (aboutNavJob) {
+      metadata.aboutNavCurrentStep = {
+        step: requestedStep,
+        startedAt: new Date(stepStartedMs).toISOString(),
+      };
+      await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+    }
 
     try {
       if (requestedStep === "outline") {
@@ -382,6 +437,13 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         metadata.step = "siteCopy_complete";
         metadata.nextStep = "offeringCopy";
         metadata.updatedAt = new Date().toISOString();
+        if (aboutNavJob) {
+          recordAboutNavTiming(metadata, "siteCopy", stepStartedMs, "complete", {
+            focus: siteCopyFocus,
+            auditTargets: copyAuditTargets.length,
+            patchHash: copyPatchResult.copyPatchHash,
+          });
+        }
         await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
         return deps.json({ success: true, id: jobId, completedStep: "siteCopy", nextStep: "offeringCopy", metadata });
       }
@@ -415,6 +477,14 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
           metadata.step = "offeringCopy_complete";
           metadata.nextStep = "finalize";
           metadata.updatedAt = new Date().toISOString();
+          if (aboutNavJob) {
+            recordAboutNavTiming(metadata, "offeringCopy", stepStartedMs, "complete", {
+              focus: offeringCopyFocus,
+              completed: total,
+              total,
+              skipped: true,
+            });
+          }
           await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
           return deps.json({ success: true, id: jobId, completedStep: "offeringCopy", nextStep: "finalize", metadata, progress: { step: "offeringCopy", completed: total, total } });
         }
@@ -499,6 +569,17 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         metadata.step = nextCursor >= total ? "offeringCopy_complete" : "offeringCopy_partial";
         metadata.nextStep = nextCursor >= total ? "finalize" : "offeringCopy";
         metadata.updatedAt = updatedAt;
+        if (aboutNavJob) {
+          recordAboutNavTiming(metadata, "offeringCopy", stepStartedMs, "complete", {
+            focus: offeringCopyFocus,
+            completed: nextCursor,
+            total,
+            index: cursor,
+            batchSize,
+            itemTitle: currentOfferingTitle,
+            patchHash: offeringPatchResult.copyPatchHash,
+          });
+        }
         await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
         return deps.json({
           success: true,
@@ -517,6 +598,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
           : null;
         if (copyPatch) deps.applyAiCopyPatch(finalJson, copyPatch);
         const copyOnlyRetryCoverageDelta = copyOnlyRetryCoverageDeltaFromRequest(body, metadata.offeringCopyCoverage, jobId);
+        const isAboutNavFill = deps.asString(storedPayload.siteCopyFocus) === "about" && deps.asString(storedPayload.offeringCopyFocus) === "navLabels";
         const finalizeBody = {
           ...storedPayload,
           requireAi: false,
@@ -545,12 +627,16 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
           prepatchedCopyOnlyRetryCoverageDelta: copyOnlyRetryCoverageDelta,
           parentGenerationJobId: jobId,
         };
-        const finalizeRequest = new Request(new URL("/api/sites/generate", request.url), {
+        const finalizeRequest = new Request(new URL(isAboutNavFill
+          ? `/api/sites/${encodeURIComponent(deps.asString(row.business_id, deps.asString(storedPayload.businessId)))}/ai-fill-about-nav-finalize`
+          : "/api/sites/generate", request.url), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(finalizeBody),
         });
-        const finalizeResponse = await deps.handleSites(finalizeRequest, db, env, ["sites", "generate"]);
+        const finalizeResponse = await deps.handleSites(finalizeRequest, db, env, isAboutNavFill
+          ? ["sites", deps.asString(row.business_id, deps.asString(storedPayload.businessId)), "ai-fill-about-nav-finalize"]
+          : ["sites", "generate"]);
         const finalizeData = await finalizeResponse.json().catch(() => ({}));
         if (!finalizeResponse.ok || finalizeData.error) {
           throw new Error(deps.asString(finalizeData.error, `Finalize failed with HTTP ${finalizeResponse.status}`));
@@ -559,6 +645,13 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         metadata.nextStep = "";
         metadata.finalizeResult = finalizeData;
         metadata.updatedAt = new Date().toISOString();
+        if (aboutNavJob) {
+          recordAboutNavTiming(metadata, "finalize", stepStartedMs, "complete", {
+            lightweight: isAboutNavFill,
+            storageMode: deps.asString(finalizeData.storageMode),
+            saveDurationMs: typeof finalizeData.finalizeDurationMs === "number" ? finalizeData.finalizeDurationMs : undefined,
+          });
+        }
         await deps.updateGenerationJob(db, jobId, { status: "success", error: null, metadata_json: JSON.stringify(metadata) });
         return deps.json({ success: true, id: jobId, completedStep: "finalize", result: finalizeData, metadata });
       }
@@ -566,6 +659,9 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
       return deps.errorJson(`Unsupported chunked generation step: ${requestedStep}`, 400);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (aboutNavJob) {
+        recordAboutNavTiming(metadata, requestedStep, stepStartedMs, "failed", {}, message);
+      }
       metadata.failureStage = `chunked_${requestedStep}`;
       metadata.failureMessage = message;
       metadata.nextStep = requestedStep;
