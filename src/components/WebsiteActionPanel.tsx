@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Copy, Download, ExternalLink, Globe2, Loader2, Minus, Plus, X } from "lucide-react";
+import { Archive, ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Clock, Copy, Download, ExternalLink, Globe2, Loader2, Minus, Plus, X } from "lucide-react";
 import { buildDomain, domainExtensions, normalizeDomainLabel } from "../lib/domainExtensions";
 import type { FontPairing } from "../lib/fontPairings";
 
@@ -8,7 +8,7 @@ type WebsiteActionPanelProps = {
   siteData: any;
   businessId?: string;
   variant: "demo" | "public";
-  onDownloadZip?: (siteData?: any) => void;
+  onDownloadZip?: (siteData?: any) => void | Promise<void>;
   fontPairings?: FontPairing[];
   selectedFontPairing?: string;
   onFontPairingChange?: (id: string) => void;
@@ -23,6 +23,8 @@ type SetupStep = "offer" | "plan" | "addons-count" | "addons-details" | "domain"
 type BillingCadence = "upfront" | "annual_recurring";
 type EditPageRequest = { pageId: string; notes: string };
 type FreeSitePageSummary = { id: string; label: string; url: string; purpose: string };
+
+const OWNER_REVIEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 declare global {
   interface Window {
@@ -188,6 +190,97 @@ function normalizedPageId(value: string, fallback = "page") {
     .replace(/^#/, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "") || fallback;
+}
+
+function businessDisplayName(siteData: any, businessId: string) {
+  return String(
+    siteData?.meta?.businessName ||
+      siteData?.businessProfile?.name ||
+      siteData?.sourceData?.name ||
+      businessId ||
+      "this business",
+  );
+}
+
+function ownerReviewStorageKey(businessId: string) {
+  return `webview.ownerReviewStartedAt.${normalizedPageId(businessId, "website")}`;
+}
+
+function ownerReviewParamActive() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("owner") === "1" || params.get("review") === "owner" || params.get("claim") === "1";
+}
+
+function ownerReviewStartFromUrl() {
+  if (typeof window === "undefined") return 0;
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("reviewStart") || params.get("reviewStartedAt") || params.get("claimStart") || "";
+  if (!raw) return 0;
+  const numeric = Number(raw);
+  const timestamp = Number.isFinite(numeric) && numeric > 0
+    ? (numeric < 100000000000 ? numeric * 1000 : numeric)
+    : Date.parse(raw);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+}
+
+function formatReviewTime(ms: number) {
+  const totalMinutes = Math.max(0, Math.ceil(ms / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return "less than 1m";
+}
+
+function reviewDateLabel(timestamp: number) {
+  if (!timestamp) return "";
+  return new Date(timestamp).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function restoreContactHref(siteData: any, businessId: string, startedAt: number | null, expiresAt: number) {
+  const name = businessDisplayName(siteData, businessId);
+  const previewUrl = typeof window !== "undefined" ? window.location.href : `https://webview.click/${businessId}`;
+  const listedPhone = siteData?.businessProfile?.contact?.phoneInternational || siteData?.businessProfile?.contact?.phoneNational || "";
+  const rawAddress = siteData?.location?.formattedAddress || siteData?.businessProfile?.address || "";
+  const listedAddress = typeof rawAddress === "string" ? rawAddress : "";
+  const subject = `Restore website preview for ${name}`;
+  const body = [
+    "Hi WebView.click,",
+    "",
+    `Please restore the preview for ${name}.`,
+    "",
+    `Business ID: ${businessId}`,
+    `Preview URL: ${previewUrl}`,
+    startedAt ? `Review started: ${new Date(startedAt).toISOString()}` : "",
+    expiresAt ? `Review window ended: ${new Date(expiresAt).toISOString()}` : "",
+    listedPhone ? `Listed phone: ${listedPhone}` : "",
+    listedAddress ? `Listed address: ${listedAddress}` : "",
+    "",
+    "Thanks.",
+  ].filter(Boolean).join("\n");
+  return `mailto:email@codev.id?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+async function recordOwnerDownload(businessId: string) {
+  if (typeof fetch === "undefined") return;
+  try {
+    await fetch(`/api/sites/${encodeURIComponent(businessId)}/downloaded`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: "website_action_panel" }),
+      keepalive: true,
+    });
+  } catch (error) {
+    console.warn("Could not record owner site download.", error);
+  }
 }
 
 function pageUrlFor(pageId: string, businessId: string) {
@@ -381,6 +474,10 @@ export default function WebsiteActionPanel({
   const paypalButtonsRef = useRef<HTMLDivElement | null>(null);
   const downloadPages = useMemo(() => freeSitePages(siteData, siteData?.meta?.businessId || businessId), [siteData, businessId]);
   const downloadFeatures = useMemo(() => freeSiteFeatures(siteData), [siteData]);
+  const effectiveBusinessId = String(siteData?.meta?.businessId || businessId || "website");
+  const [ownerReviewVisible, setOwnerReviewVisible] = useState(false);
+  const [ownerReviewStartedAt, setOwnerReviewStartedAt] = useState<number | null>(null);
+  const [reviewNow, setReviewNow] = useState(() => Date.now());
 
   const existingPageOptions = useMemo(() => {
     const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
@@ -444,6 +541,10 @@ export default function WebsiteActionPanel({
       notes: request.notes.trim(),
     })),
   }), [newPages, editedPages, newPageRequests, editPageRequests, existingPageOptions]);
+  const ownerReviewEndsAt = ownerReviewStartedAt ? ownerReviewStartedAt + OWNER_REVIEW_WINDOW_MS : 0;
+  const ownerReviewMsRemaining = ownerReviewEndsAt ? Math.max(0, ownerReviewEndsAt - reviewNow) : 0;
+  const ownerReviewExpired = ownerReviewVisible && Boolean(ownerReviewStartedAt) && ownerReviewMsRemaining <= 0;
+  const ownerReviewContactHref = restoreContactHref(siteData, effectiveBusinessId, ownerReviewStartedAt, ownerReviewEndsAt);
 
   const resetCheck = () => {
     setDomainCheck(null);
@@ -461,6 +562,49 @@ export default function WebsiteActionPanel({
   useEffect(() => {
     setEditPageRequests((current) => resizeEditRequests(current, editedPages, existingPageOptions[0]?.id || "home"));
   }, [editedPages, existingPageOptions]);
+
+  useEffect(() => {
+    if (variant !== "public" || typeof window === "undefined") {
+      setOwnerReviewVisible(false);
+      setOwnerReviewStartedAt(null);
+      return;
+    }
+    const active = ownerReviewParamActive();
+    setOwnerReviewVisible(active);
+    if (!active) {
+      setOwnerReviewStartedAt(null);
+      return;
+    }
+
+    const urlStartedAt = ownerReviewStartFromUrl();
+    let storedStartedAt = 0;
+    if (!urlStartedAt) {
+      try {
+        storedStartedAt = Number(window.localStorage.getItem(ownerReviewStorageKey(effectiveBusinessId)) || 0);
+      } catch {
+        storedStartedAt = 0;
+      }
+    }
+    const startedAt = urlStartedAt || (Number.isFinite(storedStartedAt) && storedStartedAt > 0 ? storedStartedAt : Date.now());
+    try {
+      window.localStorage.setItem(ownerReviewStorageKey(effectiveBusinessId), String(startedAt));
+    } catch {
+      // The countdown can still work for the current visit if storage is unavailable.
+    }
+    if (!urlStartedAt) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("reviewStart", String(startedAt));
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+    setOwnerReviewStartedAt(startedAt);
+    setReviewNow(Date.now());
+  }, [variant, effectiveBusinessId]);
+
+  useEffect(() => {
+    if (!ownerReviewVisible || !ownerReviewStartedAt || typeof window === "undefined") return;
+    const intervalId = window.setInterval(() => setReviewNow(Date.now()), 30000);
+    return () => window.clearInterval(intervalId);
+  }, [ownerReviewVisible, ownerReviewStartedAt]);
 
   const handleCheckout = async () => {
     setCheckoutLoading(true);
@@ -676,11 +820,40 @@ export default function WebsiteActionPanel({
 
   return (
     <>
+      {ownerReviewExpired && (
+        <div className="hide-in-export fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" data-export-remove="true" data-wv-tool-ui="owner-review-archived">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-2xl">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+              <Archive size={22} />
+            </div>
+            <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Preview archived</p>
+            <h1 className="mt-2 text-2xl font-bold leading-tight text-slate-950">
+              This website preview review window has ended.
+            </h1>
+            <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-slate-600">
+              Contact WebView.click with your business details if you want this preview site restored.
+            </p>
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-left text-xs leading-5 text-slate-600">
+              <p><strong className="text-slate-900">Business:</strong> {businessDisplayName(siteData, effectiveBusinessId)}</p>
+              <p><strong className="text-slate-900">Preview ID:</strong> {effectiveBusinessId}</p>
+              {ownerReviewEndsAt > 0 && <p><strong className="text-slate-900">Archived after:</strong> {reviewDateLabel(ownerReviewEndsAt)}</p>}
+            </div>
+            <a
+              href={ownerReviewContactHref}
+              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
+            >
+              <ExternalLink size={18} />
+              Contact us to restore it
+            </a>
+          </div>
+        </div>
+      )}
+
       <div className={panelPosition} data-export-remove="true" data-wv-tool-ui="website-action-panel">
         {panelOpen && (
           <div className="mb-3 w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <p className="font-semibold text-slate-950">Get this website</p>
+              <p className="font-semibold text-slate-950">Claim this website package</p>
               <button type="button" onClick={() => setPanelOpen(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100">
                 <X size={18} />
               </button>
@@ -743,10 +916,10 @@ export default function WebsiteActionPanel({
                 >
                   <span>
                     <span className="flex items-center gap-1.5 font-semibold text-slate-950">
-                      Download your free site
-                      <InfoTooltip text="You receive the static site files. You can upload them to your own hosting provider and point your own domain yourself." />
+                      Claim free site package
+                      <InfoTooltip text="You receive the static site files. You can upload them to your own hosting provider, point your own domain, or ask WebView.click to launch it for you." />
                     </span>
-                    <span className="block text-xs text-slate-500">Host it yourself and point your own domain.</span>
+                    <span className="block text-xs text-slate-500">$997 starter value. Download files and host anywhere.</span>
                   </span>
                   <Download size={18} />
                 </button>
@@ -776,6 +949,21 @@ export default function WebsiteActionPanel({
             </div>
           </div>
         )}
+        {ownerReviewVisible && ownerReviewStartedAt && !ownerReviewExpired && (
+          <div className="mb-2 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left shadow-xl" data-export-remove="true" data-wv-tool-ui="owner-review-countdown">
+            <div className="flex items-start gap-2">
+              <Clock className="mt-0.5 shrink-0 text-amber-700" size={17} />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold leading-5 text-amber-950">
+                  Review window: {formatReviewTime(ownerReviewMsRemaining)} left
+                </p>
+                <p className="mt-0.5 text-xs leading-5 text-amber-800">
+                  This preview may be archived after {reviewDateLabel(ownerReviewEndsAt)}. Download now to keep the files.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         <button
           type="button"
           onClick={() => setPanelOpen((value) => !value)}
@@ -793,19 +981,50 @@ export default function WebsiteActionPanel({
           <div className="max-h-[min(92vh,820px)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <p className="font-semibold text-slate-950">Your free website package</p>
-                <p className="text-xs text-slate-500">Review what is included before downloading your site.</p>
+                <p className="font-semibold text-slate-950">Your starter website package is ready</p>
+                <p className="text-xs text-slate-500">Review the included files, pages, and launch options.</p>
               </div>
               <button type="button" onClick={() => setDownloadInfoOpen(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close download details">
                 <X size={18} />
               </button>
             </div>
             <div className="space-y-5 p-5">
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-center">
-                <p className="text-lg font-bold text-slate-950">The generated website files are free.</p>
-                <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                  Your download includes the website files you can host yourself, plus starter SEO files and setup notes. You can also ask WebView.click to host, connect a domain, or add custom pages for you.
-                </p>
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+                <div className="text-center">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Portfolio sample offer</p>
+                  <p className="mt-1 text-lg font-bold text-slate-950">Estimated starter site value: <span className="text-slate-400 line-through">$997</span></p>
+                  <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                    Prepared as a portfolio/sample project for your business. Your download is $0 today, and you can host the files anywhere.
+                  </p>
+                </div>
+                <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+                  <div className="rounded-lg border border-white/80 bg-white px-3 py-2 text-center">
+                    <p className="text-xs text-slate-500">Starter value</p>
+                    <p className="font-bold text-slate-950">$997</p>
+                  </div>
+                  <div className="rounded-lg border border-white/80 bg-white px-3 py-2 text-center">
+                    <p className="text-xs text-slate-500">Portfolio credit</p>
+                    <p className="font-bold text-emerald-700">-$997</p>
+                  </div>
+                  <div className="rounded-lg border border-white/80 bg-white px-3 py-2 text-center">
+                    <p className="text-xs text-slate-500">Download today</p>
+                    <p className="font-bold text-slate-950">$0</p>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                  {["No payment required to download.", "Host it anywhere.", "No obligation to use our hosting.", "Setup help is optional."].map((item) => (
+                    <div key={item} className="flex items-center gap-2">
+                      <CheckCircle2 className="shrink-0 text-emerald-600" size={15} />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+                {ownerReviewVisible && ownerReviewStartedAt && !ownerReviewExpired && (
+                  <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-900">
+                    <Clock className="mt-0.5 shrink-0" size={15} />
+                    <span>Free review window: {formatReviewTime(ownerReviewMsRemaining)} left. Download now so you have a copy if this preview link is archived later.</span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -861,7 +1080,7 @@ export default function WebsiteActionPanel({
                   className="flex min-h-[76px] items-center justify-between gap-3 rounded-xl bg-indigo-600 px-4 py-3 text-left text-white hover:bg-indigo-700"
                 >
                   <span>
-                    <span className="block font-semibold leading-5">Host it for me</span>
+                    <span className="block font-semibold leading-5">Launch it for me</span>
                     <span className="mt-1 block text-xs leading-5 text-indigo-100">We handle hosting, domain/DNS, SSL, upload, and launch.</span>
                   </span>
                   <ArrowRight size={18} className="shrink-0" />
@@ -890,14 +1109,15 @@ export default function WebsiteActionPanel({
 
               <button
                 type="button"
-                onClick={() => {
-                  onDownloadZip(siteData);
+                onClick={async () => {
+                  void recordOwnerDownload(effectiveBusinessId);
+                  await onDownloadZip(siteData);
                   setDownloadInfoOpen(false);
                 }}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white hover:bg-slate-800"
               >
                 <Download size={18} />
-                Download your site for free
+                Download my $0 website package
               </button>
             </div>
           </div>
@@ -921,9 +1141,9 @@ export default function WebsiteActionPanel({
                 <>
                   <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-5 text-center text-sm leading-6 text-slate-700">
                     <div>
-                      <p className="text-base font-semibold leading-6 text-slate-950">Your generated website is free.</p>
+                      <p className="text-base font-semibold leading-6 text-slate-950">Your $0 starter website package is ready.</p>
                       <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-slate-600">
-                        Pay only for the yearly infrastructure and setup work needed to put it online for your business.
+                        The static site files are free to download. Pay only if you want WebView.click to launch, host, connect a domain, and maintain it for you.
                       </p>
                     </div>
                     <div className="grid gap-2 text-left sm:grid-cols-2">

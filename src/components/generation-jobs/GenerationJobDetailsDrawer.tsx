@@ -43,6 +43,75 @@ type GenerationJobDetailsDrawerProps = {
   onRetryChunkedStep: (job: any, step?: ChunkedGenerationStep) => void | Promise<void>;
 };
 
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function numberValue(value: unknown) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : 0;
+}
+
+function formatDuration(value: unknown) {
+  const ms = numberValue(value);
+  if (!ms) return "-";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`;
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+}
+
+function formatTimestamp(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString();
+}
+
+function aboutNavTimingRows(metadata: Record<string, unknown>) {
+  const timing = objectValue(metadata.aboutNavTiming);
+  const stageLabels: Array<[string, string]> = [
+    ["start", "Start/save"],
+    ["siteCopy", "About copy"],
+    ["offeringCopy", "Nav labels"],
+    ["finalize", "Finalize"],
+  ];
+  return stageLabels
+    .map(([key, label]) => {
+      const item = objectValue(timing[key]);
+      if (!Object.keys(item).length) return null;
+      const detail = key === "offeringCopy"
+        ? `${numberValue(item.completed) || 0}/${numberValue(item.total) || 0}${item.itemTitle ? ` - ${String(item.itemTitle)}` : ""}`
+        : key === "finalize"
+          ? item.storageMode ? `Storage: ${String(item.storageMode)}` : ""
+          : key === "start"
+            ? item.storageMode ? `Storage: ${String(item.storageMode)}` : ""
+            : item.auditTargets ? `${String(item.auditTargets)} targets` : "";
+      return {
+        key,
+        label,
+        status: String(item.status || "-"),
+        lastDuration: formatDuration(item.lastDurationMs),
+        averageDuration: formatDuration(item.averageDurationMs),
+        attempts: numberValue(item.attempts) || 0,
+        completedAt: formatTimestamp(item.lastCompletedAt),
+        detail,
+        error: typeof item.error === "string" ? item.error : "",
+        history: Array.isArray(item.history) ? item.history : [],
+      };
+    })
+    .filter(Boolean) as Array<{
+      key: string;
+      label: string;
+      status: string;
+      lastDuration: string;
+      averageDuration: string;
+      attempts: number;
+      completedAt: string;
+      detail: string;
+      error: string;
+      history: unknown[];
+    }>;
+}
+
 export default function GenerationJobDetailsDrawer({
   job,
   fallbackProvider,
@@ -111,6 +180,8 @@ export default function GenerationJobDetailsDrawer({
   const returnedOfferingCopyPatch = job?.metadata?.offeringCopyPatch && typeof job.metadata.offeringCopyPatch === "object"
     ? job.metadata.offeringCopyPatch
     : null;
+  const aboutNavTiming = aboutNavTimingRows(objectValue(job?.metadata));
+  const aboutNavCurrentStep = objectValue(job?.metadata?.aboutNavCurrentStep);
   const provider = job?.provider || fallbackProvider;
   const selectedReadiness = {
     provider,
@@ -350,6 +421,70 @@ export default function GenerationJobDetailsDrawer({
                   {job.metadata?.failureMessage || job.metadata?.offeringOutlineError}
                 </p>
               )}
+            </section>
+          )}
+
+          {aboutNavTiming.length > 0 && (
+            <section>
+              <div className="mb-2">
+                <h3 className="inline-flex items-center gap-1.5 font-semibold text-slate-950">
+                  About/nav timing
+                  <HelpTooltip text="Lightweight timing captured for the About/nav repair flow. Use this to see whether time is spent in deterministic start/save, About copy, nav-label AI calls, or finalize." />
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {aboutNavCurrentStep.step
+                    ? `Current step: ${String(aboutNavCurrentStep.step)} since ${formatTimestamp(aboutNavCurrentStep.startedAt)}.`
+                    : "No About/nav step is currently marked running."}
+                </p>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="grid grid-cols-[1.1fr_0.8fr_0.8fr_0.8fr_0.6fr] border-b border-slate-100 bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  <span>Step</span>
+                  <span>Status</span>
+                  <span>Last</span>
+                  <span>Avg</span>
+                  <span>Tries</span>
+                </div>
+                {aboutNavTiming.map((row) => (
+                  <div key={row.key} className="border-b border-slate-100 px-3 py-2 last:border-b-0">
+                    <div className="grid grid-cols-[1.1fr_0.8fr_0.8fr_0.8fr_0.6fr] items-center gap-2 text-xs">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-950">{row.label}</p>
+                        <p className="truncate text-[11px] text-slate-500">{row.detail || `Done ${row.completedAt}`}</p>
+                      </div>
+                      <span className={`w-fit rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        row.status === "complete"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : row.status === "failed"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-amber-100 text-amber-800"
+                      }`}>
+                        {row.status}
+                      </span>
+                      <span className="font-mono text-[11px] text-slate-700">{row.lastDuration}</span>
+                      <span className="font-mono text-[11px] text-slate-700">{row.averageDuration}</span>
+                      <span className="font-mono text-[11px] text-slate-700">{row.attempts}</span>
+                    </div>
+                    {row.error && (
+                      <p className="mt-1 max-h-12 overflow-hidden rounded-lg bg-red-50 px-2 py-1 text-[11px] text-red-700">{row.error}</p>
+                    )}
+                    {row.key === "offeringCopy" && row.history.length > 1 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-[11px] font-semibold text-slate-500">Nav label call history</summary>
+                        <div className="mt-1 max-h-32 overflow-auto rounded-lg bg-slate-50 p-2">
+                          {row.history.slice(-8).map((entry: any, index: number) => (
+                            <div key={`${entry.startedAt || index}:${index}`} className="grid grid-cols-[0.7fr_0.9fr_1.2fr] gap-2 py-0.5 text-[11px] text-slate-600">
+                              <span>{entry.completed ?? "-"} / {entry.total ?? "-"}</span>
+                              <span className="font-mono">{formatDuration(entry.durationMs)}</span>
+                              <span className="truncate">{entry.itemTitle || entry.status || "-"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                ))}
+              </div>
             </section>
           )}
 

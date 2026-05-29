@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, ChevronDown, Database, FileText, Globe2, Image as ImageIcon, ListChecks, MapPin, Play, RefreshCw, RotateCw, Search, Shuffle, Sparkles, Wrench, X } from "lucide-react";
+import { Brain, ChevronDown, Copy, Database, Download, FileText, Globe2, Image as ImageIcon, ListChecks, Mail, MapPin, MessageCircle, Play, RefreshCw, RotateCw, Search, Send, Shuffle, Sparkles, Wrench, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { readApiJson } from "../../lib/apiResponse";
@@ -59,6 +59,15 @@ type SiteRow = {
   fontPairing?: string;
   fontPairingLabel?: string;
   lastVisualVariationAt?: string;
+  leadStatus?: string;
+  lastContactedAt?: string;
+  lastViewedAt?: string;
+  viewCount?: number;
+  lastDownloadedAt?: string;
+  downloadCount?: number;
+  setupFollowUpContactedAt?: string;
+  prospectStatus?: string;
+  contacted?: boolean;
   latestGenerationJobId?: string;
   latestGenerationJobStatus?: string;
   latestGenerationJobUpdatedAt?: string;
@@ -69,6 +78,7 @@ type RegenerateMode = "resave" | "ai";
 const SERVICE_IMAGE_BATCH_REPAIR_LIMIT = 10;
 const VISUAL_VARIATION_BATCH_LIMIT = 10;
 const ABOUT_NAV_AI_BATCH_LIMIT = 5;
+const FOLLOW_UP_AFTER_DAYS = 3;
 
 function generationBadge(site: SiteRow) {
   if (site.generationMode === "ai_copy_patch" || site.generatedWithAi) {
@@ -165,6 +175,42 @@ function needsAboutNavRepair(site: SiteRow) {
   return site.needsAboutNavRepair === true || site.aboutNavAuditKnown === false;
 }
 
+function siteWasContacted(site: SiteRow) {
+  return site.contacted === true || Boolean(site.lastContactedAt) || site.leadStatus === "contacted" || site.prospectStatus === "contacted";
+}
+
+function siteNeedsFollowUp(site: SiteRow) {
+  if (!siteWasContacted(site) || !site.lastContactedAt) return false;
+  const contactedAt = Date.parse(site.lastContactedAt);
+  if (!Number.isFinite(contactedAt)) return false;
+  const followUpAt = Date.now() - FOLLOW_UP_AFTER_DAYS * 24 * 60 * 60 * 1000;
+  const leadStatus = String(site.leadStatus || "").toLowerCase();
+  const prospectStatus = String(site.prospectStatus || "").toLowerCase();
+  const hasViewed = Boolean(site.lastViewedAt) || Number(site.viewCount || 0) > 0 || leadStatus === "viewed";
+  const hasDownloaded = Boolean(site.lastDownloadedAt) || Number(site.downloadCount || 0) > 0;
+  const hasAdvanced = ["checkout_pending", "won_paid", "paid"].includes(leadStatus) || ["checkout_pending", "won_paid", "paid"].includes(prospectStatus);
+  return contactedAt <= followUpAt && !hasViewed && !hasDownloaded && !hasAdvanced;
+}
+
+function siteWasDownloaded(site: SiteRow) {
+  return Boolean(site.lastDownloadedAt) || Number(site.downloadCount || 0) > 0;
+}
+
+function siteDownloadedWithoutSetup(site: SiteRow) {
+  if (!siteWasDownloaded(site)) return false;
+  const leadStatus = String(site.leadStatus || "").toLowerCase();
+  const prospectStatus = String(site.prospectStatus || "").toLowerCase();
+  return !["checkout_pending", "won_paid", "paid"].includes(leadStatus) && !["checkout_pending", "won_paid", "paid"].includes(prospectStatus);
+}
+
+function siteSetupFollowUpSent(site: SiteRow) {
+  return Boolean(site.setupFollowUpContactedAt);
+}
+
+function siteDownloadedWithoutSetupFollowUp(site: SiteRow) {
+  return siteDownloadedWithoutSetup(site) && !siteSetupFollowUpSent(site);
+}
+
 export default function AdminSites() {
   const { showApiError, showToast } = useAdminToast();
   const [sites, setSites] = useState<SiteRow[]>([]);
@@ -172,7 +218,7 @@ export default function AdminSites() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "images" | "content">("all");
+  const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "images" | "content" | "contacted" | "followUp" | "downloaded" | "setupFollowUp" | "downloadedNoSetupFollowUp">("all");
   const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
   const [regeneratingId, setRegeneratingId] = useState("");
   const [repairingServiceImagesId, setRepairingServiceImagesId] = useState("");
@@ -183,6 +229,8 @@ export default function AdminSites() {
   const [generatingProspectId, setGeneratingProspectId] = useState("");
   const [generationProgress, setGenerationProgress] = useState<Record<string, { step: string; text: string; shortText?: string; message?: string; retryInSeconds?: number }>>({});
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
+  const [openOutreachMenu, setOpenOutreachMenu] = useState("");
+  const [outreachLoadingKey, setOutreachLoadingKey] = useState("");
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
@@ -318,6 +366,16 @@ export default function AdminSites() {
       ? sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0)
       : siteIssueFilter === "content"
         ? sites.filter(needsAboutNavRepair)
+        : siteIssueFilter === "contacted"
+          ? sites.filter(siteWasContacted)
+          : siteIssueFilter === "followUp"
+            ? sites.filter(siteNeedsFollowUp)
+            : siteIssueFilter === "downloaded"
+              ? sites.filter(siteDownloadedWithoutSetup)
+              : siteIssueFilter === "setupFollowUp"
+                ? sites.filter(siteSetupFollowUpSent)
+                : siteIssueFilter === "downloadedNoSetupFollowUp"
+                  ? sites.filter(siteDownloadedWithoutSetupFollowUp)
       : sites;
     if (!needle) return issueFilteredSites;
     return issueFilteredSites.filter((site) => [
@@ -328,6 +386,11 @@ export default function AdminSites() {
       site.region,
       site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0 ? "missing duplicate service images" : "",
       needsAboutNavRepair(site) ? "missing about nav labels ai fill content" : "",
+      siteWasContacted(site) ? "contacted outreach follow up" : "",
+      siteNeedsFollowUp(site) ? "needs follow up stale contacted not viewed not paid" : "",
+      siteDownloadedWithoutSetup(site) ? "downloaded claimed free package warm owner no setup" : "",
+      site.setupFollowUpContactedAt ? "downloaded follow up sent setup upsell domain hosting" : "",
+      siteDownloadedWithoutSetupFollowUp(site) ? "downloaded no setup follow up needs setup message upsell queue" : "",
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [query, siteIssueFilter, sites]);
 
@@ -338,6 +401,31 @@ export default function AdminSites() {
 
   const missingAboutNavSiteCount = useMemo(
     () => sites.filter(needsAboutNavRepair).length,
+    [sites],
+  );
+
+  const contactedSiteCount = useMemo(
+    () => sites.filter(siteWasContacted).length,
+    [sites],
+  );
+
+  const needsFollowUpSiteCount = useMemo(
+    () => sites.filter(siteNeedsFollowUp).length,
+    [sites],
+  );
+
+  const downloadedWithoutSetupSiteCount = useMemo(
+    () => sites.filter(siteDownloadedWithoutSetup).length,
+    [sites],
+  );
+
+  const setupFollowUpSentSiteCount = useMemo(
+    () => sites.filter(siteSetupFollowUpSent).length,
+    [sites],
+  );
+
+  const downloadedNoSetupFollowUpSiteCount = useMemo(
+    () => sites.filter(siteDownloadedWithoutSetupFollowUp).length,
     [sites],
   );
 
@@ -715,6 +803,230 @@ export default function AdminSites() {
     }
   };
 
+  const ownerReviewLinkForSite = (site: SiteRow) => {
+    let url: URL;
+    try {
+      url = new URL(site.previewUrl || `/${site.businessId}`, window.location.origin);
+    } catch {
+      url = new URL(`/${site.businessId}`, window.location.origin);
+    }
+    url.searchParams.set("owner", "1");
+    url.searchParams.delete("reviewStart");
+    url.searchParams.delete("reviewStartedAt");
+    url.searchParams.delete("claimStart");
+    return url.toString();
+  };
+
+  const firstOutreachMessageForSite = (site: SiteRow) => {
+    const link = ownerReviewLinkForSite(site);
+    return [
+      `Hi ${site.businessName} team,`,
+      "",
+      `I made a starter website preview for ${site.businessName} using your public business profile details.`,
+      "",
+      "It is a portfolio/sample project, so the website package is free for you to download during the review window.",
+      "",
+      "Estimated starter site value: $997",
+      "Portfolio sample credit: -$997",
+      "Your download today: $0",
+      "",
+      "You can host the files anywhere, or WebView.click can launch it for you with hosting, domain/DNS, SSL, upload, and setup.",
+      "",
+      `Preview: ${link}`,
+      "",
+      "If it is not useful, no reply is needed and I will not keep following up.",
+      "",
+      "Thanks,",
+      "WebView.click",
+    ].join("\n");
+  };
+
+  const setupOutreachMessageForSite = (site: SiteRow) => {
+    const link = ownerReviewLinkForSite(site);
+    const downloadedLine = site.lastDownloadedAt
+      ? `I noticed the free website package was downloaded on ${new Date(site.lastDownloadedAt).toLocaleDateString()}, so I wanted to make the launch step easy.`
+      : "I noticed the free website package was downloaded, so I wanted to make the launch step easy.";
+    return [
+      `Hi ${site.businessName} team,`,
+      "",
+      downloadedLine,
+      "",
+      "You can still host the files anywhere yourself. If you want WebView.click to handle the technical setup, I can take care of:",
+      "",
+      "- hosting setup",
+      "- domain/DNS connection",
+      "- SSL",
+      "- upload",
+      "- final mobile/desktop check",
+      "",
+      `Preview: ${link}`,
+      "",
+      "Reply with \"setup\" and I will send the next steps.",
+      "",
+      "Thanks,",
+      "WebView.click",
+    ].join("\n");
+  };
+
+  const shouldUseSetupOutreachForSite = (site: SiteRow) => siteDownloadedWithoutSetup(site);
+
+  const outreachMessageForSite = (site: SiteRow) => (
+    shouldUseSetupOutreachForSite(site) ? setupOutreachMessageForSite(site) : firstOutreachMessageForSite(site)
+  );
+
+  const outreachSubjectForSite = (site: SiteRow) => (
+    shouldUseSetupOutreachForSite(site)
+      ? `Website setup for ${site.businessName}`
+      : `I made a starter website for ${site.businessName}`
+  );
+
+  const outreachTemplateLabelForSite = (site: SiteRow) => (
+    shouldUseSetupOutreachForSite(site) ? "Copy setup/domain/hosting template" : "Copy full DM/email template"
+  );
+
+  const outreachMenuDescriptionForSite = (site: SiteRow) => (
+    shouldUseSetupOutreachForSite(site)
+      ? "Uses a warm follow-up for owners who downloaded the free package but have not bought setup."
+      : "Uses the owner review link with a 7-day countdown."
+  );
+
+  const contactInfoFromSiteJson = (siteJson: any) => {
+    const contact = siteJson?.businessProfile?.contact || {};
+    const sourceData = siteJson?.sourceData || {};
+    const email = String(
+      contact.email ||
+        siteJson?.businessProfile?.email ||
+        sourceData.email ||
+        siteJson?.meta?.email ||
+        "",
+    ).trim();
+    const phone = String(
+      contact.phoneInternational ||
+        contact.phoneNational ||
+        sourceData.international_phone_number ||
+        sourceData.formatted_phone_number ||
+        sourceData.nationalPhoneNumber ||
+        "",
+    ).trim();
+    return {
+      email,
+      phone: isPlaceholderPhone(phone) ? "" : phone,
+    };
+  };
+
+  const loadOutreachContactInfo = async (site: SiteRow) => contactInfoFromSiteJson(await fetchSiteJson(site));
+
+  const markOutreachContacted = async (site: SiteRow, channel: string, action: string, contact = "") => {
+    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/outreach-contacted`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel, action, contact }),
+    });
+    const result = await readApiJson<{ lastContactedAt?: string; setupFollowUpContactedAt?: string; leadUpdated?: boolean; prospectUpdated?: boolean }>(response, "Mark outreach contacted");
+    const lastContactedAt = result.lastContactedAt || new Date().toISOString();
+    const setupFollowUpContactedAt = result.setupFollowUpContactedAt || (action.startsWith("setup_upsell_") || action.startsWith("setup_followup_") ? lastContactedAt : "");
+    setSites((current) => current.map((item) => item.businessId === site.businessId
+      ? {
+        ...item,
+        contacted: true,
+        leadStatus: item.leadStatus && ["won_paid", "checkout_pending", "viewed"].includes(item.leadStatus) ? item.leadStatus : "contacted",
+        lastContactedAt,
+        setupFollowUpContactedAt: setupFollowUpContactedAt || item.setupFollowUpContactedAt,
+        prospectStatus: item.prospectStatus || "contacted",
+      }
+      : item));
+    return result;
+  };
+
+  const handleCopyOwnerReviewLink = async (site: SiteRow) => {
+    const link = ownerReviewLinkForSite(site);
+    try {
+      await navigator.clipboard.writeText(link);
+      await markOutreachContacted(site, "link", "owner_review_link_copied");
+      notifyAction("success", "Owner review link copied", `${site.businessName} outreach link is ready to paste.`);
+    } catch {
+      notifyAction("warning", "Copy/mark failed", `Could not complete automatically. Link: ${link}`);
+    } finally {
+      setOpenOutreachMenu("");
+    }
+  };
+
+  const handleCopyOutreachMessage = async (site: SiteRow) => {
+    const message = outreachMessageForSite(site);
+    const isSetupOutreach = shouldUseSetupOutreachForSite(site);
+    try {
+      await navigator.clipboard.writeText(message);
+      await markOutreachContacted(site, "template", isSetupOutreach ? "setup_upsell_template_copied" : "outreach_template_copied");
+      notifyAction("success", isSetupOutreach ? "Setup follow-up copied" : "Outreach message copied", `${site.businessName} message is ready to paste.`);
+    } catch {
+      notifyAction("warning", "Copy/mark failed", `Could not complete automatically. Message: ${message}`);
+    } finally {
+      setOpenOutreachMenu("");
+    }
+  };
+
+  const handleOpenOutreachEmail = async (site: SiteRow) => {
+    const key = `${site.businessId}:email`;
+    setOutreachLoadingKey(key);
+    try {
+      const contact = await loadOutreachContactInfo(site);
+      if (!contact.email) {
+        notifyAction("warning", "No email found", `${site.businessName} does not have an email saved in the generated site data.`);
+        return;
+      }
+      const emailAddress = contact.email.match(/[^\s<>@]+@[^\s<>@]+/)?.[0] || "";
+      if (!emailAddress) {
+        notifyAction("warning", "Email is not usable", `${site.businessName} has an email-like value saved, but it is not a valid address.`);
+        return;
+      }
+      const subject = outreachSubjectForSite(site);
+      try {
+        await markOutreachContacted(site, "email", shouldUseSetupOutreachForSite(site) ? "setup_upsell_email_draft_opened" : "email_draft_opened", emailAddress);
+      } catch (markError) {
+        notifyAction("warning", "Outreach not marked", markError instanceof Error ? markError.message : String(markError));
+      }
+      window.location.href = `mailto:${encodeURI(emailAddress)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(outreachMessageForSite(site))}`;
+      setOpenOutreachMenu("");
+    } catch (err) {
+      showApiError(err, { source: "Open outreach email" });
+    } finally {
+      setOutreachLoadingKey("");
+    }
+  };
+
+  const smsHref = (phone: string, body: string) => {
+    const normalizedPhone = phone.replace(/[^\d+]/g, "");
+    return `sms:${normalizedPhone}&body=${encodeURIComponent(body)}`;
+  };
+
+  const handleOpenOutreachMessage = async (site: SiteRow) => {
+    const key = `${site.businessId}:message`;
+    setOutreachLoadingKey(key);
+    try {
+      const contact = await loadOutreachContactInfo(site);
+      if (!contact.phone) {
+        notifyAction("warning", "No phone found", `${site.businessName} does not have a usable phone number saved in the generated site data.`);
+        return;
+      }
+      const normalizedPhone = contact.phone.replace(/[^\d+]/g, "");
+      if (!normalizedPhone) {
+        notifyAction("warning", "Phone is not usable", `${site.businessName} has a phone-like value saved, but it is not usable for Messages/SMS.`);
+        return;
+      }
+      try {
+        await markOutreachContacted(site, "sms", shouldUseSetupOutreachForSite(site) ? "setup_upsell_message_draft_opened" : "message_draft_opened", normalizedPhone);
+      } catch (markError) {
+        notifyAction("warning", "Outreach not marked", markError instanceof Error ? markError.message : String(markError));
+      }
+      window.location.href = smsHref(normalizedPhone, outreachMessageForSite(site));
+      setOpenOutreachMenu("");
+    } catch (err) {
+      showApiError(err, { source: "Open outreach message" });
+    } finally {
+      setOutreachLoadingKey("");
+    }
+  };
+
   const runAboutNavAiFillSite = async (site: SiteRow, label: string) => {
     const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/ai-fill-about-nav-start`, {
       method: "POST",
@@ -1077,6 +1389,86 @@ export default function AdminSites() {
             <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingAboutNavSiteCount}</span>
           </button>
         </HoverTooltip>
+        <HoverTooltip text="Show generated sites whose owner outreach template/link/email/message action has been copied or opened. Use this for follow-up review.">
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "contacted" ? "all" : "contacted")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "contacted"
+                ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "contacted"}
+          >
+            <MessageCircle size={14} />
+            Contacted
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{contactedSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text={`Show sites contacted at least ${FOLLOW_UP_AFTER_DAYS} days ago where the owner has not viewed the preview, downloaded the package, or reached checkout/paid status.`}>
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "followUp" ? "all" : "followUp")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "followUp"
+                ? "border-amber-300 bg-amber-50 text-amber-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "followUp"}
+          >
+            <RefreshCw size={14} />
+            Follow-up
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{needsFollowUpSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text={`Show owners who downloaded the free website package but have not reached checkout or paid setup status. Use this as a warm setup upsell list. ${downloadedNoSetupFollowUpSiteCount} need setup follow-up, ${setupFollowUpSentSiteCount} already sent.`}>
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "downloaded" ? "all" : "downloaded")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "downloaded"
+                ? "border-slate-400 bg-slate-100 text-slate-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "downloaded"}
+          >
+            <Download size={14} />
+            Downloaded
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{downloadedWithoutSetupSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text="Show downloaded owners who have not bought setup and have not received the setup/domain/hosting follow-up yet. This is the exact warm upsell queue.">
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "downloadedNoSetupFollowUp" ? "all" : "downloadedNoSetupFollowUp")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "downloadedNoSetupFollowUp"
+                ? "border-orange-300 bg-orange-50 text-orange-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "downloadedNoSetupFollowUp"}
+          >
+            <Send size={14} />
+            No setup sent
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{downloadedNoSetupFollowUpSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text="Show downloaded owners who already received the setup/domain/hosting follow-up message. Use this to avoid sending the same upsell twice.">
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "setupFollowUp" ? "all" : "setupFollowUp")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "setupFollowUp"
+                ? "border-cyan-300 bg-cyan-50 text-cyan-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "setupFollowUp"}
+          >
+            <Send size={14} />
+            Setup sent
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{setupFollowUpSentSiteCount}</span>
+          </button>
+        </HoverTooltip>
         <HoverTooltip text={`AI fill About page copy and short service submenu labels for up to ${ABOUT_NAV_AI_BATCH_LIMIT} rows in the current filtered list. Each site starts server-side, then runs an About-only AI request, one nav-label AI request per service, and finalize.`}>
           <button
             type="button"
@@ -1318,7 +1710,7 @@ export default function AdminSites() {
           <span>Updated</span>
           <span className="inline-flex items-center justify-end gap-1.5 text-right">
             Actions
-            <HelpTooltip text="Preview opens the public site, Data shows saved JSON source data, Brief shows copy-only input, Image repairs service cards, Shuffle refreshes font variation without AI, Jobs opens the latest generation audit row, and Regen refreshes Google data or runs an AI copy patch." />
+            <HelpTooltip text="Preview opens the public site, Outreach copies or opens the owner-ready message with the ?owner=1 review link, Data shows saved JSON source data, Brief shows copy-only input, Image repairs service cards, Shuffle refreshes font variation without AI, Jobs opens the latest generation audit row, and Regen refreshes Google data or runs an AI copy patch." />
           </span>
         </div>
 
@@ -1382,6 +1774,38 @@ export default function AdminSites() {
                       </span>
                     </HoverTooltip>
                   )}
+                  {siteWasContacted(site) && (
+                    <HoverTooltip text={`Owner outreach marked contacted${site.lastContactedAt ? ` at ${new Date(site.lastContactedAt).toLocaleString()}` : ""}. Lead status: ${site.leadStatus || "unknown"}.`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                        <MessageCircle size={11} />
+                        Contacted{site.lastContactedAt ? ` ${new Date(site.lastContactedAt).toLocaleDateString()}` : ""}
+                      </span>
+                    </HoverTooltip>
+                  )}
+                  {(site.lastDownloadedAt || Number(site.downloadCount || 0) > 0) && (
+                    <HoverTooltip text={`Free package downloaded${site.lastDownloadedAt ? ` at ${new Date(site.lastDownloadedAt).toLocaleString()}` : ""}. Download count: ${site.downloadCount || 1}.`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                        <Download size={11} />
+                        Downloaded{site.lastDownloadedAt ? ` ${new Date(site.lastDownloadedAt).toLocaleDateString()}` : ""}
+                      </span>
+                    </HoverTooltip>
+                  )}
+                  {site.setupFollowUpContactedAt && (
+                    <HoverTooltip text={`Setup/domain/hosting follow-up sent at ${new Date(site.setupFollowUpContactedAt).toLocaleString()}. This is separate from the first free-preview outreach timestamp.`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-semibold text-cyan-800">
+                        <Send size={11} />
+                        Setup follow-up {new Date(site.setupFollowUpContactedAt).toLocaleDateString()}
+                      </span>
+                    </HoverTooltip>
+                  )}
+                  {siteNeedsFollowUp(site) && (
+                    <HoverTooltip text={`Contacted at least ${FOLLOW_UP_AFTER_DAYS} days ago, with no preview view, download, checkout, or paid status recorded. Last contacted: ${site.lastContactedAt ? new Date(site.lastContactedAt).toLocaleString() : "unknown"}.`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                        <RefreshCw size={11} />
+                        Follow-up
+                      </span>
+                    </HoverTooltip>
+                  )}
                   {site.lastImageRepairAt && (
                     <HoverTooltip text={`Service card image repair last ran at ${new Date(site.lastImageRepairAt).toLocaleString()}.`}>
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
@@ -1429,6 +1853,72 @@ export default function AdminSites() {
                     <Globe2 size={14} />
                   </a>
                 </HoverTooltip>
+                <div className="relative">
+                  <HoverTooltip text={shouldUseSetupOutreachForSite(site) ? "Copy or open a setup/domain/hosting follow-up for an owner who downloaded the free package but has not bought setup." : "Copy or open an owner-ready outreach message with the ?owner=1 review link. Email uses the saved business email if one exists; message opens the saved phone in Messages/SMS."}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenOutreachMenu(openOutreachMenu === site.businessId ? "" : site.businessId)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                      aria-label="Open outreach options"
+                    >
+                      <Send size={14} />
+                    </button>
+                  </HoverTooltip>
+                  {openOutreachMenu === site.businessId && (
+                    <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl">
+                      <div className="mb-3 flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-900">Owner outreach</p>
+                          <p className="mt-1 text-[11px] leading-4 text-gray-500">{outreachMenuDescriptionForSite(site)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setOpenOutreachMenu("")}
+                          className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                          aria-label="Close outreach options"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <div className="grid gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyOutreachMessage(site)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          <Copy size={14} />
+                          {outreachTemplateLabelForSite(site)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyOwnerReviewLink(site)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          <Globe2 size={14} />
+                          Copy owner review link only
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenOutreachEmail(site)}
+                          disabled={outreachLoadingKey === `${site.businessId}:email`}
+                          className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-xs font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-60"
+                        >
+                          {outreachLoadingKey === `${site.businessId}:email` ? <RefreshCw size={14} className="animate-spin" /> : <Mail size={14} />}
+                          Open email draft
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenOutreachMessage(site)}
+                          disabled={outreachLoadingKey === `${site.businessId}:message`}
+                          className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                        >
+                          {outreachLoadingKey === `${site.businessId}:message` ? <RefreshCw size={14} className="animate-spin" /> : <MessageCircle size={14} />}
+                          Open Messages/SMS
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {site.googleMapsUrl && (
                   <HoverTooltip text="Open the source Google Maps listing.">
                     <a

@@ -263,6 +263,17 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
       { table: "json_sites", column: "json_summary", definition: "TEXT" },
       { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+      { table: "leads", column: "status", definition: "TEXT DEFAULT 'scraped'" },
+      { table: "leads", column: "last_contacted", definition: "DATETIME" },
+      { table: "leads", column: "last_viewed_at", definition: "DATETIME" },
+      { table: "leads", column: "last_downloaded_at", definition: "DATETIME" },
+      { table: "leads", column: "setup_followup_contacted_at", definition: "DATETIME" },
+      { table: "leads", column: "view_count", definition: "INTEGER DEFAULT 0" },
+      { table: "leads", column: "download_count", definition: "INTEGER DEFAULT 0" },
+      { table: "leads", column: "updated_at", definition: "DATETIME" },
+      { table: "places_prospects", column: "status", definition: "TEXT DEFAULT 'new'" },
+      { table: "places_prospects", column: "generated_business_id", definition: "TEXT" },
+      { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
     ]);
     const columns = await tableColumns(db, "json_sites");
     const selectedColumns = [
@@ -280,6 +291,14 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const rows = await db
       .prepare(
         `SELECT ${selectedColumns.map((column) => `s.${column}`).join(", ")},
+          (SELECT l.status FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_status,
+          (SELECT l.last_contacted FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_last_contacted,
+          (SELECT l.last_viewed_at FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_last_viewed_at,
+          (SELECT l.view_count FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_view_count,
+          (SELECT l.last_downloaded_at FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_last_downloaded_at,
+          (SELECT l.download_count FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_download_count,
+          (SELECT l.setup_followup_contacted_at FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_setup_followup_contacted_at,
+          (SELECT p.status FROM places_prospects p WHERE p.generated_business_id = s.business_id ORDER BY datetime(p.updated_at) DESC LIMIT 1) AS prospect_status,
           (SELECT j.id FROM generation_jobs j WHERE j.business_id = s.business_id ORDER BY datetime(j.created_at) DESC LIMIT 1) AS latest_generation_job_id,
           (SELECT j.status FROM generation_jobs j WHERE j.business_id = s.business_id ORDER BY datetime(j.created_at) DESC LIMIT 1) AS latest_generation_job_status,
           (SELECT j.updated_at FROM generation_jobs j WHERE j.business_id = s.business_id ORDER BY datetime(j.created_at) DESC LIMIT 1) AS latest_generation_job_updated_at
@@ -295,6 +314,14 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         json_summary?: string;
         created_at?: string;
         updated_at?: string;
+        lead_status?: string;
+        lead_last_contacted?: string;
+        lead_last_viewed_at?: string;
+        lead_view_count?: number;
+        lead_last_downloaded_at?: string;
+        lead_download_count?: number;
+        lead_setup_followup_contacted_at?: string;
+        prospect_status?: string;
         latest_generation_job_id?: string;
         latest_generation_job_status?: string;
         latest_generation_job_updated_at?: string;
@@ -362,6 +389,15 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         fontPairing: asString(summary.fontPairing, ""),
         fontPairingLabel: asString(summary.fontPairingLabel, ""),
         lastVisualVariationAt: asString(summary.lastVisualVariationAt, ""),
+        leadStatus: row.lead_status || "",
+        lastContactedAt: row.lead_last_contacted || "",
+        lastViewedAt: row.lead_last_viewed_at || "",
+        viewCount: Number(row.lead_view_count || 0) || 0,
+        lastDownloadedAt: row.lead_last_downloaded_at || "",
+        downloadCount: Number(row.lead_download_count || 0) || 0,
+        setupFollowUpContactedAt: row.lead_setup_followup_contacted_at || "",
+        prospectStatus: row.prospect_status || "",
+        contacted: Boolean(row.lead_last_contacted || row.lead_status === "contacted" || row.prospect_status === "contacted"),
         r2JsonUrl: row.r2_json_url || "",
         storageMode: row.r2_json_key ? "r2" : "legacy_d1",
         latestGenerationJobId: row.latest_generation_job_id || "",
@@ -373,6 +409,125 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
 
   if (request.method === "POST" && segments.length === 2 && segments[1] === "migrate-r2") {
     return migrateOldSiteJsonRowsToR2(siteStorageDeps, request, db, env);
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "outreach-contacted") {
+    const businessId = segments[1];
+    const body = await readJsonBody(request);
+    const channel = asString(body.channel, "unknown").trim() || "unknown";
+    const action = asString(body.action, "outreach").trim() || "outreach";
+    const contact = asString(body.contact).trim();
+    const now = new Date().toISOString();
+
+    await ensureRequiredColumns(db, [
+      { table: "leads", column: "status", definition: "TEXT DEFAULT 'scraped'" },
+      { table: "leads", column: "last_contacted", definition: "DATETIME" },
+      { table: "leads", column: "setup_followup_contacted_at", definition: "DATETIME" },
+      { table: "leads", column: "updated_at", definition: "DATETIME" },
+      { table: "places_prospects", column: "status", definition: "TEXT DEFAULT 'new'" },
+      { table: "places_prospects", column: "generated_business_id", definition: "TEXT" },
+      { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
+    ]);
+
+    const leadColumns = await tableColumns(db, "leads");
+    const lead = await db.prepare("SELECT id, status FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string; status?: string }>();
+    const isSetupFollowUp = action.startsWith("setup_upsell_") || action.startsWith("setup_followup_");
+    let leadUpdated = false;
+    if (lead?.id) {
+      const updates: Array<{ column: string; value: unknown; expression?: string }> = [];
+      if (leadColumns.has("status")) {
+        updates.push({
+          column: "status",
+          value: "contacted",
+          expression: "CASE WHEN status IN ('won_paid', 'checkout_pending', 'viewed') THEN status ELSE ? END",
+        });
+      }
+      if (leadColumns.has("last_contacted")) updates.push({ column: "last_contacted", value: now });
+      if (isSetupFollowUp && leadColumns.has("setup_followup_contacted_at")) updates.push({ column: "setup_followup_contacted_at", value: now });
+      if (leadColumns.has("updated_at")) updates.push({ column: "updated_at", value: now });
+      if (updates.length) {
+        await db
+          .prepare(`UPDATE leads SET ${updates.map((item) => `${item.column} = ${item.expression || "?"}`).join(", ")} WHERE id = ?`)
+          .bind(...updates.map((item) => item.value), lead.id)
+          .run();
+        leadUpdated = true;
+      }
+      await insertCrmActivitySafe(db, {
+        id: crypto.randomUUID(),
+        lead_id: lead.id,
+        staff_id: "admin",
+        activity_type: "outreach_contacted",
+        description: `Owner outreach ${action} via ${channel}${contact ? ` (${contact})` : ""}.`,
+      });
+    }
+
+    const prospectColumns = await tableColumns(db, "places_prospects");
+    let prospectUpdated = false;
+    if (prospectColumns.has("generated_business_id") && prospectColumns.has("status")) {
+      await db
+        .prepare(
+          `UPDATE places_prospects
+           SET status = CASE WHEN status IN ('site_generated', 'skipped') THEN status ELSE 'contacted' END${prospectColumns.has("updated_at") ? ", updated_at = ?" : ""}
+           WHERE generated_business_id = ?`,
+        )
+        .bind(...(prospectColumns.has("updated_at") ? [now] : []), businessId)
+        .run();
+      prospectUpdated = true;
+    }
+
+    return json({
+      success: true,
+      businessId,
+      leadUpdated,
+      prospectUpdated,
+      lastContactedAt: now,
+      setupFollowUpContactedAt: isSetupFollowUp ? now : undefined,
+    });
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "downloaded") {
+    const businessId = segments[1];
+    const body = await readJsonBody(request).catch(() => ({}));
+    const source = asString(body.source, "website_action_panel").trim() || "website_action_panel";
+    const now = new Date().toISOString();
+
+    await ensureRequiredColumns(db, [
+      { table: "leads", column: "download_count", definition: "INTEGER DEFAULT 0" },
+      { table: "leads", column: "last_downloaded_at", definition: "DATETIME" },
+      { table: "leads", column: "updated_at", definition: "DATETIME" },
+      { table: "crm_activities", column: "staff_id", definition: "TEXT" },
+      { table: "crm_activities", column: "description", definition: "TEXT" },
+    ]);
+
+    const lead = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
+    let leadUpdated = false;
+    if (lead?.id) {
+      await db
+        .prepare(
+          `UPDATE leads
+           SET download_count = COALESCE(download_count, 0) + 1,
+               last_downloaded_at = ?,
+               updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(now, now, lead.id)
+        .run();
+      leadUpdated = true;
+      await insertCrmActivitySafe(db, {
+        id: crypto.randomUUID(),
+        lead_id: lead.id,
+        staff_id: "system",
+        activity_type: "site_downloaded",
+        description: `Free static website package downloaded from ${source}.`,
+      });
+    }
+
+    return json({
+      success: true,
+      businessId,
+      leadUpdated,
+      lastDownloadedAt: now,
+    });
   }
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "ai-fill-about-nav-start") {
@@ -514,6 +669,12 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
       { table: "json_sites", column: "json_summary", definition: "TEXT" },
       { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+      { table: "leads", column: "status", definition: "TEXT DEFAULT 'scraped'" },
+      { table: "leads", column: "last_contacted", definition: "DATETIME" },
+      { table: "leads", column: "updated_at", definition: "DATETIME" },
+      { table: "places_prospects", column: "status", definition: "TEXT DEFAULT 'new'" },
+      { table: "places_prospects", column: "generated_business_id", definition: "TEXT" },
+      { table: "places_prospects", column: "updated_at", definition: "DATETIME" },
     ]);
     const columns = await tableColumns(db, "json_sites");
     const selectedColumns = [
