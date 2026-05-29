@@ -1471,15 +1471,17 @@ export default function AdminSites() {
                       type="button"
                       onClick={() => handleAboutNavAiFillSite(site)}
                       disabled={!activeRegenerateModel || Boolean(regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
-                      className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-indigo-200 px-2.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-                      aria-label="Generate missing About page copy and short service menu labels"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                      aria-label={regeneratingId === site.businessId
+                        ? `Generating About/nav: ${generationProgress[site.businessId]?.shortText || "running"}`
+                        : "Generate missing About page copy and short service menu labels"
+                      }
                     >
                       {regeneratingId === site.businessId ? (
                         <RefreshCw size={14} className="animate-spin" />
                       ) : (
                         <Brain size={14} />
                       )}
-                      {regeneratingId === site.businessId ? generationProgress[site.businessId]?.shortText || "Running" : "Generate About/nav"}
                     </button>
                   </HoverTooltip>
                 )}
