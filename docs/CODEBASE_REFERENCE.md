@@ -830,7 +830,7 @@ Logic penting:
 - `fetchGooglePlaceDetails()` centralizes Place Details fetch/parsing and non-JSON error handling.
 - `buildScaffoldGeneratePayload()` and `buildSelectedPhotoGeneratePayload()` centralize fallback scaffold creation plus `/api/sites/generate` payload fields (`jsonContent`, `originData`, brand palette, selected logo/photo metadata, provider/model, and phone).
 - Photo helpers in this module centralize Google photo URL creation, attribution cleanup, owner-like/UGC priority scoring, sorted photo lists, prospect selection persistence payloads, palette option payloads, and generate-time selected photo/palette resolution.
-- `postGenerateSite()` is the shared POST wrapper for `/api/sites/generate`, using `readApiJson()` so Cloudflare/provider HTML errors stay actionable.
+- `postGenerateSite()` is the shared POST wrapper for `/api/sites/generate`, using `readApiJson()` so Cloudflare/provider HTML errors stay actionable. `readApiJson()` includes request path and HTTP status in thrown raw messages when available, so admin toasts show which Pages Function endpoint returned HTML/non-JSON or failed JSON.
 - `/admin/leads` and `/admin/sites` should call this helper for new generate/regenerate flows instead of hand-writing readiness, cooldown, scaffold, or generate POST logic.
 - Fixture tests live in `tests/adminSiteGeneration.test.ts`; run `npm run test:admin-generation` when local dependencies are installed.
 
