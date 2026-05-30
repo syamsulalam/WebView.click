@@ -137,6 +137,20 @@ export function interpretApiError(error: unknown, input: ApiErrorInput = {}): Ap
     };
   }
 
+  if (/Cloudflare\/HTML|returned Cloudflare|Pages Function|deployment is failing at the edge|instead of JSON/i.test(rawMessage)) {
+    return {
+      title: `${sourcePrefix}Cloudflare Pages Function returned HTML`,
+      meaning: `WebView.click expected JSON from its own API, but Cloudflare returned an HTML error page. This usually means the Pages Function crashed, the deployment is unhealthy, or Cloudflare temporarily failed before the provider response could be returned.`,
+      actions: [
+        "Check the raw error for the API label that failed, such as Load parent chunked generation job or Finalize.",
+        "Check Cloudflare Pages Functions logs for the matching timestamp and fix any runtime exception shown there.",
+        "After deploying the fix or confirming Cloudflare recovered, refresh /admin/jobs and retry once.",
+      ],
+      severity: "error",
+      rawMessage,
+    };
+  }
+
   if (status === 455 || status === 500 || status === 502 || status === 503 || /unavailable|overloaded|timeout|timed out|fetch failed/i.test(rawMessage)) {
     return {
       title: `${sourcePrefix}${provider} temporary service failure`,

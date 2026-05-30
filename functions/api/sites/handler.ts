@@ -1,5 +1,6 @@
 import { applyGeneratedSitePageInserts, repairOfferingNavLabels, repairServiceCardImages } from "../../../src/lib/generatedSitePostProcess";
 import { fontPairingsForText, fontPairingVariantForText } from "../../../src/lib/fontPairings";
+import { asString } from "../_shared/response";
 import {
   applyAiCopyPatch,
   applyAiOfferingOutline,

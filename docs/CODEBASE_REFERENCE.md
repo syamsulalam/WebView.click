@@ -867,7 +867,7 @@ Fungsi:
 - Interpreter error API untuk toast admin.
 
 Logic penting:
-- Mengklasifikasi 429/rate limit/quota, IP whitelist/allowlist rejection, 401/402/403 key-permission-billing-credit, 400 payload/model invalid, dan 455/5xx/provider temporary failure.
+- Mengklasifikasi 429/rate limit/quota, IP whitelist/allowlist rejection, 401/402/403 key-permission-billing-credit, 400 payload/model invalid, Cloudflare/HTML non-JSON API responses, dan 455/5xx/provider temporary failure.
 - Untuk Gemini 429 `RESOURCE_EXHAUSTED`, message menjelaskan bahwa quota/rate limit diterapkan per project, lalu menyarankan wait/retry, hentikan batch retry, switch model/provider, atau naikkan quota/billing.
 - Provider cooldown memakai strategi konservatif: Gemini/OpenAI/custom default 90 detik untuk rate limit per menit, OpenRouter 75 detik kecuali ada retry hint, KIE.ai 30 detik karena KIE mendokumentasikan burst limit pendek, dan quota/billing/daily cases lebih lama.
 - Dipakai oleh `AdminToast.showApiError()` supaya UI menampilkan meaning/action items, bukan hanya raw provider string.
