@@ -2323,12 +2323,12 @@ export default function AdminLeads() {
                       <button
                         type="button"
                         onClick={() => setContactEdit({ leadId: lead.id, kind: "email", value: "" })}
-                        className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                        className="relative inline-flex h-9 w-9 items-center justify-center rounded border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
                         aria-label={`Email not found, enter the email for ${lead.business_name}`}
                         title={`Email not found, enter the email for ${lead.business_name}`}
                       >
-                        <Mail size={15} />
-                        No email
+                        <Mail size={17} />
+                        <span className="pointer-events-none absolute h-0.5 w-7 -rotate-45 rounded-full bg-amber-700" />
                       </button>
                     )}
                     {contactEdit?.leadId === lead.id && contactEdit.kind === "phone" ? (
@@ -2355,12 +2355,12 @@ export default function AdminLeads() {
                       <button
                         type="button"
                         onClick={() => setContactEdit({ leadId: lead.id, kind: "phone", value: "" })}
-                        className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                        className="relative inline-flex h-9 w-9 items-center justify-center rounded border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
                         aria-label={`Number not found, enter the number for ${lead.business_name}`}
                         title={`Number not found, enter the number for ${lead.business_name}`}
                       >
-                        <MessageSquare size={15} />
-                        No number
+                        <MessageSquare size={17} />
+                        <span className="pointer-events-none absolute h-0.5 w-7 -rotate-45 rounded-full bg-amber-700" />
                       </button>
                     )}
                   </td>
