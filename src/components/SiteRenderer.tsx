@@ -1114,22 +1114,33 @@ export default function SiteRenderer({
       if (page && page.getAttribute("data-wv-page") !== activeTab) return;
       heading.style.removeProperty("--wv-hero-heading-size");
       const baseFontSize = Number.parseFloat(window.getComputedStyle(heading).fontSize) || 56;
+      const maxScale = window.matchMedia("(max-width: 640px)").matches ? 1.12 : 1.2;
+      const maxFontSize = baseFontSize * maxScale;
 
       const fitsWithinLineLimit = () => heading.scrollHeight <= lineHeightFor(heading) * maxLines + 2;
+      const setSize = (size: number) => heading.style.setProperty("--wv-hero-heading-size", `${size.toFixed(2)}px`);
+
+      setSize(maxFontSize);
       if (fitsWithinLineLimit()) return;
 
-      let low = baseFontSize * minScale;
-      let high = baseFontSize;
-      for (let i = 0; i < 8; i += 1) {
+      heading.style.removeProperty("--wv-hero-heading-size");
+      const baseFits = fitsWithinLineLimit();
+      let low = baseFits ? baseFontSize : baseFontSize * minScale;
+      let high = baseFits ? maxFontSize : baseFontSize;
+      if (!baseFits) {
+        setSize(low);
+        if (!fitsWithinLineLimit()) return;
+      }
+      for (let i = 0; i < 10; i += 1) {
         const mid = (low + high) / 2;
-        heading.style.setProperty("--wv-hero-heading-size", `${mid.toFixed(2)}px`);
+        setSize(mid);
         if (fitsWithinLineLimit()) {
           low = mid;
         } else {
           high = mid;
         }
       }
-      heading.style.setProperty("--wv-hero-heading-size", `${low.toFixed(2)}px`);
+      setSize(low);
     };
 
     const fitHeroHeadings = () => {
