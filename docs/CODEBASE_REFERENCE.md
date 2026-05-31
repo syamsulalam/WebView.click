@@ -155,6 +155,17 @@ Logic penting:
 - Menerima `label`, optional `description`, dan `widthClass`.
 - Menggunakan `group-hover`/`group-focus-within` agar behavior konsisten dengan old nav flyout tetapi tidak copy-paste span tooltip di setiap icon.
 
+### `src/components/AdminCollapsibleSectionHeader.tsx`
+
+Fungsi:
+- Shared header untuk card/section admin yang bisa expand/collapse.
+- Menjaga pola visual konsisten: icon kiri sebelum heading, `HelpTooltip` dekat heading, action icons hanya tampil saat section expanded, dan chevron tetap di sisi kanan header.
+
+Logic penting:
+- Dipakai oleh `/admin/settings` untuk semua section collapsible seperti AI Provider, Google Places, Offer & Conversion, Payment Setup, Domain Registrar, Prospect Scoring, dan Estimator Biaya AI.
+- `actions` dirender hanya saat `open=true`, sehingga docs/book/reset controls tidak memenuhi header collapsed.
+- Klik area title dan chevron sama-sama memanggil `onToggle`; chevron punya `aria-expanded` dan label collapse/expand.
+
 ### `src/components/GenerationJobsTable.tsx`
 
 Fungsi:

@@ -50,6 +50,7 @@
 - Preserve existing user changes in the worktree.
 - Use existing project patterns before introducing new abstractions.
 - Before adding admin UI controls, inspect the surrounding controls and preserve their density and pattern. In compact row action clusters that use square icon-only buttons, add new actions as matching icon-only buttons with tooltip/aria labels rather than wider text buttons that disrupt the layout.
+- For admin collapsible card/section headers, use the shared `src/components/AdminCollapsibleSectionHeader.tsx` pattern: left icon before the heading, concise help tooltip near the title, optional action icons hidden while collapsed, and a right-aligned chevron. Do not mix one-off header layouts in the same admin page.
 - When adding a new admin feature, control, badge, status, or workflow action whose behavior is not obvious from the label alone, add a concise tooltip using the shared `src/components/HelpTooltip.tsx` component.
 - When adding or materially changing a page, component, or Pages Function endpoint, update `docs/CODEBASE_REFERENCE.md` in the same change with its purpose, APIs, important state/logic, and debugging notes.
 - Features added to `/demo` that affect visitor-facing website preview, download, checkout, domain selection, or setup flow must also be available on public preview routes `/:businessId`.

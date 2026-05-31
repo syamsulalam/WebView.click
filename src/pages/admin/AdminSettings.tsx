@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, ChevronDown, Copy, Loader2, RefreshCw, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, Calculator, CheckCircle2, Copy, CreditCard, DollarSign, Globe2, KeyRound, Loader2, MapPin, RefreshCw, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { aiModelPrices, defaultInputTokens, defaultOutputTokens, estimateCostUsd, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { clearAiReadinessCache } from "../../lib/aiReadiness";
@@ -11,6 +11,7 @@ import {
 } from "../../lib/aiSlowProviderMode";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
+import AdminCollapsibleSectionHeader from "../../components/AdminCollapsibleSectionHeader";
 import AdminDocsReader from "../../components/AdminDocsReader";
 import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
@@ -843,24 +844,17 @@ export default function AdminSettings() {
       )}
 
       <div id="settings-ai-provider" className="scroll-mt-24 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="flex w-full items-center justify-between gap-2 hover:bg-slate-50">
-          <button
-            type="button"
-            onClick={() => toggleSettingsSection("aiProvider")}
-            className="min-w-0 flex-1 px-6 py-4 text-left"
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                  AI Provider Credentials
-                  <HelpTooltip text="Expand only when editing API keys. Generation provider/model selection still happens in Leads and Sites." />
-                </h2>
-                <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("aiProvider") ? "rotate-180" : ""}`} />
-              </div>
-              <p className="mt-1 text-xs text-gray-500">{selectedProviderConfig.label} selected for credential editing.</p>
-            </div>
-          </button>
-          <div className="pr-6">
+        <AdminCollapsibleSectionHeader
+          title="AI Provider Credentials"
+          icon={KeyRound}
+          open={settingsSectionOpen("aiProvider")}
+          onToggle={() => toggleSettingsSection("aiProvider")}
+          tooltip="Expand only when editing API keys. Generation provider/model selection still happens in Leads and Sites."
+          description={`${selectedProviderConfig.label} selected for credential editing.`}
+          descriptionClassName="mt-1 text-xs text-gray-500"
+          className="px-6 py-4 hover:bg-slate-50"
+          actionsClassName="pt-0"
+          actions={
             <AdminDocsReader
               pathname="/admin/settings"
               defaultDocId="ai-models-research"
@@ -868,8 +862,8 @@ export default function AdminSettings() {
               buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
               iconSize={17}
             />
-          </div>
-        </div>
+          }
+        />
         {settingsSectionOpen("aiProvider") && (
         <div className="grid border-t border-gray-100 md:grid-cols-[240px_1fr]">
           <aside className="border-b md:border-b-0 md:border-r border-gray-100 p-4 bg-gray-50">
@@ -926,24 +920,15 @@ export default function AdminSettings() {
 
       <div className={`mt-6 grid items-start gap-6 ${pairedSettingsGridClass("googlePlaces", "offerConversion")}`}>
         <div id="settings-google-places" className={pairedSettingsCardClass("googlePlaces", ["googlePlaces", "offerConversion"])}>
-          <button
-            type="button"
-            onClick={() => toggleSettingsSectionInRow("googlePlaces", ["googlePlaces", "offerConversion"])}
-            className="w-full text-left"
-          >
-            <div className="min-w-0">
-              <div className="mb-2 flex items-center gap-2">
-                <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                  Google Places
-                  <HelpTooltip text="Server-side key used for Places search, details, reviews, and photo proxy calls. It should be API-restricted, not HTTP-referrer restricted." />
-                </h2>
-                <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("googlePlaces") ? "rotate-180" : ""}`} />
-              </div>
-              <p className={`${pairedSettingsCollapsed("googlePlaces", ["googlePlaces", "offerConversion"]) ? "hidden" : ""} text-xs text-gray-500`}>
-                Dipakai dari Cloudflare Pages Function. Expand only when rotating the Places key.
-              </p>
-            </div>
-          </button>
+          <AdminCollapsibleSectionHeader
+            title="Google Places"
+            icon={MapPin}
+            open={settingsSectionOpen("googlePlaces")}
+            onToggle={() => toggleSettingsSectionInRow("googlePlaces", ["googlePlaces", "offerConversion"])}
+            tooltip="Server-side key used for Places search, details, reviews, and photo proxy calls. It should be API-restricted, not HTTP-referrer restricted."
+            description="Dipakai dari Cloudflare Pages Function. Expand only when rotating the Places key."
+            descriptionClassName={`${pairedSettingsCollapsed("googlePlaces", ["googlePlaces", "offerConversion"]) ? "hidden" : ""} mt-1 text-xs text-gray-500`}
+          />
           {settingsSectionOpen("googlePlaces") && (
           <div className="mt-4">
             <p className="mb-3 text-xs text-gray-500">
@@ -961,24 +946,15 @@ export default function AdminSettings() {
         </div>
 
         <div id="settings-offer-conversion" className={pairedSettingsCardClass("offerConversion", ["googlePlaces", "offerConversion"])}>
-          <button
-            type="button"
-            onClick={() => toggleSettingsSectionInRow("offerConversion", ["googlePlaces", "offerConversion"])}
-            className="w-full text-left"
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                  Offer & Conversion
-                  <HelpTooltip text="Pricing and package copy shown to buyers and sent to checkout providers. Keep this separate from gateway credentials so payment setup stays focused." />
-                </h2>
-                <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("offerConversion") ? "rotate-180" : ""}`} />
-              </div>
-              <p className={`${pairedSettingsCollapsed("offerConversion", ["googlePlaces", "offerConversion"]) ? "hidden" : ""} mt-1 text-xs leading-relaxed text-gray-500`}>
-                ${settings.PAYMENT_USD_AMOUNT || "197"}/year new-domain total, ${settings.PAYMENT_DOMAIN_FEE_USD || "17"}/year domain fee, ${settings.PAYMENT_ADDON_PAGE_USD || "50"} page/edit add-ons, IDR rate {settings.PAYMENT_USD_TO_IDR_RATE || "16000"}.
-              </p>
-            </div>
-          </button>
+          <AdminCollapsibleSectionHeader
+            title="Offer & Conversion"
+            icon={DollarSign}
+            open={settingsSectionOpen("offerConversion")}
+            onToggle={() => toggleSettingsSectionInRow("offerConversion", ["googlePlaces", "offerConversion"])}
+            tooltip="Pricing and package copy shown to buyers and sent to checkout providers. Keep this separate from gateway credentials so payment setup stays focused."
+            description={`$${settings.PAYMENT_USD_AMOUNT || "197"}/year new-domain total, $${settings.PAYMENT_DOMAIN_FEE_USD || "17"}/year domain fee, $${settings.PAYMENT_ADDON_PAGE_USD || "50"} page/edit add-ons, IDR rate ${settings.PAYMENT_USD_TO_IDR_RATE || "16000"}.`}
+            descriptionClassName={`${pairedSettingsCollapsed("offerConversion", ["googlePlaces", "offerConversion"]) ? "hidden" : ""} mt-1 text-xs leading-relaxed text-gray-500`}
+          />
 
           {settingsSectionOpen("offerConversion") && (
           <div className="mt-4">
@@ -1009,39 +985,36 @@ export default function AdminSettings() {
 
       <div className={`mt-6 grid items-start gap-6 ${pairedSettingsGridClass("payment", "domainRegistrar")}`}>
         <div id="settings-payment" className={pairedSettingsCardClass("payment", ["payment", "domainRegistrar"])}>
-          <div className="flex w-full items-start justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => toggleSettingsSectionInRow("payment", ["payment", "domainRegistrar"])}
-              className="min-w-0 flex-1 text-left"
-            >
-              <div className="min-w-0">
-                <div className="mb-2 flex items-center gap-2">
-                  <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                    Payment Setup
-                    <HelpTooltip text="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up." />
-                  </h2>
-                  <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("payment") ? "rotate-180" : ""}`} />
-                </div>
-                <p className={`${pairedSettingsCollapsed("payment", ["payment", "domainRegistrar"]) ? "hidden" : ""} text-xs leading-relaxed text-gray-500`}>
+          <AdminCollapsibleSectionHeader
+            title="Payment Setup"
+            icon={CreditCard}
+            open={settingsSectionOpen("payment")}
+            onToggle={() => toggleSettingsSectionInRow("payment", ["payment", "domainRegistrar"])}
+            tooltip="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up."
+            description={pairedSettingsCollapsed("payment", ["payment", "domainRegistrar"]) && !paypalActiveCredentialsMissing ? undefined : (
+              <>
+                <span className={`${pairedSettingsCollapsed("payment", ["payment", "domainRegistrar"]) ? "hidden" : ""} block`}>
                   Active processor: {paymentProcessorOptions.find((option) => option.value === activePaymentProcessor)?.label || activePaymentProcessor}
-                </p>
+                </span>
                 {paypalActiveCredentialsMissing && (
-                  <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                  <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
                     <AlertCircle size={13} />
                     PayPal {activePaypalModeLabel} keys missing
-                  </p>
+                  </span>
                 )}
-              </div>
-            </button>
-            <AdminDocsReader
-              pathname="/admin/settings"
-              defaultDocId={paypalSelected ? "paypal-express-checkout" : "payment-processor-research"}
-              tooltip="Open payment setup docs."
-              buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
-              iconSize={17}
-            />
-          </div>
+              </>
+            )}
+            descriptionClassName="mt-1 text-xs leading-relaxed text-gray-500"
+            actions={
+              <AdminDocsReader
+                pathname="/admin/settings"
+                defaultDocId={paypalSelected ? "paypal-express-checkout" : "payment-processor-research"}
+                tooltip="Open payment setup docs."
+                buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-700"
+                iconSize={17}
+              />
+            }
+          />
 
           {settingsSectionOpen("payment") && (
           <div className="mt-4">
@@ -1348,30 +1321,27 @@ export default function AdminSettings() {
         </div>
 
       <div id="settings-domain-registrar" className={pairedSettingsCardClass("domainRegistrar", ["payment", "domainRegistrar"])}>
-        <button
-          type="button"
-          onClick={() => toggleSettingsSectionInRow("domainRegistrar", ["payment", "domainRegistrar"])}
-          className="w-full text-left"
-        >
-          <div className="min-w-0">
-            <div className="mb-2 flex items-center gap-2">
-              <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                Domain Registrar
-                <HelpTooltip text="Optional automation for real registrar quote capture. If credentials are empty, public checkout still works and the order remains manual-confirmation friendly." widthClass="w-80" />
-              </h2>
-              <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("domainRegistrar") ? "rotate-180" : ""}`} />
-            </div>
-            <p className={`${pairedSettingsCollapsed("domainRegistrar", ["payment", "domainRegistrar"]) ? "hidden" : ""} text-xs leading-relaxed text-gray-500`}>
-              Active registrar: {activeDomainRegistrarOption.label}. Buyer-facing checkout still shows the included $17/year domain fee.
-            </p>
-            {!domainRegistrarConfigured && (
-              <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                <AlertCircle size={13} />
-                Registrar quote not configured
-              </p>
-            )}
-          </div>
-        </button>
+        <AdminCollapsibleSectionHeader
+          title="Domain Registrar"
+          icon={Globe2}
+          open={settingsSectionOpen("domainRegistrar")}
+          onToggle={() => toggleSettingsSectionInRow("domainRegistrar", ["payment", "domainRegistrar"])}
+          tooltip="Optional automation for real registrar quote capture. If credentials are empty, public checkout still works and the order remains manual-confirmation friendly."
+          description={pairedSettingsCollapsed("domainRegistrar", ["payment", "domainRegistrar"]) && domainRegistrarConfigured ? undefined : (
+            <>
+              <span className={`${pairedSettingsCollapsed("domainRegistrar", ["payment", "domainRegistrar"]) ? "hidden" : ""} block`}>
+                Active registrar: {activeDomainRegistrarOption.label}. Buyer-facing checkout still shows the included $17/year domain fee.
+              </span>
+              {!domainRegistrarConfigured && (
+                <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                  <AlertCircle size={13} />
+                  Registrar quote not configured
+                </span>
+              )}
+            </>
+          )}
+          descriptionClassName="mt-1 text-xs leading-relaxed text-gray-500"
+        />
 
         {settingsSectionOpen("domainRegistrar") && (
           <div className="mt-4 space-y-5">
@@ -1430,33 +1400,26 @@ export default function AdminSettings() {
 
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className={`${settingsSectionOpen("scoring") ? "mb-5" : ""} flex flex-col gap-3 md:flex-row md:items-start md:justify-between`}>
-          <button
-            type="button"
-            onClick={() => toggleSettingsSection("scoring")}
-            className="min-w-0 flex-1 text-left"
-          >
-            <div>
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal size={19} className="text-indigo-600" />
-                <h2 className="text-lg font-semibold text-gray-900">Prospect Scoring</h2>
-                <HelpTooltip text="Setting ini dipakai oleh /admin/leads untuk mengurutkan dan menyaring prospek. Angka positif menaikkan prioritas, angka negatif menurunkan prioritas." />
-                <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("scoring") ? "rotate-180" : ""}`} />
-              </div>
-              <p className="mt-1 text-sm text-gray-500">Tune prioritas prospek tanpa edit kode.</p>
-            </div>
-          </button>
-          {settingsSectionOpen("scoring") && (
-          <HoverTooltip text="Restore the Balanced prospect scoring preset and default threshold used by /admin/leads filters.">
-            <button
-              type="button"
-              onClick={resetScoringWeights}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              aria-label="Reset prospect scoring weights"
-            >
-              <RotateCcw size={16} />
-            </button>
-          </HoverTooltip>
-          )}
+          <AdminCollapsibleSectionHeader
+            title="Prospect Scoring"
+            icon={SlidersHorizontal}
+            open={settingsSectionOpen("scoring")}
+            onToggle={() => toggleSettingsSection("scoring")}
+            tooltip="Setting ini dipakai oleh /admin/leads untuk mengurutkan dan menyaring prospek. Angka positif menaikkan prioritas, angka negatif menurunkan prioritas."
+            description="Tune prioritas prospek tanpa edit kode."
+            actions={
+              <HoverTooltip text="Restore the Balanced prospect scoring preset and default threshold used by /admin/leads filters.">
+                <button
+                  type="button"
+                  onClick={resetScoringWeights}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  aria-label="Reset prospect scoring weights"
+                >
+                  <RotateCcw size={16} />
+                </button>
+              </HoverTooltip>
+            }
+          />
         </div>
 
         {settingsSectionOpen("scoring") && (
@@ -1527,24 +1490,15 @@ export default function AdminSettings() {
       </div>
 
       <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <button
-          type="button"
-          onClick={() => toggleSettingsSection("aiEstimator")}
-          className={`${settingsSectionOpen("aiEstimator") ? "mb-5" : ""} w-full text-left`}
-        >
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                Estimator Biaya AI
-                <HelpTooltip text="Local estimate for one generated site JSON using the selected pricing table. Actual provider billing can differ by tokenization and provider-side rounding." />
-              </h2>
-              <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("aiEstimator") ? "rotate-180" : ""}`} />
-            </div>
-            <p className="text-sm text-gray-500">
-              Perkiraan biaya per generate JSON. KIE.ai ditampilkan sebagai estimasi diskon karena pricing detail live ada di dashboard KIE.
-            </p>
-          </div>
-        </button>
+        <AdminCollapsibleSectionHeader
+          title="Estimator Biaya AI"
+          icon={Calculator}
+          open={settingsSectionOpen("aiEstimator")}
+          onToggle={() => toggleSettingsSection("aiEstimator")}
+          tooltip="Local estimate for one generated site JSON using the selected pricing table. Actual provider billing can differ by tokenization and provider-side rounding."
+          description="Perkiraan biaya per generate JSON. KIE.ai ditampilkan sebagai estimasi diskon karena pricing detail live ada di dashboard KIE."
+          className={settingsSectionOpen("aiEstimator") ? "mb-5" : ""}
+        />
         {settingsSectionOpen("aiEstimator") && (
         <>
         <div className="grid md:grid-cols-5 gap-4">
