@@ -433,6 +433,7 @@ function ownerPackageGuideData(siteData: any, businessId: string) {
 
 type PdfGuideLink = { rect: [number, number, number, number]; url: string };
 type PdfGuidePage = { content: string[]; links: PdfGuideLink[] };
+type PdfGuideIcon = "check" | "download" | "package" | "setup" | "page" | "chat" | "site" | "care" | "mail" | "growth" | "next" | "launch" | "domain";
 
 function pdfText(value: string) {
   return String(value || "")
@@ -502,6 +503,83 @@ class SelectablePdfGuide {
     if (stroke) this.page.content.push(`${this.rgb(stroke)} RG 0.8 w ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S`);
   }
 
+  private line(x1: number, y1Top: number, x2: number, y2Top: number, color: string, width = 1) {
+    const y1 = this.height - y1Top;
+    const y2 = this.height - y2Top;
+    this.page.content.push(`${this.rgb(color)} RG ${width.toFixed(2)} w ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
+  }
+
+  private icon(kind: PdfGuideIcon, x: number, yTop: number, size: number, color: string) {
+    const s = size;
+    if (kind === "check") {
+      this.line(x + s * 0.18, yTop + s * 0.55, x + s * 0.42, yTop + s * 0.76, color, 1.8);
+      this.line(x + s * 0.42, yTop + s * 0.76, x + s * 0.84, yTop + s * 0.27, color, 1.8);
+      return;
+    }
+    if (kind === "download") {
+      this.line(x + s * 0.5, yTop + s * 0.18, x + s * 0.5, yTop + s * 0.68, color, 1.6);
+      this.line(x + s * 0.3, yTop + s * 0.5, x + s * 0.5, yTop + s * 0.7, color, 1.6);
+      this.line(x + s * 0.7, yTop + s * 0.5, x + s * 0.5, yTop + s * 0.7, color, 1.6);
+      this.line(x + s * 0.24, yTop + s * 0.82, x + s * 0.76, yTop + s * 0.82, color, 1.6);
+      return;
+    }
+    if (kind === "mail") {
+      this.rect(x + s * 0.16, yTop + s * 0.28, s * 0.68, s * 0.45, "", color);
+      this.line(x + s * 0.18, yTop + s * 0.3, x + s * 0.5, yTop + s * 0.56, color, 1);
+      this.line(x + s * 0.82, yTop + s * 0.3, x + s * 0.5, yTop + s * 0.56, color, 1);
+      return;
+    }
+    if (kind === "page") {
+      this.rect(x + s * 0.26, yTop + s * 0.14, s * 0.48, s * 0.72, "", color);
+      this.line(x + s * 0.38, yTop + s * 0.38, x + s * 0.62, yTop + s * 0.38, color, 1);
+      this.line(x + s * 0.38, yTop + s * 0.55, x + s * 0.62, yTop + s * 0.55, color, 1);
+      return;
+    }
+    if (kind === "chat") {
+      this.rect(x + s * 0.17, yTop + s * 0.2, s * 0.66, s * 0.48, "", color);
+      this.line(x + s * 0.32, yTop + s * 0.68, x + s * 0.25, yTop + s * 0.82, color, 1.2);
+      this.line(x + s * 0.25, yTop + s * 0.82, x + s * 0.48, yTop + s * 0.68, color, 1.2);
+      return;
+    }
+    if (kind === "site") {
+      this.rect(x + s * 0.14, yTop + s * 0.2, s * 0.72, s * 0.58, "", color);
+      this.line(x + s * 0.14, yTop + s * 0.36, x + s * 0.86, yTop + s * 0.36, color, 1);
+      this.line(x + s * 0.32, yTop + s * 0.58, x + s * 0.68, yTop + s * 0.58, color, 1.4);
+      return;
+    }
+    if (kind === "growth") {
+      this.rect(x + s * 0.18, yTop + s * 0.58, s * 0.14, s * 0.24, color);
+      this.rect(x + s * 0.43, yTop + s * 0.4, s * 0.14, s * 0.42, color);
+      this.rect(x + s * 0.68, yTop + s * 0.24, s * 0.14, s * 0.58, color);
+      return;
+    }
+    if (kind === "next" || kind === "launch") {
+      this.line(x + s * 0.2, yTop + s * 0.62, x + s * 0.76, yTop + s * 0.28, color, 1.7);
+      this.line(x + s * 0.76, yTop + s * 0.28, x + s * 0.7, yTop + s * 0.55, color, 1.7);
+      this.line(x + s * 0.76, yTop + s * 0.28, x + s * 0.48, yTop + s * 0.22, color, 1.7);
+      return;
+    }
+    if (kind === "domain") {
+      this.rect(x + s * 0.18, yTop + s * 0.2, s * 0.64, s * 0.6, "", color);
+      this.line(x + s * 0.18, yTop + s * 0.5, x + s * 0.82, yTop + s * 0.5, color, 1);
+      this.line(x + s * 0.5, yTop + s * 0.2, x + s * 0.5, yTop + s * 0.8, color, 1);
+      return;
+    }
+    if (kind === "care") {
+      this.rect(x + s * 0.25, yTop + s * 0.2, s * 0.5, s * 0.56, "", color);
+      this.line(x + s * 0.35, yTop + s * 0.52, x + s * 0.48, yTop + s * 0.64, color, 1.5);
+      this.line(x + s * 0.48, yTop + s * 0.64, x + s * 0.68, yTop + s * 0.38, color, 1.5);
+      return;
+    }
+    this.rect(x + s * 0.18, yTop + s * 0.28, s * 0.64, s * 0.48, "", color);
+    this.line(x + s * 0.18, yTop + s * 0.42, x + s * 0.82, yTop + s * 0.42, color, 1);
+  }
+
+  private iconBadge(kind: PdfGuideIcon, x: number, yTop: number, size = 24, fill = "eef2ff", color = "4f46e5") {
+    this.rect(x, yTop, size, size, fill);
+    this.icon(kind, x + 4, yTop + 4, size - 8, color);
+  }
+
   private text(value: string, x: number, yTop: number, size: number, font: "regular" | "bold" = "regular", color = "334155") {
     const y = this.height - yTop;
     const fontRef = font === "bold" ? "F2" : "F1";
@@ -546,10 +624,12 @@ class SelectablePdfGuide {
     return lines.length * (size + 4);
   }
 
-  startSection(eyebrow: string, title: string) {
+  startSection(eyebrow: string, title: string, icon: PdfGuideIcon = "package") {
     if (this.pages.length > 1 || this.y > 120) this.newPage();
     this.text(eyebrow.toUpperCase(), this.margin, this.y, 9, "bold", "4f46e5");
-    this.y += 22;
+    this.rect(this.margin, this.y + 12, 88, 4, "4f46e5");
+    this.iconBadge(icon, this.width - this.margin - 30, this.y - 4, 30);
+    this.y += 34;
     this.wrap(title, 500, 28, true).forEach((line) => {
       this.text(line, this.margin, this.y, 28, "bold", "020617");
       this.y += 34;
@@ -589,17 +669,18 @@ class SelectablePdfGuide {
     this.y += 8;
   }
 
-  valueCards(items: Array<[string, string]>) {
+  valueCards(items: Array<[string, string, PdfGuideIcon?]>) {
     const gap = 10;
     const cardWidth = (this.width - this.margin * 2 - gap * (items.length - 1)) / items.length;
-    this.ensure(82);
-    items.forEach(([label, value], index) => {
+    this.ensure(88);
+    items.forEach(([label, value, icon = "package"], index) => {
       const x = this.margin + index * (cardWidth + gap);
-      this.rect(x, this.y, cardWidth, 66, "f8fafc", "e2e8f0");
-      this.text(label.toUpperCase(), x + 12, this.y + 20, 8, "bold", "64748b");
-      this.text(value, x + 12, this.y + 47, 19, "bold", value.startsWith("-") ? "047857" : "020617");
+      this.rect(x, this.y, cardWidth, 72, "f8fafc", "e2e8f0");
+      this.iconBadge(icon, x + 12, this.y + 13, 22, "eef2ff", value.startsWith("-") ? "047857" : "4f46e5");
+      this.text(label.toUpperCase(), x + 42, this.y + 22, 7.4, "bold", "64748b");
+      this.text(value, x + 12, this.y + 56, 18, "bold", value.startsWith("-") ? "047857" : "020617");
     });
-    this.y += 82;
+    this.y += 88;
   }
 
   checks(items: string[]) {
@@ -612,7 +693,8 @@ class SelectablePdfGuide {
         if (!item) return;
         const x = this.margin + offset * (width + gap);
         this.rect(x, this.y, width, 38, "eff6ff", "dbeafe");
-        this.text(item, x + 10, this.y + 23, 10, "bold", "1e3a8a");
+        this.iconBadge("check", x + 10, this.y + 9, 20, "dbeafe", "1e40af");
+        this.text(item, x + 38, this.y + 23, 10, "bold", "1e3a8a");
       });
       this.y += 48;
     }
@@ -650,16 +732,32 @@ class SelectablePdfGuide {
     this.y += height + 10;
   }
 
-  offer(title: string, price: string, body: string) {
-    const bodyLines = this.wrap(body, 475, 10);
-    const height = Math.max(86, bodyLines.length * 14 + 54);
-    this.ensure(height + 10);
-    this.rect(this.margin, this.y, this.width - this.margin * 2, height, "ffffff", "e2e8f0");
-    this.text(title, this.margin + 14, this.y + 22, 13, "bold", "020617");
-    this.rect(this.margin + 14, this.y + 32, this.textWidth(price, 9, true) + 18, 18, "eef2ff");
-    this.text(price, this.margin + 23, this.y + 45, 9, "bold", "4338ca");
-    bodyLines.forEach((line, index) => this.text(line, this.margin + 14, this.y + 66 + index * 14, 10, "regular", "475569"));
-    this.y += height + 10;
+  offerCards(items: Array<{ title: string; price: string; body: string; icon?: PdfGuideIcon }>) {
+    const gap = 12;
+    const width = (this.width - this.margin * 2 - gap) / 2;
+    for (let index = 0; index < items.length; index += 2) {
+      const row = items.slice(index, index + 2);
+      const prepared = row.map((item) => ({
+        ...item,
+        titleLines: this.wrap(item.title, width - 42, 12, true),
+        bodyLines: this.wrap(item.body, width - 26, 9),
+      }));
+      const rowHeight = Math.max(...prepared.map((item) => Math.max(100, item.titleLines.length * 15 + item.bodyLines.length * 13 + 52)));
+      this.ensure(rowHeight + 12);
+      prepared.forEach((item, offset) => {
+        const x = this.margin + offset * (width + gap);
+        this.rect(x, this.y, width, rowHeight, "ffffff", "e2e8f0");
+        this.rect(x, this.y, 5, rowHeight, "4f46e5");
+        this.iconBadge(item.icon || "growth", x + 14, this.y + 14, 24, "eef2ff", "4f46e5");
+        item.titleLines.forEach((line, lineIndex) => this.text(line, x + 38, this.y + 20 + lineIndex * 15, 12, "bold", "020617"));
+        const priceTop = this.y + 20 + item.titleLines.length * 15 + 3;
+        this.rect(x + 14, priceTop, this.textWidth(item.price, 8, true) + 18, 17, "eef2ff");
+        this.text(item.price, x + 23, priceTop + 12, 8, "bold", "4338ca");
+        const bodyTop = priceTop + 30;
+        item.bodyLines.forEach((line, lineIndex) => this.text(line, x + 14, bodyTop + lineIndex * 13, 9, "regular", "475569"));
+      });
+      this.y += rowHeight + 12;
+    }
   }
 
   note(value: string) {
@@ -671,14 +769,14 @@ class SelectablePdfGuide {
     this.y += height + 10;
   }
 
-  callout(value: string, linkLabel: string, url: string) {
+  callout(value: string, url: string) {
     const lines = this.wrap(value, 470, 10);
-    const height = lines.length * 14 + 48;
+    const height = lines.length * 14 + 34;
     this.ensure(height + 10);
     this.rect(this.margin, this.y, this.width - this.margin * 2, height, "111827");
     this.text("Reply path", this.margin + 14, this.y + 21, 12, "bold", "ffffff");
     lines.forEach((line, index) => this.text(line, this.margin + 14, this.y + 39 + index * 14, 10, "regular", "ffffff"));
-    this.linkText(linkLabel, this.margin + 14, this.y + height - 16, 10, url, 440, "bfdbfe");
+    this.page.links.push({ rect: [this.margin, this.height - this.y - height, this.width - this.margin, this.height - this.y], url });
     this.y += height + 10;
   }
 
@@ -758,6 +856,7 @@ function pdfTextPagesToBlob(pages: PdfGuidePage[], width: number, height: number
 
 function ownerPackageGuidePdf(siteData: any, businessId: string) {
   const data = ownerPackageGuideData(siteData, businessId);
+  const setupMailto = `mailto:${data.contactEmail}?subject=${encodeURIComponent(`Website setup for ${data.businessName}`)}&body=${encodeURIComponent(`Business: ${data.businessName}\nReference: ${data.businessId}\nPreview: ${data.downloadPageUrl || ""}\n\nI want help launching this website.`)}`;
   const contactRows = [
     data.phone ? ["Phone", data.phone] : null,
     data.email ? ["Email", data.email] : null,
@@ -775,42 +874,48 @@ function ownerPackageGuidePdf(siteData: any, businessId: string) {
       title: "Launch it for me",
       price: "$180-$197/year",
       body: "Your website goes live without you touching hosting, DNS, upload, or SSL settings. Good if you want the site online without learning the technical parts.",
+      icon: "launch" as PdfGuideIcon,
     },
     {
       title: "Add more pages",
       price: "From $50/page",
       body: "Useful when customers need more details before calling, such as separate service pages, menu pages, product pages, FAQ pages, or local area pages.",
+      icon: "page" as PdfGuideIcon,
     },
     {
       title: "Sticky call or WhatsApp button",
       price: "$49 one-time",
       body: "Customers can reach you from any page. WhatsApp messages can include the page they clicked from, so you know what they were interested in.",
+      icon: "chat" as PdfGuideIcon,
     },
     {
       title: "Extra focused site",
       price: "From $197/year",
       body: "Useful if you have another location, another business, or a separate service line that deserves its own website.",
+      icon: "site" as PdfGuideIcon,
     },
     {
       title: "Lead capture polish",
       price: "$99 one-time",
       body: "Make it easier for visitors to call, email, request a quote, or send a message without hunting around the site.",
+      icon: "mail" as PdfGuideIcon,
     },
     {
       title: "Monthly care",
       price: "From $49/month",
       body: "Useful if you want small text changes, new announcements, seasonal offers, or page updates handled for you.",
+      icon: "care" as PdfGuideIcon,
     },
   ];
 
   const pdf = new SelectablePdfGuide(data);
-  pdf.startSection("Free portfolio sample", `Your starter website package is ready for ${data.businessName}`);
+  pdf.startSection("Free portfolio sample", `Your starter website package is ready for ${data.businessName}`, "download");
   pdf.paragraph("This package contains a ready-to-use static website prepared for your business. You can keep the files, host them anywhere, or ask WebView.click to launch it for you.");
-  pdf.valueCards([["Starter site value", "$997"], ["Portfolio credit", "-$997"], ["Your download today", "$0"]]);
+  pdf.valueCards([["Starter site value", "$997", "site"], ["Portfolio credit", "-$997", "check"], ["Your download today", "$0", "download"]]);
   pdf.checks(["No payment required to download the files.", "You can host it with any provider.", "Setup help is optional.", "The site is personalized for your business."]);
   pdf.keyValueRows([["Business", data.businessName], ["Reference", data.businessId], ["Preview page", data.downloadPageUrl || "Not available", data.downloadPageUrl]]);
 
-  pdf.startSection("Package contents", "What you received");
+  pdf.startSection("Package contents", "What you received", "package");
   pdf.paragraph("Keep these files together when you upload the website. The images folder must stay beside the HTML file so photos keep working.");
   pdf.subheading("Website files");
   pdf.bullets(["index.html", "sitemap.xml", "robots.txt", "img/ folder", "This clickable PDF guide"]);
@@ -822,7 +927,7 @@ function ownerPackageGuidePdf(siteData: any, businessId: string) {
   pdf.subheading("Services or offers");
   pdf.bullets(data.offerings.length ? data.offerings : ["Review your services before launch."]);
 
-  pdf.startSection("Self setup checklist", "How to put it online yourself");
+  pdf.startSection("Self setup checklist", "How to put it online yourself", "setup");
   pdf.paragraph("You can launch this yourself if you are comfortable with domain, hosting, upload, and SSL settings. If this feels annoying, WebView.click can handle it for you.");
   [
     ["Choose a domain", "Use a domain you already own, or buy a new one from a registrar."],
@@ -834,24 +939,24 @@ function ownerPackageGuidePdf(siteData: any, businessId: string) {
   ].forEach(([title, body], index) => pdf.numberedStep(index + 1, title, body));
   pdf.note("The website is static. Future changes usually mean editing the file and uploading it again, unless WebView.click hosts and maintains it for you.");
 
-  pdf.startSection("Done-for-you setup", "Want us to launch it for you?");
+  pdf.startSection("Done-for-you setup", "Want us to launch it for you?", "domain");
   pdf.paragraph("This is the easiest next step if you want the website live without touching hosting, DNS, file upload, or SSL settings.");
-  pdf.valueCards([["Already own the domain", "$180/year"], ["Need us to register it", "$197/year"]]);
+  pdf.valueCards([["Already own the domain", "$180/year", "domain"], ["Need us to register it", "$197/year", "launch"]]);
   pdf.keyValueRows([["Included", "Managed hosting setup"], ["Included", "Website upload"], ["Included", "Domain/DNS connection help"], ["Included", "SSL and launch check"]]);
-  pdf.callout(`Email ${data.contactEmail} with your business name and preview link. Tell us whether you already own a domain or want a new one.`, data.contactEmail, `mailto:${data.contactEmail}?subject=${encodeURIComponent(`Website setup for ${data.businessName}`)}&body=${encodeURIComponent(`Business: ${data.businessName}\nPreview: ${data.downloadPageUrl || ""}\n\nI want help launching this website.`)}`);
+  pdf.callout(`Email ${data.contactEmail} with your business name and preview link. Tell us whether you already own a domain or want a new one. This reply box opens a ready-to-send email.`, setupMailto);
 
-  pdf.startSection("Simple growth options", "Useful upgrades after launch");
+  pdf.startSection("Simple growth options", "Useful upgrades after launch", "growth");
   pdf.paragraph("These upgrades are practical: clearer contact paths, more useful pages, or another focused site when your business situation needs it.");
-  offers.forEach((offer) => pdf.offer(offer.title, offer.price, offer.body));
+  pdf.offerCards(offers);
 
-  pdf.startSection("Keep it simple", "Recommended next step");
+  pdf.startSection("Keep it simple", "Recommended next step", "next");
   pdf.paragraph("If you do not have a website yet, the best first move is usually to launch this site on a real domain. After it is live, add pages or buttons based on what customers actually ask for.");
   pdf.subheading("If you want to do it yourself");
   pdf.paragraph("Use the self-setup checklist in this PDF and keep all files from the zip together.");
   pdf.subheading("If you want it handled");
   pdf.paragraph("Contact WebView.click and we can launch the site for you with hosting, DNS help, upload, and SSL check.");
   pdf.keyValueRows([
-    ["Email", data.contactEmail, `mailto:${data.contactEmail}?subject=${encodeURIComponent(`Website setup for ${data.businessName}`)}`],
+    ["Email", data.contactEmail, setupMailto],
     ["Business", data.businessName],
     ["Reference", data.businessId],
     ["Preview", data.downloadPageUrl || "Not available", data.downloadPageUrl],
