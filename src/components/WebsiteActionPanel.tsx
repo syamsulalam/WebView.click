@@ -209,7 +209,13 @@ function ownerReviewStorageKey(businessId: string) {
 function ownerReviewParamActive() {
   if (typeof window === "undefined") return false;
   const params = new URLSearchParams(window.location.search);
-  return params.get("owner") === "1" || params.get("review") === "owner" || params.get("claim") === "1";
+  return params.get("owner") === "1" || params.get("review") === "owner" || params.get("claim") === "1" || params.get("ownerPreview") === "1" || params.get("reviewPreview") === "1";
+}
+
+function ownerReviewPreviewActive() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("ownerPreview") === "1" || params.get("reviewPreview") === "1";
 }
 
 function ownerReviewStartFromUrl() {
@@ -588,6 +594,7 @@ export default function WebsiteActionPanel({
   const ownerReviewEndsAt = ownerReviewStartedAt ? ownerReviewStartedAt + OWNER_REVIEW_WINDOW_MS : 0;
   const ownerReviewMsRemaining = ownerReviewEndsAt ? Math.max(0, ownerReviewEndsAt - reviewNow) : 0;
   const ownerReviewExpired = ownerReviewVisible && Boolean(ownerReviewStartedAt) && ownerReviewMsRemaining <= 0;
+  const ownerReviewPreviewMode = ownerReviewVisible && ownerReviewPreviewActive();
   const ownerReviewContactHref = restoreContactHref(siteData, effectiveBusinessId, ownerReviewStartedAt, ownerReviewEndsAt);
 
   const resetCheck = () => {
@@ -614,6 +621,7 @@ export default function WebsiteActionPanel({
       return;
     }
     const active = ownerReviewParamActive();
+    const previewOnly = ownerReviewPreviewActive();
     setOwnerReviewVisible(active);
     if (!active) {
       setOwnerReviewStartedAt(null);
@@ -622,7 +630,7 @@ export default function WebsiteActionPanel({
 
     const urlStartedAt = ownerReviewStartFromUrl();
     let storedStartedAt = 0;
-    if (!urlStartedAt) {
+    if (!urlStartedAt && !previewOnly) {
       try {
         storedStartedAt = Number(window.localStorage.getItem(ownerReviewStorageKey(effectiveBusinessId)) || 0);
       } catch {
@@ -630,12 +638,14 @@ export default function WebsiteActionPanel({
       }
     }
     const startedAt = urlStartedAt || (Number.isFinite(storedStartedAt) && storedStartedAt > 0 ? storedStartedAt : Date.now());
-    try {
-      window.localStorage.setItem(ownerReviewStorageKey(effectiveBusinessId), String(startedAt));
-    } catch {
-      // The countdown can still work for the current visit if storage is unavailable.
+    if (!previewOnly) {
+      try {
+        window.localStorage.setItem(ownerReviewStorageKey(effectiveBusinessId), String(startedAt));
+      } catch {
+        // The countdown can still work for the current visit if storage is unavailable.
+      }
     }
-    if (!urlStartedAt) {
+    if (!urlStartedAt && !previewOnly) {
       const url = new URL(window.location.href);
       url.searchParams.set("reviewStart", String(startedAt));
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
@@ -990,7 +1000,7 @@ export default function WebsiteActionPanel({
                 >
                   <span>
                     <span className="flex items-center gap-1.5 font-semibold text-slate-950">
-                      Claim free site package
+                      Download your site for FREE
                       <InfoTooltip text="You receive the static site files. You can upload them to your own hosting provider, point your own domain, or ask WebView.click to launch it for you." />
                     </span>
                     <span className="block text-xs text-slate-500">$997 starter value. Download files and host anywhere.</span>
@@ -1028,8 +1038,13 @@ export default function WebsiteActionPanel({
             <div className="flex items-start gap-2">
               <Clock className="mt-0.5 shrink-0 text-amber-700" size={17} />
               <div className="min-w-0">
-                <p className="text-sm font-semibold leading-5 text-amber-950">
-                  Review window: {formatReviewTime(ownerReviewMsRemaining)} left
+                <p className="flex flex-wrap items-center gap-2 text-sm font-semibold leading-5 text-amber-950">
+                  <span>Review window: {formatReviewTime(ownerReviewMsRemaining)} left</span>
+                  {ownerReviewPreviewMode && (
+                    <span className="rounded-full border border-amber-300 bg-white/80 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                      Preview mode
+                    </span>
+                  )}
                 </p>
                 <p className="mt-0.5 text-xs leading-5 text-amber-800">
                   This preview may be archived after {reviewDateLabel(ownerReviewEndsAt)}. Download now to keep the files.
@@ -1106,7 +1121,15 @@ export default function WebsiteActionPanel({
                 {ownerReviewVisible && ownerReviewStartedAt && !ownerReviewExpired && (
                   <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-900">
                     <Clock className="mt-0.5 shrink-0" size={15} />
-                    <span>Free review window: {formatReviewTime(ownerReviewMsRemaining)} left. Download now so you have a copy if this preview link is archived later.</span>
+                    <span>
+                      <span className="font-semibold">Free review window: {formatReviewTime(ownerReviewMsRemaining)} left.</span>
+                      {ownerReviewPreviewMode && (
+                        <span className="ml-2 inline-flex rounded-full border border-amber-300 bg-white/80 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                          Preview mode
+                        </span>
+                      )}
+                      <span> Download now so you have a copy if this preview link is archived later.</span>
+                    </span>
                   </div>
                 )}
               </div>

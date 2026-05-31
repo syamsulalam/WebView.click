@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, ChevronDown, Copy, Database, Download, FileText, Globe2, Image as ImageIcon, ListChecks, Mail, MapPin, MessageCircle, Play, RefreshCw, RotateCw, Search, Send, Shuffle, Sparkles, Wrench, X } from "lucide-react";
+import { Brain, ChevronDown, Copy, Database, Download, Eye, FileText, Globe2, Image as ImageIcon, Link2, ListChecks, Mail, MapPin, MessageCircle, Play, RefreshCw, RotateCw, Search, Send, Shuffle, Sparkles, Wrench, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { readApiJson } from "../../lib/apiResponse";
@@ -848,6 +848,23 @@ export default function AdminSites() {
     return url.toString();
   };
 
+  const ownerCountdownPreviewLinkForSite = (site: SiteRow) => {
+    let url: URL;
+    try {
+      url = new URL(site.previewUrl || `/${site.businessId}`, window.location.origin);
+    } catch {
+      url = new URL(`/${site.businessId}`, window.location.origin);
+    }
+    url.searchParams.delete("owner");
+    url.searchParams.delete("review");
+    url.searchParams.delete("claim");
+    url.searchParams.delete("reviewStartedAt");
+    url.searchParams.delete("claimStart");
+    url.searchParams.set("ownerPreview", "1");
+    url.searchParams.set("reviewStart", String(Date.now()));
+    return url.toString();
+  };
+
   const firstOutreachMessageForSite = (site: SiteRow) => {
     const link = ownerReviewLinkForSite(site);
     return [
@@ -860,6 +877,8 @@ export default function AdminSites() {
       "Estimated starter site value: $997",
       "Portfolio sample credit: -$997",
       "Your download today: $0",
+      "",
+      "CTA on the preview: Download your site for FREE",
       "",
       "You can host the files anywhere, or WebView.click can launch it for you with hosting, domain/DNS, SSL, upload, and setup.",
       "",
@@ -908,7 +927,7 @@ export default function AdminSites() {
   const outreachSubjectForSite = (site: SiteRow) => (
     shouldUseSetupOutreachForSite(site)
       ? `Website setup for ${site.businessName}`
-      : `I made a starter website for ${site.businessName}`
+      : `Download your site for FREE - ${site.businessName}`
   );
 
   const outreachTemplateLabelForSite = (site: SiteRow) => (
@@ -920,6 +939,8 @@ export default function AdminSites() {
       ? "Uses a warm follow-up for owners who downloaded the free package but have not bought setup."
       : "Uses the owner review link with a 7-day countdown."
   );
+
+  const outreachPreviewForSite = (site: SiteRow) => outreachMessageForSite(site);
 
   const contactInfoFromSiteJson = (siteJson: any) => {
     const contact = siteJson?.businessProfile?.contact || {};
@@ -2100,6 +2121,17 @@ export default function AdminSites() {
                           <X size={14} />
                         </button>
                       </div>
+                      <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Template preview</p>
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+                            {shouldUseSetupOutreachForSite(site) ? "Setup follow-up" : "First outreach"}
+                          </span>
+                        </div>
+                        <div className="max-h-44 overflow-y-auto whitespace-pre-wrap rounded-lg bg-white p-2 text-[11px] leading-4 text-gray-700">
+                          {outreachPreviewForSite(site)}
+                        </div>
+                      </div>
                       <div className="grid gap-2">
                         <button
                           type="button"
@@ -2114,8 +2146,22 @@ export default function AdminSites() {
                           onClick={() => handleCopyOwnerReviewLink(site)}
                           className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50"
                         >
-                          <Globe2 size={14} />
-                          Copy owner review link only
+                          <Link2 size={14} />
+                          <span className="inline-flex items-center gap-1.5">
+                            Copy owner review link only
+                            <HelpTooltip text="Copies the real owner review URL with owner=1. The 7-day countdown starts when the business owner opens that link, not when you copy it." />
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => window.open(ownerCountdownPreviewLinkForSite(site), "_blank", "noopener,noreferrer")}
+                          className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                        >
+                          <Eye size={14} />
+                          <span className="inline-flex items-center gap-1.5">
+                            Preview 7-day countdown safely
+                            <HelpTooltip text="Opens the owner countdown with ownerPreview=1 so you can inspect the 7-day UI without writing localStorage, changing the outreach URL, or starting the real owner timer." />
+                          </span>
                         </button>
                         <button
                           type="button"

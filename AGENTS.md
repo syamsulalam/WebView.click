@@ -36,6 +36,7 @@
 - Do not run `npm run dev`, `npm run preview`, `npm run start`, or other commands that start a local HTTP server unless the user explicitly asks to override this rule.
 - The user intends to test changes directly in production at https://webview.click.
 - Do not run `npm run lint` for this repo anymore. The workspace intentionally may not have local TypeScript dependencies installed, and the user wants to avoid dependency/storage churn. Prefer lightweight checks such as `git diff --check`, JSON parsing, and targeted static inspection.
+- Keep token use lean during routine changes: use small targeted file reads, avoid dumping long diffs unless needed for diagnosis, skip unnecessary explanation, and keep progress/final notes short unless deeper reasoning is required.
 
 ## Session Summary Rule
 - Do not update `SESSION_SUMMARY.md` during normal task iteration, review/fix cycles, follow-up revisions, or because a single implementation step appears complete.
