@@ -1,6 +1,6 @@
 # WebView.click Codebase Reference
 
-Terakhir diperbarui: 29 Mei 2026.
+Terakhir diperbarui: 31 Mei 2026.
 
 Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
 
@@ -352,6 +352,7 @@ Logic penting:
 - `onDownloadZip(siteData)` menerima site data aktif dari panel; ini menjaga public preview `/:businessId` mengekspor palette/font yang sedang dipilih di renderer, bukan JSON awal dari fetch.
 - Free download modal derives buyer-facing feature/page summaries from current `siteData`: About page, review flow, Google Maps, hours, FAQ/service details, individual service pages, gallery, contact form, SEO starter files, and page links using `/:businessId#pageId` anchors. It also adds virtual standard pages like about/services/gallery/contact/feedback when the renderer can provide them from available business data.
 - The buyer-facing `Download my $0 website package` action fires a non-blocking `POST /api/sites/:businessId/downloaded` ping with `source=website_action_panel`, then runs `onDownloadZip(siteData)`. The ping updates lead `download_count`/`last_downloaded_at` and inserts a `site_downloaded` CRM activity when a lead exists; export output is unchanged.
+- While `onDownloadZip(siteData)` runs, the modal button changes to `Preparing PDF guide...`, disables repeat clicks/close, and shows a small `download-progress-toast` explaining that the branded PDF guide and website files are being packaged. This matters because owner PDF rendering can take a few seconds on slower devices.
 - Owner review links can use `?owner=1`, `?review=owner`, or `?claim=1` on `/:businessId`. On public previews only, that starts/reads a 7-day review window from `localStorage` key `webview.ownerReviewStartedAt.{businessId}` and shows a compact countdown beside `Download / Setup`; optional URL params `reviewStart`, `reviewStartedAt`, or `claimStart` can seed a fixed timestamp. If no timestamp is present, the owner-param URL is updated in-place with `reviewStart={timestamp}` so the active review link is self-describing. After the window, the owner-param view is covered by an archived-preview overlay with a prefilled `mailto:email@codev.id` restore link containing business name, ID, preview URL, started timestamp, ended timestamp, listed phone, and listed address. Normal preview URLs without owner params stay unaffected for admin/internal use.
 
 Risiko debug:
@@ -728,7 +729,7 @@ Risiko debug:
 - Jika `/demo` blank, cek apakah `resolveJsonModule` aktif di `tsconfig.json`.
 - Jika section baru tidak muncul sesuai harapan, update `SiteRenderer`.
 - Tombol floating demo:
-  - Download Free membuat zip owner via `downloadOwnerSiteZip`; zip sekarang berisi `index.html`, `sitemap.xml`, `robots.txt`, `README-FIRST.txt`, `SETUP-GUIDE.txt`, dan folder `img/`.
+  - Download Free membuat zip owner via `downloadOwnerSiteZip`; zip sekarang berisi `index.html`, `sitemap.xml`, `robots.txt`, branded PDF owner guide, dan folder `img/`.
   - Paket `$197 Domain + Hosting` memanggil `POST /api/payments/checkout`.
   - Jika payment processor aktif belum dikonfigurasi, endpoint mencatat mock checkout dan membuka link WhatsApp admin.
 - Demo memiliki selector style preset dan shader preset dari `src/lib/siteStylePresets.ts` agar visual layer bisa diuji tanpa edit JSON.
@@ -1094,13 +1095,13 @@ Logic Generation Jobs:
 - `/admin/jobs` menambahkan sort lokal `Newest`, `Failed first`, `Fallback first`, `Patch applied first`, `No AI rewrite first`, dan `Low service copy first`; quick drawer `/admin/leads` memakai sort yang sama.
 
 Logic Owner HTML Export:
-- `src/lib/exportSiteHtml.ts` membuat zip owner berisi hanya `index.html`.
+- `src/lib/exportSiteHtml.ts` membuat zip owner berisi `index.html`, `sitemap.xml`, `robots.txt`, folder `img/`, dan branded PDF owner guide.
 - Export menghapus `<script>` internal, `.hide-in-export`, `[data-export-remove="true"]`, dan semua `[data-wv-tool-ui]` seperti download/setup panel, free-package modal, checkout modal, inspector, icon picker, tooltip WebView.click, dan style QA boundary demo.
 - Export tidak menyertakan `site-data.json` karena JSON internal hanya untuk generator WebView.click.
 - Export menyertakan inline script owner untuk tab navigation, section-anchor fallback seperti `#contact`, fixed overlay submenu hover/positioning, compact-on-scroll header, contact/feedback `mailto:`, feedback rating redirect/form behavior, dan shader pointer CSS variables (`--wv-pointer-x`, `--wv-pointer-y`) agar shader procedural tetap responsif di file HTML statis.
 - Export mengambil gambar yang sedang tampil di DOM, menyimpannya ke folder `/img` di dalam zip, lalu mengubah `<img src>` menjadi path relatif seperti `img/{businessId}-hero.jpg`. Ini termasuk foto Google Business Profile yang sedang diproxy via WebView.click saat tombol download diklik, sehingga HTML owner tidak perlu hotlink ke Google atau Function WebView.click untuk gambar.
-- Export menambahkan `README-FIRST.txt` sebagai ringkasan done-for-you setup/hosting/domain offer, lalu `SETUP-GUIDE.txt` sebagai panduan teknis self-hosting domain/hosting/DNS/upload/SSL/maintenance.
-- Kedua file `.txt` tersebut menyertakan URL preview/download asli (`window.location.href`) supaya owner bisa kembali ke halaman tempat zip dibuat.
+- Export membuat PDF `WebView.click Website Package Guide - {business}.pdf` saat download. PDF dibuat dari A4 HTML tersembunyi, dirender per halaman memakai `html-to-image` `toJpeg`, lalu dibungkus menjadi PDF multi-page oleh helper ringan di `exportSiteHtml.ts` tanpa dependency PDF tambahan.
+- PDF owner guide menggantikan `README-FIRST.txt` dan `SETUP-GUIDE.txt`. Isinya noob-friendly: value summary `$997 -> $0`, isi zip, checklist self-hosting, done-for-you setup `$180/year` atau `$197/year` dengan domain, dan upgrade yang mudah dipahami seperti tambah halaman, sticky call/WhatsApp button, extra focused site, lead capture polish, dan monthly care. PDF menyertakan URL preview/download asli (`window.location.href`) dan email `email@codev.id`.
 - Export menambahkan Tailwind CSS/CDN hotlink, stylesheet production absolute, style tags renderer, favicon dari logo bisnis/fallback SVG, dan mengubah URL relatif non-gambar/link menjadi absolute URL.
 - Export menambahkan JS inline kecil untuk mengaktifkan tabbed navigation pada elemen `data-wv-tab` dan `data-wv-page` karena React handler tidak ikut dalam HTML statis.
 - Export JS juga mengaktifkan hover-persistent submenu dan contact form `mailto:` supaya HTML owner tetap interaktif tanpa React.

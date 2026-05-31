@@ -445,6 +445,8 @@ export default function WebsiteActionPanel({
 }: WebsiteActionPanelProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [downloadInfoOpen, setDownloadInfoOpen] = useState(false);
+  const [downloadPreparing, setDownloadPreparing] = useState(false);
+  const [downloadMessage, setDownloadMessage] = useState("");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [setupMode, setSetupMode] = useState<SetupMode>("base");
   const [setupStep, setSetupStep] = useState<SetupStep>("offer");
@@ -475,6 +477,23 @@ export default function WebsiteActionPanel({
   const downloadPages = useMemo(() => freeSitePages(siteData, siteData?.meta?.businessId || businessId), [siteData, businessId]);
   const downloadFeatures = useMemo(() => freeSiteFeatures(siteData), [siteData]);
   const effectiveBusinessId = String(siteData?.meta?.businessId || businessId || "website");
+  const handleOwnerPackageDownload = async () => {
+    if (!onDownloadZip || downloadPreparing) return;
+    setDownloadPreparing(true);
+    setDownloadMessage("Preparing PDF guide...");
+    try {
+      void recordOwnerDownload(effectiveBusinessId);
+      await onDownloadZip(siteData);
+      setDownloadMessage("Download is starting...");
+      setDownloadInfoOpen(false);
+      window.setTimeout(() => setDownloadMessage(""), 1800);
+    } catch (error) {
+      console.error(error);
+      setDownloadMessage("Download failed. Please try again.");
+    } finally {
+      setDownloadPreparing(false);
+    }
+  };
   const [ownerReviewVisible, setOwnerReviewVisible] = useState(false);
   const [ownerReviewStartedAt, setOwnerReviewStartedAt] = useState<number | null>(null);
   const [reviewNow, setReviewNow] = useState(() => Date.now());
@@ -820,6 +839,35 @@ export default function WebsiteActionPanel({
 
   return (
     <>
+      {downloadMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`hide-in-export fixed bottom-5 left-1/2 z-[300] flex w-[min(360px,calc(100vw-2rem))] -translate-x-1/2 items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-2xl ${
+            downloadMessage.includes("failed")
+              ? "border-red-200 bg-red-50 text-red-900"
+              : "border-slate-200 bg-white text-slate-900"
+          }`}
+          data-export-remove="true"
+          data-wv-tool-ui="download-progress-toast"
+        >
+          {downloadPreparing ? (
+            <Loader2 size={18} className="mt-0.5 shrink-0 animate-spin text-indigo-600" />
+          ) : downloadMessage.includes("failed") ? (
+            <X size={18} className="mt-0.5 shrink-0 text-red-600" />
+          ) : (
+            <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
+          )}
+          <div>
+            <p className="font-semibold">{downloadMessage}</p>
+            {downloadPreparing && (
+              <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                Rendering your branded PDF guide and packaging the website files.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
       {ownerReviewExpired && (
         <div className="hide-in-export fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" data-export-remove="true" data-wv-tool-ui="owner-review-archived">
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-2xl">
@@ -909,6 +957,7 @@ export default function WebsiteActionPanel({
                 <button
                   type="button"
                   onClick={() => {
+                    setDownloadMessage("");
                     setDownloadInfoOpen(true);
                     setPanelOpen(false);
                   }}
@@ -984,7 +1033,13 @@ export default function WebsiteActionPanel({
                 <p className="font-semibold text-slate-950">Your starter website package is ready</p>
                 <p className="text-xs text-slate-500">Review the included files, pages, and launch options.</p>
               </div>
-              <button type="button" onClick={() => setDownloadInfoOpen(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close download details">
+              <button
+                type="button"
+                onClick={() => setDownloadInfoOpen(false)}
+                disabled={downloadPreparing}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Close download details"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -1109,15 +1164,12 @@ export default function WebsiteActionPanel({
 
               <button
                 type="button"
-                onClick={async () => {
-                  void recordOwnerDownload(effectiveBusinessId);
-                  await onDownloadZip(siteData);
-                  setDownloadInfoOpen(false);
-                }}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white hover:bg-slate-800"
+                onClick={handleOwnerPackageDownload}
+                disabled={downloadPreparing}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-75"
               >
-                <Download size={18} />
-                Download my $0 website package
+                {downloadPreparing ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+                {downloadPreparing ? "Preparing PDF guide..." : "Download my $0 website package"}
               </button>
             </div>
           </div>

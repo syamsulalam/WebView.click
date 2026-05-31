@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
+import { toJpeg } from "html-to-image";
 
 function absoluteUrl(value: string) {
   if (!value || value.startsWith("#") || value.startsWith("mailto:") || value.startsWith("tel:") || value.startsWith("sms:")) {
@@ -353,203 +354,407 @@ function ownerInlineScript() {
 </script>`;
 }
 
-function ownerSetupGuide(siteData: any, businessId: string) {
-  const businessName = String(siteData?.meta?.businessName || siteData?.businessProfile?.name || "your business");
-  const filename = `${sanitizeFilePart(businessId, "website")}-website.zip`;
-  const downloadPageUrl = typeof window !== "undefined" ? window.location.href : "";
-  return `WEBSITE SETUP GUIDE FOR ${businessName.toUpperCase()}
-
-This zip contains a static website export for ${businessName}.
-
-Original preview/download page:
-${downloadPageUrl || "Not available in this export environment."}
-
-EASIER OPTION: DONE-FOR-YOU SETUP
-
-If you do not want to buy a domain, buy hosting, configure DNS, upload files, test SSL, and maintain the website yourself, we can handle the setup for you.
-
-Our setup service is free. You only pay the required third-party costs:
-
-- Domain: $17 / year
-- Hosting: $15 / month x 12 months = $180 / year
-- Total: $197 / year
-
-That includes domain purchase, hosting purchase, DNS setup, file upload, SSL check, and initial launch. If you prefer to manage everything yourself, follow the technical guide below.
-
-WHAT IS INSIDE THIS ZIP
-
-- index.html: the website page
-- sitemap.xml: basic search-engine sitemap for the exported website
-- robots.txt: basic crawler instruction file that points to sitemap.xml
-- img/: website images used by the page
-- SETUP-GUIDE.txt: this guide
-
-Keep index.html, sitemap.xml, robots.txt, and the img folder together. If you move index.html without the img folder, images may break.
-
-TECHNICAL SELF-HOSTING GUIDE
-
-1. Buy a domain
-
-Buy a domain from a registrar such as Cloudflare Registrar, Namecheap, GoDaddy, Porkbun, Dynadot, or Google/Squarespace Domains.
-
-Examples:
-- yourbusiness.com
-- yourbusiness.net
-- yourbusiness.co
-
-After buying the domain, keep access to the registrar account. You will need it for DNS or nameserver changes.
-
-2. Buy hosting
-
-You need static website hosting or normal shared hosting that can serve plain HTML files.
-
-Possible hosting types:
-- Static hosting: Cloudflare Pages, Netlify, Vercel, GitHub Pages
-- Shared hosting: cPanel hosting, Hostinger, Bluehost, SiteGround, Namecheap hosting
-- VPS/server hosting: only use this if you understand server maintenance
-
-For a simple static HTML website, static hosting is usually enough.
-
-3. Upload the website files
-
-Upload index.html, sitemap.xml, robots.txt, and the full img folder to the public web root of your hosting.
-
-Common public web root folders:
-- public_html
-- www
-- htdocs
-- /var/www/html
-
-The final structure should look like this:
-
-public_html/
-  index.html
-  sitemap.xml
-  robots.txt
-  img/
-    image-files-here.jpg
-
-Do not upload only the index.html file. The img folder must stay beside it.
-
-4. Connect the domain to hosting
-
-There are two common methods.
-
-METHOD A: Change nameservers
-
-Your hosting provider may give you nameservers like:
-
-- ns1.examplehost.com
-- ns2.examplehost.com
-
-Go to your domain registrar, find Nameservers, choose Custom Nameservers, and replace the current nameservers with the hosting provider nameservers.
-
-DNS propagation can take a few minutes to 48 hours.
-
-METHOD B: Keep registrar DNS and add records
-
-Your hosting provider may give you an IP address or CNAME target.
-
-Common DNS records:
-
-- A record:
-  Name: @
-  Value: hosting server IP address
-
-- CNAME record:
-  Name: www
-  Value: your root domain or hosting target
-
-If your hosting provider gives a special target such as cname.hostingprovider.com, follow their exact value.
-
-5. Enable SSL / HTTPS
-
-After DNS points to hosting, enable SSL in the hosting dashboard.
-
-Look for:
-- SSL
-- HTTPS
-- TLS
-- Free Let's Encrypt certificate
-- Cloudflare SSL/TLS
-
-Your website should load as:
-
-https://yourdomain.com
-
-If it only loads as http://, visitors may see browser warnings.
-
-6. Test the website
-
-Open your domain in a browser and check:
-
-- The homepage loads
-- Images load
-- Navigation tabs work
-- Phone links work
-- Email/contact links work
-- Mobile layout works
-
-Also test:
-
-https://yourdomain.com
-https://www.yourdomain.com
-
-7. Maintain the website
-
-This is a static export. Future edits require editing index.html and uploading it again.
-
-Maintenance checklist:
-- Renew domain every year
-- Renew hosting every month/year
-- Keep billing card active
-- Keep registrar and hosting login safe
-- Check SSL renewal
-- Re-upload files after content changes
-- Keep business phone, address, hours, and service text current
-
-If any of these steps feel too technical, use our done-for-you setup. The setup work is free; you only pay the third-party domain and hosting cost listed above.
-
-Export file: ${filename}
-`;
+function firstText(...values: any[]) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) return text;
+  }
+  return "";
 }
 
-function ownerReadmeFirst(siteData: any) {
-  const businessName = String(siteData?.meta?.businessName || siteData?.businessProfile?.name || "your business");
+function offeringNames(siteData: any) {
+  const raw = [
+    ...(Array.isArray(siteData?.products) ? siteData.products : []),
+    ...(Array.isArray(siteData?.services) ? siteData.services : []),
+    ...(Array.isArray(siteData?.offers) ? siteData.offers : []),
+    ...(Array.isArray(siteData?.capabilities) ? siteData.capabilities : []),
+  ];
+  const seen = new Set<string>();
+  return raw
+    .map((item: any) => firstText(item?.navLabel, item?.shortLabel, item?.title, item?.name, item?.label))
+    .filter((name: string) => {
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 8);
+}
+
+function pageNames(siteData: any) {
+  const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
+  return pages
+    .map((page: any) => firstText(page?.title, page?.label, page?.pageId))
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function ownerPackageGuideData(siteData: any, businessId: string) {
+  const businessProfile = siteData?.businessProfile || {};
+  const contact = businessProfile.contact || {};
+  const location = siteData?.location || {};
+  const sourceData = siteData?.sourceData || {};
+  const address = businessProfile.address || {};
+  const businessName = firstText(siteData?.meta?.businessName, businessProfile.name, businessId, "your business");
   const downloadPageUrl = typeof window !== "undefined" ? window.location.href : "";
-  return `README FIRST - WEBSITE SETUP FOR ${businessName.toUpperCase()}
+  const serviceAreas = normalizeStringList(
+    siteData?.locationServed ||
+      siteData?.locationsServed ||
+      location.servedAreas ||
+      location.serviceAreas ||
+      businessProfile.serviceAreas ||
+      sourceData.serviceAreas ||
+      sourceData.servedAreas ||
+      sourceData.locationServed,
+  );
+  const formattedAddress = firstText(location.formattedAddress, address.formatted, sourceData.formattedAddress);
+  const phone = firstText(contact.phoneInternational, contact.phoneNational, businessProfile.phone, sourceData.phone);
+  const email = firstText(contact.email, businessProfile.email, sourceData.email);
+  const category = firstText(businessProfile.category, sourceData.primaryTypeDisplayName, sourceData.primaryType, siteData?.meta?.industry);
+  const generatedAt = new Date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const safeName = sanitizeFilePart(businessName, "business");
 
-Your website files are included in this zip.
+  return {
+    businessName,
+    businessId,
+    category,
+    phone,
+    email,
+    formattedAddress,
+    serviceAreas,
+    offerings: offeringNames(siteData),
+    pages: pageNames(siteData),
+    downloadPageUrl,
+    generatedAt,
+    zipFilename: `${sanitizeFilePart(businessId, "website")}-website.zip`,
+    pdfFilename: `WebView.click Website Package Guide - ${safeName}.pdf`,
+    contactEmail: "email@codev.id",
+  };
+}
 
-Original preview/download page:
-${downloadPageUrl || "Not available in this export environment."}
+function listItems(items: string[], emptyText: string) {
+  const values = items.length ? items : [emptyText];
+  return values.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
 
-If you want to handle everything yourself, open SETUP-GUIDE.txt and follow the technical steps for buying a domain, buying hosting, connecting DNS, uploading files, enabling SSL, and maintaining the website.
+function ownerPackageGuideHtml(data: ReturnType<typeof ownerPackageGuideData>) {
+  const contactRows = [
+    data.phone ? ["Phone", data.phone] : null,
+    data.email ? ["Email", data.email] : null,
+    data.formattedAddress ? ["Address", data.formattedAddress] : null,
+    data.category ? ["Business type", data.category] : null,
+    data.serviceAreas.length ? ["Areas served", data.serviceAreas.slice(0, 8).join(", ")] : null,
+  ].filter(Boolean) as Array<[string, string]>;
+  const pageTotal = data.pages.length || 1;
+  const offerCards = [
+    {
+      title: "Launch it for me",
+      price: "$180-$197/year",
+      body: "We handle hosting, upload, DNS help, SSL check, and launch testing. If we register the domain, the $17/year domain fee is included in the $197/year total.",
+      delivery: "We can deliver this from the current static site package and our existing checkout/setup workflow.",
+    },
+    {
+      title: "Add more pages",
+      price: "From $50/action",
+      body: "Useful when you want pages for real services, products, areas, menus, FAQs, or seasonal offers.",
+      delivery: "We generate or edit pages from the saved site data, then QA the layout and contact buttons.",
+    },
+    {
+      title: "Sticky call or WhatsApp button",
+      price: "Simple upgrade",
+      body: "Add a floating call or WhatsApp button so mobile visitors can contact you from any page.",
+      delivery: "We code the button into the site. For WhatsApp, the message can include the page where the visitor clicked so you get context.",
+    },
+    {
+      title: "Extra focused site",
+      price: "Quoted by scope",
+      body: "Useful if you have another location, another business, or a separate service line that deserves its own website.",
+      delivery: "We generate a separate site with its own copy, pages, and domain plan so it has a clear business purpose.",
+    },
+    {
+      title: "Lead capture polish",
+      price: "Simple upgrade",
+      body: "Make it easier for visitors to call, email, request a quote, or send a message.",
+      delivery: "We improve the contact section, button text, mobile CTAs, and form/email handoff without a complex third-party integration.",
+    },
+    {
+      title: "Monthly care",
+      price: "Light retainer",
+      body: "Useful if you want small changes, new announcements, or content updates without editing files yourself.",
+      delivery: "We update the static site files and republish the site when you send approved changes.",
+    },
+  ];
+  const page = (title: string, eyebrow: string, body: string) => `
+    <section class="wv-guide-page">
+      <div class="wv-guide-topline">
+        <div>
+          <p class="wv-guide-brand">WebView.click</p>
+          <p class="wv-guide-mini">Website package guide</p>
+        </div>
+        <p class="wv-guide-date">${escapeHtml(data.generatedAt)}</p>
+      </div>
+      <p class="wv-guide-eyebrow">${escapeHtml(eyebrow)}</p>
+      <h1>${escapeHtml(title)}</h1>
+      ${body}
+      <footer>
+        <span>${escapeHtml(data.businessName)}</span>
+        <span>${escapeHtml(data.contactEmail)}</span>
+      </footer>
+    </section>`;
 
-The zip also includes sitemap.xml, robots.txt, basic LocalBusiness structured data in index.html, and local image files so the site is ready for a normal static hosting upload.
+  return `
+<div class="wv-guide-root">
+  <style>
+    .wv-guide-root { position: fixed; left: -12000px; top: 0; width: 794px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; color: #0f172a; background: #f8fafc; }
+    .wv-guide-page { box-sizing: border-box; position: relative; width: 794px; min-height: 1123px; padding: 56px; overflow: hidden; background: #fff; border: 1px solid #e2e8f0; }
+    .wv-guide-page + .wv-guide-page { margin-top: 18px; }
+    .wv-guide-page:before { content: ""; position: absolute; inset: 0 0 auto 0; height: 10px; background: #4f46e5; }
+    .wv-guide-topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+    .wv-guide-brand { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0; color: #111827; }
+    .wv-guide-mini, .wv-guide-date { margin: 4px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; color: #64748b; }
+    .wv-guide-eyebrow { margin: 56px 0 10px; font-size: 12px; font-weight: 800; text-transform: uppercase; color: #4f46e5; }
+    .wv-guide-page h1 { margin: 0; max-width: 660px; font-size: 42px; line-height: 1.08; letter-spacing: 0; color: #020617; }
+    .wv-guide-page h2 { margin: 0 0 10px; font-size: 20px; line-height: 1.25; color: #020617; }
+    .wv-guide-page h3 { margin: 0 0 8px; font-size: 16px; line-height: 1.25; color: #020617; }
+    .wv-guide-page p { margin: 0; font-size: 15px; line-height: 1.6; color: #475569; }
+    .wv-guide-lead { margin-top: 18px !important; max-width: 640px; font-size: 17px !important; color: #334155 !important; }
+    .wv-guide-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 28px; }
+    .wv-guide-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .wv-guide-card { border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; padding: 16px; }
+    .wv-guide-card.white { background: #fff; }
+    .wv-guide-card strong { display: block; font-size: 21px; color: #020617; }
+    .wv-guide-card span { display: block; margin-top: 5px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+    .wv-guide-table { margin-top: 26px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    .wv-guide-row { display: grid; grid-template-columns: 1fr auto; gap: 16px; padding: 13px 16px; border-top: 1px solid #e2e8f0; font-size: 14px; color: #334155; }
+    .wv-guide-row:first-child { border-top: 0; }
+    .wv-guide-row b { color: #020617; }
+    .wv-guide-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 24px; }
+    .wv-guide-check { border: 1px solid #dbeafe; border-radius: 8px; background: #eff6ff; padding: 12px; font-size: 13px; font-weight: 700; color: #1e3a8a; }
+    .wv-guide-list { margin: 18px 0 0; padding-left: 20px; }
+    .wv-guide-list li { margin: 7px 0; font-size: 14px; line-height: 1.45; color: #334155; }
+    .wv-guide-steps { display: grid; gap: 12px; margin-top: 24px; }
+    .wv-guide-step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; border: 1px solid #e2e8f0; border-radius: 8px; padding: 13px; }
+    .wv-guide-step-number { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 999px; background: #4f46e5; color: #fff; font-size: 13px; font-weight: 800; }
+    .wv-guide-offers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+    .wv-guide-offer { border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; background: #fff; }
+    .wv-guide-price { display: inline-flex; margin: 2px 0 8px; border-radius: 999px; background: #eef2ff; padding: 4px 9px; font-size: 12px; font-weight: 800; color: #4338ca; }
+    .wv-guide-delivery { margin-top: 8px !important; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 12px !important; color: #64748b !important; }
+    .wv-guide-note { margin-top: 24px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; padding: 14px; color: #92400e !important; }
+    .wv-guide-cta { margin-top: 28px; border-radius: 8px; background: #111827; padding: 18px; color: #fff !important; }
+    .wv-guide-cta p, .wv-guide-cta b { color: #fff !important; }
+    .wv-guide-muted { color: #64748b !important; }
+    .wv-guide-url { overflow-wrap: anywhere; font-size: 12px !important; color: #4338ca !important; }
+    .wv-guide-page footer { position: absolute; left: 56px; right: 56px; bottom: 34px; display: flex; justify-content: space-between; border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 11px; font-weight: 700; color: #94a3b8; }
+  </style>
+  ${page(
+    `Your starter website package is ready for ${data.businessName}`,
+    "Free portfolio sample",
+    `
+      <p class="wv-guide-lead">This package contains a ready-to-use static website prepared for your business. You can keep the files, host them anywhere, or ask WebView.click to launch it for you.</p>
+      <div class="wv-guide-grid">
+        <div class="wv-guide-card"><span>Starter site value</span><strong>$997</strong></div>
+        <div class="wv-guide-card"><span>Portfolio credit</span><strong>-$997</strong></div>
+        <div class="wv-guide-card"><span>Your download today</span><strong>$0</strong></div>
+      </div>
+      <div class="wv-guide-checks">
+        <div class="wv-guide-check">No payment required to download the files.</div>
+        <div class="wv-guide-check">You can host it with any provider.</div>
+        <div class="wv-guide-check">Setup help is optional.</div>
+        <div class="wv-guide-check">The site is personalized for your business.</div>
+      </div>
+      <div class="wv-guide-table">
+        <div class="wv-guide-row"><b>Business</b><span>${escapeHtml(data.businessName)}</span></div>
+        <div class="wv-guide-row"><b>Reference</b><span>${escapeHtml(data.businessId)}</span></div>
+        <div class="wv-guide-row"><b>Preview page</b><span class="wv-guide-url">${escapeHtml(data.downloadPageUrl || "Not available")}</span></div>
+      </div>
+    `,
+  )}
+  ${page(
+    "What you received",
+    "Package contents",
+    `
+      <p class="wv-guide-lead">Keep these files together when you upload the website. The images folder must stay beside the HTML file so photos keep working.</p>
+      <div class="wv-guide-grid two">
+        <div class="wv-guide-card white"><h2>Website files</h2><ul class="wv-guide-list"><li>index.html</li><li>sitemap.xml</li><li>robots.txt</li><li>img/ folder</li><li>This PDF guide</li></ul></div>
+        <div class="wv-guide-card white"><h2>Built-in basics</h2><ul class="wv-guide-list"><li>Mobile-friendly static page</li><li>Clickable phone and email links where available</li><li>Basic business search metadata</li><li>Local image files packaged into the zip</li><li>Navigation that works without React</li></ul></div>
+      </div>
+      <div class="wv-guide-table">
+        ${contactRows.length ? contactRows.map(([label, value]) => `<div class="wv-guide-row"><b>${escapeHtml(label)}</b><span>${escapeHtml(value)}</span></div>`).join("") : `<div class="wv-guide-row"><b>Business details</b><span>Review phone, email, address, and hours before launch.</span></div>`}
+        <div class="wv-guide-row"><b>Pages included</b><span>${pageTotal}</span></div>
+      </div>
+      <div class="wv-guide-grid two">
+        <div class="wv-guide-card white"><h2>Pages</h2><ul class="wv-guide-list">${listItems(data.pages, "Homepage")}</ul></div>
+        <div class="wv-guide-card white"><h2>Services or offers</h2><ul class="wv-guide-list">${listItems(data.offerings, "Review your services before launch")}</ul></div>
+      </div>
+    `,
+  )}
+  ${page(
+    "How to put it online yourself",
+    "Self setup checklist",
+    `
+      <p class="wv-guide-lead">You can launch this yourself if you are comfortable with domain, hosting, upload, and SSL settings. If this feels annoying, WebView.click can handle it for you.</p>
+      <div class="wv-guide-steps">
+        ${[
+          ["Choose a domain", "Use a domain you already own, or buy a new one from a registrar."],
+          ["Choose website hosting", "Use static hosting or normal shared hosting that can serve plain HTML files."],
+          ["Upload the files", "Upload index.html, sitemap.xml, robots.txt, and the full img folder together."],
+          ["Connect DNS", "Point your domain to the hosting provider using nameservers, A records, or CNAME records."],
+          ["Turn on HTTPS", "Enable SSL so the website opens with https:// and does not show browser warnings."],
+          ["Test the site", "Open it on desktop and phone. Check photos, menu links, phone links, email links, and contact forms."],
+        ].map((step, index) => `<div class="wv-guide-step"><div class="wv-guide-step-number">${index + 1}</div><div><h3>${escapeHtml(step[0])}</h3><p>${escapeHtml(step[1])}</p></div></div>`).join("")}
+      </div>
+      <p class="wv-guide-note">The website is static. Future changes usually mean editing the file and uploading it again, unless WebView.click hosts and maintains it for you.</p>
+    `,
+  )}
+  ${page(
+    "Want us to launch it for you?",
+    "Done-for-you setup",
+    `
+      <p class="wv-guide-lead">This is the easiest next step if you want the website live without touching hosting, DNS, file upload, or SSL settings.</p>
+      <div class="wv-guide-grid two">
+        <div class="wv-guide-card"><span>If you already own the domain</span><strong>$180/year</strong><p>Managed hosting, upload, DNS help, SSL check, and launch testing.</p></div>
+        <div class="wv-guide-card"><span>If we register the domain</span><strong>$197/year</strong><p>Includes the $17/year domain fee plus managed hosting and launch setup.</p></div>
+      </div>
+      <div class="wv-guide-table">
+        <div class="wv-guide-row"><b>We handle</b><span>Hosting setup</span></div>
+        <div class="wv-guide-row"><b>We handle</b><span>Website upload</span></div>
+        <div class="wv-guide-row"><b>We handle</b><span>Domain/DNS connection help</span></div>
+        <div class="wv-guide-row"><b>We handle</b><span>SSL and launch check</span></div>
+      </div>
+      <div class="wv-guide-cta">
+        <b>Reply path</b>
+        <p>Email ${escapeHtml(data.contactEmail)} with your business name and preview link. Tell us whether you already own a domain or want a new one.</p>
+      </div>
+    `,
+  )}
+  ${page(
+    "Useful upgrades after launch",
+    "Simple growth options",
+    `
+      <p class="wv-guide-lead">These upgrades are meant to be practical: clearer contact paths, more useful pages, or another focused site when your business situation needs it.</p>
+      <div class="wv-guide-offers">
+        ${offerCards.map((offer) => `
+          <div class="wv-guide-offer">
+            <h3>${escapeHtml(offer.title)}</h3>
+            <span class="wv-guide-price">${escapeHtml(offer.price)}</span>
+            <p>${escapeHtml(offer.body)}</p>
+            <p class="wv-guide-delivery">${escapeHtml(offer.delivery)}</p>
+          </div>
+        `).join("")}
+      </div>
+    `,
+  )}
+  ${page(
+    "Recommended next step",
+    "Keep it simple",
+    `
+      <p class="wv-guide-lead">If you do not have a website yet, the best first move is usually to launch this site on a real domain. After it is live, add pages or buttons based on what customers actually ask for.</p>
+      <div class="wv-guide-grid two">
+        <div class="wv-guide-card white"><h2>If you want to do it yourself</h2><p>Use the self-setup checklist in this PDF and keep all files from the zip together.</p></div>
+        <div class="wv-guide-card white"><h2>If you want it handled</h2><p>Contact WebView.click and we can launch the site for you with hosting, DNS help, upload, and SSL check.</p></div>
+      </div>
+      <div class="wv-guide-table">
+        <div class="wv-guide-row"><b>Email</b><span>${escapeHtml(data.contactEmail)}</span></div>
+        <div class="wv-guide-row"><b>Business</b><span>${escapeHtml(data.businessName)}</span></div>
+        <div class="wv-guide-row"><b>Reference</b><span>${escapeHtml(data.businessId)}</span></div>
+        <div class="wv-guide-row"><b>Preview</b><span class="wv-guide-url">${escapeHtml(data.downloadPageUrl || "Not available")}</span></div>
+      </div>
+      <p class="wv-guide-note">If this website is not useful, no reply is needed. If you want help launching or improving it, send the business name and preview link to ${escapeHtml(data.contactEmail)}.</p>
+    `,
+  )}
+</div>`;
+}
 
-If you do not want to deal with the technical setup, we can handle it for you.
+function dataUrlToBytes(dataUrl: string) {
+  const base64 = dataUrl.split(",")[1] || "";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
 
-DONE-FOR-YOU OPTION
+function concatBytes(chunks: Uint8Array[]) {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const output = new Uint8Array(total);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return output;
+}
 
-Our setup service is free. You only pay the required third-party costs:
+function pdfFromJpegs(jpegs: Uint8Array[]) {
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  const offsets: number[] = [0];
+  let offset = 0;
+  const append = (chunk: string | Uint8Array) => {
+    const bytes = typeof chunk === "string" ? encoder.encode(chunk) : chunk;
+    chunks.push(bytes);
+    offset += bytes.length;
+  };
+  const objectCount = 2 + jpegs.length * 3;
+  const pageRefs = jpegs.map((_, index) => `${3 + index * 3} 0 R`).join(" ");
+  const writeObject = (id: number, body: string) => {
+    offsets[id] = offset;
+    append(`${id} 0 obj\n${body}\nendobj\n`);
+  };
+  const writeStreamObject = (id: number, dictionary: string, bytes: Uint8Array) => {
+    offsets[id] = offset;
+    append(`${id} 0 obj\n<< ${dictionary} /Length ${bytes.length} >>\nstream\n`);
+    append(bytes);
+    append("\nendstream\nendobj\n");
+  };
 
-- Domain: $17 / year
-- Hosting: $15 / month x 12 months = $180 / year
-- Total: $197 / year
+  append("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  writeObject(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  writeObject(2, `<< /Type /Pages /Kids [${pageRefs}] /Count ${jpegs.length} >>`);
+  jpegs.forEach((jpeg, index) => {
+    const pageId = 3 + index * 3;
+    const contentId = pageId + 1;
+    const imageId = pageId + 2;
+    writeObject(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im${index + 1} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+    writeStreamObject(contentId, "", encoder.encode(`q\n595.28 0 0 841.89 0 0 cm\n/Im${index + 1} Do\nQ\n`));
+    writeStreamObject(imageId, `/Type /XObject /Subtype /Image /Width 794 /Height 1123 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`, jpeg);
+  });
+  const xrefOffset = offset;
+  append(`xref\n0 ${objectCount + 1}\n`);
+  append("0000000000 65535 f \n");
+  for (let id = 1; id <= objectCount; id += 1) {
+    append(`${String(offsets[id] || 0).padStart(10, "0")} 00000 n \n`);
+  }
+  append(`trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+  const pdfBytes = concatBytes(chunks);
+  const pdfBuffer = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength) as ArrayBuffer;
+  return new Blob([pdfBuffer], { type: "application/pdf" });
+}
 
-We handle:
-
-- Domain purchase
-- Hosting purchase
-- DNS setup
-- Website upload
-- SSL / HTTPS check
-- Initial launch
-
-For self-setup, start with SETUP-GUIDE.txt.
-For done-for-you setup, use the setup option from the website preview page where you downloaded this zip.
-`;
+async function ownerPackageGuidePdf(siteData: any, businessId: string) {
+  const data = ownerPackageGuideData(siteData, businessId);
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = ownerPackageGuideHtml(data);
+  const root = wrapper.firstElementChild as HTMLElement | null;
+  if (!root) throw new Error("Could not build owner PDF guide.");
+  document.body.appendChild(root);
+  try {
+    const pages = Array.from(root.querySelectorAll<HTMLElement>(".wv-guide-page"));
+    const jpegs: Uint8Array[] = [];
+    for (const page of pages) {
+      const jpegDataUrl = await toJpeg(page, {
+        width: 794,
+        height: 1123,
+        quality: 0.92,
+        pixelRatio: 1,
+        backgroundColor: "#ffffff",
+        cacheBust: true,
+      });
+      jpegs.push(dataUrlToBytes(jpegDataUrl));
+    }
+    return { filename: data.pdfFilename, blob: pdfFromJpegs(jpegs) };
+  } finally {
+    root.remove();
+  }
 }
 
 function exportBaseUrl(siteData: any) {
@@ -689,8 +894,8 @@ ${ownerInlineScript()}
   zip.file("index.html", html);
   zip.file("sitemap.xml", sitemapXml(siteData));
   zip.file("robots.txt", robotsTxt(siteData));
-  zip.file("README-FIRST.txt", ownerReadmeFirst(siteData));
-  zip.file("SETUP-GUIDE.txt", ownerSetupGuide(siteData, businessId));
+  const ownerGuide = await ownerPackageGuidePdf(siteData, businessId);
+  zip.file(ownerGuide.filename, ownerGuide.blob);
   const blob = await zip.generateAsync({ type: "blob" });
   saveAs(blob, `${businessId}-website.zip`);
 }
