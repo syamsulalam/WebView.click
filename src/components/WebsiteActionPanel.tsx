@@ -490,7 +490,9 @@ export default function WebsiteActionPanel({
     setDownloadPreparing(true);
     setDownloadMessage("Preparing PDF guide...");
     try {
-      void recordOwnerDownload(effectiveBusinessId);
+      if (ownerReviewParamActive() && !ownerReviewPreviewActive()) {
+        void recordOwnerDownload(effectiveBusinessId);
+      }
       await onDownloadZip(siteData);
       setDownloadMessage("Download is starting...");
       setDownloadInfoOpen(false);
@@ -595,6 +597,7 @@ export default function WebsiteActionPanel({
   const ownerReviewMsRemaining = ownerReviewEndsAt ? Math.max(0, ownerReviewEndsAt - reviewNow) : 0;
   const ownerReviewExpired = ownerReviewVisible && Boolean(ownerReviewStartedAt) && ownerReviewMsRemaining <= 0;
   const ownerReviewPreviewMode = ownerReviewVisible && ownerReviewPreviewActive();
+  const ownerReviewTrackingMode = ownerReviewVisible && !ownerReviewPreviewMode;
   const ownerReviewContactHref = restoreContactHref(siteData, effectiveBusinessId, ownerReviewStartedAt, ownerReviewEndsAt);
 
   const resetCheck = () => {
@@ -680,6 +683,7 @@ export default function WebsiteActionPanel({
             editedPages,
           },
           setupRequest,
+          ownerReviewSession: ownerReviewTrackingMode,
           billingPlan: {
             termYears,
             billingCadence,

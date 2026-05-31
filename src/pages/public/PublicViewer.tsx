@@ -5,6 +5,13 @@ import { downloadOwnerSiteZip } from "../../lib/exportSiteHtml";
 
 const siteFetchRetryDelays = [700, 1600, 3200];
 
+function ownerTrackingParamActive() {
+  const params = new URLSearchParams(window.location.search);
+  return (params.get("owner") === "1" || params.get("review") === "owner" || params.get("claim") === "1")
+    && params.get("ownerPreview") !== "1"
+    && params.get("reviewPreview") !== "1";
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -44,7 +51,9 @@ export default function PublicViewer() {
     setErrorMessage("");
     setSiteData(null);
 
-    fetch(`/api/leads/${encodeURIComponent(businessId)}/ping`, { method: "POST" }).catch(() => {});
+    if (ownerTrackingParamActive()) {
+      fetch(`/api/leads/${encodeURIComponent(businessId)}/ping?owner=1`, { method: "POST" }).catch(() => {});
+    }
 
     fetch(`/api/public-settings`)
       .then(r => r.json())

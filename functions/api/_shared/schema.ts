@@ -10,6 +10,8 @@ export const generateRequiredColumns: ColumnSpec[] = [
   { table: "leads", column: "address", definition: "TEXT" },
   { table: "leads", column: "status", definition: "TEXT DEFAULT 'scraped'" },
   { table: "leads", column: "view_count", definition: "INTEGER DEFAULT 0" },
+  { table: "leads", column: "owner_view_count", definition: "INTEGER DEFAULT 0" },
+  { table: "leads", column: "owner_last_viewed_at", definition: "DATETIME" },
   { table: "leads", column: "download_count", definition: "INTEGER DEFAULT 0" },
   { table: "leads", column: "last_downloaded_at", definition: "DATETIME" },
   { table: "leads", column: "setup_followup_contacted_at", definition: "DATETIME" },
@@ -111,7 +113,7 @@ export const prospectWebsiteCheckRequiredColumns: ColumnSpec[] = [
 
 export async function setupTables(db: D1Database) {
   const createStatements = [
-    "CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, business_id TEXT UNIQUE NOT NULL, business_name TEXT NOT NULL, niche TEXT, email TEXT, phone TEXT, gmb_url TEXT, website_url TEXT, rating REAL, reviews INTEGER, address TEXT, status TEXT DEFAULT 'scraped', view_count INTEGER DEFAULT 0, download_count INTEGER DEFAULT 0, last_viewed_at DATETIME, last_contacted DATETIME, last_downloaded_at DATETIME, setup_followup_contacted_at DATETIME, staff_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, business_id TEXT UNIQUE NOT NULL, business_name TEXT NOT NULL, niche TEXT, email TEXT, phone TEXT, gmb_url TEXT, website_url TEXT, rating REAL, reviews INTEGER, address TEXT, status TEXT DEFAULT 'scraped', view_count INTEGER DEFAULT 0, owner_view_count INTEGER DEFAULT 0, download_count INTEGER DEFAULT 0, last_viewed_at DATETIME, owner_last_viewed_at DATETIME, last_contacted DATETIME, last_downloaded_at DATETIME, setup_followup_contacted_at DATETIME, staff_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, package_type TEXT NOT NULL, amount_paid REAL DEFAULT 0.00, payment_status TEXT DEFAULT 'unpaid', payment_method TEXT, payment_reference TEXT, subscription_start_date DATETIME, subscription_end_date DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
     "CREATE TABLE IF NOT EXISTS lead_payments (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, business_id TEXT, processor TEXT, payment_status TEXT DEFAULT 'pending', amount_usd REAL DEFAULT 0, amount_idr INTEGER DEFAULT 0, transaction_id TEXT, payer_email TEXT, payment_reference TEXT, proof_notes TEXT, raw_json TEXT, verified_at DATETIME, verified_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
     "CREATE TABLE IF NOT EXISTS crm_activities (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, staff_id TEXT, activity_type TEXT NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
@@ -138,6 +140,8 @@ export async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "leads", "reviews", "INTEGER");
   await addColumnIfMissing(db, "leads", "address", "TEXT");
   await addColumnIfMissing(db, "leads", "view_count", "INTEGER DEFAULT 0");
+  await addColumnIfMissing(db, "leads", "owner_view_count", "INTEGER DEFAULT 0");
+  await addColumnIfMissing(db, "leads", "owner_last_viewed_at", "DATETIME");
   await addColumnIfMissing(db, "leads", "download_count", "INTEGER DEFAULT 0");
   await addColumnIfMissing(db, "leads", "last_viewed_at", "DATETIME");
   await addColumnIfMissing(db, "leads", "last_downloaded_at", "DATETIME");

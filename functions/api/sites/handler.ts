@@ -289,9 +289,11 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       { table: "leads", column: "status", definition: "TEXT DEFAULT 'scraped'" },
       { table: "leads", column: "last_contacted", definition: "DATETIME" },
       { table: "leads", column: "last_viewed_at", definition: "DATETIME" },
+      { table: "leads", column: "owner_last_viewed_at", definition: "DATETIME" },
       { table: "leads", column: "last_downloaded_at", definition: "DATETIME" },
       { table: "leads", column: "setup_followup_contacted_at", definition: "DATETIME" },
       { table: "leads", column: "view_count", definition: "INTEGER DEFAULT 0" },
+      { table: "leads", column: "owner_view_count", definition: "INTEGER DEFAULT 0" },
       { table: "leads", column: "download_count", definition: "INTEGER DEFAULT 0" },
       { table: "leads", column: "updated_at", definition: "DATETIME" },
       { table: "places_prospects", column: "status", definition: "TEXT DEFAULT 'new'" },
@@ -316,10 +318,17 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const rows = await db
       .prepare(
         `SELECT ${selectedColumns.map((column) => `s.${column}`).join(", ")},
-          (SELECT l.status FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_status,
+          (SELECT CASE
+             WHEN l.status = 'viewed' AND COALESCE(l.owner_view_count, 0) <= 0 THEN CASE WHEN l.last_contacted IS NOT NULL THEN 'contacted' ELSE 'scraped' END
+             WHEN l.status = 'checkout_pending' AND NOT EXISTS (
+               SELECT 1 FROM lead_payments lp
+               WHERE lp.lead_id = l.id AND lp.payment_status = 'pending' AND COALESCE(lp.raw_json, '') LIKE '%"crmOwnerSession":true%'
+             ) THEN CASE WHEN COALESCE(l.owner_view_count, 0) > 0 THEN 'viewed' WHEN l.last_contacted IS NOT NULL THEN 'contacted' ELSE 'scraped' END
+             ELSE l.status
+           END FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_status,
           (SELECT l.last_contacted FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_last_contacted,
-          (SELECT l.last_viewed_at FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_last_viewed_at,
-          (SELECT l.view_count FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_view_count,
+          (SELECT l.owner_last_viewed_at FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_last_viewed_at,
+          (SELECT l.owner_view_count FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_view_count,
           (SELECT l.last_downloaded_at FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_last_downloaded_at,
           (SELECT l.download_count FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_download_count,
           (SELECT l.setup_followup_contacted_at FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_setup_followup_contacted_at,

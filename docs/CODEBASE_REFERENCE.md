@@ -346,12 +346,12 @@ Logic penting:
 - Untuk domain milik sendiri, user diarahkan memakai managed nameservers kita atau menambah DNS record yang kita berikan jika ingin tetap memakai nameserver lama.
 - Indikator hijau pada domain baru berarti `available` dari pre-check; indikator hijau pada domain sendiri berarti domain terdeteksi registered/usable untuk setup DNS, bukan tersedia untuk dibeli.
 - Domain sendiri hanya bisa lanjut jika RDAP/DNS memberi sinyal registered/aktif; hasil inconclusive tetap ditahan sebagai warning.
-- Mode mock checkout tetap mencatat lead `checkout_pending` jika payment processor aktif belum dikonfigurasi atau dipilih `mock`.
+- Checkout only writes CRM `checkout_pending` / pending `lead_payments` when the shared panel is opened from a real owner review URL (`?owner=1`, `?review=owner`, or `?claim=1`), not from normal admin preview or safe `ownerPreview=1` links. Mock checkout outside a real owner session still prepares the checkout UI but does not change CRM status/payment counts.
 - Jika font pairing selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti pilihan yang aktif saat download.
 - Jika palette selector muncul, perubahan langsung diterapkan ke renderer dan export HTML mengikuti warna yang aktif saat download.
 - `onDownloadZip(siteData)` menerima site data aktif dari panel; ini menjaga public preview `/:businessId` mengekspor palette/font yang sedang dipilih di renderer, bukan JSON awal dari fetch.
 - Free download modal derives buyer-facing feature/page summaries from current `siteData`: About page, review flow, Google Maps, hours, FAQ/service details, individual service pages, gallery, contact form, SEO starter files, and page links using `/:businessId#pageId` anchors. It also adds virtual standard pages like about/services/gallery/contact/feedback when the renderer can provide them from available business data.
-- The buyer-facing `Download my $0 website package` action fires a non-blocking `POST /api/sites/:businessId/downloaded` ping with `source=website_action_panel`, then runs `onDownloadZip(siteData)`. The ping updates lead `download_count`/`last_downloaded_at` and inserts a `site_downloaded` CRM activity when a lead exists; export output is unchanged.
+- The buyer-facing `Download my $0 website package` action only fires the non-blocking `POST /api/sites/:businessId/downloaded` owner ping during a real owner review session, then runs `onDownloadZip(siteData)`. The ping updates lead `download_count`/`last_downloaded_at` and inserts a `site_downloaded` CRM activity when a lead exists; admin preview downloads and safe countdown previews do not mark owner download activity.
 - While `onDownloadZip(siteData)` runs, the modal button changes to `Preparing PDF guide...`, disables repeat clicks/close, and shows a small `download-progress-toast` explaining that the branded PDF guide and website files are being packaged. This matters because owner PDF rendering can take a few seconds on slower devices. Download modal overlays including the scroll notice are marked `data-export-remove`, `data-wv-tool-ui`, and/or `hide-in-export`, so they are excluded from owner HTML exports.
 - Owner review links can use `?owner=1`, `?review=owner`, or `?claim=1` on `/:businessId`. On public previews only, that starts/reads a 7-day review window from `localStorage` key `webview.ownerReviewStartedAt.{businessId}` and shows a compact countdown beside `Download / Setup`; optional URL params `reviewStart`, `reviewStartedAt`, or `claimStart` can seed a fixed timestamp. If no timestamp is present, the owner-param URL is updated in-place with `reviewStart={timestamp}` so the active review link is self-describing. Admin-safe preview links use `?ownerPreview=1&reviewStart={timestamp}`; they show the same countdown UI with a `Preview mode` badge, but do not write localStorage or convert the URL into a real owner review session. After the window, the owner-param view is covered by an archived-preview overlay with a prefilled `mailto:email@codev.id` restore link containing business name, ID, preview URL, started timestamp, ended timestamp, listed phone, and listed address. Normal preview URLs without owner params stay unaffected for admin/internal use.
 
@@ -746,12 +746,13 @@ Fungsi:
 - `/terms-refund` menampilkan terms/refund policy untuk generated digital packages dan managed launch support; checkout modal menautkan halaman ini sebelum payment.
 
 API yang dipakai:
-- `POST /api/leads/:businessId/ping`
+- `POST /api/leads/:businessId/ping?owner=1`
 - `GET /api/public-settings`
 - `GET /api/sites/:businessId`
 
 Logic penting:
 - Jika JSON site ditemukan, halaman meneruskan data ke `SiteRenderer`.
+- Public preview view tracking only fires from real owner review params (`?owner=1`, `?review=owner`, or `?claim=1`) and explicitly excludes `ownerPreview=1` / `reviewPreview=1`. CRM displays owner-only view counters from `owner_view_count` / `owner_last_viewed_at`, so older admin/internal preview opens do not appear as owner views.
 - Fetch `GET /api/sites/:businessId` memakai retry singkat dengan cache-busting query dan `cache: "no-store"` sebelum menampilkan error. Ini mengurangi kasus preview public terlihat 404 sesaat setelah generate/regenerate ketika D1/R2/edge masih sync.
 - Error public tidak lagi memakai copy `404 - Not Found`; UI menampilkan pesan "preview is still preparing" plus tombol `Try again`, supaya owner tidak melihat halaman yang terasa rusak saat kondisi sementara.
 - `handleDownloadZip(siteData?)` membuat zip HTML statis dari DOM preview aktif plus site data aktif yang dikirim `WebsiteActionPanel`, sehingga palette pilihan, inline text edits, dan image replacements di public renderer ikut masuk export.
@@ -919,7 +920,7 @@ Endpoint:
 - `PUT /api/leads/:id/status`
 - `GET /api/leads/payments`
 - `POST /api/leads/:id/payment-verified`
-- `POST /api/leads/:business_id/ping`
+- `POST /api/leads/:business_id/ping?owner=1` updates owner-only view fields and ignores normal preview/safe preview requests.
 - `GET /api/prospects`
 - `PUT /api/prospects/:placeId/status`
 - `PUT /api/prospects/:placeId/selection`
@@ -1110,7 +1111,7 @@ Logic Owner HTML Export:
 
 Logic Payments:
 - `/api/payments/checkout` lives in `functions/api/payments/handler.ts` and reads `PAYMENT_PROCESSOR` from Settings. Mode live yang didukung: Xendit hosted invoice, Midtrans Snap Redirect, DOKU Checkout, PayPal Orders v2 Checkout, Wise link, Payoneer link, dan legacy Lemon Squeezy.
-- Jika processor aktif belum lengkap, endpoint berjalan mock mode, membuat/mengupdate lead dengan status `checkout_pending`, dan mengembalikan `adminNotifyUrl` WhatsApp.
+- Jika processor aktif belum lengkap, endpoint berjalan mock mode dan mengembalikan `adminNotifyUrl` WhatsApp. It only creates/updates `checkout_pending` lead/payment rows when the request includes `ownerReviewSession: true` from a real owner review URL; normal admin preview checkout tests do not affect CRM owner stats.
 - Paket default saat ini: `$180/year` managed hosting + `$17/year` domain fee hanya untuk domain baru yang WebView.click register; owned-domain checkout membayar hosting saja. `PAYMENT_DOMAIN_FEE_USD` memisahkan domain fee dari `PAYMENT_USD_AMOUNT`, term discount hanya mengurangi hosting, `PAYMENT_ADDON_PAGE_USD` untuk page/edit add-ons dengan checkout minimum `$50/action`, dan `PAYMENT_USD_TO_IDR_RATE` untuk mengirim amount IDR ke gateway Indonesia.
 - Request checkout menyimpan `domainMode` (`new` atau `owned`), requested domain, optional sanitized `domainQuote`, amount, multi-year billing term/cadence, hosting/domain price split, add-on pricing, processor, dan sanitized `setupRequest/setupNote` ke CRM activity serta `lead_payments.raw_json`; gateway live juga menerima metadata/custom fields jika provider mendukung.
 - PayPal API checkout membuat one-time/prepaid order dengan `intent=CAPTURE`, `NO_SHIPPING`, `PAY_NOW`, `invoice_id=paymentReference`, dan item breakdown base package/add-ons. Jika buyer memilih yearly billing (`annual_recurring`), `/api/payments/checkout` mencari cached PayPal plan di `system_settings` dengan key `PAYPAL_SUBSCRIPTION_PLAN__{mode}__{domainMode}__term_{n}__annual_{price}__hosting_{price}__domain_{fee}__setup_{fee}`. Jika ada match exact price/term/domain/setup-fee, checkout reuse plan ID; jika tidak, endpoint membuat PayPal Catalog Product + Billing Plan lalu menyimpan product/plan ID ke cache. Response mengembalikan `paypalSubscriptionPlanId`, dan `WebsiteActionPanel` memuat PayPal JS SDK dengan `vault=true&intent=subscription` lalu memakai `actions.subscription.create({ plan_id, custom_id })`. Setelah buyer approve, `/api/payments/paypal-subscription-approved` lookup subscription, update `lead_payments`, `subscriptions`, lead status, dan CRM activity. PayPal reads mode-specific credentials: sandbox uses `PAYPAL_SANDBOX_CLIENT_ID`/`PAYPAL_SANDBOX_CLIENT_SECRET`, live uses `PAYPAL_LIVE_CLIENT_ID`/`PAYPAL_LIVE_CLIENT_SECRET`, with legacy `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET` as fallback. Webhook signature verification also reads mode-specific webhook IDs: `PAYPAL_SANDBOX_WEBHOOK_ID` or `PAYPAL_LIVE_WEBHOOK_ID`, with legacy `PAYPAL_WEBHOOK_ID` as fallback. Jika one-time order approve berhasil, `/api/payments/paypal-capture-order` capture order lalu update `lead_payments`, `subscriptions`, lead status, dan CRM activity.

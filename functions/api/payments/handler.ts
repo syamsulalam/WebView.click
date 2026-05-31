@@ -1127,6 +1127,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   const requestedDomain = deps.asString(body.domain);
   const domainMode = deps.asString(body.domainMode, "new") === "owned" ? "owned" : "new";
   const customerEmail = deps.asString(body.email);
+  const crmOwnerSession = body.ownerReviewSession === true;
   const origin = new URL(request.url).origin;
   const [
     selectedProcessorRaw,
@@ -1229,21 +1230,24 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   );
   const adminNotifyUrl = `https://wa.me/${normalizeWhatsAppNumber(adminWhatsApp)}?text=${notifyText}`;
 
-  await deps.ensureRequiredColumns(db, [...deps.checkoutRequiredColumns, ...deps.paymentLedgerRequiredColumns]);
-  const leadId = crypto.randomUUID();
-  await deps.upsertLeadRecord(db, {
-    id: leadId,
-    business_id: businessId,
-    business_name: businessName,
-    niche: "demo",
-    email: customerEmail,
-    status: "checkout_pending",
-    view_count: 0,
-    updated_at: new Date().toISOString(),
-  });
+  let row: { id: string } | null = null;
+  if (crmOwnerSession) {
+    await deps.ensureRequiredColumns(db, [...deps.checkoutRequiredColumns, ...deps.paymentLedgerRequiredColumns]);
+    const leadId = crypto.randomUUID();
+    await deps.upsertLeadRecord(db, {
+      id: leadId,
+      business_id: businessId,
+      business_name: businessName,
+      niche: "demo",
+      email: customerEmail,
+      status: "checkout_pending",
+      view_count: 0,
+      updated_at: new Date().toISOString(),
+    });
 
-  const row = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
-  if (row?.id) {
+    row = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
+  }
+  if (crmOwnerSession && row?.id) {
     const existingPendingPayment = await db
       .prepare("SELECT id FROM lead_payments WHERE lead_id = ? AND payment_reference = ? AND payment_status = 'pending' LIMIT 1")
       .bind(row.id, paymentReference)
@@ -1266,7 +1270,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
           customerEmail,
           paymentReference,
           "Checkout requested; waiting for manual payment verification.",
-          JSON.stringify({ source: "checkout_request", businessId, businessName, requestedDomain, domainMode, domainQuote, paymentProcessor, paymentReference, pricing, billingPlan: { termYears: pricing.termYears, billingCadence: pricing.billingCadence, termDiscountRate: pricing.termDiscountRate, hostingAnnualUsd: pricing.hostingAnnualUsd, hostingAfterDiscountUsd: pricing.hostingAfterDiscountUsd, domainAnnualUsd: pricing.domainAnnualUsd, annualDiscountedUsd: pricing.annualDiscountedUsd, packageTermTotalUsd: pricing.packageTermTotalUsd, packageDueTodayUsd: pricing.packageDueTodayUsd }, setupRequest, setupNote: setupRequest.setupNote }),
+          JSON.stringify({ source: "checkout_request", crmOwnerSession, businessId, businessName, requestedDomain, domainMode, domainQuote, paymentProcessor, paymentReference, pricing, billingPlan: { termYears: pricing.termYears, billingCadence: pricing.billingCadence, termDiscountRate: pricing.termDiscountRate, hostingAnnualUsd: pricing.hostingAnnualUsd, hostingAfterDiscountUsd: pricing.hostingAfterDiscountUsd, domainAnnualUsd: pricing.domainAnnualUsd, annualDiscountedUsd: pricing.annualDiscountedUsd, packageTermTotalUsd: pricing.packageTermTotalUsd, packageDueTodayUsd: pricing.packageDueTodayUsd }, setupRequest, setupNote: setupRequest.setupNote }),
           new Date().toISOString(),
         )
         .run();
@@ -1283,6 +1287,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   const mockResponse = (message: string, missing: string[] = []) => deps.json({
     success: true,
     mock: true,
+    crmTracked: crmOwnerSession,
     processor: paymentProcessor,
     checkoutUrl: "",
     adminNotifyUrl,
@@ -1295,7 +1300,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     setupNote: setupRequest.setupNote,
     paymentReference,
     missing,
-    message,
+    message: crmOwnerSession ? message : "Checkout prepared for preview/testing. CRM lead status and payment pending were not changed because this was not opened from a real owner review link.",
   });
 
   if (paymentProcessor === "xendit") {
