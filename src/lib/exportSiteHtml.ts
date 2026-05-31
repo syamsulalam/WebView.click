@@ -766,6 +766,10 @@ function ownerPackageGuidePdf(siteData: any, businessId: string) {
     data.serviceAreas.length ? ["Areas served", data.serviceAreas.slice(0, 8).join(", ")] : null,
   ].filter(Boolean) as Array<[string, string]>;
   const pageTotal = data.pages.length || 1;
+  const businessDetailRows: Array<[string, string]> = contactRows.length
+    ? contactRows
+    : [["Business details", "Review phone, email, address, and hours before launch."]];
+  const packageDetailRows: Array<[string, string]> = [...businessDetailRows, ["Pages included", String(pageTotal)]];
   const offers = [
     {
       title: "Launch it for me",
@@ -812,7 +816,7 @@ function ownerPackageGuidePdf(siteData: any, businessId: string) {
   pdf.bullets(["index.html", "sitemap.xml", "robots.txt", "img/ folder", "This clickable PDF guide"]);
   pdf.subheading("Built-in basics");
   pdf.bullets(["Mobile-friendly static page.", "Clickable phone and email links where available.", "Basic business search metadata.", "Local image files packaged into the zip.", "Navigation that works without React."]);
-  pdf.keyValueRows([...(contactRows.length ? contactRows : [["Business details", "Review phone, email, address, and hours before launch."] as [string, string]), ["Pages included", String(pageTotal)]]);
+  pdf.keyValueRows(packageDetailRows);
   pdf.subheading("Pages included");
   pdf.bullets(data.pages.length ? data.pages : ["Homepage"]);
   pdf.subheading("Services or offers");

@@ -1172,6 +1172,10 @@ Jika menambah laman atau komponen baru:
 - Jelaskan fungsi, API yang dipakai, logic state penting, dan risiko debug.
 - Jika menambah endpoint Function baru, update bagian `Cloudflare Pages Functions`.
 
+Build/Deploy Guard:
+- `npm run check:syntax` menjalankan `scripts/check-build-syntax.mjs`, yaitu parse-only esbuild transform untuk file `.ts/.tsx/.js/.jsx` di `src`, `functions`, `tests`, plus `server.ts` dan `vite.config.ts`. Ini menangkap syntax error Vite/esbuild seperti bracket/ternary rusak sebelum full build.
+- `prebuild` otomatis menjalankan `npm run check:syntax`, sehingga Cloudflare Pages command `npm run build` gagal lebih awal dengan pesan file/baris yang lebih langsung setelah `npm clean-install`.
+
 ## Related Planning Docs
 
 - `docs/GOOGLE_PLACES_DATA_INVENTORY.md`: inventaris data Google Places yang bisa dipakai untuk CRM lead scoring dan site generation.
