@@ -87,6 +87,33 @@ function visualStyleForBusiness(text: string): string {
   return "soft-rounded";
 }
 
+function validBackfillPhone(value: unknown) {
+  const text = asString(value).trim();
+  const digits = text.replace(/\D/g, "");
+  if (!text || digits.length < 7 || digits.length > 15) return "";
+  if (/^0+$/.test(digits) || /^1?0{7,}$/.test(digits)) return "";
+  return /^\+?[0-9\s().-]{7,24}$/.test(text) ? text : "";
+}
+
+function phoneFromSavedSite(siteJson: Record<string, unknown>) {
+  const profile = siteJson.businessProfile && typeof siteJson.businessProfile === "object" ? siteJson.businessProfile as Record<string, unknown> : {};
+  const contact = profile.contact && typeof profile.contact === "object" ? profile.contact as Record<string, unknown> : {};
+  const sourceData = siteJson.sourceData && typeof siteJson.sourceData === "object" ? siteJson.sourceData as Record<string, unknown> : {};
+  const originData = siteJson.originData && typeof siteJson.originData === "object" ? siteJson.originData as Record<string, unknown> : {};
+  return [
+    contact.phoneInternational,
+    contact.phoneNational,
+    sourceData.international_phone_number,
+    sourceData.formatted_phone_number,
+    sourceData.nationalPhoneNumber,
+    sourceData.phone,
+    originData.international_phone_number,
+    originData.formatted_phone_number,
+    originData.nationalPhoneNumber,
+    originData.phone,
+  ].map(validBackfillPhone).find(Boolean) || "";
+}
+
 function shaderPresetForBusiness(text: string) {
   const key = text.toLowerCase();
   if (/(contractor|concrete|roof|construction|builder|paving|masonry|auto|mechanic|security|locksmith|hvac|plumb|electric)/i.test(key)) return { id: "industrial-grid", label: "Industrial Grid", description: "Subtle diagonal/grid energy for hands-on trades and mechanical businesses.", defaultOpacity: 0.22, defaultMotion: 0.35 };
@@ -568,6 +595,55 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       total,
       hasMore: nextOffset < total && scanned > 0,
     });
+  }
+
+  if (request.method === "POST" && segments.length === 2 && segments[1] === "backfill-lead-phones") {
+    const body = await readJsonBody(request).catch(() => ({}));
+    const limit = Math.max(1, Math.min(50, Math.floor(Number(body.limit || 25))));
+    await ensureRequiredColumns(db, [
+      { table: "leads", column: "phone", definition: "TEXT" },
+      { table: "leads", column: "updated_at", definition: "DATETIME" },
+      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+      { table: "json_sites", column: "json_content", definition: "TEXT" },
+      { table: "crm_activities", column: "staff_id", definition: "TEXT" },
+      { table: "crm_activities", column: "description", definition: "TEXT" },
+    ]);
+    const rows = await db
+      .prepare(
+        `SELECT l.id AS lead_id, l.business_id, s.json_content, s.r2_json_key
+         FROM leads l
+         JOIN json_sites s ON s.business_id = l.business_id
+         WHERE COALESCE(l.phone, '') = ''
+         ORDER BY datetime(COALESCE(l.updated_at, l.created_at, '1970-01-01')) DESC
+         LIMIT ?`,
+      )
+      .bind(limit)
+      .all<{ lead_id: string; business_id: string; json_content: string; r2_json_key?: string }>();
+
+    let updated = 0;
+    let checked = 0;
+    const failures: Array<{ businessId: string; error: string }> = [];
+    for (const row of rows.results || []) {
+      checked += 1;
+      try {
+        const siteJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
+        const phone = phoneFromSavedSite(siteJson);
+        if (!phone) continue;
+        const now = new Date().toISOString();
+        await db.prepare("UPDATE leads SET phone = ?, updated_at = ? WHERE id = ?").bind(phone, now, row.lead_id).run();
+        updated += 1;
+        await insertCrmActivitySafe(db, {
+          id: crypto.randomUUID(),
+          lead_id: row.lead_id,
+          staff_id: "system",
+          activity_type: "contact_backfilled",
+          description: `Phone backfilled from saved generated site/source JSON: ${phone}`,
+        });
+      } catch (error) {
+        failures.push({ businessId: row.business_id, error: (error instanceof Error ? error.message : String(error)).slice(0, 200) });
+      }
+    }
+    return json({ success: true, checked, updated, failures });
   }
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "outreach-contacted") {

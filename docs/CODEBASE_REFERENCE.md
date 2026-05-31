@@ -394,7 +394,7 @@ Fungsi:
 - Memilih provider/model AI.
 - Menghasilkan JSON website untuk lead.
 - Mengelola status lead.
-- CRM Pipeline punya Payment Reconciliation panel untuk recent `lead_payments`, export CSV `checkout_pending`, dan action per-lead `Verify payment`.
+- CRM Pipeline punya Payment Reconciliation panel untuk recent `lead_payments`, export CSV `checkout_pending`, dan action per-lead `Verify payment`. It also has a capped phone backfill action that fills missing CRM phone numbers from saved generated site/source JSON, including R2-backed sites. Email/SMS actions use saved lead email/phone only; they no longer fall back to fake placeholders like `hello@example.com` or `+10000000000`. If contact data is missing or placeholder-like, the row shows `No email` / `No number` and clicking it opens a strict inline form to save the real contact for that business.
 - Payment verification modal and prospect details drawer close actions use shared hover tooltips for compact QA controls.
 - Payment verification modal includes an icon-only docs quick link that opens PayPal/payment reconciliation docs directly inside admin.
 - Prospect details drawer includes docs quick links for Google Places data inventory and photo strategy where those details are reviewed.
@@ -918,6 +918,7 @@ Endpoint:
 - `GET /api/activities`
 - `GET /api/leads`
 - `PUT /api/leads/:id/status`
+- `PUT /api/leads/:id/contact`
 - `GET /api/leads/payments`
 - `POST /api/leads/:id/payment-verified`
 - `POST /api/leads/:business_id/ping?owner=1` updates owner-only view fields and ignores normal preview/safe preview requests.
@@ -932,6 +933,7 @@ Endpoint:
 - `POST /api/places/cache/trim`
 - `GET/POST /api/ai/readiness`
 - `POST /api/sites/generate`
+- `POST /api/sites/backfill-lead-phones`
 - `POST /api/sites/migrate-r2`
 - `POST /api/sites/:businessId/repair-service-images`
 - `POST /api/sites/:businessId/refresh-visual-variation`

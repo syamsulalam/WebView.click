@@ -4,7 +4,7 @@ import * as htmlToImage from "html-to-image";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOptions } from "../../lib/prospectScoring";
-import { placeMapsUrl, placePhone } from "../../lib/generatedSiteScaffold";
+import { isPlaceholderPhone, placeMapsUrl, placePhone } from "../../lib/generatedSiteScaffold";
 import {
   buildScaffoldGeneratePayload,
   buildPaletteOptionForPhoto,
@@ -85,6 +85,8 @@ export default function AdminLeads() {
   const [paletteOptionsByPlace, setPaletteOptionsByPlace] = useState<Record<string, any[]>>({});
   const [paymentLedger, setPaymentLedger] = useState<any[]>([]);
   const [paymentLedgerLoading, setPaymentLedgerLoading] = useState(false);
+  const [phoneBackfillLoading, setPhoneBackfillLoading] = useState(false);
+  const [phoneBackfillMessage, setPhoneBackfillMessage] = useState("");
   const [paymentVerifyLead, setPaymentVerifyLead] = useState<any>(null);
   const [paymentVerifySaving, setPaymentVerifySaving] = useState(false);
   const [paymentVerifyMessage, setPaymentVerifyMessage] = useState("");
@@ -97,6 +99,7 @@ export default function AdminLeads() {
     paymentReference: "",
     proofNotes: "",
   });
+  const [contactEdit, setContactEdit] = useState<{ leadId: string; kind: "email" | "phone"; value: string; saving?: boolean; error?: string } | null>(null);
 
   const providers: Record<string, { label: string; models: { value: string; label: string }[] }> = {
     OpenAI: {
@@ -221,6 +224,29 @@ export default function AdminLeads() {
       .then((data) => setPaymentLedger(Array.isArray(data) ? data : []))
       .catch(e => console.error(e))
       .finally(() => setPaymentLedgerLoading(false));
+  };
+
+  const backfillLeadPhones = async () => {
+    setPhoneBackfillLoading(true);
+    setPhoneBackfillMessage("Backfilling phones...");
+    try {
+      const response = await fetch("/api/sites/backfill-lead-phones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 50 }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) throw new Error(data.error || `Backfill failed with HTTP ${response.status}`);
+      setPhoneBackfillMessage(`Checked ${data.checked || 0}, filled ${data.updated || 0}${data.failures?.length ? `, ${data.failures.length} failed` : ""}.`);
+      fetchLeads();
+      showToast({ kind: "success", title: "Phone backfill complete", message: `Filled ${data.updated || 0} CRM phone number${Number(data.updated || 0) === 1 ? "" : "s"}.` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Phone backfill failed.";
+      setPhoneBackfillMessage(message);
+      showApiError(error, "Phone backfill failed");
+    } finally {
+      setPhoneBackfillLoading(false);
+    }
   };
 
   const exportCheckoutPendingCsv = async () => {
@@ -951,6 +977,41 @@ export default function AdminLeads() {
       body: JSON.stringify({ status: newStatus })
     });
     fetchLeads();
+  };
+
+  const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  const phoneDigits = (value: string) => value.replace(/\D/g, "");
+  const validPhone = (value: string) => /^\+?[0-9\s().-]{7,20}$/.test(value.trim()) && phoneDigits(value).length >= 7 && phoneDigits(value).length <= 15 && !/^1?0{7,}$/.test(phoneDigits(value));
+  const usableLeadEmail = (value: string) => validEmail(value) && !/^hello@example\.com$/i.test(value.trim());
+  const usableLeadPhone = (value: string) => validPhone(value) && !isPlaceholderPhone(value) && !/^1?0{7,}$/.test(phoneDigits(value));
+  const smsHref = (value: string) => `sms:${value.trim().startsWith("+") ? value.trim() : phoneDigits(value)}`;
+
+  const saveLeadContact = async (lead: any) => {
+    if (!contactEdit || contactEdit.leadId !== lead.id) return;
+    const value = contactEdit.value.trim();
+    if (contactEdit.kind === "email" && !validEmail(value)) {
+      setContactEdit({ ...contactEdit, error: "Enter a valid email address." });
+      return;
+    }
+    if (contactEdit.kind === "phone" && !validPhone(value)) {
+      setContactEdit({ ...contactEdit, error: "Enter a valid phone number with 7-15 digits." });
+      return;
+    }
+    setContactEdit({ ...contactEdit, saving: true, error: "" });
+    try {
+      const response = await fetch(`/api/leads/${encodeURIComponent(lead.id)}/contact`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [contactEdit.kind]: value, staffId: "admin" }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) throw new Error(data.error || `Contact update failed with HTTP ${response.status}`);
+      setLeads((items) => items.map((item) => item.id === lead.id ? { ...item, [contactEdit.kind]: value } : item));
+      setContactEdit(null);
+      showToast({ kind: "success", title: "Contact saved", message: `${contactEdit.kind === "email" ? "Email" : "Phone"} saved for ${lead.business_name}.` });
+    } catch (error) {
+      setContactEdit({ ...contactEdit, saving: false, error: error instanceof Error ? error.message : "Contact update failed." });
+    }
   };
 
   const openPaymentVerification = (lead: any) => {
@@ -2124,8 +2185,20 @@ export default function AdminLeads() {
                 <RefreshCw size={14} className={paymentLedgerLoading ? "animate-spin" : ""} />
               </button>
             </HoverTooltip>
+            <HoverTooltip text="Backfill missing CRM phone numbers from saved generated site/source JSON, including R2-backed generated sites. Runs in a capped batch.">
+              <button
+                type="button"
+                onClick={backfillLeadPhones}
+                disabled={phoneBackfillLoading}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                aria-label="Backfill missing CRM phone numbers"
+              >
+                <MessageSquare size={14} className={phoneBackfillLoading ? "animate-pulse" : ""} />
+              </button>
+            </HoverTooltip>
           </div>
         </div>
+        {phoneBackfillMessage && <p className="mb-3 text-xs text-slate-500">{phoneBackfillMessage}</p>}
         <div className="grid gap-3 md:grid-cols-3">
           {paymentLedger.slice(0, 6).map((payment) => (
             <div key={payment.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
@@ -2226,18 +2299,70 @@ export default function AdminLeads() {
                         Screenshot Preview
                       </span>
                     </button>
-                    <a href={`mailto:${lead.email || 'hello@example.com'}`} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded group relative">
-                      <Mail size={18} />
-                      <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-[9999] pointer-events-none">
-                        Send Email
-                      </span>
-                    </a>
-                    <a href={`sms:+10000000000`} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded group relative">
-                      <MessageSquare size={18} />
-                      <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-[9999] pointer-events-none">
-                        Send SMS
-                      </span>
-                    </a>
+                    {contactEdit?.leadId === lead.id && contactEdit.kind === "email" ? (
+                      <form className="flex items-center gap-1" onSubmit={(event) => { event.preventDefault(); void saveLeadContact(lead); }}>
+                        <input
+                          type="email"
+                          value={contactEdit.value}
+                          onChange={(event) => setContactEdit({ ...contactEdit, value: event.target.value, error: "" })}
+                          placeholder={`Email for ${lead.business_name}`}
+                          className="w-44 rounded border border-slate-300 px-2 py-1 text-xs"
+                        />
+                        <button type="submit" disabled={contactEdit.saving} className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white disabled:opacity-60">Save</button>
+                        <button type="button" onClick={() => setContactEdit(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100"><X size={14} /></button>
+                        {contactEdit.error && <span className="max-w-32 text-left text-[11px] text-red-600">{contactEdit.error}</span>}
+                      </form>
+                    ) : usableLeadEmail(String(lead.email || "")) ? (
+                      <a href={`mailto:${lead.email}`} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded group relative">
+                        <Mail size={18} />
+                        <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-[9999] pointer-events-none">
+                          Send email to {lead.email}
+                        </span>
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setContactEdit({ leadId: lead.id, kind: "email", value: "" })}
+                        className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                        aria-label={`Email not found, enter the email for ${lead.business_name}`}
+                        title={`Email not found, enter the email for ${lead.business_name}`}
+                      >
+                        <Mail size={15} />
+                        No email
+                      </button>
+                    )}
+                    {contactEdit?.leadId === lead.id && contactEdit.kind === "phone" ? (
+                      <form className="flex items-center gap-1" onSubmit={(event) => { event.preventDefault(); void saveLeadContact(lead); }}>
+                        <input
+                          type="tel"
+                          value={contactEdit.value}
+                          onChange={(event) => setContactEdit({ ...contactEdit, value: event.target.value, error: "" })}
+                          placeholder={`Phone for ${lead.business_name}`}
+                          className="w-40 rounded border border-slate-300 px-2 py-1 text-xs"
+                        />
+                        <button type="submit" disabled={contactEdit.saving} className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white disabled:opacity-60">Save</button>
+                        <button type="button" onClick={() => setContactEdit(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100"><X size={14} /></button>
+                        {contactEdit.error && <span className="max-w-32 text-left text-[11px] text-red-600">{contactEdit.error}</span>}
+                      </form>
+                    ) : usableLeadPhone(String(lead.phone || "")) ? (
+                      <a href={smsHref(lead.phone)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded group relative">
+                        <MessageSquare size={18} />
+                        <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-[9999] pointer-events-none">
+                          Send SMS to {lead.phone}
+                        </span>
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setContactEdit({ leadId: lead.id, kind: "phone", value: "" })}
+                        className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                        aria-label={`Number not found, enter the number for ${lead.business_name}`}
+                        title={`Number not found, enter the number for ${lead.business_name}`}
+                      >
+                        <MessageSquare size={15} />
+                        No number
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

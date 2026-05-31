@@ -61,6 +61,15 @@ function realOwnerRequest(request: Request) {
     && url.searchParams.get("reviewPreview") !== "1";
 }
 
+function validEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function validPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return /^\+?[0-9\s().-]{7,20}$/.test(value) && digits.length >= 7 && digits.length <= 15 && !/^1?0{7,}$/.test(digits);
+}
+
 export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Database, segments: string[]): Promise<Response> {
   if (request.method === "GET" && segments.length === 1) {
     let leads;
@@ -155,6 +164,37 @@ export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Datab
     });
 
     return deps.json({ success: true });
+  }
+
+  if (request.method === "PUT" && segments.length === 3 && segments[2] === "contact") {
+    const id = segments[1];
+    const body = await deps.readJsonBody(request);
+    const email = deps.asString(body.email).trim();
+    const phone = deps.asString(body.phone).trim();
+    const staffId = deps.asString(body.staffId, "admin");
+
+    if (email && (!validEmail(email) || /^hello@example\.com$/i.test(email))) return deps.errorJson("Enter a valid email address.", 400);
+    if (phone && !validPhone(phone)) return deps.errorJson("Enter a valid phone number with 7-15 digits.", 400);
+    if (!email && !phone) return deps.errorJson("Email or phone is required.", 400);
+
+    await deps.ensureColumn(db, "leads", "email", "TEXT");
+    await deps.ensureColumn(db, "leads", "phone", "TEXT");
+    await deps.ensureColumn(db, "leads", "updated_at", "DATETIME");
+    const updates = [
+      email ? { column: "email", value: email } : null,
+      phone ? { column: "phone", value: phone } : null,
+      { column: "updated_at", value: new Date().toISOString() },
+    ].filter(Boolean) as Array<{ column: string; value: unknown }>;
+    await db.prepare(`UPDATE leads SET ${updates.map((item) => `${item.column} = ?`).join(", ")} WHERE id = ?`).bind(...updates.map((item) => item.value), id).run();
+    await deps.insertCrmActivitySafe(db, {
+      id: crypto.randomUUID(),
+      lead_id: id,
+      staff_id: staffId,
+      activity_type: "contact_updated",
+      description: `${email ? "Email updated. " : ""}${phone ? "Phone updated." : ""}`.trim(),
+    });
+
+    return deps.json({ success: true, email, phone });
   }
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "payment-verified") {
