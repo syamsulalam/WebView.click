@@ -137,7 +137,7 @@ export function interpretApiError(error: unknown, input: ApiErrorInput = {}): Ap
     };
   }
 
-  if (/Cloudflare\/HTML|returned Cloudflare|Pages Function|deployment is failing at the edge|instead of JSON/i.test(rawMessage)) {
+  if (/Cloudflare\/HTML|returned Cloudflare|Pages Function|deployment is failing at the edge|instead of JSON|non-JSON response|Response bukan JSON/i.test(rawMessage)) {
     return {
       title: `${sourcePrefix}Cloudflare Pages Function returned HTML`,
       meaning: `WebView.click expected JSON from its own API, but Cloudflare returned an HTML error page. This usually means the Pages Function crashed, the deployment is unhealthy, or Cloudflare temporarily failed before the provider response could be returned.`,

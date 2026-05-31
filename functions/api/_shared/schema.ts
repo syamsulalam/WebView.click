@@ -18,6 +18,8 @@ export const generateRequiredColumns: ColumnSpec[] = [
   { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
   { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
   { table: "json_sites", column: "json_summary", definition: "TEXT" },
+  { table: "json_sites", column: "last_preview_error", definition: "TEXT" },
+  { table: "json_sites", column: "last_preview_error_at", definition: "DATETIME" },
   { table: "json_sites", column: "updated_at", definition: "DATETIME" },
   { table: "generation_jobs", column: "business_id", definition: "TEXT" },
   { table: "generation_jobs", column: "place_id", definition: "TEXT" },
@@ -113,7 +115,7 @@ export async function setupTables(db: D1Database) {
     "CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, package_type TEXT NOT NULL, amount_paid REAL DEFAULT 0.00, payment_status TEXT DEFAULT 'unpaid', payment_method TEXT, payment_reference TEXT, subscription_start_date DATETIME, subscription_end_date DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
     "CREATE TABLE IF NOT EXISTS lead_payments (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, business_id TEXT, processor TEXT, payment_status TEXT DEFAULT 'pending', amount_usd REAL DEFAULT 0, amount_idr INTEGER DEFAULT 0, transaction_id TEXT, payer_email TEXT, payment_reference TEXT, proof_notes TEXT, raw_json TEXT, verified_at DATETIME, verified_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
     "CREATE TABLE IF NOT EXISTS crm_activities (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, staff_id TEXT, activity_type TEXT NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE)",
-    "CREATE TABLE IF NOT EXISTS json_sites (id TEXT PRIMARY KEY, business_id TEXT UNIQUE NOT NULL, json_content TEXT NOT NULL, r2_json_key TEXT, r2_json_url TEXT, json_summary TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS json_sites (id TEXT PRIMARY KEY, business_id TEXT UNIQUE NOT NULL, json_content TEXT NOT NULL, r2_json_key TEXT, r2_json_url TEXT, json_summary TEXT, last_preview_error TEXT, last_preview_error_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS ai_readiness_cache (cache_key TEXT PRIMARY KEY, provider TEXT NOT NULL, model TEXT NOT NULL, key_hash TEXT, validation_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME NOT NULL)",
     "CREATE TABLE IF NOT EXISTS daily_usage_counters (usage_date TEXT NOT NULL, counter_key TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (usage_date, counter_key))",
@@ -160,6 +162,8 @@ export async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "json_sites", "r2_json_key", "TEXT");
   await addColumnIfMissing(db, "json_sites", "r2_json_url", "TEXT");
   await addColumnIfMissing(db, "json_sites", "json_summary", "TEXT");
+  await addColumnIfMissing(db, "json_sites", "last_preview_error", "TEXT");
+  await addColumnIfMissing(db, "json_sites", "last_preview_error_at", "DATETIME");
   await addColumnIfMissing(db, "ai_readiness_cache", "provider", "TEXT");
   await addColumnIfMissing(db, "ai_readiness_cache", "model", "TEXT");
   await addColumnIfMissing(db, "ai_readiness_cache", "key_hash", "TEXT");

@@ -27,6 +27,7 @@ type D1PreparedStatementLike = {
   bind: (...values: unknown[]) => D1PreparedStatementLike;
   all: <R = unknown>() => Promise<{ results?: R[] }>;
   first: <R = unknown>() => Promise<R | null>;
+  run: () => Promise<unknown>;
 };
 
 type D1DatabaseLike = {
@@ -233,6 +234,25 @@ function normalizeSiteColorContrast(finalJson: Record<string, unknown>) {
   finalJson.design = design;
 }
 
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function restoredJsonFromGenerationMetadata(metadata: Record<string, unknown>) {
+  const payload = objectValue(metadata.payload);
+  const baseJson = objectValue(payload?.jsonContent);
+  if (!payload || !baseJson) return null;
+  const finalJson = structuredClone(baseJson) as Record<string, unknown>;
+  const originData = objectValue(payload.originData) || {};
+  const outline = objectValue(metadata.offeringOutline);
+  if (outline) applyAiOfferingOutline(finalJson, outline);
+  applyGeneratedSitePageInserts(finalJson, originData);
+  const copyPatch = objectValue(metadata.copyPatch);
+  if (copyPatch) applyAiCopyPatch(finalJson, copyPatch);
+  applyGeneratedSitePageInserts(finalJson, originData);
+  return { finalJson, payload, originData };
+}
+
 export async function handleSites(deps: SitesHandlerDeps, request: Request, db: D1DatabaseLike, env: SitesEnv, segments: string[]): Promise<Response> {
   const {
     templateSchema,
@@ -263,6 +283,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
       { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
       { table: "json_sites", column: "json_summary", definition: "TEXT" },
+      { table: "json_sites", column: "last_preview_error", definition: "TEXT" },
+      { table: "json_sites", column: "last_preview_error_at", definition: "DATETIME" },
       { table: "json_sites", column: "updated_at", definition: "DATETIME" },
       { table: "leads", column: "status", definition: "TEXT DEFAULT 'scraped'" },
       { table: "leads", column: "last_contacted", definition: "DATETIME" },
@@ -284,6 +306,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       columns.has("r2_json_key") ? "r2_json_key" : "",
       columns.has("r2_json_url") ? "r2_json_url" : "",
       columns.has("json_summary") ? "json_summary" : "",
+      columns.has("last_preview_error") ? "last_preview_error" : "",
+      columns.has("last_preview_error_at") ? "last_preview_error_at" : "",
       columns.has("created_at") ? "created_at" : "",
       columns.has("updated_at") ? "updated_at" : "",
     ].filter(Boolean);
@@ -313,6 +337,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         r2_json_key?: string;
         r2_json_url?: string;
         json_summary?: string;
+        last_preview_error?: string;
+        last_preview_error_at?: string;
         created_at?: string;
         updated_at?: string;
         lead_status?: string;
@@ -329,6 +355,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       }>();
 
     return json((rows.results || []).map((row) => {
+      try {
       let parsed: Record<string, unknown> = {};
       try {
         parsed = parseJsonObject(row.json_summary);
@@ -401,15 +428,137 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         contacted: Boolean(row.lead_last_contacted || row.lead_status === "contacted" || row.prospect_status === "contacted"),
         r2JsonUrl: row.r2_json_url || "",
         storageMode: row.r2_json_key ? "r2" : "legacy_d1",
+        lastPreviewError: row.last_preview_error || "",
+        lastPreviewErrorAt: row.last_preview_error_at || "",
+        needsRecovery: Boolean(row.last_preview_error),
         latestGenerationJobId: row.latest_generation_job_id || "",
         latestGenerationJobStatus: row.latest_generation_job_status || "",
         latestGenerationJobUpdatedAt: row.latest_generation_job_updated_at || "",
       };
+      } catch (error) {
+        console.error(`Site list row summary failed for ${row.business_id}:`, error);
+        return {
+          id: row.id || row.business_id,
+          businessId: row.business_id,
+          businessName: row.business_id,
+          niche: "Site summary needs repair",
+          language: "",
+          region: "",
+          rating: null,
+          reviewCount: null,
+          createdAt: row.created_at || "",
+          updatedAt: row.updated_at || row.created_at || "",
+          previewUrl: `/${row.business_id}`,
+          googleMapsUrl: "",
+          generatedWithAi: false,
+          generationMode: "summary_error",
+          aiProvider: "",
+          aiModel: "",
+          serviceCardImageTotal: null,
+          missingServiceCardImageCount: null,
+          duplicateServiceCardImageCount: null,
+          hasMissingServiceCardImages: false,
+          hasDuplicateServiceCardImages: false,
+          needsServiceCardImageRepair: false,
+          hasAboutPage: false,
+          serviceNavLabelTotal: null,
+          missingServiceNavLabelCount: null,
+          needsAboutNavRepair: true,
+          aboutNavAuditKnown: false,
+          lastImageRepairAt: "",
+          fontPairing: "",
+          fontPairingLabel: "",
+          lastVisualVariationAt: "",
+          leadStatus: row.lead_status || "",
+          lastContactedAt: row.lead_last_contacted || "",
+          lastViewedAt: row.lead_last_viewed_at || "",
+          viewCount: Number(row.lead_view_count || 0) || 0,
+          lastDownloadedAt: row.lead_last_downloaded_at || "",
+          downloadCount: Number(row.lead_download_count || 0) || 0,
+          setupFollowUpContactedAt: row.lead_setup_followup_contacted_at || "",
+          prospectStatus: row.prospect_status || "",
+          contacted: Boolean(row.lead_last_contacted || row.lead_status === "contacted" || row.prospect_status === "contacted"),
+          r2JsonUrl: row.r2_json_url || "",
+          storageMode: row.r2_json_key ? "r2" : "legacy_d1",
+          lastPreviewError: row.last_preview_error || "",
+          lastPreviewErrorAt: row.last_preview_error_at || "",
+          needsRecovery: true,
+          latestGenerationJobId: row.latest_generation_job_id || "",
+          latestGenerationJobStatus: row.latest_generation_job_status || "",
+          latestGenerationJobUpdatedAt: row.latest_generation_job_updated_at || "",
+        };
+      }
     }));
   }
 
   if (request.method === "POST" && segments.length === 2 && segments[1] === "migrate-r2") {
     return migrateOldSiteJsonRowsToR2(siteStorageDeps, request, db, env);
+  }
+
+  if (request.method === "POST" && segments.length === 2 && segments[1] === "scan-r2-health") {
+    if (!env.R2?.get) {
+      return errorJson("R2 binding is not configured. Cannot scan R2 JSON health.", 400);
+    }
+    const body = await readJsonBody(request).catch(() => ({}));
+    const limit = Math.max(1, Math.min(25, Math.floor(Number(body.limit || 10))));
+    const offset = Math.max(0, Math.floor(Number(body.offset || 0)));
+    await ensureRequiredColumns(db, [
+      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+      { table: "json_sites", column: "last_preview_error", definition: "TEXT" },
+      { table: "json_sites", column: "last_preview_error_at", definition: "DATETIME" },
+      { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+    ]);
+
+    const rows = await db
+      .prepare(
+        `SELECT business_id, json_content, r2_json_key
+         FROM json_sites
+         WHERE COALESCE(r2_json_key, '') <> ''
+         ORDER BY datetime(COALESCE(updated_at, created_at, '1970-01-01')) DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .bind(limit, offset)
+      .all<{ business_id: string; json_content: string; r2_json_key?: string }>();
+    const totalRow = await db
+      .prepare("SELECT COUNT(*) AS total FROM json_sites WHERE COALESCE(r2_json_key, '') <> ''")
+      .first<{ total?: number }>();
+
+    let ok = 0;
+    let failed = 0;
+    const failures: Array<{ businessId: string; error: string }> = [];
+    for (const row of rows.results || []) {
+      try {
+        await readSiteJsonFromStorage(siteStorageDeps, row, env);
+        ok += 1;
+        await db
+          .prepare("UPDATE json_sites SET last_preview_error = NULL, last_preview_error_at = NULL WHERE business_id = ?")
+          .bind(row.business_id)
+          .run();
+      } catch (error) {
+        failed += 1;
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push({ businessId: row.business_id, error: message.slice(0, 300) });
+        await db
+          .prepare("UPDATE json_sites SET last_preview_error = ?, last_preview_error_at = ? WHERE business_id = ?")
+          .bind(message.slice(0, 1000), new Date().toISOString(), row.business_id)
+          .run();
+      }
+    }
+
+    const scanned = (rows.results || []).length;
+    const total = Number(totalRow?.total || 0);
+    const nextOffset = offset + scanned;
+    return json({
+      success: true,
+      scanned,
+      ok,
+      failed,
+      failures,
+      offset,
+      nextOffset,
+      total,
+      hasMore: nextOffset < total && scanned > 0,
+    });
   }
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "outreach-contacted") {
@@ -735,6 +884,184 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       businessId,
       finalizedAt,
       finalizeDurationMs: Math.max(0, Date.now() - finalizeStartedMs),
+      summary: jsonSummary,
+      storageMode: r2JsonKey ? "r2" : "legacy_d1",
+    });
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "resave-json-summary") {
+    const businessId = segments[1];
+    await ensureRequiredColumns(db, [
+      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+      { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
+      { table: "json_sites", column: "json_summary", definition: "TEXT" },
+      { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+    ]);
+    const columns = await tableColumns(db, "json_sites");
+    const selectedColumns = [
+      "business_id",
+      "json_content",
+      columns.has("r2_json_key") ? "r2_json_key" : "",
+    ].filter(Boolean);
+    const row = await db
+      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
+      .bind(businessId)
+      .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+    if (!row?.json_content) return errorJson("Site not found", 404);
+
+    let siteJson: Record<string, unknown>;
+    try {
+      const savedJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
+      if (!savedJson || typeof savedJson !== "object" || Array.isArray(savedJson)) {
+        return errorJson("Saved site JSON is not an object and cannot be re-saved.", 422);
+      }
+      siteJson = savedJson as Record<string, unknown>;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return errorJson(`Cannot repair this site without readable full JSON. ${message}`, 409);
+    }
+
+    const originData = siteJson.sourceData && typeof siteJson.sourceData === "object" ? siteJson.sourceData as Record<string, unknown> : {};
+    applyGeneratedSitePageInserts(siteJson, originData);
+    const repairedAt = new Date().toISOString();
+    const meta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
+    siteJson.meta = { ...meta, lastJsonSummaryRepairAt: repairedAt };
+
+    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
+    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
+    let r2JsonUrl = asString(storage.r2JsonUrl);
+    if (r2JsonKey || env.R2) {
+      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
+      if (nextKey) {
+        r2JsonKey = nextKey;
+        r2JsonUrl = publicR2Url(env, nextKey);
+        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
+        await uploadJsonToR2(siteJson, env, businessId);
+      }
+    }
+    const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
+    const d1JsonContent = r2JsonKey
+      ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
+      : JSON.stringify(siteJson);
+    await saveJsonSiteRecord(db, businessId, d1JsonContent, {
+      r2_json_key: r2JsonKey || null,
+      r2_json_url: r2JsonUrl || null,
+      json_summary: JSON.stringify(jsonSummary),
+    });
+    return json({
+      success: true,
+      businessId,
+      repairedAt,
+      summary: jsonSummary,
+      storageMode: r2JsonKey ? "r2" : "legacy_d1",
+    });
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "restore-from-latest-job") {
+    const businessId = segments[1];
+    await ensureRequiredColumns(db, [
+      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+      { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
+      { table: "json_sites", column: "json_summary", definition: "TEXT" },
+      { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+      { table: "generation_jobs", column: "business_id", definition: "TEXT" },
+      { table: "generation_jobs", column: "status", definition: "TEXT" },
+      { table: "generation_jobs", column: "metadata_json", definition: "TEXT" },
+      { table: "generation_jobs", column: "updated_at", definition: "DATETIME" },
+    ]);
+
+    const candidates = await db
+      .prepare(
+        `SELECT id, metadata_json, updated_at, created_at
+         FROM generation_jobs
+         WHERE business_id = ? AND status = 'success'
+         ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
+         LIMIT 12`,
+      )
+      .bind(businessId)
+      .all<{ id: string; metadata_json?: string; updated_at?: string; created_at?: string }>();
+
+    let restored: ReturnType<typeof restoredJsonFromGenerationMetadata> = null;
+    let sourceJobId = "";
+    const checkedJobIds = new Set<string>();
+    const tryMetadata = async (jobId: string, metadataJson?: string) => {
+      if (!jobId || checkedJobIds.has(jobId)) return false;
+      checkedJobIds.add(jobId);
+      const metadata = parseJsonObject(metadataJson);
+      const direct = restoredJsonFromGenerationMetadata(metadata);
+      if (direct) {
+        restored = direct;
+        sourceJobId = jobId;
+        return true;
+      }
+      const parentId = asString(metadata.parentGenerationJobId);
+      if (!parentId || checkedJobIds.has(parentId)) return false;
+      const parent = await db
+        .prepare("SELECT id, metadata_json FROM generation_jobs WHERE id = ? LIMIT 1")
+        .bind(parentId)
+        .first<{ id: string; metadata_json?: string }>();
+      if (!parent?.id) return false;
+      checkedJobIds.add(parent.id);
+      const parentRestored = restoredJsonFromGenerationMetadata(parseJsonObject(parent.metadata_json));
+      if (!parentRestored) return false;
+      restored = parentRestored;
+      sourceJobId = parent.id;
+      return true;
+    };
+
+    for (const candidate of candidates.results || []) {
+      if (await tryMetadata(candidate.id, candidate.metadata_json)) break;
+    }
+
+    if (!restored) {
+      return errorJson("No recent successful generation job contained enough saved payload/copy patch metadata to restore this site JSON.", 409, {
+        businessId,
+        checkedJobs: Array.from(checkedJobIds),
+      });
+    }
+
+    const restoredAt = new Date().toISOString();
+    const finalJson = restored.finalJson;
+    const payload = restored.payload;
+    const originData = restored.originData;
+    const meta = finalJson.meta && typeof finalJson.meta === "object" ? finalJson.meta as Record<string, unknown> : {};
+    const businessName = asString(meta.businessName, asString(payload.businessName, businessId));
+    finalJson.meta = {
+      ...meta,
+      businessId,
+      businessName,
+      lastRestoredFromGenerationJobAt: restoredAt,
+      restoredFromGenerationJobId: sourceJobId,
+    };
+    applySeededFontPairing(finalJson, businessName, businessId, originData);
+    normalizeSiteColorContrast(finalJson);
+
+    let r2JsonKey = "";
+    let r2JsonUrl = "";
+    if (env.R2) {
+      const nextKey = await uploadJsonToR2(finalJson, env, businessId);
+      if (nextKey) {
+        r2JsonKey = nextKey;
+        r2JsonUrl = publicR2Url(env, nextKey);
+        const storage = finalJson.storage && typeof finalJson.storage === "object" ? finalJson.storage as Record<string, unknown> : {};
+        finalJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
+        await uploadJsonToR2(finalJson, env, businessId);
+      }
+    }
+    const jsonSummary = siteSummaryFromJson(siteStorageDeps, finalJson, businessId);
+    const d1JsonContent = r2JsonKey
+      ? JSON.stringify(compactSiteManifest(siteStorageDeps, finalJson, env, businessId, r2JsonKey))
+      : JSON.stringify(finalJson);
+    await saveJsonSiteRecord(db, businessId, d1JsonContent, {
+      r2_json_key: r2JsonKey || null,
+      r2_json_url: r2JsonUrl || null,
+      json_summary: JSON.stringify(jsonSummary),
+    });
+    return json({
+      success: true,
+      businessId,
+      restoredAt,
+      sourceJobId,
       summary: jsonSummary,
       storageMode: r2JsonKey ? "r2" : "legacy_d1",
     });
@@ -1359,18 +1686,43 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       "business_id",
       "json_content",
       columns.has("r2_json_key") ? "r2_json_key" : "",
+      columns.has("last_preview_error") ? "last_preview_error" : "",
     ].filter(Boolean);
     const row = await db
       .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
       .bind(businessId)
-      .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+      .first<{ business_id: string; json_content: string; r2_json_key?: string; last_preview_error?: string }>();
     if (!row?.json_content) {
       return errorJson("Site not found", 404);
     }
     try {
-      return json(await readSiteJsonFromStorage(siteStorageDeps, row, env));
+      const siteJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
+      if (row.last_preview_error && columns.has("last_preview_error") && columns.has("last_preview_error_at")) {
+        try {
+          await db
+            .prepare("UPDATE json_sites SET last_preview_error = NULL, last_preview_error_at = NULL WHERE business_id = ?")
+            .bind(businessId)
+            .run();
+        } catch (clearError) {
+          console.error(`Failed to clear preview error marker for ${businessId}:`, clearError);
+        }
+      }
+      return json(siteJson);
     } catch (error) {
-      return errorJson(error instanceof Error ? error.message : String(error), 502);
+      const message = error instanceof Error ? error.message : String(error);
+      try {
+        await ensureRequiredColumns(db, [
+          { table: "json_sites", column: "last_preview_error", definition: "TEXT" },
+          { table: "json_sites", column: "last_preview_error_at", definition: "DATETIME" },
+        ]);
+        await db
+          .prepare("UPDATE json_sites SET last_preview_error = ?, last_preview_error_at = ? WHERE business_id = ?")
+          .bind(message.slice(0, 1000), new Date().toISOString(), businessId)
+          .run();
+      } catch (markerError) {
+        console.error(`Failed to store preview error marker for ${businessId}:`, markerError);
+      }
+      return errorJson(message, 502);
     }
   }
 

@@ -367,12 +367,13 @@ export function buildSelectedPhotoGeneratePayload(input: {
 }
 
 export async function postGenerateSite(payload: Record<string, unknown>, label = "Generate site") {
+  const requestPath = "/api/sites/generate";
   const response = await fetch("/api/sites/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readApiJson<any>(response, label);
+  return readApiJson<any>(response, label, requestPath);
 }
 
 type ChunkedGenerateProgress = {
@@ -396,12 +397,13 @@ export async function postChunkedGenerateSite(
   label = "Generate site",
   onStep?: (step: string, progress?: ChunkedGenerateProgress) => void,
 ) {
+  const startPath = "/api/generation-jobs/chunked-start";
   const startResponse = await fetch("/api/generation-jobs/chunked-start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const start = await readApiJson<any>(startResponse, `${label} start`);
+  const start = await readApiJson<any>(startResponse, `${label} start`, startPath);
   const jobId = start.id;
   if (!jobId) throw new Error("Chunked generation did not return a job id.");
 
@@ -425,12 +427,13 @@ export async function runChunkedGenerationJob(
       while (attempt <= 2) {
         onStep?.(step, { status: attempt === 1 ? "running" : "retrying", attempt });
         try {
-          const stepResponse = await fetch(`/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`, {
+          const stepPath = `/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`;
+          const stepResponse = await fetch(stepPath, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ step }),
           });
-          result = await readApiJson<any>(stepResponse, `${label} ${step}`);
+          result = await readApiJson<any>(stepResponse, `${label} ${step}`, stepPath);
           onStep?.(step, {
             status: "complete",
             attempt,

@@ -68,6 +68,9 @@ type SiteRow = {
   setupFollowUpContactedAt?: string;
   prospectStatus?: string;
   contacted?: boolean;
+  lastPreviewError?: string;
+  lastPreviewErrorAt?: string;
+  needsRecovery?: boolean;
   latestGenerationJobId?: string;
   latestGenerationJobStatus?: string;
   latestGenerationJobUpdatedAt?: string;
@@ -78,6 +81,8 @@ type RegenerateMode = "resave" | "ai";
 const SERVICE_IMAGE_BATCH_REPAIR_LIMIT = 10;
 const VISUAL_VARIATION_BATCH_LIMIT = 10;
 const ABOUT_NAV_AI_BATCH_LIMIT = 5;
+const R2_HEALTH_SCAN_CHUNK_SIZE = 10;
+const R2_HEALTH_SCAN_MAX = 50;
 const FOLLOW_UP_AFTER_DAYS = 3;
 
 function generationBadge(site: SiteRow) {
@@ -93,6 +98,13 @@ function generationBadge(site: SiteRow) {
       label: "Fallback Only",
       title: "Site was built from gathered Google data/scaffold without a successful AI copy patch.",
       className: "bg-slate-100 text-slate-700",
+    };
+  }
+  if (site.generationMode === "summary_error") {
+    return {
+      label: "Summary Error",
+      title: "The site row exists, but the saved summary could not be rebuilt for the admin list. Use the repair/re-save JSON action to recompute the summary without AI.",
+      className: "bg-red-100 text-red-800",
     };
   }
   return {
@@ -211,6 +223,14 @@ function siteDownloadedWithoutSetupFollowUp(site: SiteRow) {
   return siteDownloadedWithoutSetup(site) && !siteSetupFollowUpSent(site);
 }
 
+function siteHasSummaryError(site: SiteRow) {
+  return site.generationMode === "summary_error";
+}
+
+function siteNeedsRecovery(site: SiteRow) {
+  return siteHasSummaryError(site) || site.needsRecovery === true || Boolean(site.lastPreviewError);
+}
+
 export default function AdminSites() {
   const { showApiError, showToast } = useAdminToast();
   const [sites, setSites] = useState<SiteRow[]>([]);
@@ -218,14 +238,18 @@ export default function AdminSites() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "images" | "content" | "contacted" | "followUp" | "downloaded" | "setupFollowUp" | "downloadedNoSetupFollowUp">("all");
+  const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "recovery" | "images" | "content" | "contacted" | "followUp" | "downloaded" | "setupFollowUp" | "downloadedNoSetupFollowUp">("all");
   const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
   const [regeneratingId, setRegeneratingId] = useState("");
   const [repairingServiceImagesId, setRepairingServiceImagesId] = useState("");
+  const [repairingSummaryId, setRepairingSummaryId] = useState("");
+  const [restoringFromJobId, setRestoringFromJobId] = useState("");
   const [batchRepairingServiceImages, setBatchRepairingServiceImages] = useState(false);
   const [refreshingVisualVariationId, setRefreshingVisualVariationId] = useState("");
   const [batchRefreshingVisualVariation, setBatchRefreshingVisualVariation] = useState(false);
   const [batchAiFillingAboutNav, setBatchAiFillingAboutNav] = useState(false);
+  const [scanningR2Health, setScanningR2Health] = useState(false);
+  const [r2HealthScanProgress, setR2HealthScanProgress] = useState<{ scanned: number; failed: number; total: number } | null>(null);
   const [generatingProspectId, setGeneratingProspectId] = useState("");
   const [generationProgress, setGenerationProgress] = useState<Record<string, { step: string; text: string; shortText?: string; message?: string; retryInSeconds?: number }>>({});
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
@@ -235,6 +259,8 @@ export default function AdminSites() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
   const [regenerateModel, setRegenerateModel] = useLocalStorageState("webview.adminSites.regenerateModel", "~anthropic/claude-sonnet-latest");
+  const [r2HealthScanOffset, setR2HealthScanOffset] = useLocalStorageState("webview.adminSites.r2HealthScanOffset", 0);
+  const [lastR2HealthScanAt, setLastR2HealthScanAt] = useLocalStorageState("webview.adminSites.lastR2HealthScanAt", "");
   const showAboutNavRepairOverride = useMemo(() => {
     if (typeof window === "undefined") return false;
     return new URLSearchParams(window.location.search).get("repair") === "about-nav";
@@ -323,12 +349,14 @@ export default function AdminSites() {
     setIsLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/sites");
-      const data = await readApiJson<unknown>(response, "Sites API");
+      const sitesPath = "/api/sites";
+      const response = await fetch(sitesPath);
+      const data = await readApiJson<unknown>(response, "Sites API", sitesPath);
       setSites(Array.isArray(data) ? (data as SiteRow[]) : []);
 
-      const prospectResponse = await fetch("/api/prospects?status=details_loaded");
-      const prospectData = await readApiJson<unknown>(prospectResponse, "Prospects API");
+      const prospectsPath = "/api/prospects?status=details_loaded";
+      const prospectResponse = await fetch(prospectsPath);
+      const prospectData = await readApiJson<unknown>(prospectResponse, "Prospects API", prospectsPath);
       setGatheredProspects(Array.isArray(prospectData)
         ? (prospectData as ProspectRow[]).filter((item) => item.place_id && !item.generatedBusinessId)
         : []);
@@ -362,7 +390,9 @@ export default function AdminSites() {
 
   const filteredSites = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const issueFilteredSites = siteIssueFilter === "images"
+    const issueFilteredSites = siteIssueFilter === "recovery"
+      ? sites.filter(siteNeedsRecovery)
+      : siteIssueFilter === "images"
       ? sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0)
       : siteIssueFilter === "content"
         ? sites.filter(needsAboutNavRepair)
@@ -391,8 +421,26 @@ export default function AdminSites() {
       siteDownloadedWithoutSetup(site) ? "downloaded claimed free package warm owner no setup" : "",
       site.setupFollowUpContactedAt ? "downloaded follow up sent setup upsell domain hosting" : "",
       siteDownloadedWithoutSetupFollowUp(site) ? "downloaded no setup follow up needs setup message upsell queue" : "",
+      siteNeedsRecovery(site) ? "recovery summary error r2 preview failed missing json restore repair" : "",
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [query, siteIssueFilter, sites]);
+
+  const recoverySiteCount = useMemo(
+    () => sites.filter(siteNeedsRecovery).length,
+    [sites],
+  );
+
+  const r2BackedSiteCount = useMemo(
+    () => sites.filter((site) => site.storageMode === "r2").length,
+    [sites],
+  );
+  const r2HealthScanResumeOffset = r2HealthScanOffset < r2BackedSiteCount ? r2HealthScanOffset : 0;
+  const r2HealthScanStatusLabel = useMemo(() => {
+    if (!lastR2HealthScanAt) return "No scan yet";
+    const scannedAt = Date.parse(lastR2HealthScanAt);
+    const formattedTime = Number.isFinite(scannedAt) ? new Date(scannedAt).toLocaleString() : "unknown time";
+    return `${r2HealthScanResumeOffset > 0 ? `Next row ${r2HealthScanResumeOffset + 1}` : "Starts over"} · ${formattedTime}`;
+  }, [lastR2HealthScanAt, r2HealthScanResumeOffset]);
 
   const missingServiceImageSiteCount = useMemo(
     () => sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0).length,
@@ -459,18 +507,9 @@ export default function AdminSites() {
   }, [gatheredProspects, query]);
 
   const fetchSiteJson = async (site: SiteRow) => {
-    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}`);
-    const text = await response.text();
-    let data: any = {};
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      throw new Error(`Response bukan JSON: ${text.slice(0, 120)}`);
-    }
-    if (!response.ok || data.error) {
-      throw new Error(data.error || `Site JSON returned ${response.status}`);
-    }
-    return data;
+    const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}`;
+    const response = await fetch(requestPath);
+    return readApiJson<any>(response, "Site JSON", requestPath);
   };
 
   const normalizePaletteForContrast = (palette: string[]) => {
@@ -626,17 +665,9 @@ export default function AdminSites() {
 
   const handleSeeCopyBrief = async (site: SiteRow) => {
     try {
-      const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/copy-brief`);
-      const text = await response.text();
-      let data: any = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        throw new Error(`Response bukan JSON: ${text.slice(0, 120)}`);
-      }
-      if (!response.ok || data.error) {
-        throw new Error(data.error || `Copy brief returned ${response.status}`);
-      }
+      const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/copy-brief`;
+      const response = await fetch(requestPath);
+      const data = await readApiJson<any>(response, "Copy brief", requestPath);
       setActiveData({ title: "AI copy brief", subtitle: `${site.businessName} · ${site.businessId}`, data });
     } catch (err) {
       showApiError(err, { source: "AI copy brief" });
@@ -917,12 +948,13 @@ export default function AdminSites() {
   const loadOutreachContactInfo = async (site: SiteRow) => contactInfoFromSiteJson(await fetchSiteJson(site));
 
   const markOutreachContacted = async (site: SiteRow, channel: string, action: string, contact = "") => {
-    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/outreach-contacted`, {
+    const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/outreach-contacted`;
+    const response = await fetch(requestPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channel, action, contact }),
     });
-    const result = await readApiJson<{ lastContactedAt?: string; setupFollowUpContactedAt?: string; leadUpdated?: boolean; prospectUpdated?: boolean }>(response, "Mark outreach contacted");
+    const result = await readApiJson<{ lastContactedAt?: string; setupFollowUpContactedAt?: string; leadUpdated?: boolean; prospectUpdated?: boolean }>(response, "Mark outreach contacted", requestPath);
     const lastContactedAt = result.lastContactedAt || new Date().toISOString();
     const setupFollowUpContactedAt = result.setupFollowUpContactedAt || (action.startsWith("setup_upsell_") || action.startsWith("setup_followup_") ? lastContactedAt : "");
     setSites((current) => current.map((item) => item.businessId === site.businessId
@@ -1028,7 +1060,8 @@ export default function AdminSites() {
   };
 
   const runAboutNavAiFillSite = async (site: SiteRow, label: string) => {
-    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/ai-fill-about-nav-start`, {
+    const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/ai-fill-about-nav-start`;
+    const response = await fetch(requestPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1036,7 +1069,7 @@ export default function AdminSites() {
         model: activeRegenerateModel,
       }),
     });
-    const start = await readApiJson<Record<string, unknown>>(response, `${label} start`);
+    const start = await readApiJson<Record<string, unknown>>(response, `${label} start`, requestPath);
     await runChunkedGenerationJob(start, label, (step, progress) => updateGenerationProgress(site.businessId, step, progress));
   };
 
@@ -1176,11 +1209,56 @@ export default function AdminSites() {
   };
 
   const postRepairServiceImages = async (site: SiteRow) => {
-    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/repair-service-images`, {
+    const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/repair-service-images`;
+    const response = await fetch(requestPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
-    return readApiJson<{ changed?: number; availableImages?: number; lastImageRepairAt?: string }>(response, "Repair service card images");
+    return readApiJson<{ changed?: number; availableImages?: number; lastImageRepairAt?: string }>(response, "Repair service card images", requestPath);
+  };
+
+  const handleResaveSiteSummary = async (site: SiteRow) => {
+    const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/resave-json-summary`;
+    setRepairingSummaryId(site.businessId);
+    try {
+      const response = await fetch(requestPath, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const result = await readApiJson<{ storageMode?: string }>(response, "Repair site JSON summary", requestPath);
+      notifyAction(
+        "success",
+        "Site JSON re-saved",
+        `${site.businessId} summary was rebuilt from saved full JSON without AI regeneration. Storage: ${result.storageMode || "unknown"}.`,
+      );
+      fetchSites();
+    } catch (err) {
+      showApiError(err, { source: "Repair site JSON summary" });
+    } finally {
+      setRepairingSummaryId("");
+    }
+  };
+
+  const handleRestoreSiteFromLatestJob = async (site: SiteRow) => {
+    const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/restore-from-latest-job`;
+    setRestoringFromJobId(site.businessId);
+    try {
+      const response = await fetch(requestPath, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const result = await readApiJson<{ sourceJobId?: string; storageMode?: string }>(response, "Restore site from latest generation job", requestPath);
+      notifyAction(
+        "success",
+        "Site restored from job",
+        `${site.businessId} was rebuilt from generation job ${result.sourceJobId || "metadata"} without AI regeneration. Storage: ${result.storageMode || "unknown"}.`,
+      );
+      fetchSites();
+    } catch (err) {
+      showApiError(err, { source: "Restore site from latest generation job" });
+    } finally {
+      setRestoringFromJobId("");
+    }
   };
 
   const handleRepairServiceImages = async (site: SiteRow) => {
@@ -1250,14 +1328,80 @@ export default function AdminSites() {
     }
   };
 
+  const handleScanR2Health = async () => {
+    if (r2BackedSiteCount === 0) {
+      notifyAction("info", "No R2 sites", "There are no R2-backed generated sites to scan yet.");
+      return;
+    }
+
+    setScanningR2Health(true);
+    const startingOffset = r2HealthScanResumeOffset;
+    setR2HealthScanProgress({ scanned: 0, failed: 0, total: Math.min(Math.max(r2BackedSiteCount - startingOffset, 0), R2_HEALTH_SCAN_MAX) });
+    let offset = startingOffset;
+    let scanned = 0;
+    let failed = 0;
+    let total = r2BackedSiteCount;
+    let hasMore = false;
+    const failureDetails: string[] = [];
+    try {
+      while (scanned < R2_HEALTH_SCAN_MAX) {
+        const limit = Math.min(R2_HEALTH_SCAN_CHUNK_SIZE, R2_HEALTH_SCAN_MAX - scanned);
+        const requestPath = "/api/sites/scan-r2-health";
+        const response = await fetch(requestPath, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit, offset }),
+        });
+        const result = await readApiJson<{
+          scanned?: number;
+          ok?: number;
+          failed?: number;
+          failures?: Array<{ businessId?: string; error?: string }>;
+          nextOffset?: number;
+          total?: number;
+          hasMore?: boolean;
+        }>(response, "Scan R2 JSON health", requestPath);
+        const scannedThisChunk = Number(result.scanned || 0);
+        scanned += scannedThisChunk;
+        failed += Number(result.failed || 0);
+        total = Number(result.total || total || 0);
+        (result.failures || []).forEach((item) => {
+          failureDetails.push(`${item.businessId || "unknown"}: ${item.error || "R2 JSON read failed"}`);
+        });
+        hasMore = Boolean(result.hasMore);
+        setR2HealthScanProgress({ scanned, failed, total: Math.min(Math.max(total - startingOffset, 0) || R2_HEALTH_SCAN_MAX, R2_HEALTH_SCAN_MAX) });
+        if (!hasMore || scannedThisChunk === 0) break;
+        offset = Number(result.nextOffset || offset + scannedThisChunk);
+      }
+
+      setR2HealthScanOffset(hasMore ? offset : 0);
+      setLastR2HealthScanAt(new Date().toISOString());
+      const cappedMessage = hasMore
+        ? ` Capped at ${R2_HEALTH_SCAN_MAX}; run again to continue from row ${offset + 1}.`
+        : "";
+      notifyAction(
+        failed > 0 ? "warning" : "success",
+        failed > 0 ? "R2 health scan found issues" : "R2 health scan completed",
+        `Scanned ${scanned} R2 JSON manifest${scanned === 1 ? "" : "s"}; ${failed} failed.${cappedMessage}`,
+        failureDetails.slice(0, 5),
+      );
+      fetchSites();
+    } catch (err) {
+      showApiError(err, { source: "Scan R2 JSON health" });
+    } finally {
+      setScanningR2Health(false);
+    }
+  };
+
   const postRefreshVisualVariation = async (site: SiteRow) => {
     const paletteOptions = await buildMissingPaletteOptionsForSite(site);
-    const response = await fetch(`/api/sites/${encodeURIComponent(site.businessId)}/refresh-visual-variation`, {
+    const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/refresh-visual-variation`;
+    const response = await fetch(requestPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ paletteOptions }),
     });
-    return readApiJson<{ changed?: boolean; paletteOptionsChanged?: boolean; fontPairing?: string; fontPairingLabel?: string; paletteOptionCount?: number; lastVisualVariationAt?: string }>(response, "Refresh visual variation");
+    return readApiJson<{ changed?: boolean; paletteOptionsChanged?: boolean; fontPairing?: string; fontPairingLabel?: string; paletteOptionCount?: number; lastVisualVariationAt?: string }>(response, "Refresh visual variation", requestPath);
   };
 
   const handleRefreshVisualVariation = async (site: SiteRow) => {
@@ -1357,6 +1501,48 @@ export default function AdminSites() {
           placeholder="Cari nama bisnis, slug, niche, bahasa..."
           className="min-w-0 flex-1 bg-transparent text-sm outline-none"
         />
+        <HoverTooltip text="Show generated sites that need recovery: admin summary rows that failed to parse, or R2-backed previews that recently failed to load the full saved JSON. Use the repair wrench or Regen restore-from-job action on these rows.">
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "recovery" ? "all" : "recovery")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "recovery"
+                ? "border-red-300 bg-red-50 text-red-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "recovery"}
+          >
+            <Wrench size={14} />
+            Recovery
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{recoverySiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <div className="flex shrink-0 flex-col gap-1">
+          <HoverTooltip text={`Scan up to ${R2_HEALTH_SCAN_MAX} R2-backed site JSON objects in small ${R2_HEALTH_SCAN_CHUNK_SIZE}-site API chunks. Failed reads are marked for the Recovery filter; successful reads clear old preview failure badges.`}>
+            <button
+              type="button"
+              onClick={handleScanR2Health}
+              disabled={scanningR2Health || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || regeneratingId !== "" || r2BackedSiteCount === 0}
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+              aria-label="Scan R2 JSON health"
+            >
+              {scanningR2Health ? (
+                <RefreshCw size={14} className="animate-spin" />
+              ) : (
+                <Database size={14} />
+              )}
+              {scanningR2Health
+                ? `R2 ${r2HealthScanProgress?.scanned || 0}/${r2HealthScanProgress?.total || Math.min(r2BackedSiteCount, R2_HEALTH_SCAN_MAX)}`
+                : "Scan R2"}
+              <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] text-red-700">
+                {Math.min(r2BackedSiteCount, R2_HEALTH_SCAN_MAX)}
+              </span>
+            </button>
+          </HoverTooltip>
+          <span className="max-w-[11rem] truncate px-1 text-[10px] leading-none text-gray-500" title={r2HealthScanStatusLabel}>
+            {r2HealthScanStatusLabel}
+          </span>
+        </div>
         <HoverTooltip text="Show only generated sites whose saved summary says homepage/services offer cards are missing images or repeat the same image. Rows generated before this audit exists may appear after repair or resave.">
           <button
             type="button"
@@ -1473,7 +1659,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleAiFillFilteredAboutNav}
-            disabled={batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || regeneratingId !== "" || !activeRegenerateModel || filteredMissingAboutNavSites.length === 0}
+            disabled={batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regeneratingId !== "" || !activeRegenerateModel || filteredMissingAboutNavSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
             aria-label="AI fill filtered About and navigation label issues"
           >
@@ -1492,7 +1678,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleRepairFilteredServiceImages}
-            disabled={batchRepairingServiceImages || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
+            disabled={batchRepairingServiceImages || batchRefreshingVisualVariation || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50"
             aria-label="Repair filtered service image issues"
           >
@@ -1511,7 +1697,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleRefreshFilteredVisualVariation}
-            disabled={batchRefreshingVisualVariation || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId !== "" || filteredSites.length === 0}
+            disabled={batchRefreshingVisualVariation || batchRepairingServiceImages || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || filteredSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50"
             aria-label="Refresh filtered visual variation"
           >
@@ -1710,7 +1896,7 @@ export default function AdminSites() {
           <span>Updated</span>
           <span className="inline-flex items-center justify-end gap-1.5 text-right">
             Actions
-            <HelpTooltip text="Preview opens the public site, Outreach copies or opens the owner-ready message with the ?owner=1 review link, Data shows saved JSON source data, Brief shows copy-only input, Image repairs service cards, Shuffle refreshes font variation without AI, Jobs opens the latest generation audit row, and Regen refreshes Google data or runs an AI copy patch." />
+            <HelpTooltip text="Preview opens the public site, Repair/re-save appears only for summary_error rows, Outreach copies or opens the owner-ready message with the ?owner=1 review link, Data shows saved JSON source data, Brief shows copy-only input, Image repairs service cards, Shuffle refreshes font variation without AI, Jobs opens the latest generation audit row, and Regen also includes a no-AI restore-from-job recovery action." />
           </span>
         </div>
 
@@ -1755,6 +1941,14 @@ export default function AdminSites() {
                       </HoverTooltip>
                     );
                   })()}
+                  {site.lastPreviewError && (
+                    <HoverTooltip text={`Last preview full JSON read failed${site.lastPreviewErrorAt ? ` at ${new Date(site.lastPreviewErrorAt).toLocaleString()}` : ""}. Error: ${site.lastPreviewError}`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800">
+                        <Wrench size={11} />
+                        Preview JSON failed
+                      </span>
+                    </HoverTooltip>
+                  )}
                   {(Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0 || site.needsServiceCardImageRepair === true) && (
                     <HoverTooltip text={`${site.missingServiceCardImageCount || 0} missing and ${site.duplicateServiceCardImageCount || 0} duplicate saved homepage/services offer card image${Number(site.duplicateServiceCardImageCount || 0) === 1 ? "" : "s"} out of ${site.serviceCardImageTotal || "unknown"} cards. Use the image action to repair without AI regeneration.`}>
                       <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
@@ -1853,6 +2047,32 @@ export default function AdminSites() {
                     <Globe2 size={14} />
                   </a>
                 </HoverTooltip>
+                {siteHasSummaryError(site) && (
+                  <>
+                    <HoverTooltip text="Repair this admin row by re-reading the saved full site JSON, rebuilding json_summary, and re-saving the manifest. No AI call or full regeneration.">
+                      <button
+                        type="button"
+                        onClick={() => handleResaveSiteSummary(site)}
+                        disabled={repairingSummaryId === site.businessId || restoringFromJobId === site.businessId}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
+                        aria-label="Repair and re-save site JSON summary"
+                      >
+                        {repairingSummaryId === site.businessId ? <RefreshCw size={14} className="animate-spin" /> : <Wrench size={14} />}
+                      </button>
+                    </HoverTooltip>
+                    <HoverTooltip text="Restore this site from the latest successful generation job metadata when the saved full JSON is missing. No AI call; rebuilds from saved generation payload and copy patch.">
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreSiteFromLatestJob(site)}
+                        disabled={repairingSummaryId === site.businessId || restoringFromJobId === site.businessId}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                        aria-label="Restore site from latest successful generation job"
+                      >
+                        {restoringFromJobId === site.businessId ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}
+                      </button>
+                    </HoverTooltip>
+                  </>
+                )}
                 <div className="relative">
                   <HoverTooltip text={shouldUseSetupOutreachForSite(site) ? "Copy or open a setup/domain/hosting follow-up for an owner who downloaded the free package but has not bought setup." : "Copy or open an owner-ready outreach message with the ?owner=1 review link. Email uses the saved business email if one exists; message opens the saved phone in Messages/SMS."}>
                     <button
@@ -2159,6 +2379,18 @@ export default function AdminSites() {
                             requiresAi={false}
                           />
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenRegenerateMenu("");
+                            handleRestoreSiteFromLatestJob(site);
+                          }}
+                          disabled={Boolean(regeneratingId || repairingSummaryId || restoringFromJobId || batchAiFillingAboutNav)}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                        >
+                          {restoringFromJobId === site.businessId ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}
+                          Restore from latest successful job
+                        </button>
                       </div>
                     </div>
                   )}

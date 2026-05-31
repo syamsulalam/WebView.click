@@ -142,12 +142,13 @@ export function useGenerationJobRetry({
     let data: any = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        const response = await fetch(`/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`, {
+        const requestPath = `/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`;
+        const response = await fetch(requestPath, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ step, ...extraBody }),
         });
-        data = await readApiJson<any>(response, `${label} ${step} step`);
+        data = await readApiJson<any>(response, `${label} ${step} step`, requestPath);
         break;
       } catch (error) {
         if (attempt >= 2 || !isTransientStepError(error)) throw error;
@@ -184,8 +185,9 @@ export function useGenerationJobRetry({
     if (chunkedGenerationState(job).chunked) return job;
     const parentId = String(job?.metadata?.parentGenerationJobId || "");
     if (!parentId) throw new Error("This job does not have a chunked parent job for copy-only retry.");
-    const response = await fetch(`/api/generation-jobs?limit=20&q=${encodeURIComponent(parentId)}`);
-    const data = await readApiJson<any>(response, "Load parent chunked generation job");
+    const requestPath = `/api/generation-jobs?limit=20&q=${encodeURIComponent(parentId)}`;
+    const response = await fetch(requestPath);
+    const data = await readApiJson<any>(response, "Load parent chunked generation job", requestPath);
     const rows = Array.isArray(data) ? data : Array.isArray(data?.jobs) ? data.jobs : [];
     const parentJob = rows.find((row: any) => row.id === parentId);
     if (!parentJob) throw new Error(`Parent chunked job ${parentId} was not found.`);
@@ -195,8 +197,9 @@ export function useGenerationJobRetry({
 
   const loadGenerationJobById = async (jobId: string) => {
     if (!jobId) return null;
-    const response = await fetch(`/api/generation-jobs?limit=20&q=${encodeURIComponent(jobId)}`);
-    const data = await readApiJson<any>(response, "Load generation job");
+    const requestPath = `/api/generation-jobs?limit=20&q=${encodeURIComponent(jobId)}`;
+    const response = await fetch(requestPath);
+    const data = await readApiJson<any>(response, "Load generation job", requestPath);
     const rows = Array.isArray(data) ? data : Array.isArray(data?.jobs) ? data.jobs : [];
     return rows.find((row: any) => row.id === jobId) || null;
   };

@@ -1,22 +1,23 @@
-export async function readApiJson<T = any>(response: Response, fallbackLabel = "Request"): Promise<T> {
+export async function readApiJson<T = any>(response: Response, fallbackLabel = "Request", requestPath = ""): Promise<T> {
   const text = await response.text();
   let data: any = {};
   if (text) {
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(describeNonJsonApiResponse(response, text, fallbackLabel));
+      throw new Error(describeNonJsonApiResponse(response, text, fallbackLabel, requestPath));
     }
   }
 
   if (!response.ok || data?.error) {
-    throw new Error(`${data?.error || `${fallbackLabel} failed with HTTP ${response.status}`}${apiResponseContext(response)}`);
+    throw new Error(`${data?.error || `${fallbackLabel} failed with HTTP ${response.status}`}${apiResponseContext(response, requestPath)}`);
   }
 
   return data as T;
 }
 
-function apiResponsePath(response: Response) {
+function apiResponsePath(response: Response, requestPath = "") {
+  if (requestPath) return requestPath;
   if (!response.url) return "";
   try {
     const url = new URL(response.url);
@@ -26,16 +27,16 @@ function apiResponsePath(response: Response) {
   }
 }
 
-function apiResponseContext(response: Response) {
-  const path = apiResponsePath(response);
+function apiResponseContext(response: Response, requestPath = "") {
+  const path = apiResponsePath(response, requestPath);
   return `${path ? ` Request path: ${path}.` : ""} Status: HTTP ${response.status}.`;
 }
 
-export function describeNonJsonApiResponse(response: Response, text: string, fallbackLabel = "Request") {
+export function describeNonJsonApiResponse(response: Response, text: string, fallbackLabel = "Request", requestPath = "") {
   const snippet = text.replace(/\s+/g, " ").trim().slice(0, 240);
   const lower = snippet.toLowerCase();
   const looksLikeCloudflareHtml = lower.includes("cloudflare") || lower.includes("<!doctype html") || lower.includes("<html");
-  const context = apiResponseContext(response);
+  const context = apiResponseContext(response, requestPath);
   if (looksLikeCloudflareHtml && response.status === 524) {
     return `${fallbackLabel} returned Cloudflare timeout HTML instead of JSON (HTTP 524).${context} Cloudflare connected to the Pages Function but did not receive a response before the proxy timeout, usually because this step waited too long on a slow provider call. The job progress saved before this request is still usable; resume the same chunk or switch provider/model if it repeats. Snippet: ${snippet}`;
   }

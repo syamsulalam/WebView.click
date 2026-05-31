@@ -111,6 +111,8 @@ export async function saveJsonSiteRecord(db: D1Database, businessId: string, jso
     r2_json_key: options.r2_json_key,
     r2_json_url: options.r2_json_url,
     json_summary: options.json_summary,
+    last_preview_error: options.last_preview_error === undefined ? null : options.last_preview_error,
+    last_preview_error_at: options.last_preview_error_at === undefined ? null : options.last_preview_error_at,
     updated_at: new Date().toISOString(),
   };
   const requiredColumns = ["business_id", "json_content"];
