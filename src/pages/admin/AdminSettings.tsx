@@ -847,16 +847,18 @@ export default function AdminSettings() {
           <button
             type="button"
             onClick={() => toggleSettingsSection("aiProvider")}
-            className="flex min-w-0 flex-1 items-center justify-between gap-4 px-6 py-4 text-left"
+            className="min-w-0 flex-1 px-6 py-4 text-left"
           >
-            <div>
-              <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                AI Provider Credentials
-                <HelpTooltip text="Expand only when editing API keys. Generation provider/model selection still happens in Leads and Sites." />
-              </h2>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                  AI Provider Credentials
+                  <HelpTooltip text="Expand only when editing API keys. Generation provider/model selection still happens in Leads and Sites." />
+                </h2>
+                <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("aiProvider") ? "rotate-180" : ""}`} />
+              </div>
               <p className="mt-1 text-xs text-gray-500">{selectedProviderConfig.label} selected for credential editing.</p>
             </div>
-            <ChevronDown size={18} className={`text-slate-500 transition ${settingsSectionOpen("aiProvider") ? "rotate-180" : ""}`} />
           </button>
           <div className="pr-6">
             <AdminDocsReader
@@ -927,18 +929,20 @@ export default function AdminSettings() {
           <button
             type="button"
             onClick={() => toggleSettingsSectionInRow("googlePlaces", ["googlePlaces", "offerConversion"])}
-            className="flex w-full items-center justify-between gap-4 text-left"
+            className="w-full text-left"
           >
-            <div>
-              <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                Google Places
-                <HelpTooltip text="Server-side key used for Places search, details, reviews, and photo proxy calls. It should be API-restricted, not HTTP-referrer restricted." />
-              </h2>
+            <div className="min-w-0">
+              <div className="mb-2 flex items-center gap-2">
+                <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                  Google Places
+                  <HelpTooltip text="Server-side key used for Places search, details, reviews, and photo proxy calls. It should be API-restricted, not HTTP-referrer restricted." />
+                </h2>
+                <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("googlePlaces") ? "rotate-180" : ""}`} />
+              </div>
               <p className={`${pairedSettingsCollapsed("googlePlaces", ["googlePlaces", "offerConversion"]) ? "hidden" : ""} text-xs text-gray-500`}>
                 Dipakai dari Cloudflare Pages Function. Expand only when rotating the Places key.
               </p>
             </div>
-            <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("googlePlaces") ? "rotate-180" : ""}`} />
           </button>
           {settingsSectionOpen("googlePlaces") && (
           <div className="mt-4">
@@ -960,18 +964,20 @@ export default function AdminSettings() {
           <button
             type="button"
             onClick={() => toggleSettingsSectionInRow("offerConversion", ["googlePlaces", "offerConversion"])}
-            className="flex w-full items-start justify-between gap-4 text-left"
+            className="w-full text-left"
           >
-            <div>
-              <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                Offer & Conversion
-                <HelpTooltip text="Pricing and package copy shown to buyers and sent to checkout providers. Keep this separate from gateway credentials so payment setup stays focused." />
-              </h2>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                  Offer & Conversion
+                  <HelpTooltip text="Pricing and package copy shown to buyers and sent to checkout providers. Keep this separate from gateway credentials so payment setup stays focused." />
+                </h2>
+                <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("offerConversion") ? "rotate-180" : ""}`} />
+              </div>
               <p className={`${pairedSettingsCollapsed("offerConversion", ["googlePlaces", "offerConversion"]) ? "hidden" : ""} mt-1 text-xs leading-relaxed text-gray-500`}>
                 ${settings.PAYMENT_USD_AMOUNT || "197"}/year new-domain total, ${settings.PAYMENT_DOMAIN_FEE_USD || "17"}/year domain fee, ${settings.PAYMENT_ADDON_PAGE_USD || "50"} page/edit add-ons, IDR rate {settings.PAYMENT_USD_TO_IDR_RATE || "16000"}.
               </p>
             </div>
-            <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-500 transition ${settingsSectionOpen("offerConversion") ? "rotate-180" : ""}`} />
           </button>
 
           {settingsSectionOpen("offerConversion") && (
@@ -1007,13 +1013,16 @@ export default function AdminSettings() {
             <button
               type="button"
               onClick={() => toggleSettingsSectionInRow("payment", ["payment", "domainRegistrar"])}
-              className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
+              className="min-w-0 flex-1 text-left"
             >
-              <div>
-                <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-                  Payment Setup
-                  <HelpTooltip text="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up." />
-                </h2>
+              <div className="min-w-0">
+                <div className="mb-2 flex items-center gap-2">
+                  <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                    Payment Setup
+                    <HelpTooltip text="Select the checkout rail used by the public Download / Setup panel. If the selected rail is missing keys, checkout stays in mock mode and records checkout_pending for follow-up." />
+                  </h2>
+                  <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("payment") ? "rotate-180" : ""}`} />
+                </div>
                 <p className={`${pairedSettingsCollapsed("payment", ["payment", "domainRegistrar"]) ? "hidden" : ""} text-xs leading-relaxed text-gray-500`}>
                   Active processor: {paymentProcessorOptions.find((option) => option.value === activePaymentProcessor)?.label || activePaymentProcessor}
                 </p>
@@ -1024,7 +1033,6 @@ export default function AdminSettings() {
                   </p>
                 )}
               </div>
-              <ChevronDown size={18} className={`text-slate-500 transition ${settingsSectionOpen("payment") ? "rotate-180" : ""}`} />
             </button>
             <AdminDocsReader
               pathname="/admin/settings"
@@ -1343,13 +1351,16 @@ export default function AdminSettings() {
         <button
           type="button"
           onClick={() => toggleSettingsSectionInRow("domainRegistrar", ["payment", "domainRegistrar"])}
-          className="flex w-full items-start justify-between gap-4 text-left"
+          className="w-full text-left"
         >
-          <div>
-            <h2 className="mb-2 inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-              Domain Registrar
-              <HelpTooltip text="Optional automation for real registrar quote capture. If credentials are empty, public checkout still works and the order remains manual-confirmation friendly." widthClass="w-80" />
-            </h2>
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center gap-2">
+              <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                Domain Registrar
+                <HelpTooltip text="Optional automation for real registrar quote capture. If credentials are empty, public checkout still works and the order remains manual-confirmation friendly." widthClass="w-80" />
+              </h2>
+              <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("domainRegistrar") ? "rotate-180" : ""}`} />
+            </div>
             <p className={`${pairedSettingsCollapsed("domainRegistrar", ["payment", "domainRegistrar"]) ? "hidden" : ""} text-xs leading-relaxed text-gray-500`}>
               Active registrar: {activeDomainRegistrarOption.label}. Buyer-facing checkout still shows the included $17/year domain fee.
             </p>
@@ -1360,7 +1371,6 @@ export default function AdminSettings() {
               </p>
             )}
           </div>
-          <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-500 transition ${settingsSectionOpen("domainRegistrar") ? "rotate-180" : ""}`} />
         </button>
 
         {settingsSectionOpen("domainRegistrar") && (
@@ -1423,17 +1433,17 @@ export default function AdminSettings() {
           <button
             type="button"
             onClick={() => toggleSettingsSection("scoring")}
-            className="flex min-w-0 flex-1 items-start justify-between gap-4 text-left"
+            className="min-w-0 flex-1 text-left"
           >
             <div>
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal size={19} className="text-indigo-600" />
-              <h2 className="text-lg font-semibold text-gray-900">Prospect Scoring</h2>
-              <HelpTooltip text="Setting ini dipakai oleh /admin/leads untuk mengurutkan dan menyaring prospek. Angka positif menaikkan prioritas, angka negatif menurunkan prioritas." />
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal size={19} className="text-indigo-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Prospect Scoring</h2>
+                <HelpTooltip text="Setting ini dipakai oleh /admin/leads untuk mengurutkan dan menyaring prospek. Angka positif menaikkan prioritas, angka negatif menurunkan prioritas." />
+                <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("scoring") ? "rotate-180" : ""}`} />
+              </div>
+              <p className="mt-1 text-sm text-gray-500">Tune prioritas prospek tanpa edit kode.</p>
             </div>
-            <p className="mt-1 text-sm text-gray-500">Tune prioritas prospek tanpa edit kode.</p>
-            </div>
-            <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-500 transition ${settingsSectionOpen("scoring") ? "rotate-180" : ""}`} />
           </button>
           {settingsSectionOpen("scoring") && (
           <HoverTooltip text="Restore the Balanced prospect scoring preset and default threshold used by /admin/leads filters.">
@@ -1520,18 +1530,20 @@ export default function AdminSettings() {
         <button
           type="button"
           onClick={() => toggleSettingsSection("aiEstimator")}
-          className={`${settingsSectionOpen("aiEstimator") ? "mb-5" : ""} flex w-full items-center justify-between gap-4 text-left`}
+          className={`${settingsSectionOpen("aiEstimator") ? "mb-5" : ""} w-full text-left`}
         >
           <div className="flex flex-col gap-1">
-            <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-              Estimator Biaya AI
-              <HelpTooltip text="Local estimate for one generated site JSON using the selected pricing table. Actual provider billing can differ by tokenization and provider-side rounding." />
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                Estimator Biaya AI
+                <HelpTooltip text="Local estimate for one generated site JSON using the selected pricing table. Actual provider billing can differ by tokenization and provider-side rounding." />
+              </h2>
+              <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("aiEstimator") ? "rotate-180" : ""}`} />
+            </div>
             <p className="text-sm text-gray-500">
               Perkiraan biaya per generate JSON. KIE.ai ditampilkan sebagai estimasi diskon karena pricing detail live ada di dashboard KIE.
             </p>
           </div>
-          <ChevronDown size={18} className={`shrink-0 text-slate-500 transition ${settingsSectionOpen("aiEstimator") ? "rotate-180" : ""}`} />
         </button>
         {settingsSectionOpen("aiEstimator") && (
         <>
