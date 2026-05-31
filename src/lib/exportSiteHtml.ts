@@ -628,10 +628,11 @@ class SelectablePdfGuide {
     if (this.pages.length > 1 || this.y > 120) this.newPage();
     this.text(eyebrow.toUpperCase(), this.margin, this.y, 9, "bold", "4f46e5");
     this.rect(this.margin, this.y + 12, 88, 4, "4f46e5");
-    this.iconBadge(icon, this.width - this.margin - 30, this.y - 4, 30);
-    this.y += 34;
-    this.wrap(title, 500, 28, true).forEach((line) => {
-      this.text(line, this.margin, this.y, 28, "bold", "020617");
+    this.y += 40;
+    const titleLines = this.wrap(title, 460, 28, true);
+    this.iconBadge(icon, this.margin, this.y - 23, 28);
+    titleLines.forEach((line, index) => {
+      this.text(line, this.margin + (index === 0 ? 40 : 0), this.y, 28, "bold", "020617");
       this.y += 34;
     });
     this.y += 8;
@@ -649,10 +650,11 @@ class SelectablePdfGuide {
     this.y += 5;
   }
 
-  subheading(value: string) {
+  subheading(value: string, icon: PdfGuideIcon = "package") {
     this.ensure(34);
     this.y += 5;
-    this.text(value, this.margin, this.y, 15, "bold", "020617");
+    this.iconBadge(icon, this.margin, this.y - 16, 20);
+    this.text(value, this.margin + 28, this.y, 15, "bold", "020617");
     this.y += 24;
   }
 
@@ -676,8 +678,8 @@ class SelectablePdfGuide {
     items.forEach(([label, value, icon = "package"], index) => {
       const x = this.margin + index * (cardWidth + gap);
       this.rect(x, this.y, cardWidth, 72, "f8fafc", "e2e8f0");
-      this.iconBadge(icon, x + 12, this.y + 13, 22, "eef2ff", value.startsWith("-") ? "047857" : "4f46e5");
-      this.text(label.toUpperCase(), x + 42, this.y + 22, 7.4, "bold", "64748b");
+      this.iconBadge(icon, x + 12, this.y + 9, 20, "eef2ff", value.startsWith("-") ? "047857" : "4f46e5");
+      this.text(label.toUpperCase(), x + 40, this.y + 22, 7.4, "bold", "64748b");
       this.text(value, x + 12, this.y + 56, 18, "bold", value.startsWith("-") ? "047857" : "020617");
     });
     this.y += 88;
@@ -748,8 +750,8 @@ class SelectablePdfGuide {
         const x = this.margin + offset * (width + gap);
         this.rect(x, this.y, width, rowHeight, "ffffff", "e2e8f0");
         this.rect(x, this.y, 5, rowHeight, "4f46e5");
-        this.iconBadge(item.icon || "growth", x + 14, this.y + 14, 24, "eef2ff", "4f46e5");
-        item.titleLines.forEach((line, lineIndex) => this.text(line, x + 38, this.y + 20 + lineIndex * 15, 12, "bold", "020617"));
+        this.iconBadge(item.icon || "growth", x + 14, this.y + 13, 22, "eef2ff", "4f46e5");
+        item.titleLines.forEach((line, lineIndex) => this.text(line, x + 42, this.y + 20 + lineIndex * 15, 12, "bold", "020617"));
         const priceTop = this.y + 20 + item.titleLines.length * 15 + 3;
         this.rect(x + 14, priceTop, this.textWidth(item.price, 8, true) + 18, 17, "eef2ff");
         this.text(item.price, x + 23, priceTop + 12, 8, "bold", "4338ca");
@@ -917,14 +919,14 @@ function ownerPackageGuidePdf(siteData: any, businessId: string) {
 
   pdf.startSection("Package contents", "What you received", "package");
   pdf.paragraph("Keep these files together when you upload the website. The images folder must stay beside the HTML file so photos keep working.");
-  pdf.subheading("Website files");
+  pdf.subheading("Website files", "download");
   pdf.bullets(["index.html", "sitemap.xml", "robots.txt", "img/ folder", "This clickable PDF guide"]);
-  pdf.subheading("Built-in basics");
+  pdf.subheading("Built-in basics", "check");
   pdf.bullets(["Mobile-friendly static page.", "Clickable phone and email links where available.", "Basic business search metadata.", "Local image files packaged into the zip.", "Navigation that works without React."]);
   pdf.keyValueRows(packageDetailRows);
-  pdf.subheading("Pages included");
+  pdf.subheading("Pages included", "page");
   pdf.bullets(data.pages.length ? data.pages : ["Homepage"]);
-  pdf.subheading("Services or offers");
+  pdf.subheading("Services or offers", "site");
   pdf.bullets(data.offerings.length ? data.offerings : ["Review your services before launch."]);
 
   pdf.startSection("Self setup checklist", "How to put it online yourself", "setup");
@@ -951,9 +953,9 @@ function ownerPackageGuidePdf(siteData: any, businessId: string) {
 
   pdf.startSection("Keep it simple", "Recommended next step", "next");
   pdf.paragraph("If you do not have a website yet, the best first move is usually to launch this site on a real domain. After it is live, add pages or buttons based on what customers actually ask for.");
-  pdf.subheading("If you want to do it yourself");
+  pdf.subheading("If you want to do it yourself", "download");
   pdf.paragraph("Use the self-setup checklist in this PDF and keep all files from the zip together.");
-  pdf.subheading("If you want it handled");
+  pdf.subheading("If you want it handled", "launch");
   pdf.paragraph("Contact WebView.click and we can launch the site for you with hosting, DNS help, upload, and SSL check.");
   pdf.keyValueRows([
     ["Email", data.contactEmail, setupMailto],

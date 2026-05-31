@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Clock, Copy, Download, ExternalLink, Globe2, Loader2, Minus, Plus, X } from "lucide-react";
+import { Archive, ArrowDown, ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, Clock, Copy, Download, ExternalLink, Globe2, Loader2, Minus, Plus, X } from "lucide-react";
 import { buildDomain, domainExtensions, normalizeDomainLabel } from "../lib/domainExtensions";
 import type { FontPairing } from "../lib/fontPairings";
 
@@ -447,6 +447,7 @@ export default function WebsiteActionPanel({
   const [downloadInfoOpen, setDownloadInfoOpen] = useState(false);
   const [downloadPreparing, setDownloadPreparing] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState("");
+  const [downloadScrollNoticeVisible, setDownloadScrollNoticeVisible] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [setupMode, setSetupMode] = useState<SetupMode>("base");
   const [setupStep, setSetupStep] = useState<SetupStep>("offer");
@@ -474,6 +475,7 @@ export default function WebsiteActionPanel({
   const [newPageRequests, setNewPageRequests] = useState<string[]>([]);
   const [editPageRequests, setEditPageRequests] = useState<EditPageRequest[]>([]);
   const paypalButtonsRef = useRef<HTMLDivElement | null>(null);
+  const downloadModalScrollRef = useRef<HTMLDivElement | null>(null);
   const downloadPages = useMemo(() => freeSitePages(siteData, siteData?.meta?.businessId || businessId), [siteData, businessId]);
   const downloadFeatures = useMemo(() => freeSiteFeatures(siteData), [siteData]);
   const effectiveBusinessId = String(siteData?.meta?.businessId || businessId || "website");
@@ -494,6 +496,29 @@ export default function WebsiteActionPanel({
       setDownloadPreparing(false);
     }
   };
+
+  const updateDownloadScrollNotice = useCallback(() => {
+    const node = downloadModalScrollRef.current;
+    if (!node || !downloadInfoOpen) {
+      setDownloadScrollNoticeVisible(false);
+      return;
+    }
+    const scrollRemaining = node.scrollHeight - node.scrollTop - node.clientHeight;
+    setDownloadScrollNoticeVisible(scrollRemaining > 110);
+  }, [downloadInfoOpen]);
+
+  useEffect(() => {
+    if (!downloadInfoOpen) {
+      setDownloadScrollNoticeVisible(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(updateDownloadScrollNotice);
+    window.addEventListener("resize", updateDownloadScrollNotice);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateDownloadScrollNotice);
+    };
+  }, [downloadInfoOpen, updateDownloadScrollNotice]);
   const [ownerReviewVisible, setOwnerReviewVisible] = useState(false);
   const [ownerReviewStartedAt, setOwnerReviewStartedAt] = useState<number | null>(null);
   const [reviewNow, setReviewNow] = useState(() => Date.now());
@@ -1027,17 +1052,21 @@ export default function WebsiteActionPanel({
 
       {downloadInfoOpen && onDownloadZip && (
         <div className="hide-in-export fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-export-remove="true" data-wv-tool-ui="website-download-modal">
-          <div className="max-h-[min(92vh,820px)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+          <div
+            ref={downloadModalScrollRef}
+            onScroll={updateDownloadScrollNotice}
+            className="max-h-[min(92vh,820px)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <div>
-                <p className="font-semibold text-slate-950">Your starter website package is ready</p>
-                <p className="text-xs text-slate-500">Review the included files, pages, and launch options.</p>
+              <div className="min-w-0 flex-1 text-center">
+                <p className="text-lg font-semibold text-slate-950">Your starter website package is ready</p>
+                <p className="mt-1 text-sm leading-6 text-slate-500">Review the included files, pages, and launch options.</p>
               </div>
               <button
                 type="button"
                 onClick={() => setDownloadInfoOpen(false)}
                 disabled={downloadPreparing}
-                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="ml-3 rounded-lg p-1 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Close download details"
               >
                 <X size={18} />
@@ -1083,15 +1112,15 @@ export default function WebsiteActionPanel({
               </div>
 
               <div>
-                <p className="text-sm font-semibold text-slate-950">Included website features</p>
+                <p className="text-center text-lg font-semibold text-slate-950">Included website features</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {downloadFeatures.map((feature) => (
                     <div key={feature.title} className="rounded-xl border border-slate-200 bg-white p-3">
-                      <div className="flex items-start gap-2">
-                        <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-600" size={16} />
+                      <div className="flex flex-col items-center gap-2 text-center">
+                        <CheckCircle2 className="shrink-0 text-emerald-600" size={18} />
                         <div>
-                          <p className="text-sm font-semibold text-slate-950">{feature.title}</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-500">{feature.detail}</p>
+                          <p className="text-base font-semibold text-slate-950">{feature.title}</p>
+                          <p className="mt-1 text-sm leading-6 text-slate-500">{feature.detail}</p>
                         </div>
                       </div>
                     </div>
@@ -1100,19 +1129,19 @@ export default function WebsiteActionPanel({
               </div>
 
               <div>
-                <p className="text-sm font-semibold text-slate-950">Pages included</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
+                <p className="text-center text-lg font-semibold text-slate-950">Pages included</p>
+                <p className="mx-auto mt-1 max-w-xl text-center text-sm leading-6 text-slate-500">
                   These are the preview URLs for the generated pages. After downloading your site, the same page links work inside your website files.
                 </p>
                 <div className="mt-3 space-y-2">
                   {downloadPages.map((page) => (
                     <div key={`${page.id}-${page.url}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex flex-col items-center gap-2 text-center">
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-950">{page.label}</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-600">{page.purpose}</p>
+                          <p className="text-base font-semibold text-slate-950">{page.label}</p>
+                          <p className="mx-auto mt-1 max-w-xl text-sm leading-6 text-slate-600">{page.purpose}</p>
                         </div>
-                        <code className="shrink-0 break-all rounded-lg bg-white px-2 py-1 text-[11px] text-slate-600 sm:max-w-[230px]">{page.url}</code>
+                        <code className="break-all rounded-lg bg-white px-2 py-1 text-[11px] text-slate-600">{page.url}</code>
                       </div>
                     </div>
                   ))}
@@ -1134,9 +1163,9 @@ export default function WebsiteActionPanel({
                   }}
                   className="flex min-h-[76px] items-center justify-between gap-3 rounded-xl bg-indigo-600 px-4 py-3 text-left text-white hover:bg-indigo-700"
                 >
-                  <span>
-                    <span className="block font-semibold leading-5">Launch it for me</span>
-                    <span className="mt-1 block text-xs leading-5 text-indigo-100">We handle hosting, domain/DNS, SSL, upload, and launch.</span>
+                  <span className="flex-1 text-center">
+                    <span className="block text-base font-semibold leading-6">Launch it for me</span>
+                    <span className="mt-1 block text-sm leading-6 text-indigo-100">We handle hosting, domain/DNS, SSL, upload, and launch.</span>
                   </span>
                   <ArrowRight size={18} className="shrink-0" />
                 </button>
@@ -1154,9 +1183,9 @@ export default function WebsiteActionPanel({
                   }}
                   className="flex min-h-[76px] items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-slate-900 hover:bg-indigo-100"
                 >
-                  <span>
-                    <span className="block font-semibold leading-5">Add custom pages</span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-600">$50/page action with bulk discounts before payment.</span>
+                  <span className="flex-1 text-center">
+                    <span className="block text-base font-semibold leading-6">Add custom pages</span>
+                    <span className="mt-1 block text-sm leading-6 text-slate-600">$50/page action with bulk discounts before payment.</span>
                   </span>
                   <ArrowRight size={18} className="shrink-0" />
                 </button>
@@ -1173,6 +1202,16 @@ export default function WebsiteActionPanel({
               </button>
             </div>
           </div>
+          {downloadScrollNoticeVisible && !downloadPreparing && (
+            <div
+              className="hide-in-export pointer-events-none fixed bottom-6 left-1/2 z-[241] inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-indigo-200 bg-white/95 px-4 py-2 text-sm font-semibold text-indigo-800 shadow-2xl backdrop-blur"
+              data-export-remove="true"
+              data-wv-tool-ui="download-scroll-notice"
+            >
+              <ArrowDown size={16} />
+              Keep scrolling to download
+            </div>
+          )}
         </div>
       )}
 
