@@ -9,6 +9,7 @@ type AdminDocsReaderProps = {
   tooltip?: string;
   buttonClassName?: string;
   iconSize?: number;
+  showTooltip?: boolean;
 };
 
 function inlineMarkdown(text: string) {
@@ -166,6 +167,7 @@ export default function AdminDocsReader({
   tooltip = "Read docs for the current admin page. Opens a markdown reader without leaving /admin.",
   buttonClassName = "group relative flex h-12 w-12 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-indigo-50 hover:text-indigo-700",
   iconSize = 24,
+  showTooltip = true,
 }: AdminDocsReaderProps) {
   const pageDocs = adminDocsForPath(pathname);
   const currentPageDefaultId = defaultDocId || pageDocs[0]?.id || adminDocs[0]?.id || "";
@@ -215,19 +217,24 @@ export default function AdminDocsReader({
     if (currentPageDefaultId) setSelectedDocId(currentPageDefaultId);
     setOpen(true);
   };
+  const triggerButton = (
+    <button
+      type="button"
+      onClick={openReader}
+      className={buttonClassName}
+      aria-label="Read admin docs"
+    >
+      <BookOpen size={iconSize} />
+    </button>
+  );
 
   return (
     <>
-      <HoverTooltip text={tooltip} widthClass="w-64">
-        <button
-          type="button"
-          onClick={openReader}
-          className={buttonClassName}
-          aria-label="Read admin docs"
-        >
-          <BookOpen size={iconSize} />
-        </button>
-      </HoverTooltip>
+      {showTooltip ? (
+        <HoverTooltip text={tooltip} widthClass="w-64">
+          {triggerButton}
+        </HoverTooltip>
+      ) : triggerButton}
 
       {open && selectedDoc && (
         <div className="fixed inset-0 z-[100000] flex bg-slate-950/50 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Admin documentation reader">

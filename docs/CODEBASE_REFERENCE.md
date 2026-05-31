@@ -144,6 +144,17 @@ Logic penting:
 - Center position clamps against measured tooltip width, so icon-only actions near the left or right browser edge stay readable.
 - Untuk tooltip berbentuk icon/help text gunakan `HelpTooltip`; untuk tooltip pada elemen existing gunakan `HoverTooltip`.
 
+### `src/components/AdminSidebarFlyout.tsx`
+
+Fungsi:
+- Shared flyout label untuk sidebar `/admin`, bukan tooltip generik.
+- Meniru pola lama sidebar: panel muncul fixed relative ke icon di sisi kanan sidebar, tidak memakai portal, dan tidak menutup icon lain seperti tooltip floating.
+
+Logic penting:
+- Dipakai oleh `AdminLayout` untuk route icons, DB repair badge, docs/book icon, dan sign-out.
+- Menerima `label`, optional `description`, dan `widthClass`.
+- Menggunakan `group-hover`/`group-focus-within` agar behavior konsisten dengan old nav flyout tetapi tidak copy-paste span tooltip di setiap icon.
+
 ### `src/components/GenerationJobsTable.tsx`
 
 Fungsi:
@@ -276,10 +287,10 @@ Fungsi:
 
 Logic penting:
 - `NavContent` menampilkan link Dashboard, CRM Leads, Generation Jobs, Generated Sites, JSON Schema Info, dan Settings.
-- Sidebar nav hover tooltip menampilkan label dan deskripsi singkat setiap admin area agar fitur baru lebih mudah dipahami tanpa membuka semua halaman.
+- Sidebar nav flyout menampilkan label dan deskripsi singkat setiap admin area lewat shared `AdminSidebarFlyout`, bukan generic `HoverTooltip`, karena menu flyout adalah bagian dari sidebar navigation dan harus muncul di kanan icon tanpa menutup icon lain.
 - Saat pindah route admin, container konten dan window otomatis scroll ke atas agar tab baru tidak mulai dari posisi scroll tab sebelumnya.
 - Sidebar menampilkan badge kecil `DB` setelah `/admin/schema` berhasil menjalankan `Repair DB now`; timestamp disimpan di localStorage key `webview.admin.lastDbRepairAt`.
-- Sidebar menampilkan icon docs yang membuka `AdminDocsReader` dengan dokumen relevan untuk route admin aktif; button class di `AdminLayout` sengaja disamakan dengan icon nav lain agar visual menu konsisten.
+- Sidebar menampilkan icon docs yang membuka `AdminDocsReader` dengan dokumen relevan untuk route admin aktif; di sidebar, `AdminDocsReader` mematikan generic tooltip dan dibungkus `AdminSidebarFlyout` agar visual menu konsisten dengan icon nav lain.
 - `ClerkSecureLayout` hanya mengizinkan user dengan `publicMetadata.role === "admin"`.
 - Jika role belum admin, halaman menampilkan instruksi update metadata Clerk.
 
@@ -659,11 +670,11 @@ Logic penting:
 - Tombol cooldown history export/refresh dibuat icon-only dengan hover tooltip; export menyalin JSON ringkas event cooldown yang sedang terlihat untuk support/debug tanpa endpoint export baru.
 - Settings utility actions such as prospect scoring reset are icon-only with hover tooltip; primary manual save keeps a visible label because it is the page-level commit action.
 - Auto-save berjalan 1,2 detik setelah perubahan terakhir.
-- Banner status custom menggantikan `alert()` browser.
+- Floating auto-save status custom menggantikan `alert()` browser dan tetap terlihat saat admin scroll jauh ke bawah halaman Settings.
 - Estimator biaya memakai `src/lib/aiPricing.ts`.
 - KIE.ai ditampilkan sebagai estimasi diskon karena pricing live berada di dashboard/pricing KIE.
 - Offer & Conversion settings are separate from Payment Setup and cover the base USD amount, page/edit add-on USD fee, USD->IDR rate, package name, and package description.
-- Google Places / Offer & Conversion and Payment Setup / Domain Registrar are paired desktop accordion rows. Only one card per row can be expanded; the expanded card gets about 3/4 of the row while the other collapses to a compact header rail. The row uses `items-start` so a collapsed card does not stretch to the expanded card height. Payment settings sekarang fokus ke active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), Xendit key, Midtrans keys/mode, DOKU keys/mode, PayPal sandbox/live keys/mode, PayPal/Wise/Payoneer/manual fields, legacy Lemon fields, dan nomor WhatsApp admin. Payment Setup dan Domain Registrar tampil dalam satu row desktop supaya checkout rail dan domain quote automation diedit berdekatan. The UI shows only the active processor form; PayPal risk guardrails appear only when PayPal is active or already configured. Jika PayPal aktif, Settings juga menampilkan payment smoke checklist dari `/api/settings/payment-smoke`, aggregate `Ready for traffic` badge yang hijau hanya jika semua smoke rows pass, stored controlled-live test reference `PAYPAL_CONTROLLED_LIVE_TEST_REFERENCE`, dan PayPal plan cache viewer dari `/api/settings/paypal-plan-cache`, supaya admin bisa melihat live key/webhook readiness, last paid PayPal evidence, exact pre-traffic test match, dan cached subscription plan combinations tanpa membuka D1.
+- Google Places / Offer & Conversion and Payment Setup / Domain Registrar are paired desktop accordion rows. Only one card per row can be expanded; the expanded card gets about 3/4 of the row while the other collapses to a compact header rail. The row uses `items-start` so a collapsed card does not stretch to the expanded card height. Payment settings sekarang fokus ke active processor (`mock`, `xendit`, `midtrans`, `doku`, `paypal`, `wise`, `payoneer`, `lemon_squeezy_legacy`), Xendit key, Midtrans keys/mode, DOKU keys/mode, PayPal sandbox/live keys/mode, PayPal/Wise/Payoneer/manual fields, legacy Lemon fields, dan nomor WhatsApp admin. Payment Setup dan Domain Registrar tampil dalam satu row desktop supaya checkout rail dan domain quote automation diedit berdekatan. The UI shows only the active processor form; PayPal risk guardrails appear only when PayPal is active or already configured. Jika PayPal aktif, Settings juga menampilkan PayPal live readiness check dari `/api/settings/payment-smoke`, aggregate `Ready for traffic` badge yang hijau hanya jika semua rows pass, stored controlled-live test reference `PAYPAL_CONTROLLED_LIVE_TEST_REFERENCE`, dan PayPal plan cache viewer dari `/api/settings/paypal-plan-cache`, supaya admin bisa melihat live key/webhook readiness, last paid PayPal evidence, exact pre-traffic test match, dan cached subscription plan combinations tanpa membuka D1. Check ini read-only evidence, bukan payment runner; pembayaran controlled sandbox/live tetap dilakukan manual lalu referensinya dicocokkan.
 - Section `Prospect Scoring` menyimpan preset, default threshold, dan bobot scoring ke D1 settings agar prioritas prospek bisa ditune dari UI tanpa edit kode.
 - Settings UI normalizes old saved `PAYMENT_ADDON_PAGE_USD` values below `$50` back to `$50` on load; checkout API also enforces the same minimum so old production D1 values cannot undercharge page work.
 - Bobot scoring memakai angka positif/negatif. Reset weights mengembalikan default dari `src/lib/prospectScoring.ts`.

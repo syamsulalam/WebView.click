@@ -4,6 +4,7 @@ import { FileText, Globe2, LayoutDashboard, ListChecks, Users, UserCircle, Webho
 import { SignIn, useUser, useClerk } from "@clerk/clerk-react";
 import { AdminToastProvider, useAdminToast } from "./AdminToast";
 import AdminDocsReader from "./AdminDocsReader";
+import AdminSidebarFlyout from "./AdminSidebarFlyout";
 
 export default function AdminLayout() {
   const isDevHost = window.location.hostname.includes('run.app') || window.location.hostname.includes('localhost');
@@ -67,49 +68,60 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
     <div className="flex h-screen bg-gray-50 overflow-hidden w-full">
       <div className="w-20 bg-white border-r border-gray-200 flex flex-col items-center py-6 gap-6 relative shrink-0">
         {links.map(link => (
-          <Link 
+          <AdminSidebarFlyout
             key={link.to}
-            to={link.to} 
-            className={`p-3 rounded-xl transition-colors group relative ${
-              location.pathname === link.to ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-gray-100'
-            }`}
+            widthClass="w-64"
+            label={link.label}
+            description={link.description}
           >
-            {link.icon}
-            <span className="absolute left-full ml-3 top-1/2 w-64 -translate-y-1/2 rounded-lg bg-gray-900 px-3 py-2 text-left text-xs text-white opacity-0 shadow-xl transition group-hover:opacity-100 z-[9999] pointer-events-none">
-              <span className="block font-semibold">{link.label}</span>
-              <span className="mt-1 block leading-relaxed text-gray-300">{link.description}</span>
-            </span>
-          </Link>
+            <Link
+              to={link.to}
+              className={`p-3 rounded-xl transition-colors ${
+                location.pathname === link.to ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-gray-100'
+              }`}
+              aria-label={link.label}
+            >
+              {link.icon}
+            </Link>
+          </AdminSidebarFlyout>
         ))}
 
         {repairLabel && (
-          <Link
-            to="/admin/schema"
-            className="group relative mt-1 flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
-            aria-label={repairLabel}
-          >
-            DB
-            <span className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-[9999] pointer-events-none">
-              {repairLabel}
-            </span>
-          </Link>
+          <AdminSidebarFlyout label={repairLabel} widthClass="w-auto min-w-max whitespace-nowrap">
+            <Link
+              to="/admin/schema"
+              className="mt-1 flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+              aria-label={repairLabel}
+            >
+              DB
+            </Link>
+          </AdminSidebarFlyout>
         )}
 
-        <AdminDocsReader
-          pathname={location.pathname}
-          buttonClassName="p-3 rounded-xl transition-colors group relative text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-          iconSize={24}
-        />
-        
-        <button 
-          onClick={onSignOut}
-          className="mt-auto mb-6 p-3 rounded-xl transition-colors group relative text-gray-500 hover:bg-red-50 hover:text-red-600"
+        <AdminSidebarFlyout
+          label="Admin docs"
+          description="Open route-specific project docs without leaving the admin area."
+          widthClass="w-64"
         >
-          <UserCircle size={24} />
-          <span className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-[9999] pointer-events-none">
-            Sign Out
-          </span>
-        </button>
+          <AdminDocsReader
+            pathname={location.pathname}
+            buttonClassName="p-3 rounded-xl transition-colors text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            iconSize={24}
+            showTooltip={false}
+          />
+        </AdminSidebarFlyout>
+
+        <div className="mt-auto mb-6">
+          <AdminSidebarFlyout label="Sign Out" widthClass="w-auto min-w-max whitespace-nowrap">
+            <button
+              onClick={onSignOut}
+              className="p-3 rounded-xl transition-colors text-gray-500 hover:bg-red-50 hover:text-red-600"
+              aria-label="Sign Out"
+            >
+              <UserCircle size={24} />
+            </button>
+          </AdminSidebarFlyout>
+        </div>
       </div>
       <div ref={contentRef} className="flex-1 overflow-auto bg-gray-50 h-screen">
         <Outlet />

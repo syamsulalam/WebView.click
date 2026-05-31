@@ -824,7 +824,7 @@ export default function AdminSettings() {
 
       {message && (
         <div
-          className={`mb-6 rounded-2xl border px-5 py-4 text-sm flex items-start gap-3 ${
+          className={`fixed bottom-4 right-4 z-[100000] flex w-[min(28rem,calc(100vw-2rem))] items-start gap-3 rounded-2xl border px-5 py-4 text-sm shadow-2xl ${
             saveStatus === "error"
               ? "border-red-200 bg-red-50 text-red-900"
               : saveStatus === "saved"
@@ -1182,15 +1182,17 @@ export default function AdminSettings() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-                        Payment smoke test
-                        <HelpTooltip text="Small pre-live checklist. It does not prove the payment flow is perfect; it shows whether live PayPal keys, webhook ID, cached plans, and recent successful PayPal rows exist." widthClass="w-80" />
+                        PayPal live readiness check
+                        <HelpTooltip text="Read-only pre-traffic check for PayPal. It does not create a payment or prove every checkout path; it confirms whether live credentials, webhook ID, cached subscription plans, and recent paid ledger evidence exist." widthClass="w-80" />
                       </p>
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${paymentSmokeReadyForTraffic ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
                         {paymentSmokeReadyForTraffic ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
                         {paymentSmokeReadyForTraffic ? "Ready for traffic" : "Not ready for traffic"}
                       </span>
                     </div>
-                    <p className="mt-0.5 text-xs text-slate-500">Use this before sending buyer traffic to the checkout page.</p>
+                    <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-slate-500">
+                      Use this before selecting PayPal for real buyers. It reads saved settings and payment ledger evidence so you can confirm the live setup has been tested deliberately.
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -1202,7 +1204,7 @@ export default function AdminSettings() {
                     className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
                   >
                     <RefreshCw size={14} className={paymentSmokeLoading || paypalPlanCacheLoading ? "animate-spin" : ""} />
-                    Refresh
+                    Refresh evidence
                   </button>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -1252,7 +1254,7 @@ export default function AdminSettings() {
                   </div>
                 )}
                 <p className="mt-3 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs leading-relaxed text-amber-900">
-                  This checklist is not a substitute for a controlled live or sandbox payment. It only confirms configuration and recent ledger evidence.
+                  This is a readiness checklist, not a payment test runner. Do one controlled sandbox or live payment yourself, paste its reference above, then use this section to verify that WebView.click recorded it.
                 </p>
               </section>
             )}
