@@ -1,6 +1,5 @@
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-import { toJpeg } from "html-to-image";
 
 function absoluteUrl(value: string) {
   if (!value || value.startsWith("#") || value.startsWith("mailto:") || value.startsWith("tel:") || value.startsWith("sms:")) {
@@ -432,245 +431,24 @@ function ownerPackageGuideData(siteData: any, businessId: string) {
   };
 }
 
-function listItems(items: string[], emptyText: string) {
-  const values = items.length ? items : [emptyText];
-  return values.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+type PdfGuideLink = { rect: [number, number, number, number]; url: string };
+type PdfGuidePage = { content: string[]; links: PdfGuideLink[] };
+
+function pdfText(value: string) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
 }
 
-function ownerPackageGuideHtml(data: ReturnType<typeof ownerPackageGuideData>) {
-  const contactRows = [
-    data.phone ? ["Phone", data.phone] : null,
-    data.email ? ["Email", data.email] : null,
-    data.formattedAddress ? ["Address", data.formattedAddress] : null,
-    data.category ? ["Business type", data.category] : null,
-    data.serviceAreas.length ? ["Areas served", data.serviceAreas.slice(0, 8).join(", ")] : null,
-  ].filter(Boolean) as Array<[string, string]>;
-  const pageTotal = data.pages.length || 1;
-  const offerCards = [
-    {
-      title: "Launch it for me",
-      price: "$180-$197/year",
-      body: "We handle hosting, upload, DNS help, SSL check, and launch testing. If we register the domain, the $17/year domain fee is included in the $197/year total.",
-      delivery: "We can deliver this from the current static site package and our existing checkout/setup workflow.",
-    },
-    {
-      title: "Add more pages",
-      price: "From $50/action",
-      body: "Useful when you want pages for real services, products, areas, menus, FAQs, or seasonal offers.",
-      delivery: "We generate or edit pages from the saved site data, then QA the layout and contact buttons.",
-    },
-    {
-      title: "Sticky call or WhatsApp button",
-      price: "Simple upgrade",
-      body: "Add a floating call or WhatsApp button so mobile visitors can contact you from any page.",
-      delivery: "We code the button into the site. For WhatsApp, the message can include the page where the visitor clicked so you get context.",
-    },
-    {
-      title: "Extra focused site",
-      price: "Quoted by scope",
-      body: "Useful if you have another location, another business, or a separate service line that deserves its own website.",
-      delivery: "We generate a separate site with its own copy, pages, and domain plan so it has a clear business purpose.",
-    },
-    {
-      title: "Lead capture polish",
-      price: "Simple upgrade",
-      body: "Make it easier for visitors to call, email, request a quote, or send a message.",
-      delivery: "We improve the contact section, button text, mobile CTAs, and form/email handoff without a complex third-party integration.",
-    },
-    {
-      title: "Monthly care",
-      price: "Light retainer",
-      body: "Useful if you want small changes, new announcements, or content updates without editing files yourself.",
-      delivery: "We update the static site files and republish the site when you send approved changes.",
-    },
-  ];
-  const page = (title: string, eyebrow: string, body: string) => `
-    <section class="wv-guide-page">
-      <div class="wv-guide-topline">
-        <div>
-          <p class="wv-guide-brand">WebView.click</p>
-          <p class="wv-guide-mini">Website package guide</p>
-        </div>
-        <p class="wv-guide-date">${escapeHtml(data.generatedAt)}</p>
-      </div>
-      <p class="wv-guide-eyebrow">${escapeHtml(eyebrow)}</p>
-      <h1>${escapeHtml(title)}</h1>
-      ${body}
-      <footer>
-        <span>${escapeHtml(data.businessName)}</span>
-        <span>${escapeHtml(data.contactEmail)}</span>
-      </footer>
-    </section>`;
-
-  return `
-<div class="wv-guide-root">
-  <style>
-    .wv-guide-root { position: fixed; left: -12000px; top: 0; width: 794px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; color: #0f172a; background: #f8fafc; }
-    .wv-guide-page { box-sizing: border-box; position: relative; width: 794px; min-height: 1123px; padding: 56px; overflow: hidden; background: #fff; border: 1px solid #e2e8f0; }
-    .wv-guide-page + .wv-guide-page { margin-top: 18px; }
-    .wv-guide-page:before { content: ""; position: absolute; inset: 0 0 auto 0; height: 10px; background: #4f46e5; }
-    .wv-guide-topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
-    .wv-guide-brand { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0; color: #111827; }
-    .wv-guide-mini, .wv-guide-date { margin: 4px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; color: #64748b; }
-    .wv-guide-eyebrow { margin: 56px 0 10px; font-size: 12px; font-weight: 800; text-transform: uppercase; color: #4f46e5; }
-    .wv-guide-page h1 { margin: 0; max-width: 660px; font-size: 42px; line-height: 1.08; letter-spacing: 0; color: #020617; }
-    .wv-guide-page h2 { margin: 0 0 10px; font-size: 20px; line-height: 1.25; color: #020617; }
-    .wv-guide-page h3 { margin: 0 0 8px; font-size: 16px; line-height: 1.25; color: #020617; }
-    .wv-guide-page p { margin: 0; font-size: 15px; line-height: 1.6; color: #475569; }
-    .wv-guide-lead { margin-top: 18px !important; max-width: 640px; font-size: 17px !important; color: #334155 !important; }
-    .wv-guide-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 28px; }
-    .wv-guide-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .wv-guide-card { border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; padding: 16px; }
-    .wv-guide-card.white { background: #fff; }
-    .wv-guide-card strong { display: block; font-size: 21px; color: #020617; }
-    .wv-guide-card span { display: block; margin-top: 5px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
-    .wv-guide-table { margin-top: 26px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
-    .wv-guide-row { display: grid; grid-template-columns: 1fr auto; gap: 16px; padding: 13px 16px; border-top: 1px solid #e2e8f0; font-size: 14px; color: #334155; }
-    .wv-guide-row:first-child { border-top: 0; }
-    .wv-guide-row b { color: #020617; }
-    .wv-guide-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 24px; }
-    .wv-guide-check { border: 1px solid #dbeafe; border-radius: 8px; background: #eff6ff; padding: 12px; font-size: 13px; font-weight: 700; color: #1e3a8a; }
-    .wv-guide-list { margin: 18px 0 0; padding-left: 20px; }
-    .wv-guide-list li { margin: 7px 0; font-size: 14px; line-height: 1.45; color: #334155; }
-    .wv-guide-steps { display: grid; gap: 12px; margin-top: 24px; }
-    .wv-guide-step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; border: 1px solid #e2e8f0; border-radius: 8px; padding: 13px; }
-    .wv-guide-step-number { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 999px; background: #4f46e5; color: #fff; font-size: 13px; font-weight: 800; }
-    .wv-guide-offers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
-    .wv-guide-offer { border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; background: #fff; }
-    .wv-guide-price { display: inline-flex; margin: 2px 0 8px; border-radius: 999px; background: #eef2ff; padding: 4px 9px; font-size: 12px; font-weight: 800; color: #4338ca; }
-    .wv-guide-delivery { margin-top: 8px !important; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 12px !important; color: #64748b !important; }
-    .wv-guide-note { margin-top: 24px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; padding: 14px; color: #92400e !important; }
-    .wv-guide-cta { margin-top: 28px; border-radius: 8px; background: #111827; padding: 18px; color: #fff !important; }
-    .wv-guide-cta p, .wv-guide-cta b { color: #fff !important; }
-    .wv-guide-muted { color: #64748b !important; }
-    .wv-guide-url { overflow-wrap: anywhere; font-size: 12px !important; color: #4338ca !important; }
-    .wv-guide-page footer { position: absolute; left: 56px; right: 56px; bottom: 34px; display: flex; justify-content: space-between; border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 11px; font-weight: 700; color: #94a3b8; }
-  </style>
-  ${page(
-    `Your starter website package is ready for ${data.businessName}`,
-    "Free portfolio sample",
-    `
-      <p class="wv-guide-lead">This package contains a ready-to-use static website prepared for your business. You can keep the files, host them anywhere, or ask WebView.click to launch it for you.</p>
-      <div class="wv-guide-grid">
-        <div class="wv-guide-card"><span>Starter site value</span><strong>$997</strong></div>
-        <div class="wv-guide-card"><span>Portfolio credit</span><strong>-$997</strong></div>
-        <div class="wv-guide-card"><span>Your download today</span><strong>$0</strong></div>
-      </div>
-      <div class="wv-guide-checks">
-        <div class="wv-guide-check">No payment required to download the files.</div>
-        <div class="wv-guide-check">You can host it with any provider.</div>
-        <div class="wv-guide-check">Setup help is optional.</div>
-        <div class="wv-guide-check">The site is personalized for your business.</div>
-      </div>
-      <div class="wv-guide-table">
-        <div class="wv-guide-row"><b>Business</b><span>${escapeHtml(data.businessName)}</span></div>
-        <div class="wv-guide-row"><b>Reference</b><span>${escapeHtml(data.businessId)}</span></div>
-        <div class="wv-guide-row"><b>Preview page</b><span class="wv-guide-url">${escapeHtml(data.downloadPageUrl || "Not available")}</span></div>
-      </div>
-    `,
-  )}
-  ${page(
-    "What you received",
-    "Package contents",
-    `
-      <p class="wv-guide-lead">Keep these files together when you upload the website. The images folder must stay beside the HTML file so photos keep working.</p>
-      <div class="wv-guide-grid two">
-        <div class="wv-guide-card white"><h2>Website files</h2><ul class="wv-guide-list"><li>index.html</li><li>sitemap.xml</li><li>robots.txt</li><li>img/ folder</li><li>This PDF guide</li></ul></div>
-        <div class="wv-guide-card white"><h2>Built-in basics</h2><ul class="wv-guide-list"><li>Mobile-friendly static page</li><li>Clickable phone and email links where available</li><li>Basic business search metadata</li><li>Local image files packaged into the zip</li><li>Navigation that works without React</li></ul></div>
-      </div>
-      <div class="wv-guide-table">
-        ${contactRows.length ? contactRows.map(([label, value]) => `<div class="wv-guide-row"><b>${escapeHtml(label)}</b><span>${escapeHtml(value)}</span></div>`).join("") : `<div class="wv-guide-row"><b>Business details</b><span>Review phone, email, address, and hours before launch.</span></div>`}
-        <div class="wv-guide-row"><b>Pages included</b><span>${pageTotal}</span></div>
-      </div>
-      <div class="wv-guide-grid two">
-        <div class="wv-guide-card white"><h2>Pages</h2><ul class="wv-guide-list">${listItems(data.pages, "Homepage")}</ul></div>
-        <div class="wv-guide-card white"><h2>Services or offers</h2><ul class="wv-guide-list">${listItems(data.offerings, "Review your services before launch")}</ul></div>
-      </div>
-    `,
-  )}
-  ${page(
-    "How to put it online yourself",
-    "Self setup checklist",
-    `
-      <p class="wv-guide-lead">You can launch this yourself if you are comfortable with domain, hosting, upload, and SSL settings. If this feels annoying, WebView.click can handle it for you.</p>
-      <div class="wv-guide-steps">
-        ${[
-          ["Choose a domain", "Use a domain you already own, or buy a new one from a registrar."],
-          ["Choose website hosting", "Use static hosting or normal shared hosting that can serve plain HTML files."],
-          ["Upload the files", "Upload index.html, sitemap.xml, robots.txt, and the full img folder together."],
-          ["Connect DNS", "Point your domain to the hosting provider using nameservers, A records, or CNAME records."],
-          ["Turn on HTTPS", "Enable SSL so the website opens with https:// and does not show browser warnings."],
-          ["Test the site", "Open it on desktop and phone. Check photos, menu links, phone links, email links, and contact forms."],
-        ].map((step, index) => `<div class="wv-guide-step"><div class="wv-guide-step-number">${index + 1}</div><div><h3>${escapeHtml(step[0])}</h3><p>${escapeHtml(step[1])}</p></div></div>`).join("")}
-      </div>
-      <p class="wv-guide-note">The website is static. Future changes usually mean editing the file and uploading it again, unless WebView.click hosts and maintains it for you.</p>
-    `,
-  )}
-  ${page(
-    "Want us to launch it for you?",
-    "Done-for-you setup",
-    `
-      <p class="wv-guide-lead">This is the easiest next step if you want the website live without touching hosting, DNS, file upload, or SSL settings.</p>
-      <div class="wv-guide-grid two">
-        <div class="wv-guide-card"><span>If you already own the domain</span><strong>$180/year</strong><p>Managed hosting, upload, DNS help, SSL check, and launch testing.</p></div>
-        <div class="wv-guide-card"><span>If we register the domain</span><strong>$197/year</strong><p>Includes the $17/year domain fee plus managed hosting and launch setup.</p></div>
-      </div>
-      <div class="wv-guide-table">
-        <div class="wv-guide-row"><b>We handle</b><span>Hosting setup</span></div>
-        <div class="wv-guide-row"><b>We handle</b><span>Website upload</span></div>
-        <div class="wv-guide-row"><b>We handle</b><span>Domain/DNS connection help</span></div>
-        <div class="wv-guide-row"><b>We handle</b><span>SSL and launch check</span></div>
-      </div>
-      <div class="wv-guide-cta">
-        <b>Reply path</b>
-        <p>Email ${escapeHtml(data.contactEmail)} with your business name and preview link. Tell us whether you already own a domain or want a new one.</p>
-      </div>
-    `,
-  )}
-  ${page(
-    "Useful upgrades after launch",
-    "Simple growth options",
-    `
-      <p class="wv-guide-lead">These upgrades are meant to be practical: clearer contact paths, more useful pages, or another focused site when your business situation needs it.</p>
-      <div class="wv-guide-offers">
-        ${offerCards.map((offer) => `
-          <div class="wv-guide-offer">
-            <h3>${escapeHtml(offer.title)}</h3>
-            <span class="wv-guide-price">${escapeHtml(offer.price)}</span>
-            <p>${escapeHtml(offer.body)}</p>
-            <p class="wv-guide-delivery">${escapeHtml(offer.delivery)}</p>
-          </div>
-        `).join("")}
-      </div>
-    `,
-  )}
-  ${page(
-    "Recommended next step",
-    "Keep it simple",
-    `
-      <p class="wv-guide-lead">If you do not have a website yet, the best first move is usually to launch this site on a real domain. After it is live, add pages or buttons based on what customers actually ask for.</p>
-      <div class="wv-guide-grid two">
-        <div class="wv-guide-card white"><h2>If you want to do it yourself</h2><p>Use the self-setup checklist in this PDF and keep all files from the zip together.</p></div>
-        <div class="wv-guide-card white"><h2>If you want it handled</h2><p>Contact WebView.click and we can launch the site for you with hosting, DNS help, upload, and SSL check.</p></div>
-      </div>
-      <div class="wv-guide-table">
-        <div class="wv-guide-row"><b>Email</b><span>${escapeHtml(data.contactEmail)}</span></div>
-        <div class="wv-guide-row"><b>Business</b><span>${escapeHtml(data.businessName)}</span></div>
-        <div class="wv-guide-row"><b>Reference</b><span>${escapeHtml(data.businessId)}</span></div>
-        <div class="wv-guide-row"><b>Preview</b><span class="wv-guide-url">${escapeHtml(data.downloadPageUrl || "Not available")}</span></div>
-      </div>
-      <p class="wv-guide-note">If this website is not useful, no reply is needed. If you want help launching or improving it, send the business name and preview link to ${escapeHtml(data.contactEmail)}.</p>
-    `,
-  )}
-</div>`;
-}
-
-function dataUrlToBytes(dataUrl: string) {
-  const base64 = dataUrl.split(",")[1] || "";
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
+function pdfUri(value: string) {
+  return pdfText(value).replace(/\r?\n/g, " ");
 }
 
 function concatBytes(chunks: Uint8Array[]) {
@@ -684,7 +462,239 @@ function concatBytes(chunks: Uint8Array[]) {
   return output;
 }
 
-function pdfFromJpegs(jpegs: Uint8Array[]) {
+class SelectablePdfGuide {
+  private readonly width = 595.28;
+  private readonly height = 841.89;
+  private readonly margin = 46;
+  private readonly bottom = 780;
+  private pages: PdfGuidePage[] = [];
+  private page: PdfGuidePage = { content: [], links: [] };
+  private y = 0;
+
+  constructor(private readonly data: ReturnType<typeof ownerPackageGuideData>) {
+    this.page = this.newPage();
+  }
+
+  private newPage() {
+    const page: PdfGuidePage = { content: [], links: [] };
+    this.pages.push(page);
+    this.page = page;
+    this.y = 40;
+    this.rect(0, 0, this.width, 9, "4f46e5");
+    this.text("WebView.click", this.margin, this.y, 18, "bold", "111827");
+    this.text("Website package guide", this.margin, this.y + 16, 9, "bold", "64748b");
+    this.text(this.data.generatedAt, this.width - this.margin - 90, this.y + 16, 9, "bold", "64748b");
+    this.y = 104;
+    return page;
+  }
+
+  private rgb(hex: string) {
+    const clean = hex.replace("#", "");
+    const r = parseInt(clean.slice(0, 2), 16) / 255;
+    const g = parseInt(clean.slice(2, 4), 16) / 255;
+    const b = parseInt(clean.slice(4, 6), 16) / 255;
+    return `${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)}`;
+  }
+
+  private rect(x: number, yTop: number, width: number, height: number, fill: string, stroke?: string) {
+    const y = this.height - yTop - height;
+    if (fill) this.page.content.push(`${this.rgb(fill)} rg ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re f`);
+    if (stroke) this.page.content.push(`${this.rgb(stroke)} RG 0.8 w ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S`);
+  }
+
+  private text(value: string, x: number, yTop: number, size: number, font: "regular" | "bold" = "regular", color = "334155") {
+    const y = this.height - yTop;
+    const fontRef = font === "bold" ? "F2" : "F1";
+    this.page.content.push(`BT /${fontRef} ${size.toFixed(2)} Tf ${this.rgb(color)} rg ${x.toFixed(2)} ${y.toFixed(2)} Td (${pdfText(value)}) Tj ET`);
+  }
+
+  private textWidth(value: string, size: number, bold = false) {
+    return String(value || "").length * size * (bold ? 0.55 : 0.5);
+  }
+
+  private wrap(value: string, maxWidth: number, size: number, bold = false) {
+    const words = String(value || "").split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let line = "";
+    words.forEach((word) => {
+      const next = line ? `${line} ${word}` : word;
+      if (this.textWidth(next, size, bold) <= maxWidth || !line) {
+        line = next;
+      } else {
+        lines.push(line);
+        line = word;
+      }
+    });
+    if (line) lines.push(line);
+    return lines.length ? lines : [""];
+  }
+
+  private ensure(height: number) {
+    if (this.y + height > this.bottom) this.newPage();
+  }
+
+  private linkText(value: string, x: number, yTop: number, size: number, url: string, maxWidth = 430, color = "4338ca") {
+    const lines = this.wrap(value, maxWidth, size);
+    lines.forEach((line, index) => {
+      const top = yTop + index * (size + 4);
+      this.text(line, x, top, size, "regular", color);
+      const width = Math.min(maxWidth, this.textWidth(line, size));
+      const y1 = this.height - top - 3;
+      const y2 = this.height - top + size + 2;
+      this.page.links.push({ rect: [x, y1, x + width, y2], url });
+    });
+    return lines.length * (size + 4);
+  }
+
+  startSection(eyebrow: string, title: string) {
+    if (this.pages.length > 1 || this.y > 120) this.newPage();
+    this.text(eyebrow.toUpperCase(), this.margin, this.y, 9, "bold", "4f46e5");
+    this.y += 22;
+    this.wrap(title, 500, 28, true).forEach((line) => {
+      this.text(line, this.margin, this.y, 28, "bold", "020617");
+      this.y += 34;
+    });
+    this.y += 8;
+  }
+
+  paragraph(value: string, options: { color?: string; size?: number; indent?: number } = {}) {
+    const size = options.size || 12;
+    const indent = options.indent || 0;
+    const lines = this.wrap(value, 500 - indent, size);
+    this.ensure(lines.length * (size + 5) + 8);
+    lines.forEach((line) => {
+      this.text(line, this.margin + indent, this.y, size, "regular", options.color || "475569");
+      this.y += size + 5;
+    });
+    this.y += 5;
+  }
+
+  subheading(value: string) {
+    this.ensure(34);
+    this.y += 5;
+    this.text(value, this.margin, this.y, 15, "bold", "020617");
+    this.y += 24;
+  }
+
+  bullets(items: string[]) {
+    items.forEach((item) => {
+      const lines = this.wrap(item, 470, 11);
+      this.ensure(lines.length * 16 + 4);
+      this.text("-", this.margin + 4, this.y, 11, "bold", "4f46e5");
+      lines.forEach((line, index) => {
+        this.text(line, this.margin + 18, this.y + index * 16, 11, "regular", "334155");
+      });
+      this.y += lines.length * 16 + 3;
+    });
+    this.y += 8;
+  }
+
+  valueCards(items: Array<[string, string]>) {
+    const gap = 10;
+    const cardWidth = (this.width - this.margin * 2 - gap * (items.length - 1)) / items.length;
+    this.ensure(82);
+    items.forEach(([label, value], index) => {
+      const x = this.margin + index * (cardWidth + gap);
+      this.rect(x, this.y, cardWidth, 66, "f8fafc", "e2e8f0");
+      this.text(label.toUpperCase(), x + 12, this.y + 20, 8, "bold", "64748b");
+      this.text(value, x + 12, this.y + 47, 19, "bold", value.startsWith("-") ? "047857" : "020617");
+    });
+    this.y += 82;
+  }
+
+  checks(items: string[]) {
+    const gap = 10;
+    const width = (this.width - this.margin * 2 - gap) / 2;
+    for (let index = 0; index < items.length; index += 2) {
+      this.ensure(50);
+      [0, 1].forEach((offset) => {
+        const item = items[index + offset];
+        if (!item) return;
+        const x = this.margin + offset * (width + gap);
+        this.rect(x, this.y, width, 38, "eff6ff", "dbeafe");
+        this.text(item, x + 10, this.y + 23, 10, "bold", "1e3a8a");
+      });
+      this.y += 48;
+    }
+    this.y += 8;
+  }
+
+  keyValueRows(rows: Array<[string, string, string?]>) {
+    this.ensure(20);
+    this.rect(this.margin, this.y, this.width - this.margin * 2, 1, "e2e8f0");
+    this.y += 8;
+    rows.forEach(([label, value, url]) => {
+      const lines = this.wrap(value, 350, 10);
+      const height = Math.max(26, lines.length * 14 + 10);
+      this.ensure(height + 4);
+      this.text(label, this.margin, this.y + 15, 10, "bold", "020617");
+      if (url) {
+        this.linkText(value, this.margin + 140, this.y + 15, 10, url, 350);
+      } else {
+        lines.forEach((line, index) => this.text(line, this.margin + 140, this.y + 15 + index * 14, 10, "regular", "334155"));
+      }
+      this.y += height;
+    });
+    this.y += 8;
+  }
+
+  numberedStep(number: number, title: string, body: string) {
+    const bodyLines = this.wrap(body, 430, 10);
+    const height = Math.max(54, bodyLines.length * 14 + 32);
+    this.ensure(height + 8);
+    this.rect(this.margin, this.y, this.width - this.margin * 2, height, "ffffff", "e2e8f0");
+    this.rect(this.margin + 12, this.y + 13, 24, 24, "4f46e5");
+    this.text(String(number), this.margin + 20, this.y + 31, 11, "bold", "ffffff");
+    this.text(title, this.margin + 50, this.y + 21, 12, "bold", "020617");
+    bodyLines.forEach((line, index) => this.text(line, this.margin + 50, this.y + 39 + index * 14, 10, "regular", "475569"));
+    this.y += height + 10;
+  }
+
+  offer(title: string, price: string, body: string) {
+    const bodyLines = this.wrap(body, 475, 10);
+    const height = Math.max(86, bodyLines.length * 14 + 54);
+    this.ensure(height + 10);
+    this.rect(this.margin, this.y, this.width - this.margin * 2, height, "ffffff", "e2e8f0");
+    this.text(title, this.margin + 14, this.y + 22, 13, "bold", "020617");
+    this.rect(this.margin + 14, this.y + 32, this.textWidth(price, 9, true) + 18, 18, "eef2ff");
+    this.text(price, this.margin + 23, this.y + 45, 9, "bold", "4338ca");
+    bodyLines.forEach((line, index) => this.text(line, this.margin + 14, this.y + 66 + index * 14, 10, "regular", "475569"));
+    this.y += height + 10;
+  }
+
+  note(value: string) {
+    const lines = this.wrap(value, 470, 10);
+    const height = lines.length * 14 + 22;
+    this.ensure(height + 10);
+    this.rect(this.margin, this.y, this.width - this.margin * 2, height, "fffbeb", "fde68a");
+    lines.forEach((line, index) => this.text(line, this.margin + 12, this.y + 19 + index * 14, 10, "regular", "92400e"));
+    this.y += height + 10;
+  }
+
+  callout(value: string, linkLabel: string, url: string) {
+    const lines = this.wrap(value, 470, 10);
+    const height = lines.length * 14 + 48;
+    this.ensure(height + 10);
+    this.rect(this.margin, this.y, this.width - this.margin * 2, height, "111827");
+    this.text("Reply path", this.margin + 14, this.y + 21, 12, "bold", "ffffff");
+    lines.forEach((line, index) => this.text(line, this.margin + 14, this.y + 39 + index * 14, 10, "regular", "ffffff"));
+    this.linkText(linkLabel, this.margin + 14, this.y + height - 16, 10, url, 440, "bfdbfe");
+    this.y += height + 10;
+  }
+
+  toBlob() {
+    this.pages.forEach((page, index) => {
+      const yTop = 812;
+      page.content.push(`${this.rgb("e2e8f0")} rg ${this.margin.toFixed(2)} ${(this.height - yTop).toFixed(2)} ${(this.width - this.margin * 2).toFixed(2)} 1 re f`);
+      this.page = page;
+      this.text(`${this.data.businessName} | ${this.data.contactEmail}`, this.margin, 828, 8, "bold", "94a3b8");
+      this.text(`Page ${index + 1}`, this.width - this.margin - 34, 828, 8, "bold", "94a3b8");
+    });
+    return pdfTextPagesToBlob(this.pages, this.width, this.height);
+  }
+}
+
+function pdfTextPagesToBlob(pages: PdfGuidePage[], width: number, height: number) {
   const encoder = new TextEncoder();
   const chunks: Uint8Array[] = [];
   const offsets: number[] = [0];
@@ -694,29 +704,45 @@ function pdfFromJpegs(jpegs: Uint8Array[]) {
     chunks.push(bytes);
     offset += bytes.length;
   };
-  const objectCount = 2 + jpegs.length * 3;
-  const pageRefs = jpegs.map((_, index) => `${3 + index * 3} 0 R`).join(" ");
   const writeObject = (id: number, body: string) => {
     offsets[id] = offset;
     append(`${id} 0 obj\n${body}\nendobj\n`);
   };
-  const writeStreamObject = (id: number, dictionary: string, bytes: Uint8Array) => {
+  const writeStreamObject = (id: number, body: string) => {
+    const bytes = encoder.encode(body);
     offsets[id] = offset;
-    append(`${id} 0 obj\n<< ${dictionary} /Length ${bytes.length} >>\nstream\n`);
+    append(`${id} 0 obj\n<< /Length ${bytes.length} >>\nstream\n`);
     append(bytes);
     append("\nendstream\nendobj\n");
   };
 
+  const catalogId = 1;
+  const pagesId = 2;
+  const fontRegularId = 3;
+  const fontBoldId = 4;
+  let nextId = 5;
+  const pageIds = pages.map(() => nextId++);
+  const contentIds = pages.map(() => nextId++);
+  const annotationIds = pages.map((page) => page.links.map(() => nextId++));
+  const objectCount = nextId - 1;
+
   append("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
-  writeObject(1, "<< /Type /Catalog /Pages 2 0 R >>");
-  writeObject(2, `<< /Type /Pages /Kids [${pageRefs}] /Count ${jpegs.length} >>`);
-  jpegs.forEach((jpeg, index) => {
-    const pageId = 3 + index * 3;
-    const contentId = pageId + 1;
-    const imageId = pageId + 2;
-    writeObject(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im${index + 1} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`);
-    writeStreamObject(contentId, "", encoder.encode(`q\n595.28 0 0 841.89 0 0 cm\n/Im${index + 1} Do\nQ\n`));
-    writeStreamObject(imageId, `/Type /XObject /Subtype /Image /Width 794 /Height 1123 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`, jpeg);
+  writeObject(catalogId, `<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+  writeObject(pagesId, `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`);
+  writeObject(fontRegularId, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  writeObject(fontBoldId, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+
+  pages.forEach((page, index) => {
+    const annots = annotationIds[index].length ? ` /Annots [${annotationIds[index].map((id) => `${id} 0 R`).join(" ")}]` : "";
+    writeObject(
+      pageIds[index],
+      `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${width.toFixed(2)} ${height.toFixed(2)}] /Resources << /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >> >> /Contents ${contentIds[index]} 0 R${annots} >>`,
+    );
+    writeStreamObject(contentIds[index], page.content.join("\n"));
+    page.links.forEach((link, linkIndex) => {
+      const [x1, y1, x2, y2] = link.rect;
+      writeObject(annotationIds[index][linkIndex], `<< /Type /Annot /Subtype /Link /Rect [${x1.toFixed(2)} ${y1.toFixed(2)} ${x2.toFixed(2)} ${y2.toFixed(2)}] /Border [0 0 0] /A << /S /URI /URI (${pdfUri(link.url)}) >> >>`);
+    });
   });
   const xrefOffset = offset;
   append(`xref\n0 ${objectCount + 1}\n`);
@@ -724,37 +750,111 @@ function pdfFromJpegs(jpegs: Uint8Array[]) {
   for (let id = 1; id <= objectCount; id += 1) {
     append(`${String(offsets[id] || 0).padStart(10, "0")} 00000 n \n`);
   }
-  append(`trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+  append(`trailer\n<< /Size ${objectCount + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
   const pdfBytes = concatBytes(chunks);
   const pdfBuffer = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength) as ArrayBuffer;
   return new Blob([pdfBuffer], { type: "application/pdf" });
 }
 
-async function ownerPackageGuidePdf(siteData: any, businessId: string) {
+function ownerPackageGuidePdf(siteData: any, businessId: string) {
   const data = ownerPackageGuideData(siteData, businessId);
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = ownerPackageGuideHtml(data);
-  const root = wrapper.firstElementChild as HTMLElement | null;
-  if (!root) throw new Error("Could not build owner PDF guide.");
-  document.body.appendChild(root);
-  try {
-    const pages = Array.from(root.querySelectorAll<HTMLElement>(".wv-guide-page"));
-    const jpegs: Uint8Array[] = [];
-    for (const page of pages) {
-      const jpegDataUrl = await toJpeg(page, {
-        width: 794,
-        height: 1123,
-        quality: 0.92,
-        pixelRatio: 1,
-        backgroundColor: "#ffffff",
-        cacheBust: true,
-      });
-      jpegs.push(dataUrlToBytes(jpegDataUrl));
-    }
-    return { filename: data.pdfFilename, blob: pdfFromJpegs(jpegs) };
-  } finally {
-    root.remove();
-  }
+  const contactRows = [
+    data.phone ? ["Phone", data.phone] : null,
+    data.email ? ["Email", data.email] : null,
+    data.formattedAddress ? ["Address", data.formattedAddress] : null,
+    data.category ? ["Business type", data.category] : null,
+    data.serviceAreas.length ? ["Areas served", data.serviceAreas.slice(0, 8).join(", ")] : null,
+  ].filter(Boolean) as Array<[string, string]>;
+  const pageTotal = data.pages.length || 1;
+  const offers = [
+    {
+      title: "Launch it for me",
+      price: "$180-$197/year",
+      body: "Your website goes live without you touching hosting, DNS, upload, or SSL settings. Good if you want the site online without learning the technical parts.",
+    },
+    {
+      title: "Add more pages",
+      price: "From $50/page",
+      body: "Useful when customers need more details before calling, such as separate service pages, menu pages, product pages, FAQ pages, or local area pages.",
+    },
+    {
+      title: "Sticky call or WhatsApp button",
+      price: "$49 one-time",
+      body: "Customers can reach you from any page. WhatsApp messages can include the page they clicked from, so you know what they were interested in.",
+    },
+    {
+      title: "Extra focused site",
+      price: "From $197/year",
+      body: "Useful if you have another location, another business, or a separate service line that deserves its own website.",
+    },
+    {
+      title: "Lead capture polish",
+      price: "$99 one-time",
+      body: "Make it easier for visitors to call, email, request a quote, or send a message without hunting around the site.",
+    },
+    {
+      title: "Monthly care",
+      price: "From $49/month",
+      body: "Useful if you want small text changes, new announcements, seasonal offers, or page updates handled for you.",
+    },
+  ];
+
+  const pdf = new SelectablePdfGuide(data);
+  pdf.startSection("Free portfolio sample", `Your starter website package is ready for ${data.businessName}`);
+  pdf.paragraph("This package contains a ready-to-use static website prepared for your business. You can keep the files, host them anywhere, or ask WebView.click to launch it for you.");
+  pdf.valueCards([["Starter site value", "$997"], ["Portfolio credit", "-$997"], ["Your download today", "$0"]]);
+  pdf.checks(["No payment required to download the files.", "You can host it with any provider.", "Setup help is optional.", "The site is personalized for your business."]);
+  pdf.keyValueRows([["Business", data.businessName], ["Reference", data.businessId], ["Preview page", data.downloadPageUrl || "Not available", data.downloadPageUrl]]);
+
+  pdf.startSection("Package contents", "What you received");
+  pdf.paragraph("Keep these files together when you upload the website. The images folder must stay beside the HTML file so photos keep working.");
+  pdf.subheading("Website files");
+  pdf.bullets(["index.html", "sitemap.xml", "robots.txt", "img/ folder", "This clickable PDF guide"]);
+  pdf.subheading("Built-in basics");
+  pdf.bullets(["Mobile-friendly static page.", "Clickable phone and email links where available.", "Basic business search metadata.", "Local image files packaged into the zip.", "Navigation that works without React."]);
+  pdf.keyValueRows([...(contactRows.length ? contactRows : [["Business details", "Review phone, email, address, and hours before launch."] as [string, string]), ["Pages included", String(pageTotal)]]);
+  pdf.subheading("Pages included");
+  pdf.bullets(data.pages.length ? data.pages : ["Homepage"]);
+  pdf.subheading("Services or offers");
+  pdf.bullets(data.offerings.length ? data.offerings : ["Review your services before launch."]);
+
+  pdf.startSection("Self setup checklist", "How to put it online yourself");
+  pdf.paragraph("You can launch this yourself if you are comfortable with domain, hosting, upload, and SSL settings. If this feels annoying, WebView.click can handle it for you.");
+  [
+    ["Choose a domain", "Use a domain you already own, or buy a new one from a registrar."],
+    ["Choose website hosting", "Use static hosting or normal shared hosting that can serve plain HTML files."],
+    ["Upload the files", "Upload index.html, sitemap.xml, robots.txt, and the full img folder together."],
+    ["Connect DNS", "Point your domain to the hosting provider using nameservers, A records, or CNAME records."],
+    ["Turn on HTTPS", "Enable SSL so the website opens with https:// and does not show browser warnings."],
+    ["Test the site", "Open it on desktop and phone. Check photos, menu links, phone links, email links, and contact forms."],
+  ].forEach(([title, body], index) => pdf.numberedStep(index + 1, title, body));
+  pdf.note("The website is static. Future changes usually mean editing the file and uploading it again, unless WebView.click hosts and maintains it for you.");
+
+  pdf.startSection("Done-for-you setup", "Want us to launch it for you?");
+  pdf.paragraph("This is the easiest next step if you want the website live without touching hosting, DNS, file upload, or SSL settings.");
+  pdf.valueCards([["Already own the domain", "$180/year"], ["Need us to register it", "$197/year"]]);
+  pdf.keyValueRows([["Included", "Managed hosting setup"], ["Included", "Website upload"], ["Included", "Domain/DNS connection help"], ["Included", "SSL and launch check"]]);
+  pdf.callout(`Email ${data.contactEmail} with your business name and preview link. Tell us whether you already own a domain or want a new one.`, data.contactEmail, `mailto:${data.contactEmail}?subject=${encodeURIComponent(`Website setup for ${data.businessName}`)}&body=${encodeURIComponent(`Business: ${data.businessName}\nPreview: ${data.downloadPageUrl || ""}\n\nI want help launching this website.`)}`);
+
+  pdf.startSection("Simple growth options", "Useful upgrades after launch");
+  pdf.paragraph("These upgrades are practical: clearer contact paths, more useful pages, or another focused site when your business situation needs it.");
+  offers.forEach((offer) => pdf.offer(offer.title, offer.price, offer.body));
+
+  pdf.startSection("Keep it simple", "Recommended next step");
+  pdf.paragraph("If you do not have a website yet, the best first move is usually to launch this site on a real domain. After it is live, add pages or buttons based on what customers actually ask for.");
+  pdf.subheading("If you want to do it yourself");
+  pdf.paragraph("Use the self-setup checklist in this PDF and keep all files from the zip together.");
+  pdf.subheading("If you want it handled");
+  pdf.paragraph("Contact WebView.click and we can launch the site for you with hosting, DNS help, upload, and SSL check.");
+  pdf.keyValueRows([
+    ["Email", data.contactEmail, `mailto:${data.contactEmail}?subject=${encodeURIComponent(`Website setup for ${data.businessName}`)}`],
+    ["Business", data.businessName],
+    ["Reference", data.businessId],
+    ["Preview", data.downloadPageUrl || "Not available", data.downloadPageUrl],
+  ]);
+  pdf.note(`If this website is not useful, no reply is needed. If you want help launching or improving it, send the business name and preview link to ${data.contactEmail}.`);
+
+  return { filename: data.pdfFilename, blob: pdf.toBlob() };
 }
 
 function exportBaseUrl(siteData: any) {

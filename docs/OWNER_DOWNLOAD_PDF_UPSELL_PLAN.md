@@ -12,7 +12,7 @@ Purpose: turn the owner download package into a stronger perceived-value asset, 
 - [x] Create branded A4 HTML sections for the owner package guide.
 - [x] Add client-side PDF generation during `downloadOwnerSiteZip()`.
 - [x] Replace `README-FIRST.txt` and `SETUP-GUIDE.txt` with `WebView.click Website Package Guide.pdf`.
-- [ ] Add PDF export QA for A4 page breaks, file size, business-specific personalization, and no hidden admin/tool UI.
+- [ ] Add PDF export QA for page breaks, file size, business-specific personalization, clickable links, selectable text, and no hidden admin/tool UI.
 - [x] Update `docs/CODEBASE_REFERENCE.md` when implementation changes the zip contents.
 
 ## Core Positioning
@@ -437,12 +437,11 @@ Avoid:
 - Tiny text that prints badly.
 - Anything that looks like a legal invoice.
 
-Page slicing:
+Page handling:
 
-- Build each page as a fixed A4-like HTML section.
-- CSS target: `width: 794px; min-height: 1123px;` for 96dpi A4 approximation, or use millimeter units for print CSS.
-- Use `break-after: page`.
-- Keep each page self-contained so html-to-image/PDF generation does not split cards awkwardly.
+- Build the PDF as real text/vector PDF content, not screenshots.
+- Keep text selectable and links clickable.
+- Let long sections continue onto the next page instead of clipping content.
 
 ## Implementation Plan
 
@@ -452,23 +451,16 @@ Current dependencies already include:
 
 - `jszip`
 - `file-saver`
-- `html-to-image`
 
 No PDF dependency is currently present.
-
-Recommended first implementation:
-
-1. Build a hidden owner PDF HTML node in the browser at download time.
-2. Render each A4 page section to JPEG using `html-to-image`.
-3. Wrap those JPEG pages in a lightweight PDF writer inside `exportSiteHtml.ts`.
-4. Add the PDF blob to the zip.
-5. Remove the hidden node.
 
 Implemented first pass:
 
 - No new dependency.
-- `html-to-image` renders A4 HTML pages with `toJpeg`.
-- `pdfFromJpegs()` writes a simple multi-page PDF with each JPEG page as an A4 image.
+- `SelectablePdfGuide` writes text, boxes, and clickable link annotations directly into a PDF.
+- Text remains selectable.
+- Preview and email links remain clickable.
+- Content paginates when a section grows beyond one page.
 - The zip no longer includes `.txt` guide files.
 
 ### Files Likely To Change
@@ -491,9 +483,9 @@ Implemented first pass:
 Add helpers inside `src/lib/exportSiteHtml.ts` first, then extract only if it grows too large:
 
 - `ownerPackageGuideData(siteData, businessId)`
-- `ownerPackageGuideHtml(data)`
 - `ownerPackageGuidePdf(siteData, businessId)`
-- `pdfFromJpegs(jpegs)`
+- `SelectablePdfGuide`
+- `pdfTextPagesToBlob(pages, width, height)`
 
 If the PDF logic becomes large, extract later:
 
