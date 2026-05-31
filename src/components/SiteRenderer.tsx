@@ -1109,19 +1109,51 @@ export default function SiteRenderer({
       return Number.isFinite(lineHeight) ? lineHeight : fontSize * 0.98;
     };
 
+    const lineMetricsFor = (element: HTMLElement) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const rects = Array.from(range.getClientRects())
+        .filter((rect) => rect.width > 1 && rect.height > 1)
+        .sort((a, b) => a.top - b.top || a.left - b.left);
+      range.detach();
+
+      const lines: Array<{ top: number; left: number; right: number }> = [];
+      rects.forEach((rect) => {
+        const line = lines.find((item) => Math.abs(item.top - rect.top) < 3);
+        if (line) {
+          line.left = Math.min(line.left, rect.left);
+          line.right = Math.max(line.right, rect.right);
+        } else {
+          lines.push({ top: rect.top, left: rect.left, right: rect.right });
+        }
+      });
+
+      const maxLineWidth = lines.reduce((max, line) => Math.max(max, line.right - line.left), 0);
+      return {
+        lineCount: lines.length || Math.ceil(element.scrollHeight / Math.max(lineHeightFor(element), 1)),
+        widthUsage: maxLineWidth / Math.max(element.clientWidth, 1),
+      };
+    };
+
     const fitHeading = (heading: HTMLElement) => {
       const page = heading.closest<HTMLElement>("[data-wv-page]");
       if (page && page.getAttribute("data-wv-page") !== activeTab) return;
       heading.style.removeProperty("--wv-hero-heading-size");
       const baseFontSize = Number.parseFloat(window.getComputedStyle(heading).fontSize) || 56;
-      const maxScale = window.matchMedia("(max-width: 640px)").matches ? 1.12 : 1.2;
+      const isMobile = window.matchMedia("(max-width: 640px)").matches;
+      const maxScale = isMobile ? 1.36 : 1.62;
+      const targetWidthUsage = isMobile ? 0.78 : 0.84;
       const maxFontSize = baseFontSize * maxScale;
 
-      const fitsWithinLineLimit = () => heading.scrollHeight <= lineHeightFor(heading) * maxLines + 2;
+      const metrics = () => lineMetricsFor(heading);
+      const fitsWithinLineLimit = () => {
+        const current = metrics();
+        return current.lineCount <= maxLines && heading.scrollHeight <= lineHeightFor(heading) * maxLines + 6;
+      };
       const setSize = (size: number) => heading.style.setProperty("--wv-hero-heading-size", `${size.toFixed(2)}px`);
 
       setSize(maxFontSize);
-      if (fitsWithinLineLimit()) return;
+      if (fitsWithinLineLimit() && metrics().widthUsage >= targetWidthUsage) return;
 
       heading.style.removeProperty("--wv-hero-heading-size");
       const baseFits = fitsWithinLineLimit();
