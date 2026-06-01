@@ -1,5 +1,5 @@
-import { type PointerEvent, useEffect, useRef, useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronUp, GripHorizontal, ShieldCheck, XCircle } from "lucide-react";
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, ChevronDown, ChevronUp, GripHorizontal, ShieldCheck, Shuffle, XCircle } from "lucide-react";
 import templateSchema from "../../../JSON/template-schema.json";
 import SiteRenderer from "../../components/SiteRenderer";
 import WebsiteActionPanel from "../../components/WebsiteActionPanel";
@@ -7,6 +7,161 @@ import { downloadOwnerSiteZip } from "../../lib/exportSiteHtml";
 import { fontPairingsForText, getFontPairing } from "../../lib/fontPairings";
 import { applyGeneratedSitePageInserts } from "../../lib/generatedSitePostProcess";
 import { getShaderPreset, siteShaderPresets, siteStylePresets } from "../../lib/siteStylePresets";
+
+const demoIndustries = [
+  {
+    id: "cafe",
+    label: "Cafe",
+    businessName: "Maple & Main Coffee",
+    typeLabel: "Neighborhood cafe",
+    niche: "cafe",
+    categories: ["cafe", "coffee shop", "bakery"],
+    pitch: "Fresh coffee, baked goods, and a warm local spot for quick meetings or slow mornings.",
+    address: "1420 Main Street, Austin, TX",
+    services: ["Espresso Bar", "Fresh Pastries", "Catering Coffee Boxes"],
+    styles: ["cafe-warm", "education-friendly", "pet-care-friendly"],
+    shaders: ["cafe-heat", "local-aurora", "organic-dapple"],
+  },
+  {
+    id: "contractor",
+    label: "Contractor",
+    businessName: "Summit Ridge Concrete",
+    typeLabel: "Concrete contractor",
+    niche: "concrete contractor",
+    categories: ["concrete contractor", "driveway contractor", "foundation repair"],
+    pitch: "Concrete driveways, patios, and repair work for homeowners who want a clean estimate and durable finish.",
+    address: "780 Quarry Road, Denver, CO",
+    services: ["Driveway Replacement", "Patio Concrete", "Foundation Repair"],
+    styles: ["contractor-rugged", "auto-shop-steel", "security-trust"],
+    shaders: ["industrial-grid", "property-depth", "local-aurora"],
+  },
+  {
+    id: "professional",
+    label: "Professional",
+    businessName: "Northstar Tax & Advisory",
+    typeLabel: "Tax and advisory firm",
+    niche: "tax accountant",
+    categories: ["tax accountant", "bookkeeping service", "financial consultant"],
+    pitch: "Tax planning, bookkeeping, and advisory support for owners who need clear answers before deadlines.",
+    address: "315 Market Street, Raleigh, NC",
+    services: ["Business Tax Prep", "Monthly Bookkeeping", "Advisory Consultation"],
+    styles: ["legal-authority", "financial-trust", "real-estate-premium"],
+    shaders: ["legal-vellum", "property-depth", "none"],
+  },
+  {
+    id: "salon",
+    label: "Salon / Spa",
+    businessName: "Velvet Room Med Spa",
+    typeLabel: "Med spa and beauty studio",
+    niche: "med spa",
+    categories: ["med spa", "skin care clinic", "beauty salon"],
+    pitch: "Polished skin and beauty treatments with a calm booking path and premium consultation feel.",
+    address: "225 Palm Avenue, Scottsdale, AZ",
+    services: ["Facial Treatments", "Skin Consultation", "Beauty Maintenance"],
+    styles: ["salon-soft-luxe", "dental-clean", "real-estate-premium"],
+    shaders: ["salon-silk", "aqua-caustics", "local-aurora"],
+  },
+  {
+    id: "emergency",
+    label: "Emergency",
+    businessName: "RapidFlow Plumbing",
+    typeLabel: "Emergency plumbing service",
+    niche: "emergency plumber",
+    categories: ["plumber", "emergency plumber", "water heater repair"],
+    pitch: "Fast help for leaks, clogs, and urgent plumbing problems with a phone-first response path.",
+    address: "98 Service Lane, Tampa, FL",
+    services: ["Emergency Leak Repair", "Drain Clearing", "Water Heater Service"],
+    styles: ["security-trust", "contractor-rugged", "cleaning-fresh"],
+    shaders: ["industrial-grid", "aqua-caustics", "local-aurora"],
+  },
+  {
+    id: "cleaning",
+    label: "Cleaning",
+    businessName: "BrightPath Cleaning Co.",
+    typeLabel: "Residential and office cleaning",
+    niche: "cleaning service",
+    categories: ["cleaning service", "janitorial service", "maid service"],
+    pitch: "Reliable home and office cleaning with checklist-friendly service options and simple booking.",
+    address: "54 Brookline Avenue, Charlotte, NC",
+    services: ["Recurring Home Cleaning", "Move-Out Cleaning", "Office Cleaning"],
+    styles: ["cleaning-fresh", "pool-aqua", "dental-clean"],
+    shaders: ["aqua-caustics", "local-aurora", "organic-dapple"],
+  },
+];
+
+function pickSeeded<T>(items: T[], seed: number, fallback: T): T {
+  if (!items.length) return fallback;
+  return items[Math.abs(seed) % items.length] || fallback;
+}
+
+function demoPaletteForStyle(styleId: string) {
+  return siteStylePresets.find((preset) => preset.id === styleId)?.recommendedColors || ["#111827", "#4F46E5", "#F8FAFC"];
+}
+
+function buildDemoIndustrySite(template: any, demo: typeof demoIndustries[number], nonce: number) {
+  const site = structuredClone(template);
+  const stylePreset = pickSeeded(demo.styles, nonce, demo.styles[0]);
+  const shaderPreset = pickSeeded(demo.shaders, nonce + 1, demo.shaders[0]);
+  const palette = demoPaletteForStyle(stylePreset);
+  const businessId = `demo-${demo.id}`;
+  const services = demo.services.map((title, index) => ({
+    id: title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+    type: "service",
+    title,
+    navLabel: title.split(/\s+/).slice(0, 2).join(" "),
+    summary: `${title} for local customers who want a clear next step from ${demo.businessName}.`,
+    description: `${demo.businessName} helps customers understand scope, timing, and the easiest way to get started with ${title.toLowerCase()}.`,
+    priceHint: index === 0 ? "Request a clear estimate" : "Ask about availability",
+    detailPageId: `service-${index + 1}`,
+    bestFor: ["Local customers", "Clear next steps", "Service comparison"],
+    included: ["Scope overview", "Next-step guidance", "Contact path"],
+    highlights: [{ title: "Built around local intent", description: "The page keeps proof, service fit, and the primary action close together." }],
+  }));
+  site.meta = { ...(site.meta || {}), businessId, businessName: demo.businessName, niche: demo.niche, seoDescription: demo.pitch };
+  site.businessProfile = { ...(site.businessProfile || {}), name: demo.businessName, typeLabel: demo.typeLabel, categories: demo.categories, shortPitch: demo.pitch };
+  site.sourceData = { ...(site.sourceData || {}), name: demo.businessName, searchQuery: demo.niche, formattedAddress: demo.address, types: demo.categories, rating: 4.8, user_ratings_total: 127 };
+  site.location = { ...(site.location || {}), formattedAddress: demo.address, servedAreas: ["Downtown", "North Side", "Nearby neighborhoods"] };
+  site.trust = { ...(site.trust || {}), rating: 4.8, reviewCount: 127, reviewSummary: "Local customers mention clear communication and reliable service." };
+  site.services = services;
+  site.products = [];
+  site.offers = services;
+  site.brand = {
+    ...(site.brand || {}),
+    palette,
+    paletteOptions: [
+      { id: `${demo.id}-primary`, label: `${demo.label} palette`, colors: palette },
+      ...(Array.isArray(site.brand?.paletteOptions) ? site.brand.paletteOptions : []),
+    ],
+  };
+  site.design = {
+    ...(site.design || {}),
+    stylePreset,
+    shaderPreset,
+    themeVariables: {
+      ...(site.design?.themeVariables || {}),
+      colors: {
+        ...(site.design?.themeVariables?.colors || {}),
+        primary: palette[0],
+        accent: palette[1],
+        secondary: palette[2],
+      },
+    },
+  };
+  const home = Array.isArray(site.pages) ? site.pages.find((page: any) => page.pageId === "home") : null;
+  const hero = Array.isArray(home?.sections) ? home.sections.find((section: any) => section.type === "hero") : null;
+  if (hero) {
+    hero.content = {
+      ...(hero.content || {}),
+      headline: `${demo.businessName} helps local customers choose the right next step`,
+      subheadline: demo.pitch,
+      buttons: [
+        { text: demo.id === "emergency" ? "Call Now" : "Request a Consultation", href: "#contact", style: "primary" },
+        { text: "View Services", href: "#services", style: "outline" },
+      ],
+    };
+  }
+  return site;
+}
 
 function emptyVisualQa() {
   return {
@@ -64,7 +219,11 @@ function iconStats(group: "features" | "trustBar" | "hoursLocation", minExpected
 }
 
 export default function DemoSite() {
-  const baseSiteData = templateSchema as any;
+  const templateData = templateSchema as any;
+  const [selectedDemoId, setSelectedDemoId] = useState("cafe");
+  const [styleNonce, setStyleNonce] = useState(0);
+  const selectedDemo = demoIndustries.find((item) => item.id === selectedDemoId) || demoIndustries[0];
+  const baseSiteData = useMemo(() => buildDemoIndustrySite(templateData, selectedDemo, styleNonce), [selectedDemo, styleNonce, templateData]);
   const [selectedPreset, setSelectedPreset] = useState(baseSiteData.design?.stylePreset || "cafe-warm");
   const [selectedShaderPreset, setSelectedShaderPreset] = useState(baseSiteData.design?.shaderPreset || "cafe-heat");
   const fontOptions = fontPairingsForText([
@@ -158,6 +317,19 @@ export default function DemoSite() {
     !siteData?.navigation?.headerMenu ? "navigation.headerMenu" : "",
     !Array.isArray(siteData?.pages) ? "pages[]" : "",
   ].filter(Boolean);
+
+  useEffect(() => {
+    const nextFontOptions = fontPairingsForText([
+      baseSiteData.meta?.businessName,
+      baseSiteData.meta?.niche,
+      baseSiteData.businessProfile?.typeLabel,
+      Array.isArray(baseSiteData.businessProfile?.categories) ? baseSiteData.businessProfile.categories.join(" ") : "",
+    ].filter(Boolean).join(" "), 5);
+    setSelectedPreset(baseSiteData.design?.stylePreset || selectedDemo.styles[0] || "local-clean");
+    setSelectedShaderPreset(baseSiteData.design?.shaderPreset || selectedDemo.shaders[0] || "local-aurora");
+    setSelectedFontPairing(nextFontOptions[styleNonce % Math.max(1, nextFontOptions.length)]?.id || baseSiteData.design?.fontPairing || "montserrat-raleway");
+    setSelectedPaletteOption(baseSiteData.brand?.paletteOptions?.[0]?.id || "");
+  }, [baseSiteData, selectedDemo, styleNonce]);
 
   const handleDownloadZip = async (downloadSiteData = panelSiteData) => {
     await downloadOwnerSiteZip(downloadSiteData, downloadSiteData?.meta?.businessId || "webview-demo");
@@ -362,6 +534,31 @@ export default function DemoSite() {
               <p className="font-medium text-slate-900">{sections.length}</p>
             </div>
           </div>
+          <label className="mt-3 block text-xs">
+            <span className="mb-1 block font-medium text-slate-600">Industry demo</span>
+            <div className="flex gap-2">
+              <select
+                value={selectedDemoId}
+                onChange={(event) => {
+                  setSelectedDemoId(event.target.value);
+                  setStyleNonce((value) => value + 1);
+                }}
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {demoIndustries.map((demo) => (
+                  <option key={demo.id} value={demo.id}>{demo.label}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setStyleNonce((value) => value + 1)}
+                className="inline-flex items-center justify-center rounded-lg border border-indigo-200 px-2 text-indigo-700 hover:bg-indigo-50"
+                aria-label="Randomize this industry style"
+              >
+                <Shuffle size={14} />
+              </button>
+            </div>
+          </label>
           <label className="mt-3 block text-xs">
             <span className="mb-1 block font-medium text-slate-600">Style preset</span>
             <select

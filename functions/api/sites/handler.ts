@@ -44,6 +44,8 @@ type SitesEnv = Record<string, unknown> & {
   R2_PUBLIC_BASE_URL?: string;
 };
 
+const DESIGN_SYSTEM_VERSION = "premium-design-intent-v1";
+
 export type SitesHandlerDeps = {
   templateSchema: Record<string, unknown>;
   json: (data: unknown, status?: number) => Response;
@@ -85,6 +87,33 @@ function visualStyleForBusiness(text: string): string {
   if (/(medical|doctor|cleaning|pool|service|repair|maintenance|clinic|dental)/i.test(key)) return "clean-minimal";
   if (/(gym|fitness|trainer|boxing|martial|crossfit|sport)/i.test(key)) return "bold-sport";
   return "soft-rounded";
+}
+
+function stableHashIndex(seed: string, length: number) {
+  if (length <= 1) return 0;
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash) % length;
+}
+
+function visualStyleVariantsForBusiness(text: string) {
+  const key = text.toLowerCase();
+  if (/(contractor|concrete|roof|construction|builder|paving|masonry|auto|mechanic|security|locksmith)/i.test(key)) return ["industrial-diagonal", "boxy-editorial", "clean-minimal"];
+  if (/(law|legal|attorney|finance|financial|accounting|consulting|insurance|advisor)/i.test(key)) return ["boxy-editorial", "clean-minimal", "soft-rounded"];
+  if (/(real estate|realtor|property|broker|home staging|premium)/i.test(key)) return ["boxy-editorial", "soft-rounded", "clean-minimal"];
+  if (/(medical|doctor|cleaning|pool|service|repair|maintenance|clinic|dental)/i.test(key)) return ["clean-minimal", "soft-rounded", "boxy-editorial"];
+  if (/(gym|fitness|trainer|boxing|martial|crossfit|sport)/i.test(key)) return ["bold-sport", "industrial-diagonal", "clean-minimal"];
+  if (/(salon|spa|massage|beauty|nail|lashes|brow|esthetician|hair)/i.test(key)) return ["soft-rounded", "clean-minimal", "boxy-editorial"];
+  if (/(cafe|coffee|bakery|restaurant|bar|food|bistro|brunch|tea|pizza|taco|diner)/i.test(key)) return ["soft-rounded", "boxy-editorial", "clean-minimal"];
+  return ["soft-rounded", "clean-minimal", "boxy-editorial"];
+}
+
+function seededVisualStyleForBusiness(text: string, seed: string) {
+  const variants = visualStyleVariantsForBusiness(text);
+  return variants[stableHashIndex(seed || text, variants.length)] || visualStyleForBusiness(text);
 }
 
 function validBackfillPhone(value: unknown) {
@@ -259,6 +288,99 @@ function normalizeSiteColorContrast(finalJson: Record<string, unknown>) {
   themeVariables.colors = colors;
   design.themeVariables = themeVariables;
   finalJson.design = design;
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function savedSiteOriginData(siteJson: Record<string, unknown>) {
+  const sourceData = recordValue(siteJson.sourceData);
+  const profile = recordValue(siteJson.businessProfile);
+  const location = recordValue(siteJson.location);
+  const trust = recordValue(siteJson.trust);
+  const brand = recordValue(siteJson.brand);
+  return {
+    ...sourceData,
+    name: asString(sourceData.name, asString(profile.name)),
+    place_id: asString(sourceData.placeId, asString(sourceData.place_id)),
+    formatted_address: asString(sourceData.formattedAddress, asString(sourceData.formatted_address, asString(location.formattedAddress))),
+    url: asString(sourceData.googleMapsUri, asString(location.directionsUrl)),
+    website: asString(sourceData.websiteUri, asString(sourceData.website)),
+    rating: typeof trust.rating === "number" ? trust.rating : sourceData.rating,
+    user_ratings_total: typeof trust.reviewCount === "number" ? trust.reviewCount : sourceData.user_ratings_total,
+    photos: Array.isArray(sourceData.photos) ? sourceData.photos : [],
+    types: Array.isArray(profile.categories) ? profile.categories : Array.isArray(sourceData.types) ? sourceData.types : [],
+    searchQuery: asString(sourceData.searchQuery, [asString(profile.typeLabel), asString(location.formattedAddress)].filter(Boolean).join(" ")),
+    selectedPhoto: {
+      reference: asString(brand.googlePhotoReference),
+      url: asString(brand.logoImageUrl, asString(brand.preferredHeroImage)),
+      attributions: Array.isArray(brand.photoAttributions) ? brand.photoAttributions : [],
+      source: asString(brand.photoSource),
+      priorityLabel: asString(brand.selectedPhotoPriority),
+    },
+  };
+}
+
+function auditFlags(value: unknown) {
+  const record = recordValue(value);
+  return Array.isArray(record.flags) ? record.flags.map((item) => asString(item)).filter(Boolean) : [];
+}
+
+function siteUpgradeAudit(siteJson: Record<string, unknown>) {
+  const conversion = recordValue(siteJson.conversion);
+  const design = recordValue(siteJson.design);
+  const conversionAudit = recordValue(conversion.conversionAudit);
+  const designAudit = recordValue(design.designAudit);
+  const conversionFlags = auditFlags(conversionAudit);
+  const designFlags = auditFlags(designAudit);
+  const aiFlags = conversionFlags.filter((flag) => [
+    "missing_objection_faq",
+    "thin_service_pages",
+    "non_specific_hero",
+    "generic_primary_cta",
+    "missing_proof_above_fold",
+  ].includes(flag));
+  return {
+    conversion: {
+      pagePattern: asString(conversion.pagePattern),
+      primaryAction: asString(conversion.primaryAction),
+      flags: conversionFlags,
+      ready: conversionAudit.ready === true || conversionFlags.length === 0,
+    },
+    design: {
+      compositionPattern: asString(design.compositionPattern),
+      heroLayout: asString(design.heroLayout),
+      mediaStrategy: asString(design.mediaStrategy),
+      proofTreatment: asString(design.proofTreatment),
+      ctaTreatment: asString(design.ctaTreatment),
+      flags: designFlags,
+      ready: designAudit.ready === true || designFlags.length === 0,
+    },
+    needsAi: aiFlags.length > 0,
+    aiFlags,
+  };
+}
+
+function changedUpgradeFields(before: Record<string, unknown>, after: Record<string, unknown>) {
+  const read = (site: Record<string, unknown>, path: string) => {
+    let value: unknown = site;
+    for (const part of path.split(".")) {
+      value = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>)[part] : undefined;
+    }
+    return JSON.stringify(value ?? null);
+  };
+  return [
+    "conversion.pagePattern",
+    "conversion.primaryAction",
+    "conversion.conversionAudit",
+    "design.stylePreset",
+    "design.visualStyle",
+    "design.designIntent",
+    "design.designAudit",
+    "design.fontPairing",
+    "pages",
+  ].filter((path) => read(before, path) !== read(after, path));
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -1042,6 +1164,124 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     });
   }
 
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "upgrade-design") {
+    const businessId = segments[1];
+    await ensureRequiredColumns(db, [
+      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+      { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
+      { table: "json_sites", column: "json_summary", definition: "TEXT" },
+      { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+    ]);
+    const columns = await tableColumns(db, "json_sites");
+    const selectedColumns = [
+      "business_id",
+      "json_content",
+      columns.has("r2_json_key") ? "r2_json_key" : "",
+    ].filter(Boolean);
+    const row = await db
+      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
+      .bind(businessId)
+      .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+    if (!row?.json_content) return errorJson("Site not found", 404);
+
+    const body = await readJsonBody(request).catch(() => ({}));
+    const siteJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
+    if (!siteJson || typeof siteJson !== "object" || Array.isArray(siteJson)) {
+      return errorJson("Saved site JSON is not an object and cannot be upgraded.", 422);
+    }
+
+    const beforeJson = structuredClone(siteJson) as Record<string, unknown>;
+    const beforeAudit = siteUpgradeAudit(beforeJson);
+    const originData = savedSiteOriginData(siteJson);
+    const meta = recordValue(siteJson.meta);
+    const profile = recordValue(siteJson.businessProfile);
+    const businessName = asString(meta.businessName, asString(profile.name, businessId));
+    const upgradedAt = new Date().toISOString();
+
+    applyGeneratedSitePageInserts(siteJson, originData);
+    applySeededFontPairing(siteJson, businessName, businessId, originData, body.randomizeStyle === true);
+    const designConfig = recordValue(siteJson.design);
+    const visualDesignContext = [
+      businessName,
+      asString(originData.formatted_address, asString(originData.formattedAddress)),
+      Array.isArray(originData.types) ? originData.types.join(" ") : "",
+      asString(originData.searchQuery),
+    ].filter(Boolean).join(" ");
+    const visualSeed = [businessName, businessId, asString(originData.place_id), asString(originData.formatted_address, asString(originData.formattedAddress))].filter(Boolean).join(" ");
+    if (body.randomizeStyle === true || asString(recordValue(designConfig.visualStyleConfig).selectionMode) !== "stable_seeded_business_variant") {
+      designConfig.visualStyle = seededVisualStyleForBusiness(visualDesignContext, `${visualSeed} ${upgradedAt}`);
+      designConfig.visualStyleConfig = {
+        ...recordValue(designConfig.visualStyleConfig),
+        label: asString(designConfig.visualStyle).replace(/-/g, " "),
+        allowedValues: ["soft-rounded", "boxy-editorial", "industrial-diagonal", "clean-minimal", "bold-sport"],
+        selectionMode: "stable_seeded_business_variant",
+        seed: visualSeed,
+        selectionRule: "Existing-site upgrade chooses a business-seeded visual variant that fits the industry while preserving saved copy and URLs.",
+      };
+      siteJson.design = designConfig;
+    }
+    normalizeSiteColorContrast(siteJson);
+    siteJson.meta = {
+      ...recordValue(siteJson.meta),
+      businessId,
+      businessName,
+      designSystemVersion: DESIGN_SYSTEM_VERSION,
+      lastDesignUpgradeAt: upgradedAt,
+      lastUpgradeMode: "deterministic_design_schema",
+    };
+
+    const afterAudit = siteUpgradeAudit(siteJson);
+    const changedFields = changedUpgradeFields(beforeJson, siteJson);
+    const storage = recordValue(siteJson.storage);
+    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
+    let r2JsonUrl = asString(storage.r2JsonUrl);
+    if (r2JsonKey || env.R2) {
+      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
+      if (nextKey) {
+        r2JsonKey = nextKey;
+        r2JsonUrl = publicR2Url(env, nextKey);
+        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
+        await uploadJsonToR2(siteJson, env, businessId);
+      }
+    }
+    const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
+    const d1JsonContent = r2JsonKey
+      ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
+      : JSON.stringify(siteJson);
+    await saveJsonSiteRecord(db, businessId, d1JsonContent, {
+      r2_json_key: r2JsonKey || null,
+      r2_json_url: r2JsonUrl || null,
+      json_summary: JSON.stringify(jsonSummary),
+    });
+
+    const leadRow = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
+    if (leadRow?.id) {
+      await insertCrmActivitySafe(db, {
+        id: crypto.randomUUID(),
+        lead_id: leadRow.id,
+        staff_id: "system",
+        activity_type: "note_added",
+        description: `Existing site upgraded to ${DESIGN_SYSTEM_VERSION}; changed fields: ${changedFields.join(", ") || "metadata only"}.`,
+      });
+    }
+
+    return json({
+      success: true,
+      businessId,
+      upgradedAt,
+      designSystemVersion: DESIGN_SYSTEM_VERSION,
+      changedFields,
+      beforeAudit,
+      afterAudit,
+      needsAi: afterAudit.needsAi,
+      aiFlags: afterAudit.aiFlags,
+      summary: jsonSummary,
+      storageMode: r2JsonKey ? "r2" : "legacy_d1",
+      r2JsonKey,
+      r2JsonUrl,
+    });
+  }
+
   if (request.method === "POST" && segments.length === 3 && segments[2] === "restore-from-latest-job") {
     const businessId = segments[1];
     await ensureRequiredColumns(db, [
@@ -1534,15 +1774,25 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       Array.isArray(originData.types) ? originData.types.join(" ") : "",
       asString(originData.searchQuery),
     ].filter(Boolean).join(" ");
-    if (!allowedVisualStyles.includes(asString(designConfig.visualStyle))) {
-      designConfig.visualStyle = visualStyleForBusiness(visualDesignContext);
+    const visualSeed = [businessName, businessId, originPlaceId, asString(originData.formatted_address, asString(originData.formattedAddress))].filter(Boolean).join(" ");
+    const shouldSeedVisualStyle = asString(recordValue(designConfig.visualStyleConfig).selectionMode) !== "stable_seeded_business_variant";
+    if (shouldSeedVisualStyle || !allowedVisualStyles.includes(asString(designConfig.visualStyle))) {
+      designConfig.visualStyle = seededVisualStyleForBusiness(visualDesignContext, visualSeed);
     }
     if (!designConfig.visualStyleConfig || typeof designConfig.visualStyleConfig !== "object") {
       designConfig.visualStyleConfig = {
         label: asString(designConfig.visualStyle).replace(/-/g, " "),
         description: "Controls shape language, image treatment, borders, and visual edge style on top of the industry preset.",
         allowedValues: allowedVisualStyles,
-        selectionRule: "Use the visual structure that best matches the business niche and desired feel.",
+        selectionMode: "stable_seeded_business_variant",
+        seed: visualSeed,
+        selectionRule: "Use a stable business-seeded visual variant from the styles that match this industry, so generated sites in the same niche still look custom.",
+      };
+    } else {
+      designConfig.visualStyleConfig = {
+        ...(designConfig.visualStyleConfig as Record<string, unknown>),
+        selectionMode: "stable_seeded_business_variant",
+        seed: visualSeed,
       };
     }
     const shaderMeta = shaderPresetForBusiness(visualDesignContext);

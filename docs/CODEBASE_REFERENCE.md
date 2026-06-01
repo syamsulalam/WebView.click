@@ -579,6 +579,7 @@ Fungsi:
 - Tombol `Repair filtered` menjalankan repair service images untuk maksimal 10 site dari hasil search/filter saat ini, satu per satu, supaya admin bisa membersihkan missing image ringan tanpa membuka tiap preview dan tanpa membuat request paralel berat.
 - Setelah repair image berjalan, row menampilkan badge `Repaired {date}` dari summary `lastImageRepairAt` supaya QA bisa melihat site mana yang sudah dibersihkan dalam production pass.
 - Tombol `Refresh visual variation` memanggil `POST /api/sites/:businessId/refresh-visual-variation` untuk mengubah saved font pairing/typography ke stable seeded variant dan mengirim palette tambahan yang diekstrak client-side dari gallery images jika jumlah saved palette lebih sedikit daripada jumlah foto gallery. Action ini tidak memanggil AI, tidak mengubah copy, dan tidak mengubah image.
+- Tombol `Upgrade existing site` icon-only memakai sparkle icon dan memanggil `POST /api/sites/:businessId/upgrade-design`. Endpoint membaca full saved JSON dari R2/D1, menghitung before audit, menjalankan deterministic post-process/design intent, memilih seeded visual/font variant, menulis `meta.designSystemVersion`, `meta.lastDesignUpgradeAt`, `meta.lastUpgradeMode`, menyimpan ulang JSON ke R2/D1, lalu mengembalikan after audit, changed fields, `needsAi`, dan `aiFlags`. Jika `needsAi=true`, UI otomatis lanjut ke existing chunked AI flow (`siteCopy -> offeringCopy -> finalize`) dengan `upgradeMode=premium_design_copy_upgrade`, progress bar per row, provider cooldown/readiness preflight, dan final save R2/D1 yang sama dengan regenerate.
 - Tombol `Visual filtered` menjalankan refresh visual variation plus palette backfill untuk maksimal 10 site dari hasil search/filter saat ini, satu per satu, supaya situs lama bisa dibuat lebih bervariasi tanpa regenerate full site atau tombol terpisah.
 - Untuk prospect yang belum generated, tombol action adalah `Generate`, bukan `Regen`; flow ini memakai `src/lib/adminSiteGeneration.ts` untuk provider cooldown, AI readiness, refresh Place Details, shared scaffold payload, photo/palette resolution, dan chunked generation steps yang sama dengan `/admin/leads`. Jika AI provider gagal, error ditampilkan dan job ditandai failed agar fallback tidak menyamar sebagai hasil AI.
 - First generate dari `Ready to Generate` juga memakai chunked AI flow untuk step outline/siteCopy/offeringCopy/finalize; mode `Re-gather Google data + resave` tetap memakai save langsung tanpa AI.
@@ -599,6 +600,7 @@ API yang dipakai:
 - `GET /api/sites/:businessId/copy-brief`
 - `POST /api/sites/:businessId/repair-service-images`
 - `POST /api/sites/:businessId/resave-json-summary`
+- `POST /api/sites/:businessId/upgrade-design`
 - `POST /api/sites/:businessId/restore-from-latest-job`
 - `POST /api/sites/scan-r2-health`
 - `POST /api/sites/:businessId/refresh-visual-variation`
@@ -624,6 +626,7 @@ Logic penting:
 - First generate dari `Ready to Generate` memakai selected photo/palette yang tersimpan di prospect jika ada; jika tidak ada, flow memilih foto Places fallback dengan prioritas owner-like yang sama seperti `/admin/leads` dan memakai URL proxy `maxwidth=960` untuk visual generated site.
 - Tombol `Generate` di section `Ready to Generate` menampilkan AI readiness badge agar admin tahu key provider/model sebelum membuat site pertama.
 - First generate dan `AI regenerate` memakai `src/lib/adminSiteGeneration.ts` untuk shared cooldown/readiness preflight sebelum gather/generate berat; mode `Re-gather Google data + resave` tidak membutuhkan preflight AI. Shared chunked helper reports step progress and one-time transient auto-retry countdowns back to `/admin/leads` and `/admin/sites`, and starts from the `nextStep` returned by `chunked-start`. First generate memakai sequence `outline -> siteCopy -> offeringCopy -> finalize`; existing-site AI fill skips outline and starts at `siteCopy` so missing About/menu-label copy can be filled without rediscovering services.
+- First generate and existing-site design upgrade both apply stable business-seeded visual variation. New scaffolded sites infer the industry preset, then `/api/sites/generate` sets `design.visualStyleConfig.selectionMode=stable_seeded_business_variant` and chooses a visual-style variant from the allowed industry family. Existing-site upgrade can refresh the visual variant while preserving `businessId`, saved source data, preview URL, and R2 JSON key semantics.
 - `AI regenerate` dan `Re-gather Google data + resave` mengirim ulang `brand.paletteOptions` dari site JSON agar pilihan warna yang sudah ada tidak bergantung pada shape lama atau fallback renderer.
 - Selector provider/model di Ready to Generate dan dropdown Regen punya tombol `Refresh AI readiness` untuk memaksa badge/preflight recheck setelah key baru disimpan.
 - JSON/data modal close action uses shared hover tooltip so the compact X control is named during production QA.
@@ -723,7 +726,7 @@ Fungsi:
 - Dipakai untuk koreksi visual dan menentukan variable JSON tambahan sebelum generator AI dipaksa mengikuti schema baru.
 
 Logic penting:
-- Import JSON sample langsung dari repo.
+- Import JSON sample langsung dari repo, lalu membuat beberapa sample industri in-memory dari template yang sama: cafe, contractor, professional/tax, salon/spa, emergency plumbing, dan cleaning. Selector `Industry demo` mengubah business/profile/source/services context; tombol shuffle memilih style/shader/font/palette variant yang masih sesuai industri.
 - Menampilkan floating inspector kecil berisi nama bisnis dan daftar `pageId:sectionType` yang sedang tersedia.
 - Inspector menampilkan field JSON yang hilang jika renderer sedang memakai fallback.
 - Inspector bisa diminimize dan di-drag agar tidak menutup navbar/preview.

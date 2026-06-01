@@ -247,6 +247,7 @@ export default function AdminSites() {
   const [batchRepairingServiceImages, setBatchRepairingServiceImages] = useState(false);
   const [refreshingVisualVariationId, setRefreshingVisualVariationId] = useState("");
   const [batchRefreshingVisualVariation, setBatchRefreshingVisualVariation] = useState(false);
+  const [upgradingDesignId, setUpgradingDesignId] = useState("");
   const [batchAiFillingAboutNav, setBatchAiFillingAboutNav] = useState(false);
   const [scanningR2Health, setScanningR2Health] = useState(false);
   const [r2HealthScanProgress, setR2HealthScanProgress] = useState<{ scanned: number; failed: number; total: number } | null>(null);
@@ -293,6 +294,7 @@ export default function AdminSites() {
     progress?: { status?: string; retryInSeconds?: number; message?: string },
   ) => {
     const labels: Record<string, string> = {
+      designUpgrade: "Upgrading design system",
       outline: "Inferring service/product pages",
       copy: "Writing AI copy patch",
       siteCopy: "Writing homepage and site copy",
@@ -310,6 +312,7 @@ export default function AdminSites() {
       const previous = current[key];
       const progressMessage = progress?.message || (previous?.step === step ? previous.message : "");
       let shortText = labels[step] || "Generating";
+      if (step === "designUpgrade") shortText = "Design upgrade";
       if (step === "siteCopy") shortText = "About copy";
       if (step === "offeringCopy") {
         const match = progressMessage.match(/(\d+)\s*\/\s*(\d+)/);
@@ -338,6 +341,7 @@ export default function AdminSites() {
     });
   };
   const generationProgressPercent = (step: string) => {
+    if (step === "designUpgrade") return 28;
     if (step === "outline") return 33;
     if (step === "copy" || step === "siteCopy") return 55;
     if (step === "offeringCopy") return 76;
@@ -831,6 +835,72 @@ export default function AdminSites() {
       await postChunkedGenerateSite(regeneratePayload, label, (step, progress) => updateGenerationProgress(site.businessId, step, progress));
     } else {
       await postGenerateSite(regeneratePayload, label);
+    }
+  };
+
+  const handleUpgradeExistingSite = async (site: SiteRow) => {
+    setUpgradingDesignId(site.businessId);
+    updateGenerationProgress(site.businessId, "designUpgrade", { status: "running", message: "Auditing saved JSON and applying deterministic design intent" });
+    try {
+      const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/upgrade-design`;
+      const response = await fetch(requestPath, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ randomizeStyle: true }),
+      });
+      const result = await readApiJson<{
+        changedFields?: string[];
+        needsAi?: boolean;
+        aiFlags?: string[];
+        afterAudit?: { conversion?: { flags?: string[] }; design?: { flags?: string[] } };
+      }>(response, "Upgrade existing site", requestPath);
+      updateGenerationProgress(site.businessId, "designUpgrade", {
+        status: "complete",
+        message: `${result.changedFields?.length || 0} deterministic fields updated`,
+      });
+
+      if (result.needsAi) {
+        await ensureAiGenerationReady({
+          provider: activeRegenerateProvider,
+          model: activeRegenerateModel,
+          action: "sites_premium_upgrade",
+          businessId: site.businessId,
+          businessName: site.businessName,
+          readinessMessage: "AI provider/model is not ready. Check /admin/settings before premium-upgrading existing sites.",
+          cooldownMessage: (cooldown) => `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`,
+        });
+        updateGenerationProgress(site.businessId, "siteCopy", {
+          status: "running",
+          message: `AI needed for: ${(result.aiFlags || []).join(", ") || "copy/depth gaps"}`,
+        });
+        const regeneratePayload = {
+          ...await buildRegeneratePayload(site, "ai"),
+          upgradeMode: "premium_design_copy_upgrade",
+          skipAiOfferingOutline: true,
+        };
+        await postChunkedGenerateSite(regeneratePayload, "Premium site upgrade", (step, progress) => updateGenerationProgress(site.businessId, step, progress));
+        notifyAction(
+          "success",
+          "Premium upgrade completed",
+          `${site.businessName} was deterministically upgraded, AI-filled where needed, and re-saved.`,
+        );
+      } else {
+        notifyAction(
+          "success",
+          "Design upgrade completed",
+          `${site.businessName} was upgraded and re-saved without AI. Changed: ${result.changedFields?.join(", ") || "audit metadata"}.`,
+        );
+      }
+      fetchSites();
+    } catch (err) {
+      if (isAdminGenerationBlockedError(err) && err.kind === "cooldown") {
+        showToast({ kind: "warning", title: err.title || `${activeRegenerateProvider} cooldown active`, message: err.message, actions: err.actions });
+      } else {
+        showApiError(err, { source: "Premium site upgrade", provider: activeRegenerateProvider, model: activeRegenerateModel });
+      }
+    } finally {
+      setUpgradingDesignId("");
+      clearGenerationProgress(site.businessId);
     }
   };
 
@@ -2246,7 +2316,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleRepairServiceImages(site)}
-                      disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId)}
+                      disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId || upgradingDesignId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
                       aria-label="Repair service card images"
                     >
@@ -2262,7 +2332,7 @@ export default function AdminSites() {
                   <button
                     type="button"
                     onClick={() => handleRefreshVisualVariation(site)}
-                    disabled={Boolean(refreshingVisualVariationId || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId)}
+                    disabled={Boolean(refreshingVisualVariationId || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId || upgradingDesignId)}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
                     aria-label="Refresh visual variation"
                   >
@@ -2270,6 +2340,21 @@ export default function AdminSites() {
                       <RefreshCw size={14} className="animate-spin" />
                     ) : (
                       <Shuffle size={14} />
+                    )}
+                  </button>
+                </HoverTooltip>
+                <HoverTooltip text="Upgrade this existing saved site to the premium design-intent system. It audits what is already present, applies deterministic layout/proof/CTA/style upgrades, saves to R2/D1, and only runs chunked AI copy work if audit flags still need AI.">
+                  <button
+                    type="button"
+                    onClick={() => handleUpgradeExistingSite(site)}
+                    disabled={!activeRegenerateModel || Boolean(upgradingDesignId || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    aria-label="Upgrade existing site to premium design system"
+                  >
+                    {upgradingDesignId === site.businessId ? (
+                      <RefreshCw size={14} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={14} />
                     )}
                   </button>
                 </HoverTooltip>
@@ -2300,7 +2385,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => setOpenRegenerateMenu(openRegenerateMenu === site.businessId ? "" : site.businessId)}
-                      disabled={Boolean(regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
+                      disabled={Boolean(regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       aria-label="Open regenerate menu"
                     >
@@ -2412,7 +2497,7 @@ export default function AdminSites() {
                               setOpenRegenerateMenu("");
                               handleRegenerate(site, "resave");
                             }}
-                            disabled={Boolean(regeneratingId || batchAiFillingAboutNav)}
+                            disabled={Boolean(regeneratingId || batchAiFillingAboutNav || upgradingDesignId)}
                             className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                           >
                             <RotateCw size={14} />
@@ -2431,7 +2516,7 @@ export default function AdminSites() {
                             setOpenRegenerateMenu("");
                             handleRestoreSiteFromLatestJob(site);
                           }}
-                          disabled={Boolean(regeneratingId || repairingSummaryId || restoringFromJobId || batchAiFillingAboutNav)}
+                          disabled={Boolean(regeneratingId || repairingSummaryId || restoringFromJobId || batchAiFillingAboutNav || upgradingDesignId)}
                           className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
                         >
                           {restoringFromJobId === site.businessId ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}
