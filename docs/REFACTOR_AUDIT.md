@@ -61,7 +61,7 @@ Still to do today if time allows:
 | --- | ---: | --- |
 | `functions/api/[[path]].ts` | 301 | Improved. Now close to a thin router: imports, dependency wiring, DB bootstrap, and route dispatch. |
 | `functions/api/ai/siteGeneration.ts` | 1342 | New focused module. Large but cohesive around AI offering/copy generation; good candidate for continued direct tests. |
-| `src/pages/admin/AdminLeads.tsx` | 1047 | Improved. Presentational UI, CRM state/actions, prospect search state/actions, Places details/palette selection, and generation queue state/actions now live in `src/pages/admin/leads/*`; parent still owns settings, filters, prospect scoring, duplicate review, and high-level wiring. |
+| `src/pages/admin/AdminLeads.tsx` | 768 | Improved. Presentational UI, CRM state/actions, prospect route/checklist state, prospect search state/actions, manual import/cache trim, filters/scoring, duplicate review, Places details/palette selection, and generation queue state/actions now live in `src/pages/admin/leads/*`; parent still owns settings/provider loading, active tab selection, and high-level wiring. |
 | `src/components/SiteRenderer.tsx` | 1878 | Needs refactor carefully. Visitor renderer is shared by `/demo`, `/:businessId`, and export preparation, so extraction should preserve behavior. |
 | `src/components/GenerationJobsTable.tsx` | 497 | Improved. Drawer, retry orchestration, and job helpers moved into focused `generation-jobs/*` modules; remaining responsibility is table data loading/search/filter/rendering. |
 | `src/lib/siteStylePresets.ts` | 1106 | Watchlist. Large but mostly registry/config; split only if editing gets painful. |
@@ -208,26 +208,15 @@ Cloudflare Functions cannot import arbitrary browser-only React code. Shared gen
 
 File: `src/pages/admin/AdminLeads.tsx`
 
-Current size: 1,047 lines after the 2026-06-02 extraction passes. It is improved but still large; the parent now mostly owns settings, filters, prospect scoring, duplicate review, and high-level wiring while focused components/hooks hold route planning, search, history, CRM, payment, Places details/palette selection, prospect cards, and generation queue behavior.
+Current size: 768 lines after the 2026-06-02 prospecting route hook extraction. It is improved but still large; the parent now mostly owns settings/provider loading, active tab selection, and high-level wiring while focused components/hooks hold route planning, search, history, manual import/cache trim, CRM, payment, filters/scoring, duplicate review, Places details/palette selection, prospect cards, and generation queue behavior.
 
-Current mixed responsibilities:
+Remaining parent responsibilities:
 
-- Lead list and CRM status.
-- Google Places search.
-- US local prospecting route builder and checklist state.
-- Manual Maps URL/captured JSON import.
-- Search history.
-- Duplicate review/merge queue.
-- Places detail gathering.
-- Logo/photo selection.
-- Palette extraction from image.
-- Prospect scoring and filters.
-- AI provider/model readiness.
-- Single and batch site generation.
-- Generation job drawer.
-- Payment reconciliation and payment verification modal.
-- CRM contact editing and phone backfill actions.
-- Large rendered UI for multiple workflow tabs.
+- Settings load and missing-key warning.
+- Active workspace tab selection.
+- AI provider/model selection, readiness badge wiring, and estimate-cost display.
+- High-level hook/component wiring for search, route planning, manual import/cache trim, filters/scoring, duplicate review, Places details, generation queue, jobs drawer, CRM, and payment reconciliation.
+- Small cross-cutting prospect status update that keeps search results, draft list, and duplicate queue in sync.
 
 Recommended extraction boundaries:
 
@@ -285,12 +274,15 @@ AdminLeads refactor checklist:
 - [x] Move payment verification modal into `PaymentVerificationModal.tsx`.
 - [x] Move prospect details drawer into `ProspectDetailsDrawer.tsx`.
 - [x] Extract route/progress helpers into `prospectingData.ts`.
-- [ ] Extract `useProspectingRoute` after the panel extraction is stable.
+- [x] Extract `useProspectingRoute` after the panel extraction is stable.
 - [x] Extract `useProspectSearch` after search UI is stable.
 - [x] Extract `useLeadCrm` after CRM table/payment modal extraction is stable.
 - [x] Extract generation queue state/actions into `useSiteGenerationQueue`.
 - [x] Extract Places details and palette selection into `useProspectDetails`.
-- [ ] Keep `AdminLeads.tsx` as orchestration only: load settings, hold selected tab/provider/model, connect hooks/components.
+- [x] Extract manual duplicate review state/actions into `useManualDuplicateReview`.
+- [x] Extract prospect filter/scoring state/actions into `useProspectFiltersAndScoring`.
+- [x] Extract manual Maps import/cache trim state/actions into `useManualImport`.
+- [x] Keep `AdminLeads.tsx` as orchestration only: load settings, hold selected tab/provider/model, connect hooks/components.
 - [x] After each extraction, run `git diff --check` and targeted static inspection.
 - [ ] Production smoke test after each major section: search, gather, generate, CRM contact edit, payment verify.
 

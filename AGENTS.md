@@ -38,6 +38,12 @@
 - Do not run `npm run lint` for this repo anymore. The workspace intentionally may not have local TypeScript dependencies installed, and the user wants to avoid dependency/storage churn. Prefer lightweight checks such as `git diff --check`, JSON parsing, and targeted static inspection.
 - Keep token use lean during routine changes: use small targeted file reads, avoid dumping long diffs unless needed for diagnosis, skip unnecessary explanation, and keep progress/final notes short unless deeper reasoning is required.
 
+## Work Reporting Preference
+- Prefer completing the requested task end-to-end before reporting back.
+- Do not send progress updates after every small step during normal implementation.
+- Report only when the task is finished, blocked, or a meaningful approval/decision is needed.
+- Keep final reports concise: changed files, verification performed, and the next production-testing step.
+
 ## Session Summary Rule
 - Do not update `SESSION_SUMMARY.md` during normal task iteration, review/fix cycles, follow-up revisions, or because a single implementation step appears complete.
 - Create or update `SESSION_SUMMARY.md` only when the user explicitly asks for a session summary, says the session is ending/closing, says usage limit is almost reached, or asks to wrap up/checkpoint the work.

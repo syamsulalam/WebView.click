@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { defaultOutputTokens, estimateCostUsd, estimateTokensFromText, formatUsd } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
-import { parseProspectScoreWeights, prospectScoringPresets, scoreThresholdOptions } from "../../lib/prospectScoring";
-import { placeMapsUrl, placePhone } from "../../lib/generatedSiteScaffold";
+import { placeMapsUrl } from "../../lib/generatedSiteScaffold";
 import {
   googlePlacePhotoUrlForPhoto,
   mapsQueryPlaceholder,
@@ -30,44 +29,22 @@ import ProspectingRoutePanel from "./leads/ProspectingRoutePanel";
 import ProspectSearchPanel from "./leads/ProspectSearchPanel";
 import SearchHistoryPanel from "./leads/SearchHistoryPanel";
 import useLeadCrm from "./leads/useLeadCrm";
+import useManualDuplicateReview from "./leads/useManualDuplicateReview";
+import useManualImport from "./leads/useManualImport";
 import useProspectDetails from "./leads/useProspectDetails";
+import useProspectFiltersAndScoring from "./leads/useProspectFiltersAndScoring";
 import useProspectSearch from "./leads/useProspectSearch";
+import useProspectingRoute from "./leads/useProspectingRoute";
 import useSiteGenerationQueue from "./leads/useSiteGenerationQueue";
 
 export default function AdminLeads() {
   const { showApiError, showToast } = useAdminToast();
   const [prospectDrafts, setProspectDrafts] = useState<any[]>([]);
-  const [prospectFilter, setProspectFilter] = useLocalStorageState("webview.adminLeads.prospectFilter", "active");
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useLocalStorageState("webview.adminLeads.workspaceTab", "search");
-  const [websiteFilter, setWebsiteFilter] = useLocalStorageState("webview.adminLeads.websiteFilter", "none");
-  const [minRatingFilter, setMinRatingFilter] = useLocalStorageState("webview.adminLeads.minRatingFilter", "0");
-  const [minReviewsFilter, setMinReviewsFilter] = useLocalStorageState("webview.adminLeads.minReviewsFilter", "0");
-  const [minScoreFilter, setMinScoreFilter] = useLocalStorageState("webview.adminLeads.minScoreFilter", "0");
-  const [cityFilter, setCityFilter] = useLocalStorageState("webview.adminLeads.cityFilter", "");
-  const [stateFilter, setStateFilter] = useLocalStorageState("webview.adminLeads.stateFilter", "");
-  const [nicheFilter, setNicheFilter] = useLocalStorageState("webview.adminLeads.nicheFilter", "");
-  const [prospectingState, setProspectingState] = useLocalStorageState("webview.adminLeads.prospectingState", "TX");
-  const [prospectingCity, setProspectingCity] = useLocalStorageState("webview.adminLeads.prospectingCity", "Dallas");
-  const [prospectingNiche, setProspectingNiche] = useLocalStorageState("webview.adminLeads.prospectingNiche", "concrete contractor");
-  const [prospectingProgressRaw, setProspectingProgressRaw] = useLocalStorageState("webview.adminLeads.prospectingProgress", "{}");
-  const [manualImportOpen, setManualImportOpen] = useLocalStorageState("webview.adminLeads.manualImportOpen", "0");
-  const [selectedProspects, setSelectedProspects] = useState<Record<string, boolean>>({});
   const [scorePopoverKey, setScorePopoverKey] = useState("");
   const [generationJobCount, setGenerationJobCount] = useState(0);
   const [jobsOpen, setJobsOpen] = useState(false);
-  const [manualMapsUrl, setManualMapsUrl] = useLocalStorageState("webview.adminLeads.manualMapsUrl", "");
-  const [manualCaptureText, setManualCaptureText] = useLocalStorageState("webview.adminLeads.manualCaptureText", "");
-  const [manualImportLoading, setManualImportLoading] = useState(false);
-  const [manualImportMessage, setManualImportMessage] = useState("");
-  const [manualDuplicateQueue, setManualDuplicateQueue] = useState<any[]>([]);
-  const [manualDuplicateLoading, setManualDuplicateLoading] = useState(false);
-  const [manualDuplicateMessage, setManualDuplicateMessage] = useState("");
   const [generationMessages, setGenerationMessages] = useState<Record<string, { type: "success" | "error"; text: string; businessId?: string }>>({});
-  const [isTrimmingCache, setIsTrimmingCache] = useState(false);
-  const [cacheTrimMessage, setCacheTrimMessage] = useState("");
-  const [filtersOpen, setFiltersOpen] = useLocalStorageState("webview.adminLeads.filtersOpen", "0");
-  const [autoWebsitePrecheck, setAutoWebsitePrecheck] = useLocalStorageState("webview.adminLeads.autoWebsitePrecheck", "1");
-  const [websitePrecheckLimit, setWebsitePrecheckLimit] = useLocalStorageState("webview.adminLeads.websitePrecheckLimit", "10");
   const [aiProvider, setAiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
   const [aiModel, setAiModel] = useLocalStorageState("webview.adminLeads.aiModel", "~anthropic/claude-sonnet-latest");
   const [settings, setSettings] = useState<any>({});
@@ -208,42 +185,63 @@ export default function AdminLeads() {
     }
   }, [aiProvider, aiModel]);
 
-  const prospectingProgress = useMemo(() => {
-    try {
-      return JSON.parse(prospectingProgressRaw || "{}") as Record<string, Record<string, boolean>>;
-    } catch {
-      return {};
-    }
-  }, [prospectingProgressRaw]);
-  const progressKey = `${prospectingState}:${prospectingCity}:${prospectingNiche}`;
-  const currentProgress = prospectingProgress[progressKey] || {};
-  const setProgressStep = (key: string, checked: boolean) => {
-    setProspectingProgressRaw(JSON.stringify({
-      ...prospectingProgress,
-      [progressKey]: { ...currentProgress, [key]: checked },
-    }));
-  };
+  const {
+    prospectingState,
+    setProspectingState,
+    prospectingCity,
+    setProspectingCity,
+    prospectingNiche,
+    setProspectingNiche,
+    currentProgress,
+    setProgressStep,
+  } = useProspectingRoute();
 
-  const fetchProspectDrafts = () => {
-    const params = new URLSearchParams();
-    if (prospectFilter && prospectFilter !== "active" && prospectFilter !== "all") params.set("status", prospectFilter);
-    if (websiteFilter && websiteFilter !== "all") params.set("website", websiteFilter);
-    if (minRatingFilter && minRatingFilter !== "0") params.set("minRating", minRatingFilter);
-    if (minReviewsFilter && minReviewsFilter !== "0") params.set("minReviews", minReviewsFilter);
-    if (cityFilter.trim()) params.set("city", cityFilter.trim());
-    if (stateFilter.trim()) params.set("state", stateFilter.trim());
-    if (nicheFilter.trim()) params.set("niche", nicheFilter.trim());
-    fetch(`/api/prospects?${params.toString()}`)
-      .then(r => r.ok ? r.json() : [])
-      .then((data) => {
-        const rows = Array.isArray(data) ? data : [];
-        setProspectDrafts(prospectFilter === "active"
-          ? rows.filter((item) => !["skipped", "site_generated"].includes(item.prospectStatus))
-          : rows);
-        restoreProspectDetailState(rows);
-      })
-      .catch(e => console.error(e));
-  };
+  const activeWorkspaceTab = ["search", "crm", "history"].includes(leadWorkspaceTab) ? leadWorkspaceTab : "search";
+
+  const {
+    prospectFilter,
+    setProspectFilter,
+    websiteFilter,
+    setWebsiteFilter,
+    minRatingFilter,
+    setMinRatingFilter,
+    minReviewsFilter,
+    setMinReviewsFilter,
+    minScoreFilter,
+    setMinScoreFilter,
+    cityFilter,
+    setCityFilter,
+    stateFilter,
+    setStateFilter,
+    nicheFilter,
+    setNicheFilter,
+    filtersOpen,
+    setFiltersOpen,
+    autoWebsitePrecheck,
+    setAutoWebsitePrecheck,
+    websitePrecheckLimit,
+    setWebsitePrecheckLimit,
+    selectedProspects,
+    setSelectedProspects,
+    activeScoringPreset,
+    activeScoringPresetLabel,
+    minScore,
+    activeFilterChips,
+    getProspectView,
+    fetchProspectDrafts,
+    resetLeadFilters,
+    toggleProspectSelection,
+    websiteBadge,
+    prospectScore,
+  } = useProspectFiltersAndScoring({
+    settings,
+    loadingSettings,
+    prospectDrafts,
+    setProspectDrafts,
+    getPlaceKey,
+    hasGatheredDetails,
+    restoreProspectDetailState,
+  });
 
   const {
     searchQuery,
@@ -252,7 +250,6 @@ export default function AdminLeads() {
     setSearchResults,
     searchMessage,
     isSearching,
-    searchActive,
     setSearchActive,
     searchHistory,
     loadingSearchHistory,
@@ -271,6 +268,7 @@ export default function AdminLeads() {
     setPlaceDetails,
     setGenerationMessages,
   });
+  const { visibleProspects, selectedVisibleProspects } = getProspectView(searchResults, activeWorkspaceTab);
 
   const fetchGenerationJobs = () => {
     fetch("/api/generation-jobs?limit=100")
@@ -279,21 +277,47 @@ export default function AdminLeads() {
       .catch(e => console.error(e));
   };
 
-  const fetchManualDuplicateQueue = () => {
-    setManualDuplicateLoading(true);
-    fetch("/api/places/manual-duplicates?limit=500")
-      .then(async (r) => {
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok || data.error) throw new Error(data.error || `Duplicate queue returned ${r.status}`);
-        setManualDuplicateQueue(Array.isArray(data.groups) ? data.groups : []);
-        setManualDuplicateMessage("");
-      })
-      .catch((error) => {
-        console.error(error);
-        setManualDuplicateMessage(error instanceof Error ? error.message : "Could not load duplicate queue.");
-      })
-      .finally(() => setManualDuplicateLoading(false));
-  };
+  const {
+    manualDuplicateQueue,
+    manualDuplicateLoading,
+    manualDuplicateMessage,
+    fetchManualDuplicateQueue,
+    mergePreviewFields,
+    reviewDuplicateInList,
+    mergeManualDuplicate,
+    skipManualDuplicate,
+  } = useManualDuplicateReview({
+    getPlaceKey,
+    setSearchResults,
+    setProspectDrafts,
+    setSearchActive,
+    setLeadWorkspaceTab,
+  });
+  const {
+    manualImportOpen,
+    setManualImportOpen,
+    manualMapsUrl,
+    setManualMapsUrl,
+    manualCaptureText,
+    setManualCaptureText,
+    manualImportLoading,
+    manualImportMessage,
+    isTrimmingCache,
+    cacheTrimMessage,
+    handleManualMapsImport,
+    trimPlacesCache,
+  } = useManualImport({
+    searchQuery,
+    setSearchQuery,
+    setSearchResults,
+    setSearchActive,
+    setSelectedSearchHistoryKey,
+    setWebsiteFilter,
+    setLeadWorkspaceTab,
+    fetchProspectDrafts,
+    fetchSearchHistory,
+    fetchManualDuplicateQueue,
+  });
 
   const selectedPrice = estimateCostUsd(activeProviderKey, activeModel);
   const providerApiKeyMap: Record<string, string> = {
@@ -314,10 +338,6 @@ export default function AdminLeads() {
     !String(settings?.GOOGLE_PLACES_API_KEY || "").trim() ? "Google Places API Key" : "",
     !String(settings?.[settingsKey] || "").trim() ? `${activeProvider.label} Key` : "",
   ].filter(Boolean);
-  const scoreWeights = parseProspectScoreWeights(settings?.SCORING_WEIGHTS_JSON);
-  const activeScoringPreset = prospectScoringPresets.find((preset) => preset.key === settings?.SCORING_PRESET);
-  const activeScoringPresetLabel = activeScoringPreset?.label || (settings?.SCORING_PRESET === "custom" ? "Custom" : "Balanced");
-
   const estimateGenerateCost = (place?: any) => {
     const source = place ? JSON.stringify(place) : searchQuery;
     const inputTokens = estimateTokensFromText(source, 5000);
@@ -368,90 +388,6 @@ export default function AdminLeads() {
       .catch(() => setLoadingSettings(false));
   }, []);
 
-  useEffect(() => {
-    if (loadingSettings) return;
-    const defaultThreshold = String(settings?.SCORING_MIN_SCORE_DEFAULT || "");
-    if (scoreThresholdOptions.some((option) => option.value === defaultThreshold)) {
-      setMinScoreFilter(defaultThreshold);
-    }
-  }, [loadingSettings, settings?.SCORING_MIN_SCORE_DEFAULT]);
-
-  useEffect(() => {
-    fetchProspectDrafts();
-  }, [prospectFilter, websiteFilter, minRatingFilter, minReviewsFilter, cityFilter, stateFilter, nicheFilter]);
-
-  const handleManualMapsImport = async () => {
-    const url = manualMapsUrl.trim();
-    const capturedText = manualCaptureText.trim();
-    if (!url && !capturedText) {
-      setManualImportMessage("Paste a Google Maps URL or captured JSON first.");
-      return;
-    }
-
-    setManualImportLoading(true);
-    setManualImportMessage("Importing manual Google Maps data...");
-    try {
-      const res = await fetch("/api/places/manual-import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, capturedText }),
-      });
-      const text = await res.text();
-      let data: any = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        throw new Error(`Response bukan JSON: ${text.substring(0, 120)}`);
-      }
-      if (!res.ok || data.error) {
-        throw new Error(data.error || `Manual import failed with HTTP ${res.status}`);
-      }
-
-      const importedProspects = Array.isArray(data.prospects) ? data.prospects : [];
-      if (importedProspects.length > 0) {
-        setSearchResults(importedProspects.map((item: any) => ({ ...item, searchQuery: data.query || item.searchQuery || "" })));
-        setSearchQuery(data.query || searchQuery);
-        setSearchActive(true);
-        setSelectedSearchHistoryKey(data.queryKey || "");
-        setManualCaptureText("");
-      }
-      setWebsiteFilter("all");
-      fetchProspectDrafts();
-      fetchSearchHistory();
-      fetchManualDuplicateQueue();
-      setManualImportMessage(data.message || `${data.importedCount || 0} manual prospects imported.`);
-      if (importedProspects.length > 0) setLeadWorkspaceTab("search");
-    } catch (error) {
-      console.error(error);
-      setManualImportMessage(error instanceof Error ? error.message : "Manual import failed.");
-    } finally {
-      setManualImportLoading(false);
-    }
-  };
-
-  const trimPlacesCache = async () => {
-    setIsTrimmingCache(true);
-    setCacheTrimMessage("");
-    try {
-      const res = await fetch("/api/places/cache/trim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ olderThanDays: 30 }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || `Cache trim failed with HTTP ${res.status}`);
-      }
-      setCacheTrimMessage("Cache pencarian lama/expired sudah dibersihkan.");
-      fetchSearchHistory();
-    } catch (error) {
-      console.error(error);
-      setCacheTrimMessage(error instanceof Error ? error.message : "Gagal membersihkan cache.");
-    } finally {
-      setIsTrimmingCache(false);
-    }
-  };
-
   const updateProspectStatus = async (place: any, status: string) => {
     const placeKey = getPlaceKey(place);
     if (!placeKey) return;
@@ -466,221 +402,6 @@ export default function AdminLeads() {
     setSearchResults(applyStatus);
     setProspectDrafts(applyStatus);
     fetchManualDuplicateQueue();
-  };
-
-  const skipManualDuplicate = async (place: any) => {
-    const placeKey = getPlaceKey(place);
-    if (!placeKey) return;
-    setManualDuplicateMessage(`Skipping duplicate ${place.name || placeKey}...`);
-    try {
-      const res = await fetch(`/api/prospects/${encodeURIComponent(placeKey)}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "skipped" }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.error) throw new Error(data.error || `Skip failed with HTTP ${res.status}`);
-      setSearchResults((items) => items.filter((item) => getPlaceKey(item) !== placeKey));
-      setProspectDrafts((items) => items.filter((item) => getPlaceKey(item) !== placeKey));
-      setManualDuplicateMessage("Duplicate skipped.");
-      fetchManualDuplicateQueue();
-    } catch (error) {
-      console.error(error);
-      setManualDuplicateMessage(error instanceof Error ? error.message : "Could not skip duplicate.");
-    }
-  };
-
-  const reviewDuplicateInList = (place: any) => {
-    setSearchResults([place]);
-    setSearchActive(true);
-    setLeadWorkspaceTab("search");
-    setManualDuplicateMessage(`Loaded ${place.name || "duplicate prospect"} for review.`);
-  };
-
-  const mergeManualDuplicate = async (keepPlace: any, duplicatePlace: any) => {
-    const keepPlaceId = getPlaceKey(keepPlace);
-    const duplicatePlaceId = getPlaceKey(duplicatePlace);
-    if (!keepPlaceId || !duplicatePlaceId || keepPlaceId === duplicatePlaceId) return;
-    setManualDuplicateLoading(true);
-    setManualDuplicateMessage(`Merging missing fields into ${keepPlace.name || keepPlaceId}...`);
-    try {
-      const res = await fetch("/api/places/manual-duplicates/merge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keepPlaceId, duplicatePlaceId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.error) throw new Error(data.error || `Merge failed with HTTP ${res.status}`);
-      const mergedProspect = data.prospect;
-      if (mergedProspect) {
-        setSearchResults((items) => items
-          .filter((item) => getPlaceKey(item) !== duplicatePlaceId)
-          .map((item) => getPlaceKey(item) === keepPlaceId ? { ...item, ...mergedProspect } : item));
-        setProspectDrafts((items) => items
-          .filter((item) => getPlaceKey(item) !== duplicatePlaceId)
-          .map((item) => getPlaceKey(item) === keepPlaceId ? { ...item, ...mergedProspect } : item));
-      }
-      setManualDuplicateMessage(
-        data.copiedFields?.length
-          ? `Merged ${data.copiedFields.join(", ")} and skipped duplicate.`
-          : "No missing fields needed copying; duplicate was skipped.",
-      );
-      fetchManualDuplicateQueue();
-    } catch (error) {
-      console.error(error);
-      setManualDuplicateMessage(error instanceof Error ? error.message : "Could not merge duplicate.");
-    } finally {
-      setManualDuplicateLoading(false);
-    }
-  };
-
-  const mergePreviewFields = (keepPlace: any, duplicatePlace: any) => {
-    const fields = [
-      { key: "formatted_address", label: "Address", keep: keepPlace?.formatted_address, duplicate: duplicatePlace?.formatted_address },
-      { key: "formatted_phone_number", label: "Phone", keep: placePhone(keepPlace), duplicate: placePhone(duplicatePlace) },
-      { key: "rating", label: "Rating", keep: keepPlace?.rating, duplicate: duplicatePlace?.rating },
-      { key: "user_ratings_total", label: "Reviews", keep: keepPlace?.user_ratings_total || keepPlace?.userRatingCount, duplicate: duplicatePlace?.user_ratings_total || duplicatePlace?.userRatingCount },
-      { key: "website", label: "Website", keep: keepPlace?.website || keepPlace?.websiteUri, duplicate: duplicatePlace?.website || duplicatePlace?.websiteUri },
-      { key: "url", label: "Maps URL", keep: placeMapsUrl(keepPlace), duplicate: placeMapsUrl(duplicatePlace) },
-      { key: "websiteCheckStatus", label: "Website status", keep: keepPlace?.websiteCheckStatus, duplicate: duplicatePlace?.websiteCheckStatus },
-    ];
-    return fields
-      .filter((field) => {
-        const keepValue = String(field.keep || "").trim();
-        const duplicateValue = String(field.duplicate || "").trim();
-        return !keepValue && duplicateValue;
-      })
-      .map((field) => ({ ...field, value: String(field.duplicate) }));
-  };
-
-  const hasWebsite = (place: any) => Boolean(place.website || place.websiteUri);
-  const websiteBadge = (place: any) => {
-    if (hasWebsite(place)) {
-      return { label: "Has website", className: "bg-amber-100 text-amber-800", title: "Website found from Google Places data." };
-    }
-    if (place.websiteCheckStatus === "no_website") {
-      return { label: "No website verified", className: "bg-emerald-100 text-emerald-800", title: "Place Details pre-check did not return a website." };
-    }
-    if (place.websiteCheckStatus === "error") {
-      return { label: "Website check error", className: "bg-red-100 text-red-800", title: place.websiteCheckError || "Website pre-check failed. Try Gather data." };
-    }
-    if (!hasGatheredDetails(place)) {
-      return { label: "Website unknown", className: "bg-slate-100 text-slate-700", title: "Text Search often does not include website. Click Gather data to call Place Details." };
-    }
-    return { label: "No website verified", className: "bg-emerald-100 text-emerald-800", title: "No website returned by Google Place Details." };
-  };
-  const isUsMarket = (place: any) => {
-    const text = [
-      place.formatted_address,
-      place.formattedAddress,
-      place.address,
-      place.vicinity,
-      place.plus_code?.compound_code,
-      place.region,
-    ].filter(Boolean).join(" ").toLowerCase();
-    return /\b(united states|usa|tx|texas|ca|california|fl|florida|ny|new york|az|arizona|ga|georgia|il|illinois|pa|pennsylvania|oh|ohio|nc|north carolina|mi|michigan|nj|new jersey|va|virginia|wa|washington|tn|tennessee|ma|massachusetts|in|indiana|mo|missouri|md|maryland|wi|wisconsin|co|colorado|mn|minnesota|sc|south carolina|al|alabama|la|louisiana|ky|kentucky|or|oregon|ok|oklahoma|ct|connecticut|ut|utah|ia|iowa|nv|nevada|ar|arkansas|ms|mississippi|ks|kansas|nm|new mexico|ne|nebraska|id|idaho|wv|west virginia|hi|hawaii|nh|new hampshire|me|maine|mt|montana|ri|rhode island|de|delaware|sd|south dakota|nd|north dakota|ak|alaska|vt|vermont|wy|wyoming)\b/.test(text);
-  };
-  const prospectScore = (place: any) => {
-    const rating = Number(place.rating || 0);
-    const reviews = Number(place.user_ratings_total || place.userRatingCount || place.reviews || 0);
-    const phone = placePhone(place);
-    let score = 0;
-    const reasons: string[] = [];
-    const breakdown: { label: string; points: number; detail: string }[] = [];
-    const addScore = (label: string, points: number, detail: string) => {
-      score += points;
-      reasons.push(label);
-      breakdown.push({ label, points, detail });
-    };
-
-    if (place.websiteCheckStatus === "no_website" && !hasWebsite(place)) {
-      addScore("no website verified", scoreWeights.noWebsiteVerified, "Place Details did not return a website.");
-    } else if (hasWebsite(place)) {
-      addScore("has website", scoreWeights.hasWebsitePenalty, "Existing website lowers outreach priority.");
-    } else {
-      addScore("website unknown", scoreWeights.websiteUnknownPenalty, "Run website pre-check or gather data to confirm.");
-    }
-
-    if (rating >= 4.5) {
-      addScore("4.5+ rating", scoreWeights.rating45Plus, `Rating: ${rating.toFixed(1)}.`);
-    } else if (rating >= 4) {
-      addScore("4.0+ rating", scoreWeights.rating40Plus, `Rating: ${rating.toFixed(1)}.`);
-    }
-
-    if (reviews >= 10 && reviews <= 100) {
-      addScore("10-100 reviews", scoreWeights.reviews10To100, `${reviews} reviews is enough proof without looking too enterprise.`);
-    } else if (reviews > 100 && reviews <= 300) {
-      addScore("established reviews", scoreWeights.reviews101To300, `${reviews} reviews.`);
-    } else if (reviews > 0 && reviews < 10) {
-      addScore("some reviews", scoreWeights.reviews1To9, `${reviews} reviews.`);
-    }
-
-    if (phone) {
-      addScore("phone exists", scoreWeights.phoneExists, phone);
-    }
-    if (isUsMarket(place)) {
-      addScore("US market", scoreWeights.usMarket, "US leads fit the high-value target market.");
-    }
-    if (!place.generatedBusinessId) {
-      addScore("not generated yet", scoreWeights.notGeneratedYet, "No generated site linked yet.");
-    }
-    if (hasGatheredDetails(place)) {
-      addScore("details gathered", scoreWeights.detailsGathered, "Ready for richer generation.");
-    }
-
-    return { score: Math.max(0, Math.round(score)), rawScore: Math.round(score), reasons, breakdown };
-  };
-  const activeWorkspaceTab = ["search", "crm", "history"].includes(leadWorkspaceTab) ? leadWorkspaceTab : "search";
-  const visibleProspectsRaw = activeWorkspaceTab === "search" ? searchResults : prospectDrafts;
-  const minScore = Number(minScoreFilter || 0);
-  const visibleProspects = [...visibleProspectsRaw]
-    .filter((place) => prospectScore(place).score >= minScore)
-    .sort((a, b) => prospectScore(b).score - prospectScore(a).score);
-  const selectedVisibleProspects = visibleProspects.filter((place) => selectedProspects[getPlaceKey(place)]);
-  const statusLabels: Record<string, string> = {
-    active: "Active pipeline",
-    new: "New",
-    details_loaded: "Details loaded",
-    site_generated: "Site generated",
-    contacted: "Contacted",
-    skipped: "Skipped",
-    all: "All saved",
-  };
-  const websiteLabels: Record<string, string> = {
-    none: "No website",
-    unknown: "Unknown website",
-    has: "Has website",
-    all: "All websites",
-  };
-  const activeFilterChips = [
-    prospectFilter !== "active" ? `Status: ${statusLabels[prospectFilter] || prospectFilter}` : "",
-    websiteFilter !== "all" ? `Website: ${websiteLabels[websiteFilter] || websiteFilter}` : "",
-    minRatingFilter !== "0" ? `Rating ${minRatingFilter}+` : "",
-    minReviewsFilter !== "0" ? `Reviews ${minReviewsFilter}+` : "",
-    minScoreFilter !== "0" ? `Score ${minScoreFilter}+` : "",
-    cityFilter.trim() ? `City: ${cityFilter.trim()}` : "",
-    stateFilter.trim() ? `State: ${stateFilter.trim()}` : "",
-    nicheFilter.trim() ? `Niche: ${nicheFilter.trim()}` : "",
-    autoWebsitePrecheck !== "1" ? "No pre-check" : "",
-    websitePrecheckLimit !== "10" ? `Check top ${websitePrecheckLimit}` : "",
-  ].filter(Boolean);
-  const resetLeadFilters = () => {
-    setProspectFilter("active");
-    setWebsiteFilter("none");
-    setMinRatingFilter("0");
-    setMinReviewsFilter("0");
-    setMinScoreFilter("0");
-    setCityFilter("");
-    setStateFilter("");
-    setNicheFilter("");
-    setAutoWebsitePrecheck("1");
-    setWebsitePrecheckLimit("10");
-  };
-
-  const toggleProspectSelection = (place: any, checked: boolean) => {
-    const placeKey = getPlaceKey(place);
-    if (!placeKey) return;
-    setSelectedProspects(prev => ({ ...prev, [placeKey]: checked }));
   };
 
   return (
