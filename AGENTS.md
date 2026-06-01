@@ -50,6 +50,7 @@
 - Keep changes narrowly scoped to the requested behavior.
 - Preserve existing user changes in the worktree.
 - Use existing project patterns before introducing new abstractions.
+- Code new features modularly from the start. If a page/component is gaining a distinct workflow, state cluster, table/card renderer, modal/drawer, or API action group, create a focused component or hook in the same change instead of letting one file grow into a later refactor target. As a rough trigger, avoid adding large JSX blocks or multiple unrelated state groups to files that are already several hundred lines long.
 - Before adding admin UI controls, inspect the surrounding controls and preserve their density and pattern. In compact row action clusters that use square icon-only buttons, add new actions as matching icon-only buttons with tooltip/aria labels rather than wider text buttons that disrupt the layout.
 - For admin collapsible card/section headers, use the shared `src/components/AdminCollapsibleSectionHeader.tsx` pattern: left icon before the heading, concise help tooltip near the title, optional action icons hidden while collapsed, and a right-aligned chevron. Do not mix one-off header layouts in the same admin page.
 - When adding a new admin feature, control, badge, status, or workflow action whose behavior is not obvious from the label alone, add a concise tooltip using the shared `src/components/HelpTooltip.tsx` component.

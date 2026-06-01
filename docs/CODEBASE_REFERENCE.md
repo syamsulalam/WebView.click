@@ -395,11 +395,14 @@ Fungsi:
 - Memilih provider/model AI.
 - Menghasilkan JSON website untuk lead.
 - Mengelola status lead.
+- Find Leads search is visually prominent for the US local prospecting workflow, with placeholder examples focused on niche + city + state queries such as concrete contractors, pool repair, and tree service. The route builder uses curated JSON from `src/data/usLocalProspectingMarkets.json` and `src/data/usLocalProspectingNiches.json`, fills the search box/filters, and stores per-route checklist progress in localStorage.
+- Manual Google Maps import is collapsed as a fallback path so automated search/gather/generate stays primary.
 - CRM Pipeline punya Payment Reconciliation panel untuk recent `lead_payments`, export CSV `checkout_pending`, dan action per-lead `Verify payment`. It also has a capped phone backfill action that fills missing CRM phone numbers from saved generated site/source JSON, including R2-backed sites. Email/SMS actions use saved lead email/phone only; they no longer fall back to fake placeholders like `hello@example.com` or `+10000000000`. If contact data is missing or placeholder-like, the row shows the same compact email/SMS icon with amber unavailable styling and a diagonal slash; clicking it opens a strict inline form to save the real contact for that business.
 - Payment verification modal and prospect details drawer close actions use shared hover tooltips for compact QA controls.
 - Payment verification modal includes an icon-only docs quick link that opens PayPal/payment reconciliation docs directly inside admin.
 - Prospect details drawer includes docs quick links for Google Places data inventory and photo strategy where those details are reviewed.
 - Repeated admin utility actions are intentionally icon-only with hover tooltips and `aria-label`, including cache trim, capture helper, manual import, search-history refresh, duplicate refresh, filter reset/reload, Google refresh search, bulk select/generate/jobs, payment export/refresh, row details/skip/gather/generate, and drawer refresh/maps actions.
+- AdminLeads UI/state is split under `src/pages/admin/leads/`: `ProspectingRoutePanel`, `ProspectSearchPanel`, `ManualImportPanel`, `SearchHistoryPanel`, `ManualDuplicateReviewPanel`, `ProspectFiltersPanel`, `BatchGenerateToolbar`, `ProspectCard`, `CrmPipelineTable`, `PaymentReconciliationPanel`, `PaymentVerificationModal`, `ProspectDetailsDrawer`, shared `prospectingData`, `useProspectSearch`, `useLeadCrm`, `useProspectDetails`, and `useSiteGenerationQueue`. `AdminLeads.tsx` still owns settings, filters, prospect scoring, duplicate review, and high-level wiring.
 
 API yang dipakai:
 - `GET /api/leads`

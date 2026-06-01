@@ -1,0 +1,8 @@
+[
+  { "category": "Heavy home services", "priority": 1, "niches": ["concrete contractor", "ready mix concrete", "asphalt paving", "excavation contractor", "demolition contractor", "septic service", "foundation repair", "fence contractor", "roofing contractor"] },
+  { "category": "Repair and emergency", "priority": 1, "niches": ["garage door repair", "HVAC contractor", "plumbing contractor", "electrician", "appliance repair", "mobile mechanic", "auto glass repair", "towing service", "locksmith"] },
+  { "category": "Outdoor property", "priority": 1, "niches": ["tree service", "landscaping", "lawn care", "irrigation repair", "pool repair", "pressure washing", "pest control", "junk removal", "dumpster rental"] },
+  { "category": "Build and remodel", "priority": 2, "niches": ["painting contractor", "flooring contractor", "cabinet maker", "countertop installer", "deck builder", "siding contractor", "window installer", "bathroom remodeler", "kitchen remodeler"] },
+  { "category": "Commercial local services", "priority": 2, "niches": ["commercial cleaning", "security camera installer", "parking lot striping", "sign shop", "welding shop", "machine shop", "equipment rental", "moving company"] },
+  { "category": "Owner-led local retail and care", "priority": 3, "niches": ["pet grooming", "dog training", "barber shop", "hair salon", "massage therapy", "med spa", "chiropractor", "physical therapy clinic", "local restaurant", "food truck", "catering"] }
+]
