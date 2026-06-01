@@ -878,6 +878,26 @@ export default function WebsiteActionPanel({
 
   return (
     <>
+      <style>{`
+        [data-wv-tool-ui="website-action-panel"] button:not(:disabled),
+        [data-wv-tool-ui="website-action-panel"] a[href],
+        [data-wv-tool-ui="website-action-panel"] select:not(:disabled),
+        [data-wv-tool-ui="website-action-panel"] summary,
+        [data-wv-tool-ui="website-download-modal"] button:not(:disabled),
+        [data-wv-tool-ui="website-download-modal"] a[href],
+        [data-wv-tool-ui="website-checkout-modal"] button:not(:disabled),
+        [data-wv-tool-ui="website-checkout-modal"] a[href],
+        [data-wv-tool-ui="website-checkout-modal"] select:not(:disabled),
+        [data-wv-tool-ui="website-checkout-modal"] summary,
+        [data-wv-tool-ui="owner-review-archived"] a[href] {
+          cursor: pointer;
+        }
+        [data-wv-tool-ui="website-action-panel"] button:disabled,
+        [data-wv-tool-ui="website-download-modal"] button:disabled,
+        [data-wv-tool-ui="website-checkout-modal"] button:disabled {
+          cursor: not-allowed;
+        }
+      `}</style>
       {downloadMessage && (
         <div
           role="status"
