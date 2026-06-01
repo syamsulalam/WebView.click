@@ -112,21 +112,164 @@ Use this tracker as the working backlog for translating the GitHub research into
 | Status | Track | What to implement | Primary areas | Done when |
 | --- | --- | --- | --- | --- |
 | Done | Research | Review GitHub Markdown/README/SKILL material for high-ticket landing pages, premium UI, copywriting, CRO, trust, SEO, and AI design systems. | `docs/DESIGN_GUIDE.md` | Sources and reusable principles are captured in this guide. |
-| Planned | Conversion schema | Add explicit conversion metadata such as `conversion.pagePattern`, `conversion.primaryAction`, `conversion.primaryActionReason`, and source-safe proof inputs. | Site schema/types, generation parser, export path | Generated site JSON records the intended page pattern and primary action without breaking existing demos. |
-| Planned | Prompt/copy brief | Add a premium conversion-pattern block based on business category, local intent, available Places proof, and lead value. | AI generation prompt/builders | Prompts consistently request hero specificity, proof, benefits, process, objections, and final CTA. |
-| Planned | Hero quality | Require hero headline, subheadline, CTA, and proof row to be specific to service, location, and available source data. | Prompt, post-process, renderer | Generated hero avoids generic claims and shows one clear primary action above the fold. |
-| Planned | Proof badges | Generate 3-5 source-safe proof badges such as `Highly rated`, `Local service area`, `Directions ready`, `Photos available`, and `Open today` only when data supports them. | Places normalization, prompt context, renderer | Badges never invent credentials, awards, warranties, years, named clients, or guarantees. |
-| Planned | CTA copy | Add lightweight post-processing that rewrites only generic CTA labels into specific, source-safe CTAs. | Site post-process utilities | Labels such as `Submit`, `Learn More`, or `Contact Us` become action/result CTAs without changing unsupported claims. |
-| Planned | Service/detail sections | Improve service pages with high-ticket structure: best-for/use cases, what is included, process/timeline, relevant proof, FAQ objections, and contact CTA. | Prompt, schema, renderer | Service/detail pages include at least 3 concrete details and no thin generic paragraphs. |
-| Planned | Objection handling | Require 5-8 concise FAQs or objection blocks for price, timing, service area, booking/contact, preparation, guarantees/warranties only when source-safe, and next step. | Prompt, post-process QA | Generated sites include relevant FAQ content near conversion points. |
-| Planned | Final CTA band | Add one renderer section variant for a high-ticket final CTA band with phone, service area, and one short risk-reduction line. | `src/components/SiteRenderer.tsx`, export HTML | Visitor-facing `/demo`, `/:businessId`, and static exports render the same final conversion band. |
-| Planned | Industry presets | Tune perceived-value guidance by vertical: legal/accounting/finance, med spa/salon/wellness, contractor/home services, restaurant/cafe, emergency services. | `src/lib/siteStylePresets.ts`, prompt category mapping | Generated style direction matches category expectations without one-size-fits-all luxury styling. |
-| Planned | Scannability guardrails | Enforce compact generated structure: 3-6 benefits, 3-5 process steps, 5-8 FAQs, concise cards, and bounded paragraph length. | Prompt, post-process QA | Output is easier to scan and avoids long filler sections. |
-| Planned | Conversion audit metadata | Store derived QA metadata in `generation_jobs.metadata_json`, for example `conversionAudit: { primaryCtaSpecific, proofAboveFold, objectionsCovered, finalCtaPresent }`. | Pages Function generation endpoints, D1 metadata | Admin can inspect conversion-readiness signals per generated job. |
-| Planned | QA flags | Add generation QA flags for missing proof above fold, generic CTA, no objection FAQ, thin service pages, non-specific hero, competing primary CTAs, and missing final CTA. | Generation post-process, AdminSites/AdminLeads surfaces | Admin review can quickly identify weak demos before outreach. |
-| Planned | Admin visibility | Surface conversion pattern, audit flags, and key proof inputs in admin generation/job review without adding bulky controls. | Admin sites/leads UI | Admin can triage demo quality and regenerate weak pages faster. |
-| Planned | Export parity | Ensure high-ticket CTA, proof badges, CTA rewrites, and audit-safe content appear in owner static HTML/zip exports. | `src/lib/exportSiteHtml.ts` | Downloaded sites match public preview conversion structure. |
-| Planned | Tests/fixtures | Add focused fixtures or lightweight tests for CTA rewrite, proof badge eligibility, conversion audit flags, and final CTA export parity. | Test fixtures/scripts used by existing checks | Core conversion transformations are covered without requiring a dev server. |
+| Done | Conversion schema | Add explicit conversion metadata such as `conversion.pagePattern`, `conversion.primaryAction`, `conversion.primaryActionReason`, and source-safe proof inputs. | Site post-process, generation save path | Generated site JSON records the intended page pattern and primary action without breaking existing demos. |
+| Done | Prompt/copy brief | Add a premium conversion-pattern block based on business category, local intent, available Places proof, and lead value. | AI generation prompt/builders | Prompts consistently request hero specificity, proof, benefits, process, objections, and final CTA. |
+| Done | Hero quality | Require hero headline, subheadline, CTA, and proof row to be specific to service, location, and available source data. | Prompt, post-process, renderer | Generated hero avoids generic claims and shows one clear primary action above the fold. |
+| Done | Proof badges | Generate 3-5 source-safe proof badges such as `Highly rated`, `Local service area`, `Directions ready`, `Photos available`, and `Open today` only when data supports them. | Places normalization, prompt context, renderer | Badges never invent credentials, awards, warranties, years, named clients, or guarantees. |
+| Done | CTA copy | Add lightweight post-processing that rewrites only generic CTA labels into specific, source-safe CTAs. | Site post-process utilities | Labels such as `Submit`, `Learn More`, or `Contact Us` become action/result CTAs without changing unsupported claims. |
+| Done | Service/detail sections | Improve service pages with high-ticket structure: best-for/use cases, what is included, process/timeline, relevant proof, FAQ objections, and contact CTA. | Prompt, schema, renderer | Service/detail pages include at least 3 concrete details and no thin generic paragraphs. |
+| Done | Objection handling | Require 5-8 concise FAQs or objection blocks for price, timing, service area, booking/contact, preparation, guarantees/warranties only when source-safe, and next step. | Prompt, post-process QA | Generated sites include relevant FAQ content near conversion points. |
+| Done | Final CTA band | Add one renderer section variant for a high-ticket final CTA band with phone, service area, and one short risk-reduction line. | `src/components/SiteRenderer.tsx`, export HTML | Visitor-facing `/demo`, `/:businessId`, and static exports render the same final conversion band. |
+| Done | Industry presets | Tune perceived-value guidance by vertical: legal/accounting/finance, med spa/salon/wellness, contractor/home services, restaurant/cafe, emergency services. | Post-process style direction, prompt category mapping | Generated style direction matches category expectations without one-size-fits-all luxury styling. |
+| Done | Scannability guardrails | Enforce compact generated structure: 3-6 benefits, 3-5 process steps, 5-8 FAQs, concise cards, and bounded paragraph length. | Prompt, post-process QA | Output is easier to scan and avoids long filler sections. |
+| Done | Conversion audit metadata | Store derived QA metadata in `generation_jobs.metadata_json`, for example `conversionAudit: { primaryCtaSpecific, proofAboveFold, objectionsCovered, finalCtaPresent }`. | Pages Function generation endpoints, D1 metadata | Admin can inspect conversion-readiness signals per generated job. |
+| Done | QA flags | Add generation QA flags for missing proof above fold, generic CTA, no objection FAQ, thin service pages, non-specific hero, competing primary CTAs, and missing final CTA. | Generation post-process, AdminSites/AdminLeads surfaces | Admin review can quickly identify weak demos before outreach. |
+| Done | Admin visibility | Surface conversion pattern, audit flags, and key proof inputs in admin generation/job review without adding bulky controls. | Admin generation jobs UI | Admin can triage demo quality and regenerate weak pages faster. |
+| Done | Export parity | Ensure high-ticket CTA, proof badges, CTA rewrites, and audit-safe content appear in owner static HTML/zip exports. | Renderer DOM export path | Downloaded sites match public preview conversion structure. |
+| Done | Tests/fixtures | Add focused fixtures or lightweight tests for CTA rewrite, proof badge eligibility, conversion audit flags, and final CTA export parity. | `tests/generatedSitePostProcess.test.ts` | Core conversion transformations are covered without requiring a dev server. |
+
+### Design-Specific Learnings To Implement Next
+
+The research does not only point to better copy. It points to a stronger design-generation system where the page's business strategy controls layout, density, media treatment, typography, motion, and CTA hierarchy.
+
+Key design learnings:
+
+1. Design should start from page pattern, not color palette.
+   `quote-led-service`, `booking-led-local`, `menu-led-restaurant`, `trust-led-professional`, `emergency-service`, `gallery-led-craft`, and `premium-consultation` should each map to different hero layouts, proof placement, section order, CTA treatment, card density, and footer emphasis.
+
+2. Premium pages need restraint and specificity.
+   High-ticket design should look composed: fewer decorative effects, stronger spacing, better media cropping, higher contrast CTAs, tighter cards, and clear proof hierarchy. Premium does not mean purple gradients, oversized cards, random glassmorphism, or generic SaaS visuals.
+
+3. The first viewport needs a designed conversion stack.
+   Hero should combine: business/category/location promise, one primary CTA, source-safe proof row, and either a real media frame or restrained proof panel. The exact composition should vary by vertical.
+
+4. Trust signals need visual hierarchy.
+   Ratings, review counts, open status, service area, directions, phone, and photo availability should render as a compact proof strip or badges near the CTA, not scattered text.
+
+5. Service pages should feel like sales pages, not article pages.
+   Detail pages need a designed rhythm: hero, included scope, best-for/use cases, process/next step, proof, FAQ, and final CTA. This should be a renderer/schema pattern, not only AI prose.
+
+6. Media quality affects perceived value.
+   Real Places photos should drive hero/gallery treatment when available. If photos are weak or missing, the design should switch to proof-led layouts, maps/contact modules, icons, or structured cards instead of pretending with unrelated stock-like imagery.
+
+7. Industry presets should control composition, not just colors.
+   Legal/accounting/finance should use low-radius authority layouts. Med spa/salon should use editorial, soft-luxe media. Contractors should use rugged proof/gallery layouts. Restaurants should be menu/location-led. Emergency services should be phone-first.
+
+8. AI-readable design intent needs to be stored in JSON.
+   `design.stylePreset` is not enough. Generated JSON should eventually carry `design.compositionPattern`, `design.heroLayout`, `design.mediaStrategy`, `design.cardDensity`, `design.proofTreatment`, `design.ctaTreatment`, `design.motionLevel`, and `design.antiPatterns`.
+
+### Design Generation Implementation Plan
+
+This is the next implementation backlog for making generated sites visually better, not only better written. Keep changes shared across `/demo`, `/:businessId`, owner export, and saved D1/R2 JSON.
+
+| Status | Track | What to implement | Primary areas | Done when |
+| --- | --- | --- | --- | --- |
+| Done | Design intent schema | Add deterministic `design.compositionPattern`, `design.heroLayout`, `design.mediaStrategy`, `design.proofTreatment`, `design.cardDensity`, `design.ctaTreatment`, `design.motionLevel`, `design.antiPatterns`, and `design.designAudit`. | `generatedSitePostProcess`, AI brief, renderer | Saved JSON explains why the site looks the way it does and renderer/export can use the same design intent. |
+| Done | Pattern-to-layout map | Map each `conversion.pagePattern` to default hero treatment, proof placement, CTA style, card density, detail layout intent, and section rhythm, with AI-assisted `designStrategy` as a later chunked override only when deterministic rules are too stiff. | Post-process, renderer helpers, optional AI chunk | Quote-led, booking-led, menu-led, trust-led, emergency, gallery-led, and consultation sites no longer share the same generic page rhythm. |
+| Done | Hero layout variants | Add renderer variants such as `split-media-proof`, `authority-panel`, `phone-first-emergency`, `menu-location`, `gallery-led`, and `consultation-led`. | `SiteRenderer.tsx`, CSS preset layer | First viewport visually matches business type and conversion goal. |
+| Done | Proof strip variants | Render source-safe proof as compact badges, rating strip, authority bar, emergency contact rail, or location/menu strip depending on pattern. | Renderer, post-process | Proof appears above the fold with clear hierarchy and no unsupported claims. |
+| Done | Media strategy | Derive `mediaStrategy`: `real-photo-hero`, `gallery-grid`, `logo-proof`, `map-contact`, `icon-card`, or `minimal-no-photo`. | Places photo handling, post-process, renderer | Weak/missing imagery no longer creates a visually cheap hero. |
+| Planned | Detail-page sales layout | Add a stronger detail-page composition for service/product pages: sticky contact rail on desktop, included checklist, best-for chips, proof snippet, FAQ, final CTA. | Renderer, generated detail pages | Detail pages feel designed for conversion instead of simple content pages. |
+| Planned | Vertical style expansion | Tune preset CSS beyond palette: radius, border weight, section rhythm, hero crop, button shape, trust badge shape, card layout, header treatment. | `siteStylePresets.ts` | Legal, finance, salon, contractor, restaurant, emergency, medical, and cleaning pages have visibly different systems. |
+| Done | CTA treatment variants | Add `solid-contrast`, `phone-rail`, `booking-pill`, `estimate-block`, `directions-split`, and `consultation-card` CTA treatments. | Renderer, post-process | Primary action visually dominates while secondary action stays supportive. |
+| Planned | Premium section rhythm | Add pattern-specific section spacing and background alternation rules so pages avoid same-looking stacked white sections. | CSS preset layer, renderer classes | Page rhythm feels intentional and less template-like across generated sites. |
+| Done | Design audit metadata | Extend `conversionAudit` or add `designAudit`: hero layout set, proof treatment set, media strategy valid, CTA hierarchy valid, no generic preset fallback, no weak image hero. | Post-process, generation jobs | Admin can tell whether a site only got copy upgrades or also got design upgrades. |
+| Partial | Admin review badge | Surface design audit in generation jobs and site list: `design ready`, `generic layout`, `weak media`, `missing proof treatment`, `fallback preset`. | `GenerationJobsTable`, `AdminSites` | Admin can regenerate/upgrade weak-looking demos before outreach. |
+| Planned | Export parity test | Add fixture coverage that final CTA, hero proof badges, and design-intent classes survive owner zip export path. | Tests/export fixtures | Owner download matches public preview for design structure. |
+
+### Chunked AI Job Plan For Premium Conversion Work
+
+Premium conversion copy and design strategy must stay chunked. Do not add one large AI call that tries to rewrite the whole site, pick visual direction, rebuild offerings, and finalize storage at once.
+
+Target chunked flow:
+
+| Step | AI? | Purpose | Output | Retry behavior |
+| --- | --- | --- | --- | --- |
+| `preflight` | No | Validate provider/model/key/readiness and shared cooldown before work starts. | Ready/block metadata. | Blocks before creating expensive partial work. |
+| `designStrategy` | Optional AI, deterministic fallback required | Choose page pattern, composition pattern, hero layout, media strategy, proof treatment, CTA treatment, and anti-patterns. | Small JSON patch under `design` and `conversion`. | Retry independently; deterministic post-process still fills safe defaults if AI fails and `requireAi=false`. |
+| `outline` | AI | Create high-intent offerings/products aligned to the conversion and design strategy. | `offeringOutline`. | Existing retryable outline step remains. |
+| `siteCopy` | AI | Improve homepage/meta/About/general sections using `premiumConversionBrief` and `designStrategy`. | `siteCopyPatch`. | Existing retryable site-copy step remains. |
+| `offeringCopy` | AI micro-batch | Improve service/product detail pages in small batches. | Cumulative `offeringCopyPatch`, coverage metadata. | Continue current cursor until complete; retry only failed/current item group. |
+| `visualPostProcess` | No | Apply deterministic design intent, CTA cleanup, proof badges, section inserts, detail-page depth, final CTA, audits. | Final JSON mutations and `conversionAudit`/`designAudit`. | Always safe to rerun idempotently. |
+| `finalize` | No AI | Save JSON/assets to R2/D1, update lead/prospect, store job metadata. | Saved site + final job metadata. | Existing finalize save path should be preserved. |
+
+Implementation notes:
+
+- `designStrategy` should be a small schema, not a full website JSON request.
+- Deterministic design intent is the baseline and should run for every site with no extra AI cost.
+- AI-assisted design strategy is allowed when deterministic rules are too stiff, but it must stay a separate chunk and must only return controlled design-intent fields, not full site JSON or arbitrary CSS/classes.
+- The AI design strategy prompt must be detailed: business category, page pattern, source-safe proof, media availability, lead value, anti-patterns, allowed enum values, and examples of good/poor choices.
+- If the AI returns invalid design strategy JSON, repair once. If still invalid and `requireAi=false`, use deterministic mapping from `conversion.pagePattern` and business category.
+- If `requireAi=true` and the `designStrategy` step fails, the job should fail at that step with metadata; it should not silently fall back and pretend AI design strategy succeeded.
+- `premiumConversionBrief` should be part of `designStrategy`, `outline`, `siteCopy`, and `offeringCopy`, but each chunk should receive only the fields it needs.
+- `generation_jobs.metadata_json` should store `designStrategy`, `designStrategyHash`, `designStrategyApplied`, `designAudit`, and final `conversionAudit`.
+- Existing chunked UI should expose `designStrategy` as a separate step only if it becomes an actual AI call. If deterministic-only at first, store it under finalize metadata without adding a visible retry step.
+- Copy-only retry should not accidentally reset visual strategy unless the user explicitly chooses an upgrade/regenerate action that includes design.
+
+Allowed deterministic design intent values:
+
+- `compositionPattern`: `quote-service`, `booking-service`, `menu-visit`, `trust-authority`, `emergency-phone`, `gallery-craft`, `consultation-premium`.
+- `heroLayout`: `split-media-proof`, `authority-panel`, `phone-first-emergency`, `menu-location`, `gallery-led`, `consultation-led`.
+- `mediaStrategy`: `real-photo-hero`, `gallery-grid`, `logo-proof`, `map-contact`, `icon-card`, `minimal-no-photo`.
+- `proofTreatment`: `badge-row`, `rating-strip`, `authority-bar`, `emergency-rail`, `location-strip`, `gallery-proof`.
+- `ctaTreatment`: `solid-contrast`, `phone-rail`, `booking-pill`, `estimate-block`, `directions-split`, `consultation-card`.
+- `cardDensity`: `compact`, `standard`, `editorial`, `image-led`.
+- `motionLevel`: `none`, `subtle`, `standard`.
+
+### Existing Site Upgrade Plan
+
+Existing generated sites need a controlled upgrade path so old previews can receive the new design/copy system without breaking URLs, owner edits, payment state, or saved assets.
+
+Upgrade goals:
+
+- Preserve `businessId`, public URL, lead/payment records, owner session expectations, R2 asset keys where possible, source data, selected photo provenance, palette options, and local business identity.
+- Add missing new fields: `conversion.pagePattern`, `conversion.primaryAction`, `conversion.primaryActionReason`, `conversion.proofBadges`, `conversion.sourceSafeProofInputs`, `design.highTicketStyleDirection`, future design intent fields, `finalCta`, FAQ depth, service detail depth, and audits.
+- Improve copy only through chunked AI when requested. Deterministic design/schema upgrades should be available without AI.
+- Keep owner-edited public preview content safe. Browser localStorage edits are not stored server-side, so server upgrades should not claim to preserve those edits unless a future server-side edit persistence feature exists.
+
+Recommended upgrade modes:
+
+| Mode | AI? | Use case | Behavior |
+| --- | --- | --- | --- |
+| `Design/schema repair only` | No | Fast migration for all existing sites. | Read saved JSON, run idempotent post-process/design strategy defaults, write back, store audit. |
+| `Premium copy upgrade` | Chunked AI | Good prospect but old/thin copy. | Run `designStrategy` if enabled, `siteCopy`, `offeringCopy`, deterministic post-process, finalize. |
+| `Full premium regenerate` | Chunked AI | Weak offerings or wrong business positioning. | Re-run outline, site copy, offering copy, design post-process, finalize. |
+| `Visual variation only` | No or tiny AI later | Copy is good but design feels generic. | Keep copy/offerings, apply new composition/media/proof/CTA treatment and style direction. |
+| `Dry-run audit` | No | Bulk admin triage. | Compute `conversionAudit`/`designAudit` and show flags without saving. |
+
+Admin implementation plan:
+
+1. Add `/api/sites/:businessId/upgrade-preview` dry-run endpoint.
+   It reads saved JSON, runs deterministic upgrade in memory, returns before/after audit, changed fields, and warnings.
+
+2. Add `/api/sites/:businessId/upgrade-design` save endpoint.
+   It runs deterministic design/schema repair only, saves JSON, updates `json_summary`, and writes a CRM/activity note.
+
+3. Add chunked `premium-upgrade-start` action.
+   It creates a generation job with payload copied from the current saved site, `upgradeMode`, provider/model, and the current source data. It should reuse the existing `generation-jobs/:id/run-step` machinery.
+
+4. Add admin UI actions in `AdminSites`.
+   Actions should be compact icon-only controls with tooltips: `Audit design`, `Upgrade design`, `Premium copy upgrade`, and `Full premium regenerate`.
+
+5. Add batch-safe controls.
+   Batch upgrade should start with dry-run/audit filters: only upgrade sites with `generic layout`, `missing final CTA`, `generic CTA`, `missing proof`, `thin service pages`, or `fallback preset`.
+
+6. Add version metadata.
+   Store `meta.designSystemVersion`, `meta.lastDesignUpgradeAt`, `meta.lastPremiumCopyUpgradeAt`, `meta.lastUpgradeMode`, and `metadata.upgradeFromDesignSystemVersion`.
+
+7. Preserve rollback/debug.
+   Store previous compact summary and optionally previous full JSON R2 key in job metadata before overwrite. At minimum, store `previousJsonHash`, `nextJsonHash`, before/after audits, and changed field counts.
+
+8. Verify export parity.
+   After upgrade, public preview and owner zip should include the same upgraded structure because both use saved JSON and renderer DOM.
+
+### Existing Site Upgrade Risks
+
+- Some older JSON may lack stable page IDs or section IDs. Upgrade code must add missing fields idempotently and avoid duplicate pages/sections.
+- Owner browser edits are local-only today. A server-side upgrade may visually change the page underneath localStorage edits; production testing should include an edited preview before rolling bulk upgrades.
+- AI copy upgrade can change tone or offering labels. Keep `full premium regenerate` separate from `premium copy upgrade` so admin can avoid reshaping services when only copy depth is needed.
+- Google Places photos may be third-party assets. Upgrade should preserve attribution and avoid implying ownership.
+- Bulk upgrades can create many generation jobs. Use chunked jobs, provider cooldowns, limits, and visible progress.
 
 ## Implementation Rules
 

@@ -276,6 +276,11 @@ export default function GenerationJobsTable({
         copyAuditSummary: job.metadata?.copyAuditSummary || null,
         offeringCopyCoverage: job.metadata?.offeringCopyCoverage || null,
         offeringCopyMode: job.metadata?.offeringCopyMode || null,
+        conversionPagePattern: job.metadata?.conversionPagePattern || job.metadata?.conversionAudit?.pagePattern || "",
+        conversionPrimaryAction: job.metadata?.conversionPrimaryAction || job.metadata?.conversionAudit?.primaryAction || "",
+        conversionAudit: job.metadata?.conversionAudit || null,
+        designIntent: job.metadata?.designIntent || null,
+        designAudit: job.metadata?.designAudit || null,
         copyOnlyRetryCoverageDelta: job.metadata?.copyOnlyRetryCoverageDelta || null,
         copyOnlyRetryChangedDelta: copyOnlyRetryChangedDelta(job),
       })),
@@ -517,6 +522,34 @@ export default function GenerationJobsTable({
                             <HoverTooltip text={offeringCopyCoverageTooltip(offeringCoverage)} widthClass="w-80">
                               <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${offeringCopyCoverageClass(offeringCoverage)}`}>
                                 {offeringCopyCoverageLabel(offeringCoverage)}
+                              </span>
+                            </HoverTooltip>
+                          )}
+                          {job.metadata?.conversionAudit && (
+                            <HoverTooltip
+                              text={`Pattern: ${job.metadata?.conversionPagePattern || job.metadata.conversionAudit.pagePattern || "-"}; primary action: ${job.metadata?.conversionPrimaryAction || job.metadata.conversionAudit.primaryAction || "-"}; flags: ${(job.metadata.conversionAudit.flags || []).join(", ") || "none"}`}
+                              widthClass="w-80"
+                            >
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                Array.isArray(job.metadata.conversionAudit.flags) && job.metadata.conversionAudit.flags.length
+                                  ? "bg-amber-100 text-amber-900"
+                                  : "bg-emerald-100 text-emerald-800"
+                              }`}>
+                                conversion {Array.isArray(job.metadata.conversionAudit.flags) && job.metadata.conversionAudit.flags.length ? `${job.metadata.conversionAudit.flags.length} flags` : "ready"}
+                              </span>
+                            </HoverTooltip>
+                          )}
+                          {job.metadata?.designAudit && (
+                            <HoverTooltip
+                              text={`Layout: ${job.metadata?.designAudit?.heroLayout || job.metadata?.designIntent?.heroLayout || "-"}; media: ${job.metadata?.designAudit?.mediaStrategy || job.metadata?.designIntent?.mediaStrategy || "-"}; flags: ${(job.metadata.designAudit.flags || []).join(", ") || "none"}`}
+                              widthClass="w-80"
+                            >
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                Array.isArray(job.metadata.designAudit.flags) && job.metadata.designAudit.flags.length
+                                  ? "bg-amber-100 text-amber-900"
+                                  : "bg-sky-100 text-sky-800"
+                              }`}>
+                                design {Array.isArray(job.metadata.designAudit.flags) && job.metadata.designAudit.flags.length ? `${job.metadata.designAudit.flags.length} flags` : "ready"}
                               </span>
                             </HoverTooltip>
                           )}

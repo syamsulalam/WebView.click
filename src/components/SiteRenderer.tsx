@@ -62,11 +62,6 @@ function normalizeSiteData(siteData: any) {
   const location = siteData?.location || {};
   const hours = siteData?.hours || {};
   const conversion = siteData?.conversion || {};
-  const stylePreset = design.stylePreset || themeVariables.stylePreset || brand.visualStyle || "local-clean";
-  const visualStyle = design.visualStyle || design.shapeStyle || brand.imageTreatment || "soft-rounded";
-  const shaderConfig = design.shaderConfig && typeof design.shaderConfig === "object" ? design.shaderConfig : {};
-  const shaderPreset = design.shaderPreset || shaderConfig.preset || themeVariables.shaderPreset || "local-aurora";
-  const fontPairing = design.fontPairing || typography.fontPairing || "montserrat-raleway";
   const isIndonesian = meta.language === "id";
   const contactNormalizedSite = {
     ...siteData,
@@ -90,6 +85,31 @@ function normalizeSiteData(siteData: any) {
   const normalizedNavigation: any = contactNormalizedSite.navigation && typeof contactNormalizedSite.navigation === "object"
     ? contactNormalizedSite.navigation
     : navigation;
+  const normalizedDesign = contactNormalizedSite.design && typeof contactNormalizedSite.design === "object"
+    ? contactNormalizedSite.design
+    : design;
+  const normalizedThemeVariables = normalizedDesign.themeVariables || themeVariables || {};
+  const normalizedColors = normalizedThemeVariables.colors || colors || {};
+  const normalizedTypography = normalizedThemeVariables.typography || normalizedDesign.typography || typography || {};
+  const stylePreset = normalizedDesign.stylePreset || normalizedThemeVariables.stylePreset || brand.visualStyle || "local-clean";
+  const visualStyle = normalizedDesign.visualStyle || normalizedDesign.shapeStyle || brand.imageTreatment || "soft-rounded";
+  const shaderConfig = normalizedDesign.shaderConfig && typeof normalizedDesign.shaderConfig === "object" ? normalizedDesign.shaderConfig : {};
+  const shaderPreset = normalizedDesign.shaderPreset || shaderConfig.preset || normalizedThemeVariables.shaderPreset || "local-aurora";
+  const fontPairing = normalizedDesign.fontPairing || normalizedTypography.fontPairing || "montserrat-raleway";
+  const designIntent = normalizedDesign.designIntent && typeof normalizedDesign.designIntent === "object"
+    ? normalizedDesign.designIntent
+    : {
+        compositionPattern: normalizedDesign.compositionPattern,
+        heroLayout: normalizedDesign.heroLayout,
+        mediaStrategy: normalizedDesign.mediaStrategy,
+        proofTreatment: normalizedDesign.proofTreatment,
+        cardDensity: normalizedDesign.cardDensity,
+        ctaTreatment: normalizedDesign.ctaTreatment,
+        motionLevel: normalizedDesign.motionLevel,
+        sectionRhythm: normalizedDesign.sectionRhythm,
+        detailLayout: normalizedDesign.detailLayout,
+        antiPatterns: normalizedDesign.antiPatterns,
+      };
   const baseHeaderMenu = Array.isArray(normalizedNavigation.headerMenu)
     ? normalizedNavigation.headerMenu
     : normalizedPages.map((page: any) => ({ label: page.pageTitle || page.pageId, href: `#${page.pageId}` }));
@@ -115,23 +135,25 @@ function normalizeSiteData(siteData: any) {
       ...meta,
     },
     colors: {
-      primary: colors.primary || "#111827",
-      secondary: colors.secondary || "#F3F4F6",
-      accent: colors.accent || "#4F46E5",
-      textMain: colors.textMain || "#1F2937",
-      textMuted: colors.textMuted || "#6B7280",
-      background: colors.background || "#FFFFFF",
+      primary: normalizedColors.primary || "#111827",
+      secondary: normalizedColors.secondary || "#F3F4F6",
+      accent: normalizedColors.accent || "#4F46E5",
+      textMain: normalizedColors.textMain || "#1F2937",
+      textMuted: normalizedColors.textMuted || "#6B7280",
+      background: normalizedColors.background || "#FFFFFF",
     },
     typography: {
-      headingFont: typography.headingFont || "'Inter', sans-serif",
-      bodyFont: typography.bodyFont || "'Inter', sans-serif",
+      headingFont: normalizedTypography.headingFont || "'Inter', sans-serif",
+      bodyFont: normalizedTypography.bodyFont || "'Inter', sans-serif",
     },
     stylePreset,
     visualStyle,
     shaderPreset,
     shaderConfig,
     fontPairing,
-    fontPairingConfig: design.fontPairingConfig || {},
+    fontPairingConfig: normalizedDesign.fontPairingConfig || {},
+    designIntent,
+    designAudit: normalizedDesign.designAudit || {},
     brand: {
       logoImageUrl: brand.logoImageUrl || header.logoImageUrl || "",
       logoSvg: brand.logoSvg || header.logoSvg || "",
@@ -667,7 +689,7 @@ export default function SiteRenderer({
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingImageKey = useRef("");
 
-  const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, brand, businessProfile, trust, offers, products, services, capabilities, sourceData, location, servedAreas, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, designIntent, designAudit, brand, businessProfile, trust, offers, products, services, capabilities, sourceData, location, servedAreas, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
   const imageReplacementKey = imageReplacementStorageKey(businessId, meta.businessId);
   const iconStorageKey = siteIconStorageKey(businessId, meta.businessId);
   const legacyIconStorageKey = legacyButtonIconStorageKey(businessId, meta.businessId);
@@ -740,6 +762,8 @@ export default function SiteRenderer({
     location,
     hours,
     conversion,
+    designIntent,
+    designAudit,
     global: globalConfig,
     navigation,
     pages,
@@ -764,6 +788,15 @@ export default function SiteRenderer({
   const visualClass = `wv-visual-${normalizeVisualStyle(visualStyle)}`;
   const shaderMeta = getShaderPreset(shaderPreset);
   const shaderClass = `wv-shader-${normalizeShaderPreset(shaderPreset)}`;
+  const intent = designIntent || {};
+  const compositionClass = intent.compositionPattern ? `wv-composition-${String(intent.compositionPattern).replace(/[^a-z0-9-]+/gi, "-").toLowerCase()}` : "";
+  const heroLayout = String(intent.heroLayout || "split-media-proof");
+  const mediaStrategy = String(intent.mediaStrategy || "real-photo-hero");
+  const proofTreatment = String(intent.proofTreatment || "badge-row");
+  const cardDensity = String(intent.cardDensity || "standard");
+  const ctaTreatment = String(intent.ctaTreatment || "solid-contrast");
+  const sectionRhythm = String(intent.sectionRhythm || "balanced-local");
+  const detailLayout = String(intent.detailLayout || "scope-detail");
   const homePageId = pages[0]?.pageId || "home";
   const isIndonesian = meta.language === "id";
   const labels = {
@@ -1272,7 +1305,19 @@ export default function SiteRenderer({
           font-family: ${activeFontPairing.headingCss || typography.headingFont};
         }
       `}</style>
-      <div data-wv-site-canvas="true" style={siteCanvasStyles} className={`min-h-screen flex flex-col ${presetClass} ${visualClass} ${shaderClass}`}>
+      <div
+        data-wv-site-canvas="true"
+        data-wv-composition={intent.compositionPattern || undefined}
+        data-wv-hero-layout={heroLayout}
+        data-wv-media-strategy={mediaStrategy}
+        data-wv-proof-treatment={proofTreatment}
+        data-wv-card-density={cardDensity}
+        data-wv-cta-treatment={ctaTreatment}
+        data-wv-section-rhythm={sectionRhythm}
+        data-wv-detail-layout={detailLayout}
+        style={siteCanvasStyles}
+        className={`min-h-screen flex flex-col ${presetClass} ${visualClass} ${shaderClass} ${compositionClass}`}
+      >
       <div data-wv-site-shader="true" aria-hidden="true" />
       <header
         data-wv-site-header="true"
@@ -1390,11 +1435,72 @@ export default function SiteRenderer({
                   ? formatOfferHeading(heroContent.headline || labels.heroFallback)
                   : heroContent.headline || labels.heroFallback;
                 const heroSubheadline = tidyDanglingCopy(heroContent.subheadline || businessProfile.shortPitch);
+                const isEmergencyHero = heroLayout === "phone-first-emergency";
+                const isAuthorityHero = heroLayout === "authority-panel";
+                const isMenuHero = heroLayout === "menu-location";
+                const isGalleryHero = heroLayout === "gallery-led";
+                const isConsultationHero = heroLayout === "consultation-led";
+                const heroSectionClass = isEmergencyHero
+                  ? "relative overflow-hidden px-6 py-14 md:py-20 bg-slate-950"
+                  : isAuthorityHero
+                    ? "relative overflow-hidden px-6 py-16 md:py-24 bg-slate-100"
+                    : isMenuHero
+                      ? "relative overflow-hidden px-6 py-14 md:py-20 bg-orange-50"
+                      : isGalleryHero
+                        ? "relative overflow-hidden px-6 py-14 md:py-24 bg-stone-50"
+                        : isConsultationHero
+                          ? "relative overflow-hidden px-6 py-16 md:py-24 bg-slate-50"
+                          : "relative overflow-hidden px-6 py-16 md:py-24 bg-white";
+                const heroGridClass = isAuthorityHero || isConsultationHero
+                  ? "relative z-10 max-w-6xl mx-auto grid md:grid-cols-[0.9fr_1.1fr] gap-10 items-center"
+                  : isEmergencyHero
+                    ? "relative z-10 max-w-6xl mx-auto grid md:grid-cols-[1.2fr_0.8fr] gap-8 items-center"
+                    : "relative z-10 max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center";
+                const heroPanelClass = isEmergencyHero
+                  ? "rounded-xl border border-white/10 bg-white/10 p-6 shadow-xl shadow-black/20 backdrop-blur md:p-8"
+                  : isAuthorityHero
+                    ? "rounded-lg border border-slate-300 bg-white p-6 shadow-lg shadow-slate-900/10 md:p-8"
+                    : isMenuHero
+                      ? "rounded-2xl border border-orange-100 bg-white/95 p-6 shadow-xl shadow-orange-900/10 backdrop-blur md:p-8"
+                      : isGalleryHero
+                        ? "rounded-xl border border-stone-200 bg-white/95 p-6 shadow-xl shadow-stone-900/10 backdrop-blur md:p-8"
+                        : "rounded-2xl border border-white/70 bg-white/90 p-6 shadow-xl shadow-slate-900/10 backdrop-blur md:p-8";
+                const heroHeadingClass = isEmergencyHero
+                  ? "text-4xl md:text-6xl font-bold mb-6 leading-tight text-white"
+                  : "text-4xl md:text-6xl font-bold mb-6 leading-tight text-slate-950";
+                const heroBodyClass = isEmergencyHero ? "text-lg md:text-xl mb-8 text-white/75 max-w-2xl" : "text-lg md:text-xl mb-8 text-slate-600 max-w-2xl";
+                const heroProofClass = isEmergencyHero || proofTreatment === "emergency-rail"
+                  ? "mt-8 flex flex-wrap gap-2 text-sm text-white/85"
+                  : proofTreatment === "authority-bar"
+                    ? "mt-8 grid gap-2 text-sm text-slate-700 sm:grid-cols-3"
+                    : proofTreatment === "location-strip"
+                      ? "mt-8 flex flex-wrap gap-2 text-sm text-orange-950"
+                      : proofTreatment === "gallery-proof"
+                        ? "mt-8 flex flex-wrap gap-2 text-sm text-stone-700"
+                        : "mt-8 flex flex-wrap gap-3 text-sm text-slate-600";
+                const heroProofItemClass = isEmergencyHero || proofTreatment === "emergency-rail"
+                  ? "inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1"
+                  : proofTreatment === "authority-bar"
+                    ? "inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    : proofTreatment === "location-strip"
+                      ? "inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1"
+                      : proofTreatment === "gallery-proof"
+                        ? "inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1"
+                        : "inline-flex items-center gap-2";
+                const heroMediaClass = isAuthorityHero
+                  ? "h-[340px] md:h-[500px] rounded-lg overflow-hidden border border-slate-300 shadow-xl bg-slate-100"
+                  : isEmergencyHero
+                    ? "h-[280px] md:h-[460px] rounded-xl overflow-hidden border border-white/15 shadow-2xl bg-slate-900"
+                    : isGalleryHero || mediaStrategy === "gallery-grid"
+                      ? "h-[360px] md:h-[540px] rounded-xl overflow-hidden border border-stone-200 shadow-xl bg-stone-100"
+                      : "h-[360px] md:h-[520px] rounded-2xl overflow-hidden border border-slate-200 shadow-xl bg-slate-100";
                 return (
                   <section
                     key={section.id}
                     data-wv-hero-section="true"
-                    className="relative overflow-hidden px-6 py-16 md:py-24 bg-white"
+                    data-wv-hero-layout={heroLayout}
+                    data-wv-media-strategy={mediaStrategy}
+                    className={heroSectionClass}
                   >
                     {isUsableImage(heroImage) && (
                       <>
@@ -1403,18 +1509,23 @@ export default function SiteRenderer({
                           className="absolute inset-0 bg-cover bg-center opacity-20 blur-sm scale-105"
                           style={{ backgroundImage: `url("${String(heroImage).replace(/"/g, "%22")}")` }}
                         />
-                        <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-r from-white via-white/90 to-white/70" />
+                        <div
+                          aria-hidden="true"
+                          className={isEmergencyHero
+                            ? "absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/90 to-slate-950/70"
+                            : "absolute inset-0 bg-gradient-to-r from-white via-white/90 to-white/70"}
+                        />
                       </>
                     )}
-                    <div className="relative z-10 max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center">
-                      <div className="rounded-2xl border border-white/70 bg-white/90 p-6 shadow-xl shadow-slate-900/10 backdrop-blur md:p-8">
+                    <div className={heroGridClass}>
+                      <div className={heroPanelClass}>
                         <p className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: colors.accent }}>
                           {editableText(`${section.id}.eyebrow`, businessProfile.typeLabel, "span")}
                         </p>
-                        <h1 data-wv-hero-heading="true" className="text-4xl md:text-6xl font-bold mb-6 leading-tight text-slate-950">
+                        <h1 data-wv-hero-heading="true" className={heroHeadingClass}>
                           {editableText(`${section.id}.headline`, heroHeadline, "span")}
                         </h1>
-                        <p className="text-lg md:text-xl mb-8 text-slate-600 max-w-2xl">
+                        <p className={heroBodyClass}>
                           {editableText(`${section.id}.subheadline`, heroSubheadline, "span", "", undefined, true)}
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3">
@@ -1428,8 +1539,8 @@ export default function SiteRenderer({
                                 data-wv-tab={tabPageId || undefined}
                                 style={{
                                   backgroundColor: btn.style === "primary" ? colors.accent : "transparent",
-                                  color: btn.style === "primary" ? "#fff" : colors.textMain,
-                                  border: `1px solid ${btn.style === "primary" ? colors.accent : "#CBD5E1"}`,
+                                  color: btn.style === "primary" ? "#fff" : isEmergencyHero ? "#fff" : colors.textMain,
+                                  border: `1px solid ${btn.style === "primary" ? colors.accent : isEmergencyHero ? "rgba(255,255,255,0.35)" : "#CBD5E1"}`,
                                 }}
                                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-semibold transition hover:translate-y-[-1px]"
                                 onClick={(event) => {
@@ -1446,18 +1557,24 @@ export default function SiteRenderer({
                             );
                           })}
                         </div>
-                        {(trust.rating > 0 || displayPhone) && (
-                          <div className="mt-8 flex flex-wrap gap-4 text-sm text-slate-600">
-                            {trust.rating > 0 && <span className="inline-flex items-center gap-2"><span style={{ color: colors.accent }}>{editableSiteIcon("hero.rating", "star", 16)}</span> {trust.rating.toFixed(1)} {isIndonesian ? "dari" : "from"} {trust.reviewCount || labels.manyReviews} {labels.reviews}</span>}
+                        {(trust.rating > 0 || displayPhone || (Array.isArray(conversion.proofBadges) && conversion.proofBadges.length > 0)) && (
+                          <div className={heroProofClass}>
+                            {trust.rating > 0 && <span className={heroProofItemClass}><span style={{ color: colors.accent }}>{editableSiteIcon("hero.rating", "star", 16)}</span> {trust.rating.toFixed(1)} {isIndonesian ? "dari" : "from"} {trust.reviewCount || labels.manyReviews} {labels.reviews}</span>}
                             {displayPhone && (
-                              <a href={phoneHref(primaryPhone || displayPhone)} className="inline-flex items-center gap-2 hover:underline">
+                              <a href={phoneHref(primaryPhone || displayPhone)} className={`${heroProofItemClass} hover:underline`}>
                                 {editableSiteIcon("hero.phone", "phone", 16)} {displayPhone}
                               </a>
                             )}
+                            {Array.isArray(conversion.proofBadges) && conversion.proofBadges.slice(0, 3).map((badge: string, i: number) => (
+                              <span key={`${badge}-${i}`} className={heroProofItemClass}>
+                                <span style={{ color: colors.accent }}>{editableSiteIcon(`hero.proof.${i}`, i === 0 ? "check" : "shield", 16)}</span>
+                                {editableText(`${section.id}.proof.${i}`, badge, "span")}
+                              </span>
+                            ))}
                           </div>
                         )}
                       </div>
-                      <div className="h-[360px] md:h-[520px] rounded-2xl overflow-hidden border border-slate-200 shadow-xl bg-slate-100">
+                      <div className={heroMediaClass}>
                         {editableImage(imageEditKey(page.pageId, section.id, "hero"), heroImage, heroContent.image || meta.businessName, brandPhotoAttribution(heroImage), "hero")}
                       </div>
                     </div>
@@ -1472,17 +1589,33 @@ export default function SiteRenderer({
                   displayPhone ? { label: "Phone", value: displayPhone, icon: "phone" } : null,
                 ].filter(Boolean);
                 const usedTrustIcons = new Set<string>();
+                const trustSectionClass = proofTreatment === "emergency-rail"
+                  ? "px-6 py-5 bg-slate-950 text-white border-y border-white/10"
+                  : proofTreatment === "authority-bar"
+                    ? "px-6 py-5 bg-white border-y border-slate-300"
+                    : proofTreatment === "location-strip"
+                      ? "px-6 py-5 bg-orange-50 border-y border-orange-200"
+                      : proofTreatment === "gallery-proof"
+                        ? "px-6 py-5 bg-stone-50 border-y border-stone-200"
+                        : "px-6 py-6 bg-slate-50 border-y border-slate-200";
+                const trustCardClass = proofTreatment === "emergency-rail"
+                  ? "flex flex-col items-center justify-center gap-2 rounded-lg bg-white/10 border border-white/10 px-4 py-4 text-center"
+                  : proofTreatment === "authority-bar"
+                    ? "flex flex-col items-center justify-center gap-2 rounded-md bg-slate-50 border border-slate-200 px-4 py-4 text-center"
+                    : "flex flex-col items-center justify-center gap-2 rounded-lg bg-white border border-slate-200 px-4 py-4 text-center";
+                const trustValueClass = proofTreatment === "emergency-rail" ? "text-xl font-bold text-white" : "text-xl font-bold text-slate-950";
+                const trustLabelClass = proofTreatment === "emergency-rail" ? "text-xs uppercase tracking-wide text-white/60" : "text-xs uppercase tracking-wide text-slate-500";
                 return (
-                  <section key={section.id} className="px-6 py-6 bg-slate-50 border-y border-slate-200">
+                  <section key={section.id} data-wv-proof-treatment={proofTreatment} className={trustSectionClass}>
                     <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {items.map((item: any, i: number) => (
-                        <div key={i} className="flex flex-col items-center justify-center gap-2 rounded-lg bg-white border border-slate-200 px-4 py-4 text-center">
+                        <div key={i} className={trustCardClass}>
                           <span data-wv-qa-icon="trustBar" className="inline-flex" style={{ color: colors.primary }}>
                             {editableSiteIcon(`${page.pageId}.${section.id}.trust.${i}`, copyIconId(item.label || item.icon || "", item.value || "", usedTrustIcons), 30, "shrink-0")}
                           </span>
                           <div>
-                            {editableText(`${section.id}.trust.${i}.value`, item.value, "p", "text-xl font-bold text-slate-950")}
-                            {editableText(`${section.id}.trust.${i}.label`, item.label, "p", "text-xs uppercase tracking-wide text-slate-500")}
+                            {editableText(`${section.id}.trust.${i}.value`, item.value, "p", trustValueClass)}
+                            {editableText(`${section.id}.trust.${i}.label`, item.label, "p", trustLabelClass)}
                           </div>
                         </div>
                       ))}
@@ -1517,6 +1650,15 @@ export default function SiteRenderer({
               if (section.type === "offers") {
                 const offersSource = section.content?.items || offers;
                 const items = Array.isArray(offersSource) ? offersSource : [];
+                const offersGridClass = cardDensity === "compact"
+                  ? "grid md:grid-cols-4 gap-4"
+                  : cardDensity === "editorial"
+                    ? "grid md:grid-cols-2 gap-6"
+                    : cardDensity === "image-led"
+                      ? "grid md:grid-cols-3 gap-6"
+                    : "grid md:grid-cols-3 gap-5";
+                const offerImageClass = cardDensity === "compact" ? "h-32" : cardDensity === "editorial" ? "h-52" : cardDensity === "image-led" ? "h-60" : "h-44";
+                const offerBodyClass = cardDensity === "compact" ? "p-4 text-center" : cardDensity === "image-led" ? "p-6 text-left" : "p-6 text-center";
                 return (
                   <section key={section.id} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto">
@@ -1525,7 +1667,7 @@ export default function SiteRenderer({
                         {editableText(`${section.id}.title`, section.content?.title || labels.offersTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
                         {section.content?.description && editableText(`${section.id}.description`, section.content.description, "p", "mt-3 text-slate-600", undefined, true)}
                       </div>
-                      <div className="grid md:grid-cols-3 gap-5">
+                      <div className={offersGridClass}>
                         {items.map((offer: any, i: number) => {
                           const cardHref = offeringHref(offer);
                           const priceHref = priceHintLooksAction(offer.priceHint) ? contactActionHref : "";
@@ -1550,10 +1692,10 @@ export default function SiteRenderer({
                                 />
                               )}
                               <div className={`relative z-10 ${editMode ? "pointer-events-auto" : "pointer-events-none"}`}>
-                                <div className="h-44">
+                                <div className={offerImageClass}>
                                   {editableImage(imageEditKey(page.pageId, section.id, "offer", i), offer.image, offer.title, brandPhotoAttribution(offer.image), `offer-${offer.title || i + 1}`)}
                                 </div>
-                                <div className="p-6 text-center">
+                                <div className={offerBodyClass}>
                                   {editableText(`${section.id}.offer.${i}.title`, displayTitle, "h3", "text-lg font-bold text-slate-950")}
                                   {editableText(`${section.id}.offer.${i}.description`, offer.description, "p", "mt-2 text-sm text-slate-600", undefined, true)}
                                   {offer.priceHint && (
@@ -1760,6 +1902,100 @@ export default function SiteRenderer({
                             {editableText(`${section.id}.faq.${i}.answer`, item.answer, "p", "mt-2 text-slate-600", undefined, true)}
                           </div>
                         ))}
+                      </div>
+                    </div>
+                  </section>
+                );
+              }
+
+              if (section.type === "finalCta") {
+                const content = section.content || {};
+                const primaryCta = content.primaryCta || conversion.primaryCta || globalConfig.header.ctaButton || {};
+                const secondaryCta = content.secondaryCta || conversion.secondaryCta || {};
+                const badges = Array.isArray(content.proofBadges) ? content.proofBadges.slice(0, 4) : [];
+                const primaryHref = String(primaryCta.href || contactActionHref || "#contact");
+                const secondaryHref = String(secondaryCta.href || "");
+                const finalCtaClass = ctaTreatment === "phone-rail"
+                  ? "px-6 py-12 bg-slate-950 text-white"
+                  : ctaTreatment === "directions-split"
+                    ? "px-6 py-16 bg-orange-950 text-white"
+                    : ctaTreatment === "consultation-card"
+                      ? "px-6 py-16 bg-slate-100 text-slate-950"
+                      : ctaTreatment === "estimate-block"
+                        ? "px-6 py-16 bg-stone-950 text-white"
+                        : ctaTreatment === "booking-pill"
+                          ? "px-6 py-16 bg-indigo-950 text-white"
+                      : "px-6 py-16 bg-slate-950 text-white";
+                const finalCtaPanelClass = ctaTreatment === "consultation-card"
+                  ? "mx-auto grid max-w-6xl gap-8 rounded-xl border border-slate-200 bg-white p-7 shadow-xl shadow-slate-900/10 md:grid-cols-[1.1fr_0.9fr] md:p-10"
+                  : ctaTreatment === "booking-pill"
+                    ? "mx-auto grid max-w-6xl gap-8 rounded-[2rem] border border-white/10 bg-white/[0.08] p-7 shadow-2xl shadow-indigo-950/25 md:grid-cols-[1.1fr_0.9fr] md:p-10"
+                  : "mx-auto grid max-w-6xl gap-8 rounded-2xl border border-white/10 bg-white/[0.06] p-7 shadow-2xl shadow-slate-950/25 md:grid-cols-[1.1fr_0.9fr] md:p-10";
+                const finalCtaMutedClass = ctaTreatment === "consultation-card" ? "mt-4 max-w-2xl text-slate-600" : "mt-4 max-w-2xl text-white/75";
+                const finalCtaProofClass = ctaTreatment === "consultation-card" ? "mt-4 text-sm font-semibold text-slate-600" : "mt-4 text-sm font-semibold text-white/80";
+                const finalSecondaryClass = ctaTreatment === "consultation-card"
+                  ? "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-5 py-3 text-sm font-bold text-slate-800 transition hover:-translate-y-0.5 hover:bg-slate-50"
+                  : "inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-white/10";
+                const finalBadgeClass = ctaTreatment === "consultation-card"
+                  ? "inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700"
+                  : "inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/85";
+                return (
+                  <section key={section.id} data-wv-cta-treatment={ctaTreatment} className={finalCtaClass}>
+                    <div className={finalCtaPanelClass}>
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: colors.accent }}>
+                          {editableText(`${section.id}.eyebrow`, content.eyebrow || (isIndonesian ? "Langkah berikutnya" : "Next step"), "span")}
+                        </p>
+                        {editableText(`${section.id}.headline`, content.headline || (isIndonesian ? "Siap membahas kebutuhan Anda?" : "Ready to discuss your next step?"), "h2", "mt-3 text-3xl font-bold leading-tight md:text-4xl")}
+                        {editableText(`${section.id}.description`, content.description || businessProfile.shortPitch, "p", finalCtaMutedClass, undefined, true)}
+                        {content.proofLine && editableText(`${section.id}.proofLine`, content.proofLine, "p", finalCtaProofClass, undefined, true)}
+                      </div>
+                      <div className="flex flex-col justify-center gap-4">
+                        <div className="flex flex-col gap-3 sm:flex-row md:flex-col lg:flex-row">
+                          <a
+                            href={primaryHref}
+                            {...tabPropsForHref(primaryHref)}
+                            onClick={(event) => {
+                              if (editMode) {
+                                event.preventDefault();
+                                return;
+                              }
+                              handleSiteHrefClick(primaryHref, event);
+                            }}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5"
+                            style={{ backgroundColor: colors.accent }}
+                          >
+                            {editableButtonIcon(`${page.pageId}.${section.id}.primary`, primaryCta.text || globalConfig.header.ctaButton.text, primaryHref, 16)}
+                            {editableButtonText(`${page.pageId}.${section.id}.primary`, primaryCta.text || globalConfig.header.ctaButton.text)}
+                          </a>
+                          {secondaryHref && (
+                            <a
+                              href={secondaryHref}
+                              {...tabPropsForHref(secondaryHref)}
+                              onClick={(event) => {
+                                if (editMode) {
+                                  event.preventDefault();
+                                  return;
+                                }
+                                handleSiteHrefClick(secondaryHref, event);
+                              }}
+                              className={finalSecondaryClass}
+                            >
+                              {editableButtonIcon(`${page.pageId}.${section.id}.secondary`, secondaryCta.text || (isIndonesian ? "Lihat lokasi" : "View location"), secondaryHref, 16)}
+                              {editableButtonText(`${page.pageId}.${section.id}.secondary`, secondaryCta.text || (isIndonesian ? "Lihat lokasi" : "View location"))}
+                            </a>
+                          )}
+                        </div>
+                        {badges.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {badges.map((badge: string, i: number) => (
+                              <span key={`${badge}-${i}`} className={finalBadgeClass}>
+                                {editableSiteIcon(`${page.pageId}.${section.id}.badge.${i}`, i === 0 ? "shield" : "check", 14)}
+                                {editableText(`${section.id}.badge.${i}`, badge, "span")}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </section>

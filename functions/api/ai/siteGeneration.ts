@@ -773,6 +773,72 @@ function businessFactsForAiCopy(originData: unknown, siteJson: Record<string, un
   };
 }
 
+function premiumConversionBriefForAi(siteJson: Record<string, unknown>) {
+  const conversion = objectValue(siteJson.conversion);
+  const design = objectValue(siteJson.design);
+  const designIntent = objectValue(design.designIntent);
+  const designAudit = objectValue(design.designAudit);
+  const trust = objectValue(siteJson.trust);
+  const profile = objectValue(siteJson.businessProfile);
+  const location = objectValue(siteJson.location);
+  const primaryCta = objectValue(conversion.primaryCta);
+  const secondaryCta = objectValue(conversion.secondaryCta);
+  return {
+    pagePattern: asString(conversion.pagePattern, "quote-led-service"),
+    primaryAction: safeCopyText(conversion.primaryAction || primaryCta.text, 80),
+    primaryActionReason: safeCopyText(conversion.primaryActionReason, 260),
+    primaryCtaText: safeCopyText(primaryCta.text, 80),
+    secondaryCtaText: safeCopyText(secondaryCta.text, 80),
+    proofBadges: safeCopyArray(conversion.proofBadges || trust.badges, 5, 80),
+    sourceSafeProofInputs: Array.isArray(conversion.sourceSafeProofInputs)
+      ? (conversion.sourceSafeProofInputs as Array<Record<string, unknown>>).slice(0, 5).map((item) => ({
+          label: safeCopyText(item.label, 80),
+          source: safeCopyText(item.source, 80),
+        }))
+      : [],
+    trustContext: {
+      rating: typeof trust.rating === "number" ? trust.rating : null,
+      reviewCount: typeof trust.reviewCount === "number" ? trust.reviewCount : null,
+      reviewSummary: safeCopyText(trust.reviewSummary, 220),
+    },
+    locality: {
+      typeLabel: safeCopyText(profile.typeLabel || profile.primaryType, 90),
+      serviceAreas: safeCopyArray(location.servedAreas || location.serviceAreas || profile.serviceAreas, 6, 80),
+    },
+    styleDirection: {
+      stylePreset: safeCopyText(design.stylePreset, 80),
+      visualStyle: safeCopyText(design.visualStyle || design.shapeStyle, 80),
+      note: safeCopyText(objectValue(design.highTicketStyleDirection).note, 220),
+    },
+    designIntent: {
+      compositionPattern: safeCopyText(design.compositionPattern || designIntent.compositionPattern, 80),
+      heroLayout: safeCopyText(design.heroLayout || designIntent.heroLayout, 80),
+      mediaStrategy: safeCopyText(design.mediaStrategy || designIntent.mediaStrategy, 80),
+      proofTreatment: safeCopyText(design.proofTreatment || designIntent.proofTreatment, 80),
+      cardDensity: safeCopyText(design.cardDensity || designIntent.cardDensity, 80),
+      ctaTreatment: safeCopyText(design.ctaTreatment || designIntent.ctaTreatment, 80),
+      motionLevel: safeCopyText(design.motionLevel || designIntent.motionLevel, 80),
+      detailLayout: safeCopyText(design.detailLayout || designIntent.detailLayout, 80),
+      antiPatterns: safeCopyArray(design.antiPatterns || designIntent.antiPatterns, 8, 120),
+    },
+    designAudit: {
+      ready: designAudit.ready === true,
+      flags: safeCopyArray(designAudit.flags, 8, 80),
+    },
+    requiredPageStructure: [
+      "Hero must state service/category, local context, one primary action, and source-backed proof near the top.",
+      "Benefits should explain customer outcomes, not just business features.",
+      "Service/detail pages need best-for/use cases, what is included, process or next step, proof when available, FAQ objections, and a CTA.",
+      "FAQ should answer pricing/availability uncertainty, service area, timing, preparation, and next step.",
+      "Final CTA should recap value, show the easiest next step, and reduce risk without inventing guarantees.",
+    ],
+    forbiddenClaims: [
+      "Do not invent certifications, licenses, insurance, warranties, financing, years in business, named clients, awards, staff size, equipment, exact prices, guarantees, or completed projects.",
+      "Use only source-backed proof badges or conservative industry language.",
+    ],
+  };
+}
+
 export function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, originData: unknown, businessName: string, options: { focus?: string; offeringIndex?: number; offeringBatchSize?: number } = {}) {
   const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
   const offers = Array.isArray(siteJson.offers) ? siteJson.offers as Array<Record<string, unknown>> : [];
@@ -812,6 +878,7 @@ export function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, origin
   });
   return {
     facts: businessFactsForAiCopy(originData, siteJson, businessName),
+    premiumConversionBrief: premiumConversionBriefForAi(siteJson),
     focus,
     metaCopyTargets: {
       seoTitle: safeCopyText(objectValue(siteJson.meta).seoTitle, 160),
@@ -1038,6 +1105,7 @@ export async function generateAiOfferingOutline(
   })).slice(0, 8);
   const outlineBrief = {
     facts,
+    premiumConversionBrief: premiumConversionBriefForAi(siteJson),
     existingOfferings,
     instruction: "Infer the best high-intent services/products for the website from the business name, niche, categories, search query, address, and review themes. Google Business Profile may be incomplete, so infer plausible buyer-intent offerings, but do not invent certifications, years in business, exact prices, warranties, staff size, equipment, brand partnerships, or completed projects.",
   };
@@ -1067,6 +1135,8 @@ export async function generateAiOfferingOutline(
     "Rules: create 4-12 offerings unless the niche clearly needs fewer. Use the customer's likely search intent, not generic labels like Consultation unless it is truly the service. " +
     "For every offering, include navLabel as a short submenu label that fits a dropdown; use 1-3 words, not the full page title. " +
     "Use verified facts for identity, location, rating, reviews, and phone. Use conservative industry knowledge only for common problems/outcomes in the niche. " +
+    "Use premiumConversionBrief.pagePattern and primaryAction to choose high-ticket, conversion-focused offerings: quote-led services need estimate-ready scope pages; booking-led businesses need appointment-ready pages; restaurant/menu-led sites need visit/order intent; trust-led professional services need consultation-ready pages. " +
+    "Each offering should support one clear conversion action and include enough practical detail to reduce buyer uncertainty. " +
     "Every title must be distinct, specific, and plausible for the business category. Do not create pages, hrefs, IDs, images, JSON site sections, CSS, or navigation. " +
     "For US businesses write English. For Indonesian businesses write Indonesian. Plain text only.";
   const userMsg = `Business Name: ${businessName}\nOutline brief:\n${JSON.stringify(outlineBrief)}\n\nReturn only the outline JSON.`;
@@ -1291,6 +1361,9 @@ export async function generateAiCopyPatch(
     offeringFocusInstruction +
     "Critical rules: you are not given full website JSON, page IDs, navigation hrefs, image URLs, maps URLs, sourceData, palette, font, visual style, favicon, CSS, or storage fields. Do not mention or create them. " +
     "Use verified facts from the provided copy target brief for business identity, address, phone, rating, reviews, hours, status, and location. You may also use conservative industry knowledge to explain common customer problems and service outcomes for the business category, as long as you do not invent certifications, years in business, warranties, brand partnerships, equipment, staff size, exact prices, or completed projects. If a fact is missing, write honest copy like 'contact for availability' instead of inventing. " +
+    "Use copyTargetBrief.premiumConversionBrief as the conversion strategy. Keep the page aligned to its pagePattern, primaryAction, primaryActionReason, proofBadges, and sourceSafeProofInputs. The hero, primary CTA text, service/detail pages, FAQ, and final conversion copy should all support that same primary action. " +
+    "High-ticket page requirements: write a specific hero, add source-backed proof early, explain concrete benefits and included details, answer objections near conversion points, and make the bottom CTA feel low-risk. Keep the structure scannable: 3-6 benefits, 3-5 process/next-step details, 5-8 FAQs on general pages, and 3-5 FAQs on detail pages. " +
+    "Proof safety: only mention ratings, review counts, open status, phone, service area, directions, photos, and other facts present in the brief. Never turn a source-safe badge into an unsupported credential. " +
     "Voice rules: write as the business speaking to its potential customers, not as WebView, an admin, a demo builder, an auditor, Google, or a third-party report about the business. " +
     "Write nearly all public-facing paragraphs in first-person business-owner voice: 'we', 'our team', 'our customers', 'call us', 'we are based in', 'we help', and 'our on-site support'. Do not write detached third-person sentences like '{Business Name} is...', 'customers highlight...', 'reviewers mention...', or 'the team is noted for...' when they can be rewritten as business-owned claims. " +
     "Example rewrite style: instead of 'Customers specifically mention on-site support to direct trucks and manage pour timing', write 'Our customers specifically mention that our on-site support to direct trucks and manage pour timing helps the job stay organized.' " +

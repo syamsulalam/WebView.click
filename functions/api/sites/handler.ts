@@ -1643,6 +1643,17 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
 
     applyGeneratedSitePageInserts(finalJson, originData);
     normalizeSiteColorContrast(finalJson);
+    const finalConversion = objectValue(finalJson.conversion) || {};
+    const finalConversionAudit = objectValue(finalConversion.conversionAudit);
+    const finalDesign = objectValue(finalJson.design) || {};
+    const finalDesignAudit = objectValue(finalDesign.designAudit);
+    const finalDesignIntent = objectValue(finalDesign.designIntent);
+    jobMetadata.conversionPagePattern = asString(finalConversion.pagePattern);
+    jobMetadata.conversionPrimaryAction = asString(finalConversion.primaryAction);
+    if (finalConversionAudit) jobMetadata.conversionAudit = finalConversionAudit;
+    if (Array.isArray(finalConversion.proofBadges)) jobMetadata.conversionProofBadges = finalConversion.proofBadges.slice(0, 5);
+    if (finalDesignIntent) jobMetadata.designIntent = finalDesignIntent;
+    if (finalDesignAudit) jobMetadata.designAudit = finalDesignAudit;
 
     try {
       normalizeImageFilenames(finalJson, businessId);

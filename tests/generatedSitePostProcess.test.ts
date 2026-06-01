@@ -4,6 +4,7 @@ import {
   applyGeneratedSitePageInserts,
   collectGalleryImages,
   ensureContactPage,
+  ensureConversionMetadata,
   ensureFeedbackPage,
   ensureGalleryPage,
   ensureServicesPage,
@@ -325,6 +326,70 @@ test("ensureFeedbackPage creates feedback page without adding header navigation"
   assert.equal((site.navigation as any).headerMenu.some((item: any) => item.href === "#feedback"), false);
 });
 
+test("ensureConversionMetadata adds source-safe conversion strategy, proof, CTA cleanup, FAQ depth, and final CTA", () => {
+  const site: Record<string, unknown> = {
+    meta: { language: "en", businessName: "Atlas Concrete" },
+    businessProfile: {
+      name: "Atlas Concrete",
+      primaryType: "concrete contractor",
+      typeLabel: "Concrete Contractor",
+      contact: { phoneNational: "+1 555-0199" },
+      serviceAreas: ["Dallas", "Plano"],
+    },
+    trust: { rating: 4.7, reviewCount: 23, badges: [] },
+    location: { formattedAddress: "100 Main St, Dallas, TX", servedAreas: ["Dallas", "Plano"] },
+    sourceData: { googleMapsUri: "https://maps.example/atlas", businessStatus: "OPERATIONAL" },
+    conversion: { primaryCta: { text: "Contact Us", href: "tel:+15550199" }, secondaryCta: { text: "Learn More", href: "#contact" } },
+    global: { header: { ctaButton: { text: "Contact Us", href: "tel:+15550199" } } },
+    services: [
+      { title: "Driveway Repair", summary: "Fix driveway concrete.", detailPageId: "service-driveway-repair" },
+    ],
+    pages: [
+      {
+        pageId: "home",
+        sections: [
+          { type: "hero", id: "hero-1", content: { headline: "Concrete help", subheadline: "Local concrete support.", buttons: [{ text: "Contact Us", href: "#contact", style: "primary" }] } },
+          { type: "faq", id: "faq-1", content: { items: [] } },
+        ],
+      },
+      {
+        pageId: "service-driveway-repair",
+        pageTitle: "Driveway Repair",
+        sections: [
+          { type: "offeringDetail", id: "driveway-detail", content: { title: "Driveway Repair", included: [], bestFor: [], highlights: [] } },
+        ],
+      },
+    ],
+  };
+
+  const conversion = ensureConversionMetadata(site, { photos: [{ photo_reference: "abc" }] });
+
+  assert.equal(conversion.pagePattern, "gallery-led-craft");
+  assert.equal((conversion.primaryCta as any).text, "Request an Estimate");
+  assert.equal((site.design as any).stylePreset, "contractor-rugged");
+  assert.equal((site.design as any).highTicketStyleDirection.pagePattern, "gallery-led-craft");
+  assert.equal((site.design as any).compositionPattern, "gallery-craft");
+  assert.equal((site.design as any).heroLayout, "gallery-led");
+  assert.equal((site.design as any).mediaStrategy, "icon-card");
+  assert.equal((site.design as any).proofTreatment, "gallery-proof");
+  assert.equal((site.design as any).ctaTreatment, "estimate-block");
+  assert.equal((site.design as any).designIntent.source, "deterministic_pattern_map");
+  assert.equal((site.design as any).designAudit.ready, true);
+  assert.ok((conversion.proofBadges as string[]).includes("Highly rated"));
+  assert.ok((conversion.proofBadges as string[]).includes("Directions ready"));
+  assert.equal(((site.global as any).header.ctaButton.text), "Request an Estimate");
+  const homeSections = ((site.pages as Array<Record<string, unknown>>)[0].sections as Array<Record<string, unknown>>);
+  const heroButtons = ((homeSections[0].content as any).buttons as any[]);
+  assert.equal(heroButtons[0].text, "Request an Estimate");
+  assert.ok(homeSections.some((section) => section.type === "finalCta"));
+  const faq = homeSections.find((section) => section.type === "faq");
+  assert.equal(((faq?.content as any).items as any[]).length, 5);
+  const detail = (((site.pages as Array<Record<string, unknown>>)[1].sections as Array<Record<string, unknown>>)[0].content as any);
+  assert.equal(detail.included.length, 3);
+  assert.equal((conversion.conversionAudit as any).finalCtaPresent, true);
+  assert.deepEqual((conversion.conversionAudit as any).thinServicePages, []);
+});
+
 test("applyGeneratedSitePageInserts applies services, contact, feedback, and gallery in one sequence", () => {
   const site: Record<string, unknown> = {
     meta: { language: "en" },
@@ -340,4 +405,6 @@ test("applyGeneratedSitePageInserts applies services, contact, feedback, and gal
   assert.deepEqual(pageIds, ["home", "services", "contact", "feedback", "gallery"]);
   const headerHrefs = (site.navigation as any).headerMenu.map((item: any) => item.href);
   assert.deepEqual(headerHrefs, ["#home", "#services", "#gallery", "#contact"]);
+  const home = (site.pages as Array<Record<string, unknown>>).find((page) => page.pageId === "home");
+  assert.ok((home?.sections as Array<Record<string, unknown>>).some((section) => section.type === "finalCta"));
 });
