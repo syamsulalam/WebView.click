@@ -531,7 +531,9 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
               parsed.needsServiceCardImageRepair === undefined ||
               parsed.needsAboutNavRepair === undefined ||
               parsed.lastImageRepairAt === undefined ||
-              parsed.lastVisualVariationAt === undefined
+              parsed.lastVisualVariationAt === undefined ||
+              parsed.premiumUpgradeComplete === undefined ||
+              parsed.lastPremiumCopyUpgradeAt === undefined
             ) &&
             jsonContent.storageOnly !== true &&
             Array.isArray(jsonContent.pages)
@@ -560,6 +562,12 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         generationMode: asString(summary.generationMode, ""),
         aiProvider: asString(summary.aiProvider, ""),
         aiModel: asString(summary.aiModel, ""),
+        designSystemVersion: asString(summary.designSystemVersion, ""),
+        lastDesignUpgradeAt: asString(summary.lastDesignUpgradeAt, ""),
+        lastPremiumCopyUpgradeAt: asString(summary.lastPremiumCopyUpgradeAt, ""),
+        premiumUpgradeComplete: summary.premiumUpgradeComplete === true,
+        premiumUpgradeCompletedAt: asString(summary.premiumUpgradeCompletedAt, ""),
+        lastUpgradeMode: asString(summary.lastUpgradeMode, ""),
         serviceCardImageTotal: typeof summary.serviceCardImageTotal === "number" ? summary.serviceCardImageTotal : null,
         missingServiceCardImageCount: typeof summary.missingServiceCardImageCount === "number" ? summary.missingServiceCardImageCount : null,
         duplicateServiceCardImageCount: typeof summary.duplicateServiceCardImageCount === "number" ? summary.duplicateServiceCardImageCount : null,
@@ -612,6 +620,12 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
           generationMode: "summary_error",
           aiProvider: "",
           aiModel: "",
+          designSystemVersion: "",
+          lastDesignUpgradeAt: "",
+          lastPremiumCopyUpgradeAt: "",
+          premiumUpgradeComplete: false,
+          premiumUpgradeCompletedAt: "",
+          lastUpgradeMode: "",
           serviceCardImageTotal: null,
           missingServiceCardImageCount: null,
           duplicateServiceCardImageCount: null,
@@ -1197,6 +1211,21 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const profile = recordValue(siteJson.businessProfile);
     const businessName = asString(meta.businessName, asString(profile.name, businessId));
     const upgradedAt = new Date().toISOString();
+    if (meta.premiumUpgradeComplete === true && asString(meta.lastPremiumCopyUpgradeAt)) {
+      return json({
+        success: true,
+        businessId,
+        alreadyPremiumUpgraded: true,
+        designSystemVersion: asString(meta.designSystemVersion, DESIGN_SYSTEM_VERSION),
+        lastPremiumCopyUpgradeAt: asString(meta.lastPremiumCopyUpgradeAt),
+        beforeAudit,
+        afterAudit: beforeAudit,
+        changedFields: [],
+        needsAi: false,
+        aiFlags: [],
+        storageMode: row.r2_json_key ? "r2" : "legacy_d1",
+      });
+    }
 
     applyGeneratedSitePageInserts(siteJson, originData);
     applySeededFontPairing(siteJson, businessName, businessId, originData, body.randomizeStyle === true);
@@ -1628,13 +1657,16 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const prepatchedCopyOnlyRetryCoverageDelta = body.prepatchedCopyOnlyRetryCoverageDelta && typeof body.prepatchedCopyOnlyRetryCoverageDelta === "object" && !Array.isArray(body.prepatchedCopyOnlyRetryCoverageDelta)
       ? body.prepatchedCopyOnlyRetryCoverageDelta as Record<string, unknown>
       : null;
+    const upgradeMode = asString(body.upgradeMode);
+    const isPremiumDesignCopyUpgrade = upgradeMode === "premium_design_copy_upgrade";
     const originPlaceId = placeIdFromPlace(originData);
     const jobId = crypto.randomUUID();
     const jobMetadata: Record<string, unknown> = {
       businessName,
       selectedLogoReference,
       selectedLogoPriority,
-      generationMode: "deterministic_json_with_optional_ai_copy_patch",
+      generationMode: isPremiumDesignCopyUpgrade ? "premium_design_copy_upgrade" : "deterministic_json_with_optional_ai_copy_patch",
+      upgradeMode,
       copyBriefHash: "",
       copyPatchHash: "",
       copyPatchApplied: false,
@@ -1758,6 +1790,17 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     metaConfig.aiProvider = provider || "";
     metaConfig.aiModel = model || "";
     metaConfig.generatedAt = new Date().toISOString();
+    if (isPremiumDesignCopyUpgrade && aiGenerated) {
+      const completedAt = new Date().toISOString();
+      metaConfig.designSystemVersion = DESIGN_SYSTEM_VERSION;
+      metaConfig.lastDesignUpgradeAt = asString(metaConfig.lastDesignUpgradeAt, completedAt);
+      metaConfig.lastPremiumCopyUpgradeAt = completedAt;
+      metaConfig.premiumUpgradeComplete = true;
+      metaConfig.premiumUpgradeCompletedAt = completedAt;
+      metaConfig.lastUpgradeMode = "premium_design_ai_copy_upgrade";
+      metaConfig.premiumUpgradeAiProvider = provider || "";
+      metaConfig.premiumUpgradeAiModel = model || "";
+    }
     if (brandPalette.length) {
       metaConfig.brandPalette = brandPalette;
     }
@@ -1900,6 +1943,11 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const finalDesignIntent = objectValue(finalDesign.designIntent);
     jobMetadata.conversionPagePattern = asString(finalConversion.pagePattern);
     jobMetadata.conversionPrimaryAction = asString(finalConversion.primaryAction);
+    if (isPremiumDesignCopyUpgrade) {
+      jobMetadata.premiumUpgradeComplete = aiGenerated === true;
+      jobMetadata.lastPremiumCopyUpgradeAt = asString(metaConfig.lastPremiumCopyUpgradeAt);
+      jobMetadata.designSystemVersion = asString(metaConfig.designSystemVersion);
+    }
     if (finalConversionAudit) jobMetadata.conversionAudit = finalConversionAudit;
     if (Array.isArray(finalConversion.proofBadges)) jobMetadata.conversionProofBadges = finalConversion.proofBadges.slice(0, 5);
     if (finalDesignIntent) jobMetadata.designIntent = finalDesignIntent;

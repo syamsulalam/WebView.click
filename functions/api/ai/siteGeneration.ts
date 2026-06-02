@@ -1181,6 +1181,7 @@ export async function generateAiCopyPatch(
     ? Math.max(1, Math.min(4, Math.floor(copyPatchOfferingBatchSizeValue)))
     : 1;
   const copyPatchOfferingTotal = Number(body.copyPatchOfferingTotal);
+  const upgradeMode = asString(body.upgradeMode);
   const submittedJson = siteJsonOverride || (body.jsonContent && typeof body.jsonContent === "object" && !Array.isArray(body.jsonContent)
     ? body.jsonContent as Record<string, unknown>
     : null);
@@ -1363,6 +1364,9 @@ export async function generateAiCopyPatch(
     "Use verified facts from the provided copy target brief for business identity, address, phone, rating, reviews, hours, status, and location. You may also use conservative industry knowledge to explain common customer problems and service outcomes for the business category, as long as you do not invent certifications, years in business, warranties, brand partnerships, equipment, staff size, exact prices, or completed projects. If a fact is missing, write honest copy like 'contact for availability' instead of inventing. " +
     "Use copyTargetBrief.premiumConversionBrief as the conversion strategy. Keep the page aligned to its pagePattern, primaryAction, primaryActionReason, proofBadges, and sourceSafeProofInputs. The hero, primary CTA text, service/detail pages, FAQ, and final conversion copy should all support that same primary action. " +
     "High-ticket page requirements: write a specific hero, add source-backed proof early, explain concrete benefits and included details, answer objections near conversion points, and make the bottom CTA feel low-risk. Keep the structure scannable: 3-6 benefits, 3-5 process/next-step details, 5-8 FAQs on general pages, and 3-5 FAQs on detail pages. " +
+    (upgradeMode === "premium_design_copy_upgrade"
+      ? "This is a premium upgrade of an existing generated site. Treat scaffold-like, fallback, placeholder, vague, or prompt-shaped copy as not complete. Replace it with specific, buyer-aware copy grounded in the verified business facts and plausible category knowledge. The site should not read like a template after this pass. "
+      : "") +
     "Proof safety: only mention ratings, review counts, open status, phone, service area, directions, photos, and other facts present in the brief. Never turn a source-safe badge into an unsupported credential. " +
     "Voice rules: write as the business speaking to its potential customers, not as WebView, an admin, a demo builder, an auditor, Google, or a third-party report about the business. " +
     "Write nearly all public-facing paragraphs in first-person business-owner voice: 'we', 'our team', 'our customers', 'call us', 'we are based in', 'we help', and 'our on-site support'. Do not write detached third-person sentences like '{Business Name} is...', 'customers highlight...', 'reviewers mention...', or 'the team is noted for...' when they can be rewritten as business-owned claims. " +

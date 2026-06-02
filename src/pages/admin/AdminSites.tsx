@@ -44,6 +44,12 @@ type SiteRow = {
   generationMode?: string;
   aiProvider?: string;
   aiModel?: string;
+  designSystemVersion?: string;
+  lastDesignUpgradeAt?: string;
+  lastPremiumCopyUpgradeAt?: string;
+  premiumUpgradeComplete?: boolean;
+  premiumUpgradeCompletedAt?: string;
+  lastUpgradeMode?: string;
   serviceCardImageTotal?: number | null;
   missingServiceCardImageCount?: number | null;
   duplicateServiceCardImageCount?: number | null;
@@ -231,6 +237,18 @@ function siteNeedsRecovery(site: SiteRow) {
   return siteHasSummaryError(site) || site.needsRecovery === true || Boolean(site.lastPreviewError);
 }
 
+function siteFullyPremiumUpgraded(site: SiteRow) {
+  return site.premiumUpgradeComplete === true && Boolean(site.lastPremiumCopyUpgradeAt);
+}
+
+function siteNeedsVisualVariation(site: SiteRow) {
+  return !siteFullyPremiumUpgraded(site) && !site.lastVisualVariationAt;
+}
+
+function siteHasActionableDebug(site: SiteRow) {
+  return siteNeedsRecovery(site) || !siteFullyPremiumUpgraded(site);
+}
+
 export default function AdminSites() {
   const { showApiError, showToast } = useAdminToast();
   const [sites, setSites] = useState<SiteRow[]>([]);
@@ -265,6 +283,11 @@ export default function AdminSites() {
   const showAboutNavRepairOverride = useMemo(() => {
     if (typeof window === "undefined") return false;
     return new URLSearchParams(window.location.search).get("repair") === "about-nav";
+  }, []);
+  const showHiddenSiteActions = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("actions") === "all" || params.get("debug") === "sites";
   }, []);
   const notifyAction = (
     kind: "success" | "error" | "warning" | "info",
@@ -839,6 +862,10 @@ export default function AdminSites() {
   };
 
   const handleUpgradeExistingSite = async (site: SiteRow) => {
+    if (siteFullyPremiumUpgraded(site)) {
+      notifyAction("info", "Already premium upgraded", `${site.businessName} already has design and AI copy upgrade metadata in saved JSON.`);
+      return;
+    }
     setUpgradingDesignId(site.businessId);
     updateGenerationProgress(site.businessId, "designUpgrade", { status: "running", message: "Auditing saved JSON and applying deterministic design intent" });
     try {
@@ -852,45 +879,45 @@ export default function AdminSites() {
         changedFields?: string[];
         needsAi?: boolean;
         aiFlags?: string[];
+        alreadyPremiumUpgraded?: boolean;
         afterAudit?: { conversion?: { flags?: string[] }; design?: { flags?: string[] } };
       }>(response, "Upgrade existing site", requestPath);
+      if (result.alreadyPremiumUpgraded) {
+        notifyAction("info", "Already premium upgraded", `${site.businessName} already has design and AI copy upgrade metadata in saved JSON.`);
+        fetchSites();
+        return;
+      }
       updateGenerationProgress(site.businessId, "designUpgrade", {
         status: "complete",
         message: `${result.changedFields?.length || 0} deterministic fields updated`,
       });
 
-      if (result.needsAi) {
-        await ensureAiGenerationReady({
-          provider: activeRegenerateProvider,
-          model: activeRegenerateModel,
-          action: "sites_premium_upgrade",
-          businessId: site.businessId,
-          businessName: site.businessName,
-          readinessMessage: "AI provider/model is not ready. Check /admin/settings before premium-upgrading existing sites.",
-          cooldownMessage: (cooldown) => `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`,
-        });
-        updateGenerationProgress(site.businessId, "siteCopy", {
-          status: "running",
-          message: `AI needed for: ${(result.aiFlags || []).join(", ") || "copy/depth gaps"}`,
-        });
-        const regeneratePayload = {
-          ...await buildRegeneratePayload(site, "ai"),
-          upgradeMode: "premium_design_copy_upgrade",
-          skipAiOfferingOutline: true,
-        };
-        await postChunkedGenerateSite(regeneratePayload, "Premium site upgrade", (step, progress) => updateGenerationProgress(site.businessId, step, progress));
-        notifyAction(
-          "success",
-          "Premium upgrade completed",
-          `${site.businessName} was deterministically upgraded, AI-filled where needed, and re-saved.`,
-        );
-      } else {
-        notifyAction(
-          "success",
-          "Design upgrade completed",
-          `${site.businessName} was upgraded and re-saved without AI. Changed: ${result.changedFields?.join(", ") || "audit metadata"}.`,
-        );
-      }
+      await ensureAiGenerationReady({
+        provider: activeRegenerateProvider,
+        model: activeRegenerateModel,
+        action: "sites_premium_upgrade",
+        businessId: site.businessId,
+        businessName: site.businessName,
+        readinessMessage: "AI provider/model is not ready. Check /admin/settings before premium-upgrading existing sites.",
+        cooldownMessage: (cooldown) => `${activeRegenerateProvider} is cooling down for ${formatCooldownRemaining(cooldown)} after a quota/rate-limit error.`,
+      });
+      updateGenerationProgress(site.businessId, "siteCopy", {
+        status: "running",
+        message: result.needsAi
+          ? `AI copy/depth needed for: ${(result.aiFlags || []).join(", ") || "audit gaps"}`
+          : "AI premium copy pass required before this site is marked fully upgraded",
+      });
+      const regeneratePayload = {
+        ...await buildRegeneratePayload(site, "ai"),
+        upgradeMode: "premium_design_copy_upgrade",
+        skipAiOfferingOutline: true,
+      };
+      await postChunkedGenerateSite(regeneratePayload, "Premium site upgrade", (step, progress) => updateGenerationProgress(site.businessId, step, progress));
+      notifyAction(
+        "success",
+        "Premium upgrade completed",
+        `${site.businessName} was design-upgraded, AI copy-upgraded, marked complete, and re-saved.`,
+      );
       fetchSites();
     } catch (err) {
       if (isAdminGenerationBlockedError(err) && err.kind === "cooldown") {
@@ -2107,6 +2134,14 @@ export default function AdminSites() {
                       </span>
                     </HoverTooltip>
                   )}
+                  {siteFullyPremiumUpgraded(site) && (
+                    <HoverTooltip text={`Premium upgrade completed${site.lastPremiumCopyUpgradeAt ? ` at ${new Date(site.lastPremiumCopyUpgradeAt).toLocaleString()}` : ""}. This means saved JSON has both deterministic design upgrade and AI copy upgrade metadata.`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                        <Sparkles size={11} />
+                        Premium upgraded
+                      </span>
+                    </HoverTooltip>
+                  )}
                 </div>
                 {generationProgress[site.businessId] && (
                   <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-900">
@@ -2268,26 +2303,30 @@ export default function AdminSites() {
                     </a>
                   </HoverTooltip>
                 )}
-                <HoverTooltip text="Inspect saved source data and generated JSON summary for debugging preview or export issues.">
-                  <button
-                    type="button"
-                    onClick={() => handleSeeGatheredData(site)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-                    aria-label="Inspect gathered data"
-                  >
-                    <Database size={14} />
-                  </button>
-                </HoverTooltip>
-                <HoverTooltip text="Open the compact copy brief used for AI copy patch/regeneration review.">
-                  <button
-                    type="button"
-                    onClick={() => handleSeeCopyBrief(site)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-                    aria-label="Open AI copy brief"
-                  >
-                    <FileText size={14} />
-                  </button>
-                </HoverTooltip>
+                {(showHiddenSiteActions || siteHasActionableDebug(site)) && (
+                  <HoverTooltip text="Inspect saved source data and generated JSON summary for debugging preview or export issues. Hidden for healthy fully-upgraded rows unless actions=all or debug=sites is in the URL.">
+                    <button
+                      type="button"
+                      onClick={() => handleSeeGatheredData(site)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                      aria-label="Inspect gathered data"
+                    >
+                      <Database size={14} />
+                    </button>
+                  </HoverTooltip>
+                )}
+                {(showHiddenSiteActions || !siteFullyPremiumUpgraded(site)) && (
+                  <HoverTooltip text="Open the compact copy brief used for AI copy patch/regeneration review. Hidden after a row is fully premium-upgraded unless actions=all or debug=sites is in the URL.">
+                    <button
+                      type="button"
+                      onClick={() => handleSeeCopyBrief(site)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                      aria-label="Open AI copy brief"
+                    >
+                      <FileText size={14} />
+                    </button>
+                  </HoverTooltip>
+                )}
                 {(needsAboutNavRepair(site) || showAboutNavRepairOverride) && (
                   <HoverTooltip text={needsAboutNavRepair(site)
                     ? "Generate this site's missing About page copy and short service menu labels only. Runs server-side as small chunked AI calls: About copy, one nav label per service, then finalize."
@@ -2328,37 +2367,41 @@ export default function AdminSites() {
                     </button>
                   </HoverTooltip>
                 )}
-                <HoverTooltip text="Refresh only this site's saved font pairing to the stable seeded visual variation. No AI call, no copy changes, and no image changes.">
-                  <button
-                    type="button"
-                    onClick={() => handleRefreshVisualVariation(site)}
-                    disabled={Boolean(refreshingVisualVariationId || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId || upgradingDesignId)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
-                    aria-label="Refresh visual variation"
-                  >
-                    {refreshingVisualVariationId === site.businessId ? (
-                      <RefreshCw size={14} className="animate-spin" />
-                    ) : (
-                      <Shuffle size={14} />
-                    )}
-                  </button>
-                </HoverTooltip>
-                <HoverTooltip text="Upgrade this existing saved site to the premium design-intent system. It audits what is already present, applies deterministic layout/proof/CTA/style upgrades, saves to R2/D1, and only runs chunked AI copy work if audit flags still need AI.">
-                  <button
-                    type="button"
-                    onClick={() => handleUpgradeExistingSite(site)}
-                    disabled={!activeRegenerateModel || Boolean(upgradingDesignId || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-                    aria-label="Upgrade existing site to premium design system"
-                  >
-                    {upgradingDesignId === site.businessId ? (
-                      <RefreshCw size={14} className="animate-spin" />
-                    ) : (
-                      <Sparkles size={14} />
-                    )}
-                  </button>
-                </HoverTooltip>
-                {site.latestGenerationJobId ? (
+                {(showHiddenSiteActions || siteNeedsVisualVariation(site)) && (
+                  <HoverTooltip text="Refresh only this site's saved font pairing to the stable seeded visual variation. Hidden after visual pass or full premium upgrade unless actions=all or debug=sites is in the URL.">
+                    <button
+                      type="button"
+                      onClick={() => handleRefreshVisualVariation(site)}
+                      disabled={Boolean(refreshingVisualVariationId || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId || upgradingDesignId)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                      aria-label="Refresh visual variation"
+                    >
+                      {refreshingVisualVariationId === site.businessId ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                      ) : (
+                        <Shuffle size={14} />
+                      )}
+                    </button>
+                  </HoverTooltip>
+                )}
+                {!siteFullyPremiumUpgraded(site) && (
+                  <HoverTooltip text="Premium-upgrade this existing saved site. It audits what is present, applies deterministic layout/proof/CTA/style upgrades, saves to R2/D1, then always runs chunked AI copy work before marking the JSON fully upgraded.">
+                    <button
+                      type="button"
+                      onClick={() => handleUpgradeExistingSite(site)}
+                      disabled={!activeRegenerateModel || Boolean(upgradingDesignId || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                      aria-label="Premium-upgrade existing site with design and AI copy"
+                    >
+                      {upgradingDesignId === site.businessId ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={14} />
+                      )}
+                    </button>
+                  </HoverTooltip>
+                )}
+                {site.latestGenerationJobId && (
                   <HoverTooltip text={`Open latest generation job audit (${site.latestGenerationJobStatus || "unknown"}${site.latestGenerationJobUpdatedAt ? `, ${new Date(site.latestGenerationJobUpdatedAt).toLocaleString()}` : ""}).`}>
                     <a
                       href={`/admin/jobs?job=${encodeURIComponent(site.latestGenerationJobId)}&q=${encodeURIComponent(site.latestGenerationJobId)}`}
@@ -2368,18 +2411,8 @@ export default function AdminSites() {
                       <ListChecks size={14} />
                     </a>
                   </HoverTooltip>
-                ) : (
-                  <HoverTooltip text="No generation job audit row is linked to this older site record yet. Regenerate once to create one.">
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-400 opacity-60"
-                      aria-label="No generation job audit available"
-                    >
-                      <ListChecks size={14} />
-                    </button>
-                  </HoverTooltip>
                 )}
+                {(showHiddenSiteActions || !siteFullyPremiumUpgraded(site) || siteNeedsRecovery(site)) && (
                 <div className="relative">
                   <HoverTooltip text="Choose AI copy regeneration or Google re-gather/resave for this generated site.">
                     <button
@@ -2526,6 +2559,7 @@ export default function AdminSites() {
                     </div>
                   )}
                 </div>
+                )}
               </div>
             </div>
           ))

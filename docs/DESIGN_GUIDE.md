@@ -174,7 +174,7 @@ This is the next implementation backlog for making generated sites visually bett
 | Done | CTA treatment variants | Add `solid-contrast`, `phone-rail`, `booking-pill`, `estimate-block`, `directions-split`, and `consultation-card` CTA treatments. | Renderer, post-process | Primary action visually dominates while secondary action stays supportive. |
 | Planned | Premium section rhythm | Add pattern-specific section spacing and background alternation rules so pages avoid same-looking stacked white sections. | CSS preset layer, renderer classes | Page rhythm feels intentional and less template-like across generated sites. |
 | Done | Design audit metadata | Extend `conversionAudit` or add `designAudit`: hero layout set, proof treatment set, media strategy valid, CTA hierarchy valid, no generic preset fallback, no weak image hero. | Post-process, generation jobs | Admin can tell whether a site only got copy upgrades or also got design upgrades. |
-| Done | Admin review and upgrade controls | Surface design audit in generation jobs and add an AdminSites upgrade action that audits existing saved JSON, applies deterministic design/schema repair, re-saves R2/D1, and continues into chunked AI only when copy/depth flags remain. | `GenerationJobsTable`, `AdminSites`, `/api/sites/:businessId/upgrade-design` | Admin can upgrade weak-looking old demos before outreach without breaking `/:businessId`, and AI work stays chunked with progress. |
+| Done | Admin review and upgrade controls | Surface design audit in generation jobs and add an AdminSites upgrade action that audits existing saved JSON, applies deterministic design/schema repair, re-saves R2/D1, then runs chunked AI copy before marking the site fully upgraded. | `GenerationJobsTable`, `AdminSites`, `/api/sites/:businessId/upgrade-design` | Admin can upgrade weak-looking old demos before outreach without breaking `/:businessId`, and AI work stays chunked with progress. |
 | Planned | Export parity test | Add fixture coverage that final CTA, hero proof badges, and design-intent classes survive owner zip export path. | Tests/export fixtures | Owner download matches public preview for design structure. |
 
 ### Chunked AI Job Plan For Premium Conversion Work
@@ -245,7 +245,7 @@ Admin implementation plan:
 2. Done: Add `/api/sites/:businessId/upgrade-design` save endpoint.
    It runs deterministic design/schema repair only, saves JSON, updates `json_summary`, and writes a CRM/activity note.
 
-3. Done via existing chunked job runner: premium upgrade action starts with deterministic save, then uses `generation-jobs/chunked-start` and `run-step` only if `needsAi=true`.
+3. Done via existing chunked job runner: premium upgrade action starts with deterministic save, then uses `generation-jobs/chunked-start` and `run-step` for every not-yet-fully-upgraded site.
    The chunked payload is copied from the upgraded saved site, sets `upgradeMode=premium_design_copy_upgrade`, skips outline, and runs `siteCopy`, `offeringCopy`, and `finalize`.
 
 4. Done: Add admin UI actions in `AdminSites`.
@@ -266,8 +266,8 @@ Admin implementation plan:
 Implemented existing-site upgrade flow:
 
 - `POST /api/sites/:businessId/upgrade-design` reads saved JSON from R2/D1, captures before audit, applies deterministic conversion/design post-process, refreshes seeded visual/font variation, writes version metadata, saves full JSON back to R2/D1, rebuilds `json_summary`, and returns changed fields plus after audit.
-- AdminSites has a sparkle upgrade action per generated site. It shows row progress for deterministic design upgrade first, then checks `needsAi`.
-- If after-audit flags still require AI, the UI runs the existing chunked flow with provider readiness/cooldown checks and progress bar. This avoids a new large AI job and preserves the existing retry/finalize behavior.
+- AdminSites has a sparkle upgrade action per generated site that is hidden once saved summary shows `premiumUpgradeComplete=true` and `lastPremiumCopyUpgradeAt`.
+- For any not-yet-fully-upgraded site, the UI runs deterministic design repair first, then always runs the existing chunked AI copy flow with provider readiness/cooldown checks and progress bar. The final save writes `premiumUpgradeComplete=true` only after AI copy chunks succeed, so design-only repair does not hide the sparkle button.
 - `/demo` now has industry samples and shuffle behavior so visual QA can inspect cafe, contractor, professional service, salon/spa, emergency service, and cleaning-style outputs without relying on one cafe sample.
 
 ### Existing Site Upgrade Risks
