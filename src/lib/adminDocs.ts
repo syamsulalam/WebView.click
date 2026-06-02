@@ -77,6 +77,15 @@ export const adminDocs: AdminDoc[] = [
     loadContent: md(() => import("../../docs/GOOGLE_MAPS_MANUAL_IMPORT_PLAN.md?raw")),
   },
   {
+    id: "google-business-profile-marketing-audit-plan",
+    title: "GBP Marketing Audit Plan",
+    file: "docs/GOOGLE_BUSINESS_PROFILE_MARKETING_AUDIT_PLAN.md",
+    category: "Prospecting",
+    summary: "Tracker for deterministic Google Business Profile marketing audits, competitor comparison, PDF export, and service integration.",
+    adminPages: ["/admin/leads", "/admin/sites"],
+    loadContent: md(() => import("../../docs/GOOGLE_BUSINESS_PROFILE_MARKETING_AUDIT_PLAN.md?raw")),
+  },
+  {
     id: "ai-models-research",
     title: "AI Models Research",
     file: "docs/AI_MODELS_RESEARCH.md",

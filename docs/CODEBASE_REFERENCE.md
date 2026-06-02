@@ -287,6 +287,7 @@ Logic penting:
 - Reader menampilkan bagian `Relevant here` berdasarkan route admin aktif: dashboard, leads, jobs, sites, schema, atau settings.
 - Dense admin surfaces can pass `defaultDocId` to preselect a workflow doc, such as PayPal reconciliation or generation job QA.
 - `/admin/jobs` includes `docs/ADMIN_JOBS_USER_GUIDE.md` in the docs reader, and the generation job drawer opens that guide by default.
+- `/admin/leads` and `/admin/sites` include `docs/GOOGLE_BUSINESS_PROFILE_MARKETING_AUDIT_PLAN.md` for the planned deterministic GBP audit, competitor comparison, PDF export, and service workflow.
 - Semua docs tetap bisa dicari dari modal yang sama.
 - Renderer markdown dibuat lokal dan merender teks sebagai React nodes; HTML dari dokumen tidak dieksekusi.
 
@@ -1214,6 +1215,7 @@ Build/Deploy Guard:
 
 - `docs/GOOGLE_PLACES_DATA_INVENTORY.md`: inventaris data Google Places yang bisa dipakai untuk CRM lead scoring dan site generation.
 - `docs/GOOGLE_PLACES_PHOTO_STRATEGY.md`: strategi foto Google Places untuk free preview vs paid website.
+- `docs/GOOGLE_BUSINESS_PROFILE_MARKETING_AUDIT_PLAN.md`: tracker untuk `/audit/:businessId`, deterministic Google Business Profile marketing audit, competitor comparison, PDF export, and WebView.click service positioning.
 - `docs/FREE_TIER_LIMITS_AUDIT.md`: baseline batas Cloudflare Pages/Workers/D1/R2, Google Maps, Clerk, dan audit endpoint yang berisiko quota/cost.
 - `docs/NICHE_STYLE_PRESETS.md`: brainstorm dan kontrak `design.stylePreset`.
 - `docs/LEMON_SQUEEZY_INTEGRATION.md`: catatan integrasi checkout Lemon Squeezy.
