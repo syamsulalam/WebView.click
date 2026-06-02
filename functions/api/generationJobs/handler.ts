@@ -212,7 +212,7 @@ function serviceCopyModeKey(provider: string, model: string) {
 
 function defaultServiceCopyMode(provider: string, model: string) {
   const slowMode = provider.trim() === "KIE" || /^kie\//i.test(model.trim());
-  return { slowMode, serviceCopyBatchSize: slowMode ? 1 : 2 };
+  return { slowMode, serviceCopyBatchSize: 1 };
 }
 
 function parseServiceCopyModes(value: unknown) {
@@ -229,6 +229,24 @@ function normalizeServiceCopyBatchSize(value: unknown, fallback: number) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(1, Math.min(4, Math.floor(numeric)));
+}
+
+function isTransientChunkedFailureMessage(message: string) {
+  return /HTTP\s*(502|503|504|524)|Cloudflare\/HTML|temporar|timeout|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
+}
+
+function forceSingleOfferingCopyBatch(metadata: Record<string, unknown>, reason: string) {
+  const previousMode = objectPatch(metadata.offeringCopyMode) || {};
+  metadata.offeringCopyForceBatchSizeOne = true;
+  metadata.offeringCopyForceBatchSizeReason = reason;
+  metadata.offeringCopyForceBatchSizeAt = new Date().toISOString();
+  metadata.offeringCopyMode = {
+    ...previousMode,
+    serviceCopyBatchSize: 1,
+    forcedBatchSize: 1,
+    forcedBy: "transient_offering_copy_failure",
+    forcedReason: reason,
+  };
 }
 
 async function resolveServiceCopyMode(deps: GenerationJobsDeps, db: unknown, env: unknown, payload: Record<string, unknown>) {
@@ -458,9 +476,14 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         const previousCursor = Number(metadata.offeringCopyCursor);
         const cursor = resetOfferingCopy ? 0 : Math.min(total, Math.max(0, Number.isFinite(previousCursor) ? Math.floor(previousCursor) : 0));
         const offeringCopyFocus = deps.asString(payload.offeringCopyFocus, "offerings");
+        if (body.forceOfferingCopyBatchSize === 1 || body.forceServiceCopyBatchSize === 1) {
+          forceSingleOfferingCopyBatch(metadata, "client_retry_after_transient_failure");
+        }
         const serviceCopyMode = offeringCopyFocus === "navLabels"
           ? { serviceCopyBatchSize: 1, rawMode: "nav_labels" }
-          : await resolveServiceCopyMode(deps, db, env, payload);
+          : metadata.offeringCopyForceBatchSizeOne === true
+            ? { ...(await resolveServiceCopyMode(deps, db, env, payload)), serviceCopyBatchSize: 1, forcedBatchSize: 1 }
+            : await resolveServiceCopyMode(deps, db, env, payload);
         const batchSize = Math.min(serviceCopyMode.serviceCopyBatchSize, Math.max(1, total - cursor));
         if (!total || cursor >= total) {
           const combinedPatch = mergeCopyPatch(sitePatch, objectPatch(metadata.offeringCopyPatch));
@@ -662,6 +685,9 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
       if (aboutNavJob) {
         recordAboutNavTiming(metadata, requestedStep, stepStartedMs, "failed", {}, message);
       }
+      if (requestedStep === "offeringCopy" && isTransientChunkedFailureMessage(message)) {
+        forceSingleOfferingCopyBatch(metadata, "server_transient_failure");
+      }
       metadata.failureStage = `chunked_${requestedStep}`;
       metadata.failureMessage = message;
       metadata.nextStep = requestedStep;
@@ -789,6 +815,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
   const patch = String(url.searchParams.get("patch") || "").trim().toLowerCase();
   const aiRewrite = String(url.searchParams.get("aiRewrite") || "").trim().toLowerCase();
   const offeringCoverage = String(url.searchParams.get("offeringCoverage") || "").trim().toLowerCase();
+  const offeringCopyMode = String(url.searchParams.get("offeringCopyMode") || "").trim().toLowerCase();
   const preflight = String(url.searchParams.get("preflight") || "").trim().toLowerCase();
   const query = String(url.searchParams.get("q") || "").trim().slice(0, 120);
   const includeCounts = url.searchParams.get("counts") === "1";
@@ -835,6 +862,20 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
   END) = 1`;
   if (offeringCoverage === "low") {
     where.push(lowOfferingCoverageSql);
+  }
+  const offeringCopySafeModeSql = `(CASE
+    WHEN json_valid(j.metadata_json) THEN
+      CASE
+        WHEN json_extract(j.metadata_json, '$.offeringCopyForceBatchSizeOne') = 1
+          OR CAST(COALESCE(json_extract(j.metadata_json, '$.offeringCopyMode.forcedBatchSize'), 0) AS INTEGER) = 1
+          OR COALESCE(json_extract(j.metadata_json, '$.offeringCopyMode.forcedBy'), '') <> ''
+        THEN 1
+        ELSE 0
+      END
+    ELSE 0
+  END) = 1`;
+  if (offeringCopyMode === "safe") {
+    where.push(offeringCopySafeModeSql);
   }
 
   bindings.push(limit, offset);
@@ -887,14 +928,44 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS patch_count,
         SUM(CASE WHEN j.metadata_json IS NULL OR j.metadata_json NOT LIKE '%"copyPatchApplied":true%' THEN 1 ELSE 0 END) AS fallback_count,
         SUM(CASE WHEN j.metadata_json LIKE '%"copyPatchApplied":true%' AND j.metadata_json LIKE '%"aiRewritten":0%' THEN 1 ELSE 0 END) AS no_rewrite_count,
-        SUM(CASE WHEN ${lowOfferingCoverageSql} THEN 1 ELSE 0 END) AS low_offering_coverage_count
+        SUM(CASE WHEN ${lowOfferingCoverageSql} THEN 1 ELSE 0 END) AS low_offering_coverage_count,
+        SUM(CASE WHEN ${offeringCopySafeModeSql} THEN 1 ELSE 0 END) AS safe_mode_count
        FROM generation_jobs j
        LEFT JOIN places_prospects p ON p.place_id = j.place_id
        ${searchWhereSql}`,
     );
     const counts = searchBindings.length
-      ? await countsStatement.bind(...searchBindings).first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number; low_offering_coverage_count?: number }>()
-      : await countsStatement.first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number; low_offering_coverage_count?: number }>();
+      ? await countsStatement.bind(...searchBindings).first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number; low_offering_coverage_count?: number; safe_mode_count?: number }>()
+      : await countsStatement.first<{ all_count?: number; failed_count?: number; preflight_count?: number; patch_count?: number; fallback_count?: number; no_rewrite_count?: number; low_offering_coverage_count?: number; safe_mode_count?: number }>();
+    let safeModeBreakdown: Array<{ provider: string; model: string; count: number; failed: number; latestAt: string }> = [];
+    if (offeringCopyMode === "safe") {
+      const safeModeWhere = [...searchWhere, offeringCopySafeModeSql];
+      const safeModeWhereSql = `WHERE ${safeModeWhere.join(" AND ")}`;
+      const breakdownStatement = db.prepare(
+        `SELECT
+           COALESCE(NULLIF(j.provider, ''), 'Unknown') AS provider,
+           COALESCE(NULLIF(j.model, ''), 'Unknown') AS model,
+           COUNT(*) AS safe_mode_count,
+           SUM(CASE WHEN j.status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+           MAX(j.updated_at) AS latest_at
+         FROM generation_jobs j
+         LEFT JOIN places_prospects p ON p.place_id = j.place_id
+         ${safeModeWhereSql}
+         GROUP BY COALESCE(NULLIF(j.provider, ''), 'Unknown'), COALESCE(NULLIF(j.model, ''), 'Unknown')
+         ORDER BY safe_mode_count DESC, datetime(latest_at) DESC
+         LIMIT 8`,
+      );
+      const breakdownRows = searchBindings.length
+        ? await breakdownStatement.bind(...searchBindings).all<{ provider?: string; model?: string; safe_mode_count?: number; failed_count?: number; latest_at?: string }>()
+        : await breakdownStatement.all<{ provider?: string; model?: string; safe_mode_count?: number; failed_count?: number; latest_at?: string }>();
+      safeModeBreakdown = (breakdownRows.results || []).map((item) => ({
+        provider: item.provider || "Unknown",
+        model: item.model || "Unknown",
+        count: Number(item.safe_mode_count || 0),
+        failed: Number(item.failed_count || 0),
+        latestAt: item.latest_at || "",
+      }));
+    }
     return deps.json({
       jobs,
       counts: {
@@ -905,7 +976,9 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         patch: Number(counts?.patch_count || 0),
         noRewrite: Number(counts?.no_rewrite_count || 0),
         lowOfferingCoverage: Number(counts?.low_offering_coverage_count || 0),
+        safeMode: Number(counts?.safe_mode_count || 0),
       },
+      safeModeBreakdown,
     });
   }
 

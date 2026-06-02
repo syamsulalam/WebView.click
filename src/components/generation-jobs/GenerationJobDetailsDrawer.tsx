@@ -24,6 +24,8 @@ import {
   offeringCopyCoverageClass,
   offeringCopyCoverageLabel,
   offeringCopyCoverageTooltip,
+  offeringCopySafeModeActive,
+  offeringCopySafeModeTooltip,
 } from "./jobUtils";
 
 type GenerationJobDetailsDrawerProps = {
@@ -161,6 +163,7 @@ export default function GenerationJobDetailsDrawer({
     completed: offeringCopyCursor,
   });
   const serviceCopyMode = resolveAiServiceCopyProviderMode(settings, job?.provider || fallbackProvider, job?.model || fallbackModel);
+  const safeModeActive = offeringCopySafeModeActive(job);
   const stepLabel = (step: string) => {
     if (step === "outline") return "Outline";
     if (step === "siteCopy") return "Site copy";
@@ -303,13 +306,22 @@ export default function GenerationJobDetailsDrawer({
               {chunkedState.chunked && runnableStep ? (
                 <div className="flex shrink-0 flex-col items-stretch gap-2">
                   {runnableStep === "offeringCopy" && (
-                    <ProviderServiceCopyModeBadge
-                      provider={job?.provider || fallbackProvider}
-                      model={job?.model || fallbackModel}
-                      currentSlowMode={serviceCopyMode.slowMode}
-                      settings={settings}
-                      onSettingsChange={onSettingsChange}
-                    />
+                    <>
+                      {safeModeActive && (
+                        <HoverTooltip text={offeringCopySafeModeTooltip(job)} widthClass="w-80">
+                          <span className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-800">
+                            Safe mode: 1 service/request
+                          </span>
+                        </HoverTooltip>
+                      )}
+                      <ProviderServiceCopyModeBadge
+                        provider={job?.provider || fallbackProvider}
+                        model={job?.model || fallbackModel}
+                        currentSlowMode={serviceCopyMode.slowMode}
+                        settings={settings}
+                        onSettingsChange={onSettingsChange}
+                      />
+                    </>
                   )}
                   <button
                     type="button"
@@ -383,6 +395,13 @@ export default function GenerationJobDetailsDrawer({
                 <p className="mt-0.5 text-xs text-slate-500">
                   Next step: {chunkedState.nextStep || "none"}{chunkedState.failureStep ? ` - Failed step: ${chunkedState.failureStep}` : ""}
                 </p>
+                {safeModeActive && (
+                  <HoverTooltip text={offeringCopySafeModeTooltip(job)} widthClass="w-80">
+                    <span className="mt-2 inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">
+                      safe mode: 1 service/request
+                    </span>
+                  </HoverTooltip>
+                )}
               </div>
               <div className="grid gap-2 sm:grid-cols-4">
                 {CHUNKED_GENERATION_STEPS.map((step) => {

@@ -1,9 +1,17 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, ExternalLink, FileText, Loader2, RefreshCw, RotateCw, Search, X } from "lucide-react";
+import { clearAiReadinessCache } from "../lib/aiReadiness";
 import { useLocalStorageState } from "../lib/localStorageState";
 import { chunkedGenerationState } from "../lib/generationJobState";
-import { resolveAiServiceCopyProviderMode, serviceCopyPlanText } from "../lib/aiSlowProviderMode";
+import {
+  AI_SERVICE_COPY_PROVIDER_MODES_KEY,
+  aiServiceCopyModeKey,
+  parseAiServiceCopyProviderModes,
+  resolveAiServiceCopyProviderMode,
+  serviceCopyPlanText,
+} from "../lib/aiSlowProviderMode";
+import { clearProviderHealthCache } from "../lib/providerHealth";
 import AdminAiReadinessBadge from "./AdminAiReadinessBadge";
 import HelpTooltip from "./HelpTooltip";
 import HoverTooltip from "./HoverTooltip";
@@ -19,6 +27,8 @@ import {
   offeringCopyCoverageClass,
   offeringCopyCoverageLabel,
   offeringCopyCoverageTooltip,
+  offeringCopySafeModeActive,
+  offeringCopySafeModeTooltip,
   patchApplied,
   shortHash,
   sortJobs,
@@ -43,6 +53,14 @@ type GenerationJobsTableProps = {
   onJobsLoaded?: (jobs: any[]) => void;
 };
 
+type SafeModeBreakdownItem = {
+  provider: string;
+  model: string;
+  count: number;
+  failed: number;
+  latestAt: string;
+};
+
 export default function GenerationJobsTable({
   storageKeyPrefix,
   fallbackProvider,
@@ -62,6 +80,7 @@ export default function GenerationJobsTable({
 }: GenerationJobsTableProps) {
   const [jobs, setJobs] = useState<any[]>([]);
   const [remoteCounts, setRemoteCounts] = useState<GenerationJobCounts | null>(null);
+  const [remoteSafeModeBreakdown, setRemoteSafeModeBreakdown] = useState<SafeModeBreakdownItem[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [message, setMessage] = useState("");
@@ -72,6 +91,7 @@ export default function GenerationJobsTable({
   const [copiedKey, setCopiedKey] = useState("");
   const [selectedJob, setSelectedJob] = useState<any>(null);
   const [autoOpenedJobId, setAutoOpenedJobId] = useState("");
+  const [savingSlowModeKey, setSavingSlowModeKey] = useState("");
 
   const compact = variant === "compact";
   const requestLimit = Math.max(1, Math.min(500, limit || (compact ? 100 : 200)));
@@ -83,12 +103,32 @@ export default function GenerationJobsTable({
     patch: jobs.filter((job) => patchApplied(job)).length,
     noRewrite: jobs.filter((job) => noAiRewrite(job)).length,
     lowOfferingCoverage: jobs.filter((job) => lowOfferingCopyCoverage(job)).length,
+    safeMode: jobs.filter((job) => offeringCopySafeModeActive(job)).length,
   }), [jobs]);
   const counts = remoteCounts || localCounts;
   const visibleJobs = useMemo(
     () => sortJobs(serverBackedFilters ? jobs : filterJobs(jobs, filter), sort),
     [jobs, filter, sort, serverBackedFilters],
   );
+  const localSafeModeBreakdown = useMemo(() => {
+    const grouped = new Map<string, SafeModeBreakdownItem>();
+    for (const job of jobs) {
+      if (!offeringCopySafeModeActive(job)) continue;
+      const provider = String(job.provider || "Unknown");
+      const model = String(job.model || "Unknown");
+      const key = `${provider}::${model}`;
+      const existing = grouped.get(key) || { provider, model, count: 0, failed: 0, latestAt: "" };
+      const latestAt = String(job.updatedAt || job.createdAt || "");
+      grouped.set(key, {
+        ...existing,
+        count: existing.count + 1,
+        failed: existing.failed + Number(job.status === "failed"),
+        latestAt: latestAt && (!existing.latestAt || new Date(latestAt).getTime() > new Date(existing.latestAt).getTime()) ? latestAt : existing.latestAt,
+      });
+    }
+    return [...grouped.values()].sort((a, b) => b.count - a.count || new Date(b.latestAt || 0).getTime() - new Date(a.latestAt || 0).getTime()).slice(0, 8);
+  }, [jobs]);
+  const safeModeBreakdown = remoteSafeModeBreakdown || localSafeModeBreakdown;
   const serverFilterKey = serverBackedFilters ? filter : "";
   const serverSearchKey = serverBackedSearch ? searchQuery.trim() : "";
   const activeTotal = remoteCounts
@@ -155,6 +195,7 @@ export default function GenerationJobsTable({
         if (filter === "patch") params.set("patch", "applied");
         if (filter === "noRewrite") params.set("aiRewrite", "zero");
         if (filter === "lowOfferingCoverage") params.set("offeringCoverage", "low");
+        if (filter === "safeMode") params.set("offeringCopyMode", "safe");
       }
       if (serverBackedSearch && searchQuery.trim()) {
         params.set("q", searchQuery.trim());
@@ -174,9 +215,22 @@ export default function GenerationJobsTable({
           patch: Number(data.counts.patch || 0),
           noRewrite: Number(data.counts.noRewrite || 0),
           lowOfferingCoverage: Number(data.counts.lowOfferingCoverage || 0),
+          safeMode: Number(data.counts.safeMode || 0),
         });
+        setRemoteSafeModeBreakdown(
+          filter === "safeMode" && Array.isArray(data.safeModeBreakdown)
+            ? data.safeModeBreakdown.map((item: any) => ({
+                provider: String(item.provider || "Unknown"),
+                model: String(item.model || "Unknown"),
+                count: Number(item.count || 0),
+                failed: Number(item.failed || 0),
+                latestAt: String(item.latestAt || ""),
+              }))
+            : null,
+        );
       } else if (!serverBackedFilters) {
         setRemoteCounts(null);
+        setRemoteSafeModeBreakdown(null);
       }
       const nextRows = append ? [...jobs, ...rows] : rows;
       setJobs(nextRows);
@@ -253,6 +307,7 @@ export default function GenerationJobsTable({
       sort,
       searchQuery,
       count: visibleJobs.length,
+      safeModeBreakdown: filter === "safeMode" ? safeModeBreakdown : undefined,
       jobs: visibleJobs.map((job) => ({
         id: job.id,
         status: job.status,
@@ -276,6 +331,7 @@ export default function GenerationJobsTable({
         copyAuditSummary: job.metadata?.copyAuditSummary || null,
         offeringCopyCoverage: job.metadata?.offeringCopyCoverage || null,
         offeringCopyMode: job.metadata?.offeringCopyMode || null,
+        offeringCopySafeMode: offeringCopySafeModeActive(job),
         conversionPagePattern: job.metadata?.conversionPagePattern || job.metadata?.conversionAudit?.pagePattern || "",
         conversionPrimaryAction: job.metadata?.conversionPrimaryAction || job.metadata?.conversionAudit?.primaryAction || "",
         conversionAudit: job.metadata?.conversionAudit || null,
@@ -288,6 +344,51 @@ export default function GenerationJobsTable({
     await copyValue("jobs:compact-export", JSON.stringify(payload, null, 2));
   };
 
+  const applySlowModeToBreakdownItem = async (item: SafeModeBreakdownItem) => {
+    const provider = String(item.provider || "").trim();
+    const model = String(item.model || "").trim();
+    if (!provider || !model || provider === "Unknown" || model === "Unknown") return;
+    const key = aiServiceCopyModeKey(provider, model);
+    setSavingSlowModeKey(key);
+    setMessage("");
+    try {
+      const modes = parseAiServiceCopyProviderModes(settings?.[AI_SERVICE_COPY_PROVIDER_MODES_KEY]);
+      const nextModes = {
+        ...modes,
+        [key]: {
+          ...(modes[key] || {}),
+          provider,
+          model,
+          slowMode: true,
+          serviceCopyBatchSize: 1,
+          updatedAt: new Date().toISOString(),
+          source: "admin_jobs_safe_mode_breakdown",
+        },
+      };
+      const nextValue = JSON.stringify(nextModes, null, 2);
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [AI_SERVICE_COPY_PROVIDER_MODES_KEY]: nextValue }),
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(`Save slow mode failed with HTTP ${response.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
+      }
+      onSettingsChange?.({
+        ...(settings as Record<string, string>),
+        [AI_SERVICE_COPY_PROVIDER_MODES_KEY]: nextValue,
+      });
+      clearProviderHealthCache();
+      clearAiReadinessCache();
+      setMessage(`Slow mode applied to ${provider} / ${model}. Service copy will stay at 1 service/request for that provider/model.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not apply slow mode.");
+    } finally {
+      setSavingSlowModeKey("");
+    }
+  };
+
   const filterOptions = [
     { value: "all", label: "All", count: counts.all },
     { value: "failed", label: "Failed", count: counts.failed },
@@ -296,6 +397,7 @@ export default function GenerationJobsTable({
     { value: "patch", label: "Patch", count: counts.patch },
     { value: "noRewrite", label: "No rewrite", count: counts.noRewrite },
     { value: "lowOfferingCoverage", label: "Low service copy", count: counts.lowOfferingCoverage },
+    { value: "safeMode", label: "Safe mode", count: counts.safeMode },
   ];
 
   const copyRetryModeForJob = (job: any): "offerings" | "allCopy" | "" => {
@@ -324,7 +426,7 @@ export default function GenerationJobsTable({
             Generation jobs
             <HelpTooltip
               widthClass="w-80"
-              text="Preflight blocked means AI readiness or provider cooldown stopped the click before full generation. Fallback means no AI copy patch was applied. Patch means AI copy was merged into the deterministic site JSON. No rewrite means the patch ran but did not change source copy. Low service copy means fewer than half of service/product pages changed summary, description, highlights, or FAQ."
+              text="Preflight blocked means AI readiness or provider cooldown stopped the click before full generation. Fallback means no AI copy patch was applied. Patch means AI copy was merged into the deterministic site JSON. No rewrite means the patch ran but did not change source copy. Low service copy means fewer than half of service/product pages changed summary, description, highlights, or FAQ. Safe mode means service copy was forced to 1 service/request after a transient edge/provider failure."
             />
           </p>
           {!compact && <p className="mt-1 text-xs text-slate-500">Filter, sort, and retry generation attempts.</p>}
@@ -381,6 +483,7 @@ export default function GenerationJobsTable({
             <option value="patch">Patch applied first</option>
             <option value="noRewrite">No AI rewrite first</option>
             <option value="lowOfferingCoverage">Low service copy first</option>
+            <option value="safeMode">Safe mode first</option>
           </select>
           <HoverTooltip text="Copy compact JSON for the currently visible generation jobs.">
             <button
@@ -405,6 +508,59 @@ export default function GenerationJobsTable({
       {message && (
         <div className={`${compact ? "mb-3" : "m-4 mb-0"} rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900`}>
           {message}
+        </div>
+      )}
+
+      {filter === "safeMode" && safeModeBreakdown.length > 0 && (
+        <div className={`${compact ? "mb-3" : "m-4 mb-0"} rounded-xl border border-blue-100 bg-blue-50 px-4 py-3`}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-blue-900">Safe mode provider/model breakdown</p>
+              <p className="mt-0.5 text-xs text-blue-800">
+                {serverBackedFilters
+                  ? `Top providers across ${activeTotal} matching safe-mode job${activeTotal === 1 ? "" : "s"}${searchQuery ? ` for "${searchQuery}"` : ""}.`
+                  : "Top providers from the currently loaded safe-mode jobs."}
+              </p>
+            </div>
+            <HoverTooltip text="Safe mode activates when offering-copy retry falls back to one service/product per request after transient Cloudflare/HTML, timeout, or provider temporary failures." widthClass="w-80">
+              <span className="w-fit rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-blue-800 ring-1 ring-inset ring-blue-200">
+                1 service/request
+              </span>
+            </HoverTooltip>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {safeModeBreakdown.map((item) => {
+              const latest = item.latestAt ? new Date(item.latestAt) : null;
+              const latestLabel = latest && !Number.isNaN(latest.getTime()) ? latest.toLocaleString() : "";
+              const itemKey = aiServiceCopyModeKey(item.provider, item.model);
+              const isTopOffender = safeModeBreakdown[0] === item;
+              const itemMode = resolveAiServiceCopyProviderMode(settings, item.provider, item.model);
+              const canApplySlowMode = isTopOffender && item.provider !== "Unknown" && item.model !== "Unknown";
+              return (
+                <HoverTooltip
+                  key={`${item.provider}:${item.model}`}
+                  text={`${item.provider} / ${item.model}: ${item.count} safe-mode job${item.count === 1 ? "" : "s"}, ${item.failed} failed${latestLabel ? `, latest ${latestLabel}` : ""}.`}
+                  widthClass="w-80"
+                >
+                  <span className="inline-flex max-w-full items-center gap-2 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-blue-950 ring-1 ring-inset ring-blue-100">
+                    <span className="max-w-[220px] truncate">{item.provider} / {item.model}</span>
+                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-800">{item.count}</span>
+                    {item.failed > 0 && <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] text-red-700">{item.failed} failed</span>}
+                    {canApplySlowMode && (
+                      <button
+                        type="button"
+                        onClick={() => applySlowModeToBreakdownItem(item)}
+                        disabled={savingSlowModeKey === itemKey || itemMode.slowMode}
+                        className="rounded-md bg-blue-700 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-blue-800 disabled:bg-blue-200 disabled:text-blue-700"
+                      >
+                        {savingSlowModeKey === itemKey ? "Saving" : itemMode.slowMode ? "Slow on" : "Apply slow mode"}
+                      </button>
+                    )}
+                  </span>
+                </HoverTooltip>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -441,6 +597,7 @@ export default function GenerationJobsTable({
                   const offeringCopyInProgress = chunkedState.chunked && offeringCopyTotal > 0 && chunkedState.nextStep === "offeringCopy";
                   const chunkedServiceCopyContext = chunkedRunnableStep === "offeringCopy" ? serviceCopyContext(job) : null;
                   const copyRetryServiceCopyContext = copyRetryMode === "offerings" || copyRetryMode === "allCopy" ? serviceCopyContext(job, true) : null;
+                  const safeModeActive = offeringCopySafeModeActive(job);
                   return (
                     <tr key={job.id} className="align-top hover:bg-slate-50">
                     <td className={`${compact ? "max-w-[260px] px-3 py-2" : "max-w-[320px] px-4 py-3"}`}>
@@ -491,6 +648,13 @@ export default function GenerationJobsTable({
                             service copy {Math.min(offeringCopyCursor, offeringCopyTotal)}/{offeringCopyTotal}
                           </span>
                         )}
+                        {safeModeActive && (
+                          <HoverTooltip text={offeringCopySafeModeTooltip(job)} widthClass="w-80">
+                            <span className="mt-1.5 block w-fit rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800">
+                              safe mode: 1 service/request
+                            </span>
+                          </HoverTooltip>
+                        )}
                         <p className={`${compact ? "text-[11px]" : "text-xs"} mt-2 text-slate-500`}>{job.createdAt ? new Date(job.createdAt).toLocaleString() : ""}</p>
                       </td>
                       <td className={`${compact ? "max-w-[180px] px-3 py-2" : "max-w-[210px] px-4 py-3"}`}>
@@ -522,6 +686,13 @@ export default function GenerationJobsTable({
                             <HoverTooltip text={offeringCopyCoverageTooltip(offeringCoverage)} widthClass="w-80">
                               <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${offeringCopyCoverageClass(offeringCoverage)}`}>
                                 {offeringCopyCoverageLabel(offeringCoverage)}
+                              </span>
+                            </HoverTooltip>
+                          )}
+                          {safeModeActive && (
+                            <HoverTooltip text={offeringCopySafeModeTooltip(job)} widthClass="w-80">
+                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800">
+                                safe mode
                               </span>
                             </HoverTooltip>
                           )}

@@ -36,7 +36,7 @@ export function defaultAiServiceCopyProviderMode(provider: string, model = ""): 
   const slowByDefault = String(provider || "").trim() === "KIE" || /^kie\//i.test(String(model || "").trim());
   return {
     slowMode: slowByDefault,
-    serviceCopyBatchSize: slowByDefault ? 1 : 2,
+    serviceCopyBatchSize: 1,
   };
 }
 

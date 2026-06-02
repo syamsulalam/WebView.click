@@ -389,7 +389,7 @@ function sleep(ms: number) {
 
 function isTransientChunkedGenerationError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
-  return /HTTP\s*(502|503|504|524)|Cloudflare\/HTML|temporar|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
+  return /HTTP\s*(502|503|504|524)|Cloudflare\/HTML|temporar|timeout|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
 }
 
 export async function postChunkedGenerateSite(
@@ -421,6 +421,7 @@ export async function runChunkedGenerationJob(
   let result: any = start;
   const steps = ["outline", "siteCopy", "offeringCopy", "finalize"];
   const firstStepIndex = Math.max(0, steps.indexOf(String(start.nextStep || "outline")));
+  let forceOfferingCopyBatchSizeOne = false;
   for (const step of steps.slice(firstStepIndex)) {
     for (let itemAttempt = 0; itemAttempt < 24; itemAttempt += 1) {
       let attempt = 1;
@@ -431,7 +432,10 @@ export async function runChunkedGenerationJob(
           const stepResponse = await fetch(stepPath, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ step }),
+            body: JSON.stringify({
+              step,
+              ...(step === "offeringCopy" && forceOfferingCopyBatchSizeOne ? { forceOfferingCopyBatchSize: 1 } : {}),
+            }),
           });
           result = await readApiJson<any>(stepResponse, `${label} ${step}`, stepPath);
           onStep?.(step, {
@@ -444,6 +448,7 @@ export async function runChunkedGenerationJob(
           break;
         } catch (error) {
           if (attempt >= 2 || !isTransientChunkedGenerationError(error)) throw error;
+          if (step === "offeringCopy") forceOfferingCopyBatchSizeOne = true;
           for (let seconds = 60; seconds > 0; seconds -= 1) {
             onStep?.(step, {
               status: "retry_wait",

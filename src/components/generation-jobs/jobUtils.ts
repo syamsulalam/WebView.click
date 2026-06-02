@@ -6,6 +6,7 @@ export type GenerationJobCounts = {
   patch: number;
   noRewrite: number;
   lowOfferingCoverage: number;
+  safeMode: number;
 };
 
 export function shortHash(value: unknown) {
@@ -113,6 +114,23 @@ export function lowOfferingCopyCoverage(job: any) {
   return coverage.recorded && coverage.total > 0 && coverage.changed / coverage.total < 0.5;
 }
 
+export function offeringCopySafeModeActive(job: any) {
+  const mode = job?.metadata?.offeringCopyMode;
+  return job?.metadata?.offeringCopyForceBatchSizeOne === true
+    || (mode && typeof mode === "object" && !Array.isArray(mode) && (mode.forcedBatchSize === 1 || mode.forcedBy));
+}
+
+export function offeringCopySafeModeTooltip(job: any) {
+  const reason = String(job?.metadata?.offeringCopyForceBatchSizeReason || job?.metadata?.offeringCopyMode?.forcedReason || "").trim();
+  const at = String(job?.metadata?.offeringCopyForceBatchSizeAt || "").trim();
+  const reasonLabel = reason === "client_retry_after_transient_failure"
+    ? "browser retry after a transient edge/provider failure"
+    : reason === "server_transient_failure"
+      ? "server caught a transient offering-copy failure"
+      : reason || "transient edge/provider failure";
+  return `Safe mode is active for this job: service copy is forced to 1 service/product per request after ${reasonLabel}.${at ? ` Activated ${new Date(at).toLocaleString()}.` : ""}`;
+}
+
 export function auditStatusLabel(status: string) {
   if (status === "ai_rewritten") return "AI rewritten";
   if (status === "ai_filled_blank") return "AI filled";
@@ -136,6 +154,7 @@ export function filterJobs(jobs: any[], filter: string) {
   if (filter === "patch") return jobs.filter((job) => patchApplied(job));
   if (filter === "noRewrite") return jobs.filter((job) => noAiRewrite(job));
   if (filter === "lowOfferingCoverage") return jobs.filter((job) => lowOfferingCopyCoverage(job));
+  if (filter === "safeMode") return jobs.filter((job) => offeringCopySafeModeActive(job));
   return jobs;
 }
 
@@ -147,6 +166,7 @@ export function sortJobs(jobs: any[], sort: string) {
     if (sort === "patch") return Number(patchApplied(b)) - Number(patchApplied(a));
     if (sort === "noRewrite") return Number(noAiRewrite(b)) - Number(noAiRewrite(a));
     if (sort === "lowOfferingCoverage") return Number(lowOfferingCopyCoverage(b)) - Number(lowOfferingCopyCoverage(a));
+    if (sort === "safeMode") return Number(offeringCopySafeModeActive(b)) - Number(offeringCopySafeModeActive(a));
     return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
   });
 }

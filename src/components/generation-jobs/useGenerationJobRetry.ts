@@ -31,7 +31,7 @@ function sleep(ms: number) {
 
 function isTransientStepError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
-  return /HTTP\s*(502|503|504|524)|Cloudflare\/HTML|temporar|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
+  return /HTTP\s*(502|503|504|524)|Cloudflare\/HTML|temporar|timeout|upstream network|network_error|provider_temporary|empty_response|returned HTML|did not return normally/i.test(message);
 }
 
 export function useGenerationJobRetry({
@@ -140,18 +140,24 @@ export function useGenerationJobRetry({
 
   const runChunkedStepRequest = async (jobId: string, step: ChunkedGenerationStep, label: string, extraBody: Record<string, unknown> = {}) => {
     let data: any = null;
+    let forceOfferingCopyBatchSizeOne = extraBody.forceOfferingCopyBatchSize === 1 || extraBody.forceServiceCopyBatchSize === 1;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const requestPath = `/api/generation-jobs/${encodeURIComponent(jobId)}/run-step`;
         const response = await fetch(requestPath, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ step, ...extraBody }),
+          body: JSON.stringify({
+            step,
+            ...extraBody,
+            ...(step === "offeringCopy" && forceOfferingCopyBatchSizeOne ? { forceOfferingCopyBatchSize: 1 } : {}),
+          }),
         });
         data = await readApiJson<any>(response, `${label} ${step} step`, requestPath);
         break;
       } catch (error) {
         if (attempt >= 2 || !isTransientStepError(error)) throw error;
+        if (step === "offeringCopy") forceOfferingCopyBatchSizeOne = true;
         for (let seconds = 60; seconds > 0; seconds -= 1) {
           setMessage(`${step} hit a temporary provider/edge failure. Auto retry in ${seconds}s...`);
           await sleep(1000);

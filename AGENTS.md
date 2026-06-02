@@ -38,6 +38,12 @@
 - Do not run `npm run lint` for this repo anymore. The workspace intentionally may not have local TypeScript dependencies installed, and the user wants to avoid dependency/storage churn. Prefer lightweight checks such as `git diff --check`, JSON parsing, and targeted static inspection.
 - Keep token use lean during routine changes: use small targeted file reads, avoid dumping long diffs unless needed for diagnosis, skip unnecessary explanation, and keep progress/final notes short unless deeper reasoning is required.
 
+## AI Job Reliability Rule
+- Any new AI-powered workflow must be implemented as a chunked, resumable job instead of one large request. Split work into small steps such as preflight, outline/planning, site/general copy, one service/product detail copy item or micro-batch, deterministic post-process, and finalize/save.
+- Avoid adding browser calls or Pages Function endpoints that ask AI to rewrite a whole site, all services, design strategy, and final save in one invocation. Cloudflare 502/HTML, 503, 504, 524, provider temporary errors, and timeouts should fail only the current chunk and be retryable/resumable.
+- Default AI copy detail chunks should be conservative: prefer one service/product per `offeringCopy` request unless the code has explicit provider/model evidence that a larger batch is safe. Expose progress and next-step metadata in `generation_jobs.metadata_json` so Admin UI can show progress bars and resume/retry from the failed chunk.
+- Before adding or changing an AI job, check existing chunked flow in `functions/api/generationJobs/handler.ts` and `src/lib/adminSiteGeneration.ts`; reuse it when possible instead of creating a separate one-off AI call.
+
 ## Work Reporting Preference
 - Prefer completing the requested task end-to-end before reporting back.
 - Do not send progress updates after every small step during normal implementation.
