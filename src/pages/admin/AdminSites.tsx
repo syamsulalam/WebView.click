@@ -950,6 +950,18 @@ export default function AdminSites() {
     return url.toString();
   };
 
+  const auditLinkForId = (id: string) => new URL(`/audit/${encodeURIComponent(id)}`, window.location.origin).toString();
+
+  const handleCopyAuditLink = async (id: string, label = "Audit link") => {
+    const link = auditLinkForId(id);
+    try {
+      await navigator.clipboard.writeText(link);
+      notifyAction("success", `${label} copied`, link);
+    } catch {
+      notifyAction("warning", "Copy failed", `Could not copy automatically. Link: ${link}`);
+    }
+  };
+
   const ownerCountdownPreviewLinkForSite = (site: SiteRow) => {
     let url: URL;
     try {
@@ -969,6 +981,7 @@ export default function AdminSites() {
 
   const firstOutreachMessageForSite = (site: SiteRow) => {
     const link = ownerReviewLinkForSite(site);
+    const auditLink = auditLinkForId(site.businessId);
     return [
       `Hi ${site.businessName} team,`,
       "",
@@ -985,6 +998,7 @@ export default function AdminSites() {
       "You can host the files anywhere, or WebView.click can launch it for you with hosting, domain/DNS, SSL, upload, and setup.",
       "",
       `Preview: ${link}`,
+      `Profile audit: ${auditLink}`,
       "",
       "If it is not useful, no reply is needed and I will not keep following up.",
       "",
@@ -995,6 +1009,7 @@ export default function AdminSites() {
 
   const setupOutreachMessageForSite = (site: SiteRow) => {
     const link = ownerReviewLinkForSite(site);
+    const auditLink = auditLinkForId(site.businessId);
     const downloadedLine = site.lastDownloadedAt
       ? `I noticed the free website package was downloaded on ${new Date(site.lastDownloadedAt).toLocaleDateString()}, so I wanted to make the launch step easy.`
       : "I noticed the free website package was downloaded, so I wanted to make the launch step easy.";
@@ -1012,6 +1027,7 @@ export default function AdminSites() {
       "- final mobile/desktop check",
       "",
       `Preview: ${link}`,
+      `Profile audit: ${auditLink}`,
       "",
       "Reply with \"setup\" and I will send the next steps.",
       "",
@@ -1978,6 +1994,19 @@ export default function AdminSites() {
                     </a>
                   </HoverTooltip>
                 )}
+                {!mapsQueryPlaceholder && (
+                  <HoverTooltip text="Open a deterministic Google Business Profile marketing audit for this gathered prospect.">
+                    <a
+                      href={`/audit/${encodeURIComponent(prospect.generatedBusinessId || prospect.place_id)}?admin=1`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+                      aria-label="Open prospect profile audit"
+                    >
+                      <FileText size={14} />
+                    </a>
+                  </HoverTooltip>
+                )}
                 <HoverTooltip text="Inspect gathered Google data for this ready prospect.">
                   <button
                     type="button"
@@ -2203,6 +2232,27 @@ export default function AdminSites() {
                   >
                     <Globe2 size={14} />
                   </a>
+                </HoverTooltip>
+                <HoverTooltip text="Open the Google Business Profile marketing audit for this generated site.">
+                  <a
+                    href={`/audit/${encodeURIComponent(site.businessId)}?admin=1`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+                    aria-label="Open profile audit"
+                  >
+                    <FileText size={14} />
+                  </a>
+                </HoverTooltip>
+                <HoverTooltip text="Copy the audit URL for outreach or PDF follow-up.">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyAuditLink(site.businessId)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+                    aria-label="Copy profile audit link"
+                  >
+                    <Link2 size={14} />
+                  </button>
                 </HoverTooltip>
                 {siteHasSummaryError(site) && (
                   <>

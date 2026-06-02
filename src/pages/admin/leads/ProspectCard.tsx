@@ -1,4 +1,4 @@
-import { ExternalLink, ListChecks, Loader2, PanelRightOpen, Play, X } from "lucide-react";
+import { ExternalLink, FileText, ListChecks, Loader2, PanelRightOpen, Play, X } from "lucide-react";
 import AdminAiReadinessBadge from "../../../components/AdminAiReadinessBadge";
 import HelpTooltip from "../../../components/HelpTooltip";
 import HoverTooltip from "../../../components/HoverTooltip";
@@ -145,9 +145,14 @@ export default function ProspectCard({
               Rating {Number(displayPlace.rating || 0).toFixed(1)} / {Number(displayPlace.user_ratings_total || displayPlace.userRatingCount || 0)} reviews. Estimasi: {formatUsd(estimateGenerateCost(displayPlace).total)}
             </p>
             {displayPlace.generatedBusinessId && (
-              <a href={`/${displayPlace.generatedBusinessId}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline">
-                Open generated preview <ExternalLink size={12} />
-              </a>
+              <div className="mt-1 flex flex-wrap gap-3">
+                <a href={`/${displayPlace.generatedBusinessId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline">
+                  Open generated preview <ExternalLink size={12} />
+                </a>
+                <a href={`/audit/${displayPlace.generatedBusinessId}?admin=1`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:underline">
+                  Open profile audit <FileText size={12} />
+                </a>
+              </div>
             )}
             {displayPlace.lastError && (
               <p className="mt-1 max-w-2xl text-xs font-medium text-red-700">Last generate error: {displayPlace.lastError}</p>
@@ -192,6 +197,19 @@ export default function ProspectCard({
             </HoverTooltip>
           ) : (
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {!isMapsPlaceholder && (
+                <HoverTooltip text="Open deterministic Google Business Profile audit for this gathered prospect.">
+                  <a
+                    href={`/audit/${encodeURIComponent(displayPlace.generatedBusinessId || displayPlace.place_id || placeKey)}?admin=1`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50"
+                    aria-label="Open profile audit"
+                  >
+                    <FileText size={16} />
+                  </a>
+                </HoverTooltip>
+              )}
               <HoverTooltip text={isMapsPlaceholder ? "This is not a specific business listing yet." : "Generate a website for this gathered prospect."}>
                 <button
                   type="button"

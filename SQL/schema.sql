@@ -105,6 +105,19 @@ CREATE TABLE IF NOT EXISTS provider_cooldown_events (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS marketing_audits (
+    id TEXT PRIMARY KEY,
+    business_id TEXT NOT NULL,
+    place_id TEXT,
+    r2_json_key TEXT NOT NULL,
+    score INTEGER,
+    confidence TEXT,
+    query TEXT,
+    source_hash TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT
+);
+
 CREATE TABLE IF NOT EXISTS places_search_cache (
     query_key TEXT PRIMARY KEY,
     query TEXT NOT NULL,

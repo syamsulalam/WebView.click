@@ -1,6 +1,6 @@
 # Google Business Profile Marketing Audit Plan
 
-Status: planning tracker
+Status: implementation tracker, Phase 1-6 implemented, Phase 7 future-only
 
 Goal: add a deterministic `/audit/:businessId` marketing audit that turns the Google Business Profile data we already collect into a client-facing report. The report should show how a business profile compares against local competitors, explain the practical business risk, and point naturally to WebView.click website setup plus Google Business Profile management/optimization services.
 
@@ -493,22 +493,46 @@ Optional later split:
 
 ### Persistence
 
-V1 can be on-demand only.
+Current implementation computes the audit on demand from data WebView.click already stores:
 
-Future saved snapshot:
+- Generated site JSON in D1/R2.
+- `places_prospects.result_json` and `places_prospects.details_json`.
+- `leads` fallback fields.
+- Cached competitor rows in `places_search_cache`.
 
-- Table `marketing_audits`:
+This means the audit endpoint does not need to call Google again just to rebuild the report. However, saving an audit JSON snapshot is still useful because it preserves the exact outreach version that an owner saw.
+
+Recommended persistence path:
+
+- Keep PDF generation client-side and on demand; do not store audit PDFs by default.
+- Add R2 audit JSON snapshots under `audits/{businessId}/{auditId}.json`.
+- Add a small D1 metadata table so admin can list snapshots without scanning R2:
   - `id`
   - `business_id`
   - `place_id`
-  - `query`
-  - `audit_json`
+  - `r2_json_key`
   - `score`
   - `confidence`
+  - `query`
+  - `source_hash`
   - `created_at`
-  - `updated_at`
-- Save snapshot when admin clicks `Save audit` or downloads PDF.
-- Optionally upload audit JSON/PDF to R2 under `audits/{businessId}/`.
+  - `created_by`
+- Save a snapshot when admin clicks `Save audit snapshot`. Keep copy/download actions non-writing unless a later workflow needs automatic history.
+- Let `/audit/:businessId` default to latest live on-demand audit unless `?snapshot={auditId}` is present.
+- Add a stale indicator if current live audit source hash differs from the saved snapshot hash.
+
+Why save JSON if source data already exists:
+
+- It preserves point-in-time score/copy/evidence for outreach consistency.
+- It avoids drift when cached competitor rows are trimmed/refreshed.
+- It lets admin compare before/after GBP optimization later.
+- It keeps storage small compared with saving PDFs.
+
+Why not save PDF:
+
+- PDF can be regenerated from the saved audit JSON when needed.
+- PDF storage is larger and less useful for programmatic comparison.
+- Client-side PDF generation already works without a server job.
 
 ## PDF Plan
 
@@ -552,13 +576,7 @@ Recommended proof panels:
 - `Photo proof`: target visible photo count vs competitor median.
 - `Competitor website rate`: how many visible competitors have real website URLs.
 
-Do not build external screenshots of Google results, Google Business Profiles, competitor websites, or the target website:
-
-- Browser code cannot reliably screenshot cross-origin Google/competitor pages.
-- Cloudflare Pages Functions are not a normal headless browser environment.
-- A dedicated screenshot service would add operational complexity without being necessary for the sales use case.
-
-Generated evidence panels are enough to show proof clearly and can be implemented as part of the deterministic audit UI/PDF.
+Generated evidence panels are the proof layer for the audit UI/PDF.
 
 ## Deterministic Owner Problem Copy System
 
@@ -915,53 +933,57 @@ Avoid:
 
 ### Phase 1 - Deterministic Audit Core
 
-- [ ] Add `src/lib/marketingAudit.ts` to normalize profile inputs and compute score categories.
-- [ ] Add website URL classifier for missing, owned website, social profile, link hub, directory/marketplace, booking-only, and unknown/unreachable.
-- [ ] Add competitor normalization helpers.
-- [ ] Add `src/lib/marketingAuditCopy.ts` with deterministic industry profiles, owner pressure templates, and trigger-based copy assembly.
-- [ ] Add deterministic scoring with evidence and recommendations.
-- [ ] Add generated evidence card data for website quality, review count, rating, photos, and competitor website rate.
-- [ ] Add targeted tests for scoring edge cases when local dependencies are available.
+- [x] Add `src/lib/marketingAudit.ts` to normalize profile inputs and compute score categories.
+- [x] Add website URL classifier for missing, owned website, social profile, link hub, directory/marketplace, booking-only, and unknown/unreachable.
+- [x] Add competitor normalization helpers.
+- [x] Add `src/lib/marketingAuditCopy.ts` with deterministic industry profiles, owner pressure templates, and trigger-based copy assembly.
+- [x] Add deterministic scoring with evidence and recommendations.
+- [x] Add generated evidence card data for website quality, review count, rating, photos, and competitor website rate.
+- [x] Add targeted tests for scoring edge cases when local dependencies are available.
 
 ### Phase 2 - API
 
-- [ ] Add `functions/api/audits/handler.ts`.
-- [ ] Route `GET /api/audits/:businessId`.
-- [ ] Load target from site/prospect/lead fallback sources.
-- [ ] Load competitors from cached query.
-- [ ] Return confidence and missing-data notes.
-- [ ] Update `docs/CODEBASE_REFERENCE.md`.
+- [x] Add `functions/api/audits/handler.ts`.
+- [x] Route `GET /api/audits/:businessId`.
+- [x] Load target from site/prospect/lead fallback sources.
+- [x] Support prospect-only audits by accepting a `place_id` in the same `:businessId` slot when no generated site exists yet.
+- [x] Load competitors from cached query.
+- [x] Return confidence and missing-data notes.
+- [x] Update `docs/CODEBASE_REFERENCE.md`.
 
 ### Phase 3 - Public Audit UI
 
-- [ ] Add `/audit/:businessId` route before `/:businessId` in `src/App.tsx`.
-- [ ] Add `src/pages/public/MarketingAuditViewer.tsx`.
-- [ ] Build report sections: overview, website gap, reviews, photos, completeness, competitors, WebView.click help.
-- [ ] Render one custom-feeling owner problem block selected from deterministic industry templates and audit evidence.
-- [ ] Render screenshot-friendly comparison/evidence cards.
-- [ ] Add loading/error/empty states.
-- [ ] Add link to `/:businessId` preview.
+- [x] Add `/audit/:businessId` route before `/:businessId` in `src/App.tsx`.
+- [x] Add `src/pages/public/MarketingAuditViewer.tsx`.
+- [x] Build report sections: overview, website gap, reviews, photos, completeness, competitors, WebView.click help.
+- [x] Render one custom-feeling owner problem block selected from deterministic industry templates and audit evidence.
+- [x] Render screenshot-friendly comparison/evidence cards.
+- [x] Add loading/error/empty states.
+- [x] Add link to `/:businessId` preview when a generated site exists.
 
 ### Phase 4 - PDF Download
 
-- [ ] Extract reusable PDF primitives from `src/lib/exportSiteHtml.ts` if needed.
-- [ ] Add `src/lib/exportMarketingAuditPdf.ts`.
-- [ ] Add `Download audit PDF` button.
-- [ ] Include generated evidence panels in the PDF.
-- [ ] Keep PDF source-safe and selectable.
+- [x] Extract reusable PDF primitives from `src/lib/exportSiteHtml.ts` if needed.
+- [x] Add `src/lib/exportMarketingAuditPdf.ts`.
+- [x] Add `Download audit PDF` button.
+- [x] Include generated evidence panels in the PDF.
+- [x] Keep PDF source-safe and selectable.
 
 ### Phase 5 - Admin Workflow
 
-- [ ] Add icon-only audit action in `/admin/sites`.
-- [ ] Add audit action or link in `/admin/leads` for details-loaded prospects.
-- [ ] Add copy audit URL action.
-- [ ] Add audit link variables to outreach helpers.
+- [x] Add icon-only audit action in `/admin/sites`.
+- [x] Add audit action or link in `/admin/leads` for details-loaded prospects.
+- [x] Add copy audit URL action.
+- [x] Add audit link variables to outreach helpers.
 
 ### Phase 6 - Saved Snapshots
 
-- [ ] Decide if audit snapshots need D1 persistence.
-- [ ] Add `marketing_audits` table only if saved audit history becomes necessary.
-- [ ] Optionally save audit PDF/JSON to R2.
+- [x] Decide persistence split: source data remains canonical, PDFs stay on-demand, audit JSON snapshots should be saved to R2 when admin needs a stable outreach/history record.
+- [x] Add `Save audit snapshot` action that writes audit JSON to R2.
+- [x] Add lightweight `marketing_audits` D1 metadata table for snapshot listing, latest snapshot lookup, score/confidence, and R2 key.
+- [x] Add optional `?snapshot={auditId}` support on `/audit/:businessId`.
+- [x] Add stale indicator when live source hash differs from saved snapshot source hash.
+- [x] Do not save audit PDFs to R2 by default.
 
 ### Phase 7 - Future AI / Managed GBP Enhancements
 
@@ -970,9 +992,21 @@ Avoid:
 - [ ] Photo/post recency once reliable data exists.
 - [ ] Owner-authorized performance metrics if WebView.click manages the GBP.
 
+## Implementation Notes
+
+- Implemented deterministic scoring and copy in `src/lib/marketingAudit.ts` and `src/lib/marketingAuditCopy.ts`.
+- Implemented `GET /api/audits/:businessId` in `functions/api/audits/handler.ts`.
+- Implemented public `/audit/:businessId` in `src/pages/public/MarketingAuditViewer.tsx`.
+- Implemented selectable PDF download in `src/lib/exportMarketingAuditPdf.ts`; PDF remains on-demand and should be generated from live or saved audit JSON.
+- Implemented Phase 6 snapshot persistence: `POST /api/audits/:businessId/snapshots` saves audit JSON to R2 under `audits/{businessId}/{auditId}.json`, `marketing_audits` stores metadata, and `/audit/:businessId?snapshot={auditId}` renders saved JSON with stale-source warning.
+- Added Admin Sites audit open/copy actions and included audit URL in owner outreach templates.
+- Added Admin Leads prospect-card audit action for details-loaded prospects.
+- Added `tests/marketingAudit.test.ts` for website classifier and deterministic audit evidence/copy behavior.
+- External screenshots are intentionally out of scope permanently; use generated evidence panels only.
+
 ## Open Decisions
 
 - Should `/audit/:businessId` be public by default, or require a hard-to-guess token for sensitive outreach?
 - Should admins be able to create audits before generating websites, using only `placeId`?
-- Should saved audit PDFs be stored in R2 for stable email attachments, or generated on demand in the browser?
+- Snapshot saving is explicit via `Save audit snapshot`; revisit automatic saving only if outreach history needs it.
 - Should audit pricing be separate from website setup, bundled into monthly management, or shown only as "ask us to handle it" in v1?

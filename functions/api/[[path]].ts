@@ -5,6 +5,7 @@ import { checkoutRequiredColumns, databaseRepairReport, generateRequiredColumns,
 import type { D1Database, Env, PagesContext } from "./_shared/types";
 import { buildAiFailureDiagnostics, extractProviderErrorDetails, getAiReadiness, handleAiProviderFailure, handleAiProviderHealth, handleAiReadiness, kieModelConfigs, type AiReadinessDeps } from "./ai/readiness";
 import { applyAiCopyPatch, applyAiOfferingOutline, buildAiCopyAudit, collectAiCopyAuditTargets, generateAiCopyPatch, generateAiOfferingOutline, type AiSiteGenerationDeps } from "./ai/siteGeneration";
+import { handleAudits, type AuditsDeps } from "./audits/handler";
 import { handleCloudflare, type CloudflareDeps } from "./cloudflare/handler";
 import { handleDomains, type DomainsDeps } from "./domains/handler";
 import { handleGenerationJobs, type GenerationJobsDeps } from "./generationJobs/handler";
@@ -104,6 +105,17 @@ const siteStorageDeps: SiteStorageDeps = {
   parseJsonObject,
   ensureRequiredColumns: ensureRequiredColumns as SiteStorageDeps["ensureRequiredColumns"],
   saveJsonSiteRecord: saveJsonSiteRecord as SiteStorageDeps["saveJsonSiteRecord"],
+};
+
+const auditsDeps: AuditsDeps = {
+  json,
+  errorJson,
+  parseJsonObject,
+  parseJsonArray,
+  asString,
+  ensureRequiredColumns: ensureRequiredColumns as AuditsDeps["ensureRequiredColumns"],
+  sha256Json,
+  siteStorageDeps,
 };
 
 const sitesHandlerDeps: SitesHandlerDeps = {
@@ -243,6 +255,10 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (segments[0] === "generation-jobs") {
       return handleGenerationJobs(generationJobsDeps, request, db, env, segments);
+    }
+
+    if (segments[0] === "audits") {
+      return handleAudits(auditsDeps, request, db, env, url, segments);
     }
 
     if (segments[0] === "ai" && segments[1] === "readiness") {

@@ -123,6 +123,7 @@ export async function setupTables(db: D1Database) {
     "CREATE TABLE IF NOT EXISTS daily_usage_counters (usage_date TEXT NOT NULL, counter_key TEXT NOT NULL, count INTEGER DEFAULT 0, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (usage_date, counter_key))",
     "CREATE TABLE IF NOT EXISTS provider_cooldowns (provider_key TEXT PRIMARY KEY, provider TEXT NOT NULL, until_ms INTEGER NOT NULL, reason TEXT, raw_message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS provider_cooldown_events (id TEXT PRIMARY KEY, provider_key TEXT NOT NULL, provider TEXT NOT NULL, event_type TEXT NOT NULL, cooldown_until_ms INTEGER, reason TEXT, raw_message TEXT, metadata_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS marketing_audits (id TEXT PRIMARY KEY, business_id TEXT NOT NULL, place_id TEXT, r2_json_key TEXT NOT NULL, score INTEGER, confidence TEXT, query TEXT, source_hash TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, created_by TEXT)",
     "CREATE TABLE IF NOT EXISTS places_search_cache (query_key TEXT PRIMARY KEY, query TEXT NOT NULL, results_json TEXT NOT NULL, provider_status TEXT, result_count INTEGER DEFAULT 0, hit_count INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME)",
     "CREATE TABLE IF NOT EXISTS places_prospects (place_id TEXT PRIMARY KEY, query_key TEXT, query TEXT, business_name TEXT NOT NULL, address TEXT, phone TEXT, website_url TEXT, maps_url TEXT, rating REAL, reviews INTEGER, niche TEXT, status TEXT DEFAULT 'new', result_json TEXT NOT NULL, details_json TEXT, selected_photo_json TEXT, selected_palette_json TEXT, palette_options_json TEXT, website_check_status TEXT, website_checked_at DATETIME, generated_business_id TEXT, last_error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, generated_at DATETIME, details_loaded_at DATETIME)",
     "CREATE TABLE IF NOT EXISTS generation_jobs (id TEXT PRIMARY KEY, business_id TEXT, place_id TEXT, provider TEXT, model TEXT, status TEXT NOT NULL, error TEXT, metadata_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -193,6 +194,15 @@ export async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "provider_cooldown_events", "raw_message", "TEXT");
   await addColumnIfMissing(db, "provider_cooldown_events", "metadata_json", "TEXT");
   await addColumnIfMissing(db, "provider_cooldown_events", "created_at", "DATETIME");
+  await addColumnIfMissing(db, "marketing_audits", "business_id", "TEXT");
+  await addColumnIfMissing(db, "marketing_audits", "place_id", "TEXT");
+  await addColumnIfMissing(db, "marketing_audits", "r2_json_key", "TEXT");
+  await addColumnIfMissing(db, "marketing_audits", "score", "INTEGER");
+  await addColumnIfMissing(db, "marketing_audits", "confidence", "TEXT");
+  await addColumnIfMissing(db, "marketing_audits", "query", "TEXT");
+  await addColumnIfMissing(db, "marketing_audits", "source_hash", "TEXT");
+  await addColumnIfMissing(db, "marketing_audits", "created_at", "DATETIME");
+  await addColumnIfMissing(db, "marketing_audits", "created_by", "TEXT");
   await addColumnIfMissing(db, "places_search_cache", "provider_status", "TEXT");
   await addColumnIfMissing(db, "places_search_cache", "result_count", "INTEGER DEFAULT 0");
   await addColumnIfMissing(db, "places_search_cache", "hit_count", "INTEGER DEFAULT 0");
@@ -232,7 +242,7 @@ export async function setupTables(db: D1Database) {
 export async function databaseRepairReport(db: D1Database) {
   const startedAt = new Date().toISOString();
   await setupTables(db);
-  const tables = ["leads", "subscriptions", "lead_payments", "crm_activities", "json_sites", "system_settings", "ai_readiness_cache", "daily_usage_counters", "provider_cooldowns", "provider_cooldown_events", "places_search_cache", "places_prospects", "generation_jobs"];
+  const tables = ["leads", "subscriptions", "lead_payments", "crm_activities", "json_sites", "system_settings", "ai_readiness_cache", "daily_usage_counters", "provider_cooldowns", "provider_cooldown_events", "marketing_audits", "places_search_cache", "places_prospects", "generation_jobs"];
   const summary: Record<string, string[]> = {};
   for (const table of tables) {
     summary[table] = Array.from(await tableColumns(db, table)).sort();

@@ -15,6 +15,7 @@ import PublicViewer from './pages/public/PublicViewer';
 import HubPage from './pages/public/HubPage';
 import DemoSite from './pages/public/DemoSite';
 import TermsRefund from './pages/public/TermsRefund';
+import MarketingAuditViewer from './pages/public/MarketingAuditViewer';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
       <Route path="/" element={<HubPage />} />
       <Route path="/demo" element={<DemoSite />} />
       <Route path="/terms-refund" element={<TermsRefund />} />
+      <Route path="/audit/:businessId" element={<MarketingAuditViewer />} />
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<AdminDashboard />} />
         <Route path="leads" element={<AdminLeads />} />

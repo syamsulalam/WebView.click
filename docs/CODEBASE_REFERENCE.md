@@ -11,6 +11,7 @@ File: `src/App.tsx`
 Routes utama:
 - `/` -> `HubPage`
 - `/demo` -> `DemoSite`
+- `/audit/:businessId` -> `MarketingAuditViewer`
 - `/admin` -> `AdminLayout` + `AdminDashboard`
 - `/admin/leads` -> `AdminLeads`
 - `/admin/jobs` -> `AdminJobs`
@@ -21,7 +22,7 @@ Routes utama:
 - `/:businessId` -> `PublicViewer`
 
 Cloudflare Pages SPA fallback:
-- `public/_redirects` berisi `/* /index.html 200` agar direct open/refresh untuk `/demo`, `/admin/*`, dan `/:businessId` tetap masuk ke React app, bukan Pages static 404.
+- `public/_redirects` berisi `/* /index.html 200` agar direct open/refresh untuk `/demo`, `/audit/*`, `/admin/*`, dan `/:businessId` tetap masuk ke React app, bukan Pages static 404.
 - `public/_routes.json` tetap membatasi Pages Functions ke `/api` dan `/api/*`, sehingga fallback SPA tidak membuat semua route menjadi Function invocation.
 
 ## Components
@@ -783,6 +784,31 @@ Risiko debug:
 - Jika halaman tetap menampilkan preview loading issue setelah retry, cek row `json_sites.business_id`; jika row ada tetapi API mengembalikan 502, cek R2 binding/object `sites/{businessId}/{businessId}.json`.
 - Jika warna/typography rusak, cek shape `design.themeVariables` di JSON.
 
+### `src/pages/public/MarketingAuditViewer.tsx`
+
+Fungsi:
+- Route `/audit/:businessId` untuk laporan Google Business Profile marketing audit yang owner-facing.
+- Mengubah audit deterministic dari API menjadi score overview, owner problem copy, evidence panels, competitor table, WebView.click service recommendations, dan tombol PDF.
+
+API yang dipakai:
+- `GET /api/audits/:businessId`
+- `POST /api/audits/:businessId/snapshots`
+- `GET /api/audits/:businessId/snapshots`
+
+Logic penting:
+- Route ini didefinisikan sebelum `/:businessId` di `src/App.tsx` agar URL audit tidak tertangkap oleh public website preview.
+- Jika `:businessId` adalah generated site ID, audit memakai site JSON plus prospect/lead fallback; jika ID adalah `places_prospects.place_id`, audit tetap bisa jalan untuk gathered prospect yang belum digenerate.
+- Owner-facing copy berasal dari deterministic `src/lib/marketingAuditCopy.ts`, bukan AI. Copy memilih industry profile seperti dental/medical, contractor, restaurant/cafe, salon/spa, fitness, automotive, professional service, retail, atau generic local service.
+- Evidence panels adalah generated report sections dari audit JSON, bukan screenshot eksternal Google/competitor page.
+- `Download audit PDF` memakai `src/lib/exportMarketingAuditPdf.ts` untuk PDF selectable yang berisi score, problem framing, evidence panels, score breakdown, recommended action plan, dan source notes.
+- Admin-opened URLs use `?admin=1` and show `Save audit snapshot`. Saving calls `POST /api/audits/:businessId/snapshots`, stores JSON in R2, updates URL to `?admin=1&snapshot={auditId}`, and shows a stale warning when saved source hash differs from the current live audit source hash.
+- Public/owner audit URLs omit `admin=1`, so they show the report and PDF download without snapshot controls.
+
+Risiko debug:
+- Jika audit low-confidence, cek apakah `places_prospects.query` punya cached `places_search_cache` result set.
+- Jika website false-positive masih lolos sebagai real website, update classifier domain list di `src/lib/marketingAudit.ts`.
+- Jika snapshot save gagal, cek R2 binding dan table `marketing_audits`; PDF tetap bisa dibuat on-demand dari live audit tanpa snapshot.
+
 ## Shared Logic
 
 ### `src/lib/aiPricing.ts`
@@ -817,6 +843,40 @@ Logic penting:
 - `prospectScoringPresets` menyediakan preset `Balanced`, `No Website Hunter`, `US High Value`, dan `Ready to Generate`; memilih preset di Settings mengisi threshold dan weights sekaligus.
 - `parseProspectScoreWeights()` membaca override JSON dari D1 settings dan fallback per-field jika ada nilai rusak/hilang.
 - `scoreThresholdOptions` dipakai bersama oleh Settings dan Leads agar opsi filter tetap konsisten.
+
+### `src/lib/marketingAudit.ts`
+
+Fungsi:
+- Deterministic scorer untuk `/audit/:businessId`.
+- Normalizes target business from generated site JSON, `places_prospects`, and `leads`.
+- Normalizes cached competitor rows and computes a 100-point audit score.
+
+Logic penting:
+- Website URL classifier distinguishes `owned_website`, `social_profile`, `link_hub`, `directory_or_marketplace`, `booking_only`, `unknown_or_unreachable`, and `missing`; only `owned_website` counts as a full website.
+- Score categories: website/customer research path, reviews/social proof, photos/visual proof, profile completeness, local competitor position, and conversion readiness.
+- Owner review replies and photo recency are intentionally missing-data notes, not scored, because current third-party Places data is not reliable for those claims.
+- Generates screenshot-friendly evidence cards from audit data for the UI/PDF proof layer.
+- Targeted tests live in `tests/marketingAudit.test.ts`.
+
+### `src/lib/marketingAuditCopy.ts`
+
+Fungsi:
+- Deterministic owner-facing copy registry for GBP audits.
+- Makes audits feel customized without AI by matching industry/niche and issue flags.
+
+Logic penting:
+- Industry profiles include dental/medical, home services, restaurant/cafe, salon/spa/beauty, fitness/wellness, automotive, professional services, retail/local shop, and generic local service fallback.
+- Copy slots cover owner pressure, customer decision moment, website gap, partial social/directory website gap, review/rating/photo problems, operational overhead pressure, seasonality where relevant, and recommendation tone.
+- Copy assembly only emits problem framing when the triggering audit evidence exists.
+
+### `src/lib/exportMarketingAuditPdf.ts`
+
+Fungsi:
+- Browser-side selectable PDF exporter for `MarketingAuditViewer`.
+
+Logic penting:
+- Uses a small internal PDF text writer and `file-saver`; no new PDF dependency.
+- Includes score, owner problem copy, generated evidence panels, category breakdown, WebView.click services, and source notes.
 
 ### `src/lib/siteStylePresets.ts`
 
@@ -945,6 +1005,7 @@ Endpoint:
 - `GET /api/prospects`
 - `PUT /api/prospects/:placeId/status`
 - `PUT /api/prospects/:placeId/selection`
+- `GET /api/audits/:businessId`
 - `GET /api/places/search`
 - `GET /api/places/history`
 - `GET /api/places/photo`
@@ -980,6 +1041,8 @@ Logic router modules:
 - Dashboard stats/activity endpoints live in `functions/api/stats/handler.ts`: `GET /api/stats` and `GET /api/activities`.
 - Lead endpoints live in `functions/api/leads/handler.ts`: `GET /api/leads`, `PUT /api/leads/:id/status`, `GET /api/leads/payments`, `POST /api/leads/:id/payment-verified`, and `POST /api/leads/:business_id/ping`.
 - Prospect endpoints live in `functions/api/prospects/handler.ts`: filtered `GET /api/prospects`, `PUT /api/prospects/:placeId/status`, and `PUT /api/prospects/:placeId/selection`.
+- Audit endpoint lives in `functions/api/audits/handler.ts`: `GET /api/audits/:businessId` builds deterministic Google Business Profile marketing audit JSON from generated site/prospect/lead fallback sources plus cached competitor rows. It supports generated `business_id` and prospect `place_id`, does not call AI, does not refresh Google Places, and returns confidence/missing-data notes.
+- Audit snapshots: `POST /api/audits/:businessId/snapshots` saves the current audit JSON to R2 under `audits/{businessId}/{auditId}.json` and writes metadata to `marketing_audits`; `GET /api/audits/:businessId/snapshots` lists recent metadata; `GET /api/audits/:businessId?snapshot={auditId}` reads saved JSON and marks it stale if the current live source hash differs.
 - Endpoint-level fixtures for extracted API handlers live in `tests/apiHandlers.test.ts`; run `npm run test:api-handlers` when local dependencies are installed, or trigger the manual GitHub Actions workflow `API Handler Tests` to run `npm ci` and the fixture suite remotely without installing dependencies locally.
 
 Logic AI:
@@ -1186,7 +1249,7 @@ Fungsi:
 
 Fungsi:
 - Skema Cloudflare D1 production.
-- Tabel inti: `leads`, `subscriptions`, `crm_activities`, `json_sites`, `system_settings`, `ai_readiness_cache`, `daily_usage_counters`, `provider_cooldowns`, `provider_cooldown_events`.
+- Tabel inti: `leads`, `subscriptions`, `crm_activities`, `json_sites`, `system_settings`, `ai_readiness_cache`, `daily_usage_counters`, `provider_cooldowns`, `provider_cooldown_events`, `marketing_audits`.
 - Tabel admin prospecting: `places_search_cache`, `places_prospects`, dan `generation_jobs`.
 
 Tabel:
@@ -1199,6 +1262,7 @@ Tabel:
 - `daily_usage_counters`
 - `provider_cooldowns`
 - `provider_cooldown_events`
+- `marketing_audits`
 
 ## Maintenance Rule
 
