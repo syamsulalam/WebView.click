@@ -52,6 +52,8 @@ export type Env = {
   DOMAIN_REGISTRATION_MAX_USD?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
+  CLOUDFLARE_PAGES_PROJECT_NAME?: string;
+  CLOUDFLARE_PAGES_API_TOKEN?: string;
   NAME_COM_USERNAME?: string;
   NAME_COM_API_TOKEN?: string;
   NAME_COM_ENV?: string;

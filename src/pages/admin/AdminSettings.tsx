@@ -93,6 +93,8 @@ const initialSettings: Record<string, string> = {
   DOMAIN_REGISTRATION_MAX_USD: "17",
   CLOUDFLARE_ACCOUNT_ID: "",
   CLOUDFLARE_API_TOKEN: "",
+  CLOUDFLARE_PAGES_PROJECT_NAME: "webview-click",
+  CLOUDFLARE_PAGES_API_TOKEN: "",
   NAME_COM_USERNAME: "",
   NAME_COM_API_TOKEN: "",
   NAME_COM_ENV: "production",
@@ -348,6 +350,29 @@ const domainRegistrarFieldGroups: Array<{
     fields: [
       { key: "SPACESHIP_API_KEY", label: "API key", type: "password", placeholder: "Spaceship API key", tooltip: "Create this in Spaceship API Manager with New API key. Spaceship uses a key + secret pair; this field is the X-Api-Key value, not your login email/password." },
       { key: "SPACESHIP_API_SECRET", label: "API secret", type: "password", placeholder: "Spaceship API secret", tooltip: "Spaceship API Manager shows this with the API key. This is the X-Api-Secret value. Keep it server-side only and rotate it if it is ever exposed." },
+    ],
+  },
+];
+
+const cloudflareObservabilityFieldGroups: Array<{
+  title: string;
+  description: string;
+  fields: Array<{ key: string; label: string; type?: "text" | "password"; placeholder?: string; tooltip: string }>;
+}> = [
+  {
+    title: "Shared Cloudflare account",
+    description: "Reused by Cloudflare Registrar and Pages deployment logs.",
+    fields: [
+      { key: "CLOUDFLARE_ACCOUNT_ID", label: "Account ID", placeholder: "Cloudflare account ID", tooltip: "Shared Cloudflare Account ID. Used as {account_id} for Registrar API calls and Pages deployment log calls." },
+      { key: "CLOUDFLARE_API_TOKEN", label: "Shared API token", type: "password", placeholder: "Cloudflare API token", tooltip: "Shared Cloudflare API token. For Pages logs it needs Pages Read permission. If you also use Cloudflare Registrar automation, keep registrar/domain permissions too, or fill a Pages-only token below." },
+    ],
+  },
+  {
+    title: "Pages deployment logs",
+    description: "Used by /api/cloudflare/pages-logs and the Dashboard Latest deployment logs panel.",
+    fields: [
+      { key: "CLOUDFLARE_PAGES_PROJECT_NAME", label: "Pages project name", placeholder: "webview-click", tooltip: "Cloudflare Pages project name used in /accounts/{account_id}/pages/projects/{project_name}. This can differ from the public domain." },
+      { key: "CLOUDFLARE_PAGES_API_TOKEN", label: "Pages API token override", type: "password", placeholder: "Optional Pages Read token", tooltip: "Optional restricted token for Pages logs. Leave blank to reuse CLOUDFLARE_API_TOKEN. Minimum needed permission for deployment logs is Pages Read on the account/project." },
     ],
   },
 ];
@@ -727,6 +752,12 @@ export default function AdminSettings() {
   const visibleDomainRegistrarFieldGroups = domainRegistrarFieldGroups.filter((group) => !group.providers || group.providers.includes(activeDomainRegistrar));
   const missingDomainRegistrarKeys = activeDomainRegistrarOption.requiredKeys.filter((key) => !String(settings[key] || "").trim());
   const domainRegistrarConfigured = missingDomainRegistrarKeys.length === 0;
+  const cloudflarePagesLogsMissingKeys = [
+    ["CLOUDFLARE_ACCOUNT_ID", settings.CLOUDFLARE_ACCOUNT_ID],
+    ["CLOUDFLARE_PAGES_PROJECT_NAME", settings.CLOUDFLARE_PAGES_PROJECT_NAME],
+    ["CLOUDFLARE_PAGES_API_TOKEN or CLOUDFLARE_API_TOKEN", settings.CLOUDFLARE_PAGES_API_TOKEN || settings.CLOUDFLARE_API_TOKEN],
+  ].filter(([, value]) => !String(value || "").trim()).map(([key]) => key);
+  const cloudflarePagesLogsConfigured = cloudflarePagesLogsMissingKeys.length === 0;
   const visiblePaymentFieldGroups = paymentFieldGroups.filter((group) => !group.processors || group.processors.includes(activePaymentProcessor));
   const paypalSelected = activePaymentProcessor === "paypal";
   const paypalLink = String(settings.PAYPAL_BUSINESS_URL || "").trim();
@@ -1396,6 +1427,69 @@ export default function AdminSettings() {
           </div>
         )}
       </div>
+      </div>
+
+      <div id="settings-cloudflare-observability" className="mt-6 scroll-mt-24 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <AdminCollapsibleSectionHeader
+          title="Cloudflare Observability"
+          icon={ShieldAlert}
+          open={settingsSectionOpen("cloudflareObservability")}
+          onToggle={() => toggleSettingsSection("cloudflareObservability")}
+          tooltip="Optional credentials for reading Cloudflare Pages deployment history logs into the admin dashboard. Uses shared Cloudflare account details where possible."
+          description={cloudflarePagesLogsConfigured
+            ? `Pages logs configured for ${settings.CLOUDFLARE_PAGES_PROJECT_NAME || "selected project"}.`
+            : `Missing: ${cloudflarePagesLogsMissingKeys.join(", ")}.`}
+          descriptionClassName="mt-1 text-xs leading-relaxed text-gray-500"
+          actions={
+            <a
+              href="/admin"
+              className="inline-flex h-9 items-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              Dashboard logs
+            </a>
+          }
+        />
+
+        {settingsSectionOpen("cloudflareObservability") && (
+          <div className="mt-4 space-y-5">
+            {!cloudflarePagesLogsConfigured && (
+              <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-700" />
+                <div>
+                  <p className="font-semibold">Deployment logs are optional until Cloudflare details are filled</p>
+                  <p className="mt-1 text-xs leading-relaxed">
+                    Add Account ID, Pages project name, and a Cloudflare API token with Pages Read permission. The Pages token override can stay empty if the shared token already has Pages Read.
+                  </p>
+                </div>
+              </div>
+            )}
+            {cloudflareObservabilityFieldGroups.map((group) => (
+              <section key={group.title} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3">
+                  <p className="text-sm font-semibold text-slate-900">{group.title}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{group.description}</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {group.fields.map((field) => (
+                    <label key={field.key} className="text-sm">
+                      <span className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
+                        {field.label}
+                        <HelpTooltip text={field.tooltip} widthClass="w-80" />
+                      </span>
+                      <input
+                        type={field.type || "text"}
+                        value={settings[field.key] || ""}
+                        onChange={(e) => handleChange(field.key, e.target.value)}
+                        placeholder={field.placeholder}
+                        className="w-full rounded-lg border border-gray-300 bg-white p-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">

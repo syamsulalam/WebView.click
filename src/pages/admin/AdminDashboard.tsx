@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, CircleDashed, ListChecks } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, CircleDashed, Copy, ListChecks, RefreshCw } from "lucide-react";
 import AdminDocsReader from "../../components/AdminDocsReader";
 import HelpTooltip from "../../components/HelpTooltip";
 import HoverTooltip from "../../components/HoverTooltip";
+import { readAdminApiDiagnosticHistory, readLatestAdminApiDiagnostic, recordAdminApiDiagnostic, type AdminApiDiagnostic } from "../../lib/adminDiagnostics";
 
 type Stats = {
   totalLeads: number;
@@ -40,6 +41,30 @@ type ReadinessItem = {
   tooltip: string;
 };
 
+type PagesDeploymentLogs = {
+  configured?: boolean;
+  missingKeys?: string[];
+  projectName?: string;
+  environment?: string;
+  deploymentId?: string;
+  deployment?: {
+    id?: string;
+    url?: string;
+    environment?: string;
+    status?: string;
+    branch?: string;
+    commitHash?: string;
+    commitMessage?: string;
+    createdOn?: string;
+    modifiedOn?: string;
+  } | null;
+  logs?: Array<{ ts?: string; line: string }>;
+  total?: number;
+  includesContainerLogs?: boolean;
+  error?: string;
+  fetchedAt?: string;
+};
+
 function toNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -48,34 +73,65 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats>(emptyStats);
   const [activities, setActivities] = useState<any[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [pagesLogs, setPagesLogs] = useState<PagesDeploymentLogs | null>(null);
+  const [pagesLogsLoading, setPagesLogsLoading] = useState(false);
+  const [latestDashboardApiDiagnostic, setLatestDashboardApiDiagnostic] = useState<AdminApiDiagnostic | null>(null);
+  const [diagnosticBundleCopied, setDiagnosticBundleCopied] = useState(false);
   const [usageHistoryDays, setUsageHistoryDays] = useState<7 | 30>(7);
   const [loading, setLoading] = useState(true);
   const [apiWarning, setApiWarning] = useState("");
 
-  useEffect(() => {
-    const fetchJson = async (url: string) => {
-      const response = await fetch(url);
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`${url} returned ${response.status}: ${text.substring(0, 140)}`);
-      }
-      return response.json() as Promise<unknown>;
-    };
+  const fetchJson = async (url: string) => {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const text = await response.text();
+      const error = new Error(`${url} returned ${response.status}: ${text.substring(0, 140)}`);
+      Object.assign(error, { requestPath: url, status: response.status });
+      throw error;
+    }
+    return response.json() as Promise<unknown>;
+  };
 
+  const recordDashboardApiWarning = (source: string, warning: string, error: unknown, requestPath: string) => {
+    const errorLike = error as { message?: unknown; status?: unknown; requestPath?: unknown };
+    const diagnostic = recordAdminApiDiagnostic({
+      source,
+      title: "Dashboard API warning",
+      message: warning,
+      rawMessage: error instanceof Error ? error.message : String(error || warning),
+      requestPath: typeof errorLike?.requestPath === "string" ? errorLike.requestPath : requestPath,
+      status: typeof errorLike?.status === "number" ? errorLike.status : undefined,
+    });
+    setLatestDashboardApiDiagnostic(diagnostic);
+    setApiWarning(warning);
+  };
+
+  const fetchPagesLogs = () => {
+    setPagesLogsLoading(true);
+    fetchJson("/api/cloudflare/pages-logs?limit=80")
+      .then((data) => setPagesLogs(data && typeof data === "object" ? data as PagesDeploymentLogs : null))
+      .catch((error) => {
+        console.error(error);
+        setPagesLogs({ configured: true, logs: [], error: error instanceof Error ? error.message : "Cloudflare Pages logs failed." });
+      })
+      .finally(() => setPagesLogsLoading(false));
+  };
+
+  useEffect(() => {
     Promise.all([
       fetchJson("/api/stats").catch((error) => {
         console.error(error);
-        setApiWarning("API stats belum siap. Dashboard menampilkan angka default sementara.");
+        recordDashboardApiWarning("Dashboard stats", "API stats belum siap. Dashboard menampilkan angka default sementara.", error, "/api/stats");
         return emptyStats;
       }),
       fetchJson("/api/activities").catch((error) => {
         console.error(error);
-        setApiWarning("API activities belum siap. Dashboard tetap bisa dibuka dengan data kosong sementara.");
+        recordDashboardApiWarning("Dashboard activities", "API activities belum siap. Dashboard tetap bisa dibuka dengan data kosong sementara.", error, "/api/activities");
         return [];
       }),
       fetchJson("/api/settings").catch((error) => {
         console.error(error);
-        setApiWarning("Settings belum bisa dibaca. Readiness setup memakai state kosong sementara.");
+        recordDashboardApiWarning("Dashboard settings", "Settings belum bisa dibaca. Readiness setup memakai state kosong sementara.", error, "/api/settings");
         return {};
       })
     ]).then(([statsData, activitiesData, settingsData]) => {
@@ -91,9 +147,10 @@ export default function AdminDashboard() {
       setLoading(false);
     }).catch(e => {
       console.error(e);
-      setApiWarning("API admin belum merespons normal. Dashboard menampilkan state kosong sementara.");
+      recordDashboardApiWarning("Dashboard admin", "API admin belum merespons normal. Dashboard menampilkan state kosong sementara.", e, "/admin");
       setLoading(false);
     });
+    fetchPagesLogs();
   }, []);
 
   const aiProviderKeys = ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "KIE_API_KEY", "OPENCODE_API_KEY"];
@@ -193,6 +250,71 @@ export default function AdminDashboard() {
     if (level === "warn") return "Watch";
     if (level === "unknown") return "Unknown";
     return "OK";
+  };
+
+  const buildDiagnosticBundle = () => {
+    const storedHistory = readAdminApiDiagnosticHistory();
+    const latestDiagnostic = latestDashboardApiDiagnostic || readLatestAdminApiDiagnostic();
+    const diagnosticHistory = latestDashboardApiDiagnostic && storedHistory[0]?.capturedAt !== latestDashboardApiDiagnostic.capturedAt
+      ? [latestDashboardApiDiagnostic, ...storedHistory].slice(0, 5)
+      : storedHistory.slice(0, 5);
+    const historyLines = diagnosticHistory.length
+      ? diagnosticHistory.map((item, index) => [
+        `${index + 1}. ${item.capturedAt || "unknown time"} - ${item.source || item.title || "unknown source"}`,
+        `   Path/status: ${item.requestPath || "unknown"} / ${item.status ? `HTTP ${item.status}` : "unknown"}`,
+        item.provider || item.model ? `   Provider/model: ${item.provider || "unknown"} / ${item.model || "unknown"}` : "",
+        `   Message: ${item.message || item.rawMessage || "unknown"}`,
+      ].filter(Boolean).join("\n")).join("\n")
+      : "(no API diagnostic history captured in this browser session)";
+    const deployment = pagesLogs?.deployment;
+    const logLines = (pagesLogs?.logs || [])
+      .slice(-80)
+      .map((log) => `[${log.ts || "-"}] ${log.line}`)
+      .join("\n") || "(no deployment log lines loaded)";
+    return [
+      "WebView.click diagnostic bundle",
+      `Generated: ${new Date().toISOString()}`,
+      `Admin page: ${typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/admin"}`,
+      "",
+      "Latest API warning",
+      `Captured: ${latestDiagnostic?.capturedAt || "none"}`,
+      `Source: ${latestDiagnostic?.source || "unknown"}`,
+      `Title: ${latestDiagnostic?.title || "none"}`,
+      `Message: ${apiWarning || latestDiagnostic?.message || "No API warning captured in this browser session."}`,
+      `Request path: ${latestDiagnostic?.requestPath || "unknown"}`,
+      `Status: ${latestDiagnostic?.status ? `HTTP ${latestDiagnostic.status}` : "unknown"}`,
+      latestDiagnostic?.provider ? `Provider: ${latestDiagnostic.provider}` : "",
+      latestDiagnostic?.model ? `Model: ${latestDiagnostic.model}` : "",
+      latestDiagnostic?.rawMessage ? `Raw error: ${latestDiagnostic.rawMessage}` : "",
+      "",
+      "Recent API warning history",
+      historyLines,
+      "",
+      "Cloudflare Pages deployment",
+      `Configured: ${pagesLogs?.configured === false ? "no" : "yes"}`,
+      `Project: ${pagesLogs?.projectName || "unknown"}`,
+      `Environment: ${pagesLogs?.environment || deployment?.environment || "unknown"}`,
+      `Deployment ID: ${pagesLogs?.deploymentId || deployment?.id || "unknown"}`,
+      `Status: ${deployment?.status || "unknown"}`,
+      `Branch: ${deployment?.branch || "unknown"}`,
+      `Commit: ${deployment?.commitHash || "unknown"}`,
+      `Fetched: ${pagesLogs?.fetchedAt || "not loaded"}`,
+      pagesLogs?.error ? `Logs API error: ${pagesLogs.error}` : "",
+      pagesLogs?.missingKeys?.length ? `Missing keys: ${pagesLogs.missingKeys.join(", ")}` : "",
+      "",
+      "Latest deployment log lines",
+      logLines,
+    ].filter((line) => line !== "").join("\n");
+  };
+
+  const copyDiagnosticBundle = async () => {
+    try {
+      await navigator.clipboard.writeText(buildDiagnosticBundle());
+      setDiagnosticBundleCopied(true);
+      window.setTimeout(() => setDiagnosticBundleCopied(false), 1400);
+    } catch {
+      setDiagnosticBundleCopied(false);
+    }
   };
 
   return (
@@ -395,6 +517,107 @@ export default function AdminDashboard() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mb-12 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900">
+                  Latest deployment logs
+                  <HelpTooltip text="Reads Cloudflare Pages deployment history logs for the latest production deployment. This is deployment history output, not live Functions tail streaming." />
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  {pagesLogs?.configured === false
+                    ? "Configure Cloudflare Pages log credentials in Settings."
+                    : pagesLogs?.deploymentId
+                      ? `${pagesLogs.projectName || "Pages project"} deployment ${String(pagesLogs.deploymentId).slice(0, 8)}`
+                      : "Cloudflare Pages deployment logs."}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <HoverTooltip text="Copy the last 5 API warnings, request paths/statuses, and current Cloudflare deployment log lines.">
+                  <button
+                    type="button"
+                    onClick={copyDiagnosticBundle}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-indigo-700 hover:bg-indigo-50"
+                    aria-label="Copy diagnostic bundle"
+                  >
+                    {diagnosticBundleCopied ? <Check size={16} /> : <Copy size={16} />}
+                  </button>
+                </HoverTooltip>
+                <HoverTooltip text="Reload latest Cloudflare Pages deployment logs.">
+                  <button
+                    type="button"
+                    onClick={fetchPagesLogs}
+                    disabled={pagesLogsLoading}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
+                    aria-label="Refresh Cloudflare Pages deployment logs"
+                  >
+                    <RefreshCw size={16} className={pagesLogsLoading ? "animate-spin" : ""} />
+                  </button>
+                </HoverTooltip>
+                <a href="/admin/settings#settings-cloudflare-observability" className="text-sm font-semibold text-indigo-700 hover:underline">Settings</a>
+              </div>
+            </div>
+            {pagesLogs?.configured === false ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-semibold">Cloudflare Pages logs not configured</p>
+                <p className="mt-1 text-xs leading-relaxed">
+                  Missing: {(pagesLogs.missingKeys || []).join(", ") || "Cloudflare Pages settings"}. Add Account ID, Pages project name, and a token with Pages Read permission.
+                </p>
+              </div>
+            ) : pagesLogs?.error ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+                <p className="font-semibold">Could not read Cloudflare deployment logs</p>
+                <p className="mt-1 text-xs leading-relaxed">{pagesLogs.error}</p>
+              </div>
+            ) : pagesLogsLoading && !pagesLogs ? (
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                <RefreshCw size={16} className="animate-spin" />
+                Loading Cloudflare deployment logs...
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pagesLogs?.deployment && (
+                  <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 sm:grid-cols-4">
+                    <div>
+                      <p className="font-semibold uppercase tracking-wide text-slate-500">Status</p>
+                      <p className="mt-1 font-semibold text-slate-900">{pagesLogs.deployment.status || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold uppercase tracking-wide text-slate-500">Branch</p>
+                      <p className="mt-1 truncate font-semibold text-slate-900">{pagesLogs.deployment.branch || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold uppercase tracking-wide text-slate-500">Commit</p>
+                      <p className="mt-1 truncate font-mono text-slate-900">{pagesLogs.deployment.commitHash ? pagesLogs.deployment.commitHash.slice(0, 10) : "-"}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold uppercase tracking-wide text-slate-500">Fetched</p>
+                      <p className="mt-1 font-semibold text-slate-900">{pagesLogs.fetchedAt ? new Date(pagesLogs.fetchedAt).toLocaleString() : "-"}</p>
+                    </div>
+                  </div>
+                )}
+                {(pagesLogs?.logs || []).length > 0 ? (
+                  <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3">
+                    {(pagesLogs?.logs || []).map((log, index) => (
+                      <div key={`${log.ts || index}:${index}`} className="grid grid-cols-[9rem_1fr] gap-3 border-b border-white/5 py-1.5 text-xs last:border-b-0">
+                        <span className="font-mono text-slate-400">{log.ts ? new Date(log.ts).toLocaleTimeString() : "-"}</span>
+                        <span className="whitespace-pre-wrap break-words font-mono text-slate-100">{log.line}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    No deployment log lines returned yet.
+                  </div>
+                )}
+                <p className="text-xs text-slate-500">
+                  Showing {(pagesLogs?.logs || []).length} of {pagesLogs?.total || 0} deployment log line{Number(pagesLogs?.total || 0) === 1 ? "" : "s"}.
+                  {pagesLogs?.includesContainerLogs ? " Includes container logs." : ""}
+                </p>
               </div>
             )}
           </div>

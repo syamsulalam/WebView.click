@@ -240,6 +240,7 @@ Fungsi:
 Logic penting:
 - `AdminToastProvider` menyimpan maksimal 4 toast dan merender overlay fixed kanan atas dengan z-index tinggi.
 - `useAdminToast().showApiError()` memakai `src/lib/apiErrorInsights.ts` untuk mengubah error provider menjadi judul, arti error, action items, dan raw message.
+- `showApiError()` juga menyimpan 5 diagnostic browser-side terakhir lewat `src/lib/adminDiagnostics.ts` (`localStorage` key `webview.admin.latestApiDiagnostic`) berisi source, request path, HTTP status, provider/model, dan raw error. Reader tetap backward-compatible dengan nilai single-object lama. History ini dipakai oleh tombol copy diagnostic bundle di Dashboard.
 - Error generate/regenerate/retry dari `/api/sites/generate` muncul sebagai toast, sehingga pesan seperti Gemini 429 quota tidak tersembunyi di panel/card yang harus discroll.
 - Success/info action notices on `/admin/sites`, including AI copy patch regenerated, Google data resaved, first site generated, and AI readiness refreshed, also use the floating toast stack instead of an inline fixed-position page notice.
 - `src/lib/apiResponse.ts` dipakai oleh API fetch penting supaya body error non-JSON/HTML dari provider atau Cloudflare edge tetap muncul sebagai pesan actionable, bukan hanya fallback `HTTP 502` atau dump HTML. Jika response HTML Cloudflare 524, pesan eksplisit bahwa Cloudflare timeout menunggu Pages Function/provider call terlalu lama dan job bisa dilanjutkan dari chunk yang tersimpan; HTML 5xx lain tetap mengarahkan admin cek Pages deployment logs, Functions logs, dan Cloudflare Status.
@@ -373,11 +374,13 @@ Fungsi:
 - Menampilkan overview CRM: total leads, conversion rate, total revenue, dan aktivitas terbaru.
 - Menampilkan setup readiness ringkas untuk Google Places, AI generation, dan payment setup sebelum admin masuk workflow detail.
 - Menampilkan daily usage guardrails untuk Places search, Places details, remote AI readiness, dan site generation agar admin melihat aktivitas quota-sensitive sebelum terlalu dekat batas operasional harian.
+- Menampilkan panel kecil `Latest deployment logs` dari Cloudflare Pages deployment history saat Cloudflare observability credentials sudah dikonfigurasi.
 
 API yang dipakai:
 - `GET /api/stats`
 - `GET /api/activities`
 - `GET /api/settings`
+- `GET /api/cloudflare/pages-logs?limit=80`
 
 Logic penting:
 - Response API divalidasi. Jika endpoint 500 atau return shape salah, halaman tidak crash.
@@ -391,6 +394,8 @@ Logic penting:
 - Readiness card memakai `HelpTooltip` pada heading dan setiap item agar admin tahu setup mana yang memblokir search, generation, atau checkout.
 - Utility links in dense dashboard controls, such as generation-job review, use icon-only buttons with hover tooltips to reduce admin panel text noise.
 - Dashboard includes docs quick links for admin workflow, setup readiness, and free-tier usage guardrails.
+- `Latest deployment logs` membaca latest production deployment via Cloudflare Pages API, lalu menampilkan status/branch/commit/fetched time dan log lines. Jika credentials belum lengkap, panel menampilkan missing keys dan link ke `/admin/settings#settings-cloudflare-observability`; ini adalah deployment history logs, bukan live `wrangler pages deployment tail`.
+- Panel `Latest deployment logs` memiliki tombol copy diagnostic bundle. Payload menggabungkan latest API warning dan history 5 warning terakhir dari `src/lib/adminDiagnostics.ts`/Dashboard fallback state, request path/status, deployment metadata, error/missing-credentials state, dan log lines yang sedang tampil supaya debugging edge/function failure bisa langsung ditempel ke issue/chat.
 
 ### `src/pages/admin/AdminLeads.tsx`
 
@@ -637,7 +642,8 @@ Logic penting:
 - Generate/regenerate/readiness action notices memakai `AdminToast`, sehingga pesan sukses seperti `AI copy patch regenerated ...` tetap floating di kanan atas meski admin sedang melihat bagian bawah list.
 - `/admin/sites` shows per-business inline progress while first generate/regenerate is running, including the active `outline`, `siteCopy`, `offeringCopy`, or `finalize` step, a compact progress bar, and transient auto-retry countdowns, so one business failure/status is visible without opening `/admin/jobs`.
 - Tombol Refresh membaca ulang list dari API setelah batch generate.
-- Initial load `/admin/sites` memakai `readApiJson` untuk `/api/sites` dan `/api/prospects`, sehingga Cloudflare HTML 503 ditampilkan sebagai masalah Pages Functions/edge, bukan pesan mentah `Response bukan JSON`.
+- Initial load `/admin/sites` memakai `readApiJson` untuk `/api/sites` dan `/api/prospects`, sehingga Cloudflare HTML 503 ditampilkan sebagai masalah Pages Functions/edge, bukan pesan mentah `Response bukan JSON`. Jika `/api/prospects?status=details_loaded` gagal, warning ditampilkan lewat floating `AdminToast` dan generated sites tetap dirender dari `/api/sites`; tidak ada banner error di atas halaman yang mengharuskan scroll.
+- `/admin/sites` memisahkan `Ready to Generate` dan `Generated Sites` memakai `AdminCollapsibleSectionHeader`. State `webview.adminSites.openSection` menjaga hanya satu section berat terbuka pada satu waktu (`ready`, `generated`, atau kosong), sehingga admin bisa fokus pada queue yang sedang dikerjakan.
 - `/api/sites` list isolates per-row summary failures and returns a minimal `summary_error` row instead of failing the entire Generated Sites list when one saved JSON/summary row is malformed or from an interrupted save.
 - Tooltip dipasang pada heading Generated Sites, Ready to Generate, table actions, dan Regen dropdown untuk menjelaskan perbedaan Preview/Data/Brief/Regen, first generate, AI regenerate, dan re-gather.
 - Generated Sites row action includes an icon-only `Owner outreach` menu beside Preview. It shows a compact read-only template preview before copy/open actions, can copy the full owner-ready DM/email template, copy only the public preview URL with `?owner=1`, open a safe `ownerPreview=1` countdown preview without starting localStorage, open a prefilled `mailto:` draft when the generated site data contains an email, or open a prefilled `sms:` Messages/iMessage draft when the generated site data contains a usable phone number. The real owner link and safe countdown preview actions both include help tooltips: the real link explains that the countdown starts when the owner opens it, while the safe preview explains that it does not start the real owner timer. First outreach subject/body aligns with the preview CTA copy `Download your site for FREE`; downloaded-without-setup rows automatically use a warmer setup/domain/hosting follow-up template and subject instead of the first free-preview message. These outreach actions call `POST /api/sites/:businessId/outreach-contacted` to set `leads.last_contacted`, keep paid/viewed lead statuses from being downgraded, insert a CRM activity, and mark non-generated/non-skipped matching prospects as contacted. Setup upsell template/email/SMS actions also set `leads.setup_followup_contacted_at`, returned as `setupFollowUpContactedAt`, and `/admin/sites` shows a separate `Setup follow-up` badge/timestamp so first outreach and downloaded-owner upsell are not confused. The copied review link removes any `reviewStart`/`reviewStartedAt`/`claimStart` params so outreach links start the 7-day owner countdown when the business owner opens them.
@@ -920,7 +926,8 @@ Logic penting:
 Fungsi:
 - Catch-all API production untuk `/api/*` di Cloudflare Pages.
 - Menggantikan Express API saat deploy di Cloudflare Pages.
-- Route handler ini sekarang terutama menyiapkan dependency wiring, menjalankan DB bootstrap, lalu dispatch ke focused modules seperti `functions/api/settings/handler.ts`, `functions/api/stats/handler.ts`, `functions/api/leads/handler.ts`, `functions/api/prospects/handler.ts`, `functions/api/sites/handler.ts`, `functions/api/places/handler.ts`, `functions/api/payments/handler.ts`, dan `functions/api/domains/handler.ts`.
+- Route handler ini sekarang terutama menyiapkan dependency wiring, menjalankan DB bootstrap, lalu dispatch ke focused modules seperti `functions/api/settings/handler.ts`, `functions/api/stats/handler.ts`, `functions/api/leads/handler.ts`, `functions/api/prospects/handler.ts`, `functions/api/sites/handler.ts`, `functions/api/places/handler.ts`, `functions/api/payments/handler.ts`, `functions/api/domains/handler.ts`, dan `functions/api/cloudflare/handler.ts`.
+- Cloudflare Pages deployment history logs can be brought into admin via the official Cloudflare API `GET /accounts/{account_id}/pages/projects/{project_name}/deployments/{deployment_id}/history/logs`, but it requires explicit env/settings credentials (`CLOUDFLARE_ACCOUNT_ID`, Pages project name, restricted API token). Live Functions tail logs are a separate dashboard/Wrangler streaming workflow and should not be presented as stored historical logs unless Cloudflare exposes a stored API source.
 
 Endpoint:
 - `GET/POST /api/settings`
@@ -954,6 +961,7 @@ Endpoint:
 - `POST /api/payments/checkout`
 - `POST /api/payments/paypal-webhook`
 - `GET /api/domains/check`
+- `GET /api/cloudflare/pages-logs`
 
 Logic D1:
 - Binding wajib: `DB`.
@@ -1140,6 +1148,7 @@ Logic Payments:
 - PayPal/Wise/Payoneer manual fallback rails mengembalikan `requiresManualReview=true`, `paymentReference`, dan `paymentInstructions`; `WebsiteActionPanel` menampilkan review step sebelum membuka payment link agar buyer menyertakan business/domain/reference.
 - PayPal setup lives in `/admin/settings#settings-payment`: sandbox/live API segmented toggle, mode-specific API key / Client ID, secret, and webhook ID fields, optional fallback `PAYPAL_BUSINESS_URL`, `PAYPAL_RISK_ACKNOWLEDGED`, active-mode missing credential warning, and a compact guardrails panel. `PAYPAL_PAYMENT_NOTE` and fallback account mode are only shown when a manual PayPal fallback link is configured because API Checkout stores the reference on the PayPal order.
 - Domain registrar setup lives next to Payment Setup in `/admin/settings#settings-domain-registrar`: default registrar, max internal domain cost, and credential fields for Cloudflare Registrar, Name.com, Dynadot, and Spaceship. Registrar tooltips explain where to find each account ID/API token/key/secret. Empty registrar credentials are allowed; public checkout falls back to manual domain confirmation.
+- Cloudflare observability setup lives in `/admin/settings#settings-cloudflare-observability`: it reuses shared `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, adds `CLOUDFLARE_PAGES_PROJECT_NAME`, and allows optional `CLOUDFLARE_PAGES_API_TOKEN` override for a restricted Pages Read token.
 - `/api/payments/paypal-webhook` aman sebelum PayPal Business siap: tanpa active-mode PayPal Client ID/Secret/webhook ID, endpoint acknowledge dan ignore event. Jika lengkap, endpoint verify signature PayPal lalu mencatat completed payment yang match ke `lead_payments`, `subscriptions`, status lead, dan CRM activity sebagai backup bila browser capture callback terputus.
 - `lead_payments` menyimpan ledger manual/webhook: processor, status, amount, transaction ID, payer email, payment reference, proof notes, raw webhook JSON, waktu verified, dan verifier.
 - PayPal operating guidance and implementation tracker live in `docs/PAYPAL_RISK_CONTROLS.md` and `docs/PAYPAL_EXPRESS_CHECKOUT_IMPLEMENTATION.md`.
@@ -1153,6 +1162,12 @@ Logic Domains:
 - `POST /api/domains/quote` is the non-billable registrar quote endpoint. It normalizes to `DomainQuote`, reads provider credentials from Cloudflare env first and D1 settings second, returns `premium`, `withinMaxPrice`, and `supportedForMvp`, and never registers a domain.
 - Registrar quote credentials/settings recognized by the backend: `DOMAIN_REGISTRAR_PROVIDER`, `DOMAIN_REGISTRATION_MAX_USD`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `NAME_COM_USERNAME`, `NAME_COM_API_TOKEN`, `NAME_COM_ENV`, `DYNADOT_API_KEY`, `DYNADOT_ENV`, `SPACESHIP_API_KEY`, and `SPACESHIP_API_SECRET`.
 - Response harus diperlakukan sebagai kandidat availability, bukan jaminan pembelian; final confirmation terjadi saat registrar purchase.
+
+Logic Cloudflare Observability:
+- `/api/cloudflare/pages-logs` lives in `functions/api/cloudflare/handler.ts`.
+- Endpoint reads env first, then D1 settings. Required values: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT_NAME`, and `CLOUDFLARE_PAGES_API_TOKEN` or shared `CLOUDFLARE_API_TOKEN`.
+- If configured, it calls Cloudflare official Pages APIs: list latest deployment from `GET /accounts/{account_id}/pages/projects/{project_name}/deployments?env=production&per_page=1`, then fetch logs from `GET /accounts/{account_id}/pages/projects/{project_name}/deployments/{deployment_id}/history/logs`. Accepted Cloudflare permission is Pages Read.
+- If credentials are missing, endpoint returns `{ configured:false, missingKeys }` with HTTP 200 so Dashboard can show setup guidance instead of treating it as an app outage.
 
 ## Data and Schema
 

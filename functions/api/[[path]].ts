@@ -5,6 +5,7 @@ import { checkoutRequiredColumns, databaseRepairReport, generateRequiredColumns,
 import type { D1Database, Env, PagesContext } from "./_shared/types";
 import { buildAiFailureDiagnostics, extractProviderErrorDetails, getAiReadiness, handleAiProviderFailure, handleAiProviderHealth, handleAiReadiness, kieModelConfigs, type AiReadinessDeps } from "./ai/readiness";
 import { applyAiCopyPatch, applyAiOfferingOutline, buildAiCopyAudit, collectAiCopyAuditTargets, generateAiCopyPatch, generateAiOfferingOutline, type AiSiteGenerationDeps } from "./ai/siteGeneration";
+import { handleCloudflare, type CloudflareDeps } from "./cloudflare/handler";
 import { handleDomains, type DomainsDeps } from "./domains/handler";
 import { handleGenerationJobs, type GenerationJobsDeps } from "./generationJobs/handler";
 import { handleLeads, type LeadsDeps } from "./leads/handler";
@@ -65,6 +66,12 @@ const domainsDeps: DomainsDeps = {
   errorJson,
   readJsonBody,
   getSetting: getSetting as DomainsDeps["getSetting"],
+};
+
+const cloudflareDeps: CloudflareDeps = {
+  json,
+  errorJson,
+  getSetting: getSetting as CloudflareDeps["getSetting"],
 };
 
 const paymentsDeps: PaymentsDeps = {
@@ -296,6 +303,10 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (segments[0] === "domains") {
       return handleDomains(domainsDeps, request, db, env, url, segments);
+    }
+
+    if (segments[0] === "cloudflare") {
+      return handleCloudflare(cloudflareDeps, request, db, env, segments);
     }
 
     return errorJson("Not Found", 404);

@@ -1,5 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { AlertTriangle, Check, CheckCircle2, Copy, Info, X } from "lucide-react";
+import { recordAdminApiDiagnostic } from "../lib/adminDiagnostics";
 import { interpretApiError, type ApiErrorInsight } from "../lib/apiErrorInsights";
 import { setProviderCooldown } from "../lib/providerCooldown";
 
@@ -65,6 +66,15 @@ export function AdminToastProvider({ children }: { children: ReactNode }) {
     if (insight.cooldownMs && insight.cooldownProvider) {
       setProviderCooldown(insight.cooldownProvider, insight.cooldownMs, insight.title, insight.rawMessage);
     }
+    recordAdminApiDiagnostic({
+      source: options.source,
+      title: insight.title,
+      message: insight.meaning,
+      rawMessage: insight.rawMessage,
+      status: options.status,
+      provider: options.provider,
+      model: options.model,
+    });
     return showToast({
       kind: toastKindFromInsight(insight),
       title: insight.title,

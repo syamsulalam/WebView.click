@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, ChevronDown, Copy, Database, Download, Eye, FileText, Globe2, Image as ImageIcon, Link2, ListChecks, Mail, MapPin, MessageCircle, Play, RefreshCw, RotateCw, Search, Send, Shuffle, Sparkles, Wrench, X } from "lucide-react";
+import { Brain, Copy, Database, Download, Eye, FileText, Globe2, Image as ImageIcon, Link2, ListChecks, Mail, MapPin, MessageCircle, Play, RefreshCw, RotateCw, Search, Send, Shuffle, Sparkles, Wrench, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { readApiJson } from "../../lib/apiResponse";
@@ -23,6 +23,7 @@ import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import { useAdminToast } from "../../components/AdminToast";
 import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
+import AdminCollapsibleSectionHeader from "../../components/AdminCollapsibleSectionHeader";
 import { formatCooldownRemaining } from "../../lib/providerCooldown";
 
 type SiteRow = {
@@ -254,7 +255,6 @@ export default function AdminSites() {
   const [sites, setSites] = useState<SiteRow[]>([]);
   const [gatheredProspects, setGatheredProspects] = useState<ProspectRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "recovery" | "images" | "content" | "contacted" | "followUp" | "downloaded" | "setupFollowUp" | "downloadedNoSetupFollowUp">("all");
   const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
@@ -278,6 +278,7 @@ export default function AdminSites() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
   const [regenerateModel, setRegenerateModel] = useLocalStorageState("webview.adminSites.regenerateModel", "~anthropic/claude-sonnet-latest");
+  const [openSitesSection, setOpenSitesSection] = useLocalStorageState<"ready" | "generated" | "">("webview.adminSites.openSection", "generated");
   const [r2HealthScanOffset, setR2HealthScanOffset] = useLocalStorageState("webview.adminSites.r2HealthScanOffset", 0);
   const [lastR2HealthScanAt, setLastR2HealthScanAt] = useLocalStorageState("webview.adminSites.lastR2HealthScanAt", "");
   const showAboutNavRepairOverride = useMemo(() => {
@@ -374,7 +375,6 @@ export default function AdminSites() {
 
   const fetchSites = async () => {
     setIsLoading(true);
-    setError("");
     try {
       const sitesPath = "/api/sites";
       const response = await fetch(sitesPath);
@@ -382,11 +382,16 @@ export default function AdminSites() {
       setSites(Array.isArray(data) ? (data as SiteRow[]) : []);
 
       const prospectsPath = "/api/prospects?status=details_loaded";
-      const prospectResponse = await fetch(prospectsPath);
-      const prospectData = await readApiJson<unknown>(prospectResponse, "Prospects API", prospectsPath);
-      setGatheredProspects(Array.isArray(prospectData)
-        ? (prospectData as ProspectRow[]).filter((item) => item.place_id && !item.generatedBusinessId)
-        : []);
+      try {
+        const prospectResponse = await fetch(prospectsPath);
+        const prospectData = await readApiJson<unknown>(prospectResponse, "Prospects API", prospectsPath);
+        setGatheredProspects(Array.isArray(prospectData)
+          ? (prospectData as ProspectRow[]).filter((item) => item.place_id && !item.generatedBusinessId)
+          : []);
+      } catch (prospectError) {
+        setGatheredProspects([]);
+        showApiError(prospectError, { source: "Ready prospects" });
+      }
 
       const settingsResponse = await fetch("/api/settings");
       if (settingsResponse.ok) {
@@ -395,7 +400,7 @@ export default function AdminSites() {
       }
       setSettingsLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Gagal memuat daftar situs.");
+      showApiError(err, { source: "Generated sites" });
     } finally {
       setIsLoading(false);
     }
@@ -1832,21 +1837,21 @@ export default function AdminSites() {
         </HoverTooltip>
       </div>
 
-      {error && (
-        <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
       <div className="mb-6 overflow-visible rounded-2xl border border-emerald-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-emerald-100 bg-emerald-50 px-5 py-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-900">
-              Ready to Generate
-              <HelpTooltip text="Prospects already have gathered Place Details but no saved generated site yet. The provider/model selectors apply to the Generate buttons in this section." />
-            </p>
-            <p className="text-xs text-emerald-700">Prospect yang sudah gather data tapi belum dibuatkan site.</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="border-b border-emerald-100 bg-emerald-50 px-5 py-4">
+          <AdminCollapsibleSectionHeader
+            title={`Ready to Generate (${filteredGatheredProspects.length})`}
+            icon={Play}
+            open={openSitesSection === "ready"}
+            onToggle={() => setOpenSitesSection(openSitesSection === "ready" ? "" : "ready")}
+            tooltip="Prospects already have gathered Place Details but no saved generated site yet. The provider/model selectors apply to the Generate buttons in this section."
+            description="Prospect yang sudah gather data tapi belum dibuatkan site."
+            iconClassName="text-emerald-700"
+            titleClassName="text-sm font-semibold text-emerald-900"
+            descriptionClassName="mt-1 text-xs text-emerald-700"
+            actionsClassName="min-w-0"
+            actions={(
+              <div className="flex flex-wrap items-center justify-end gap-2">
             <select
               value={activeRegenerateProvider}
               onChange={(event) => {
@@ -1900,9 +1905,13 @@ export default function AdminSites() {
               buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"
               iconSize={15}
             />
-          </div>
+              </div>
+            )}
+          />
         </div>
 
+        {openSitesSection === "ready" && (
+          <>
         <div className="grid grid-cols-[1.25fr_0.75fr_0.55fr_0.7fr_1.75fr] gap-4 border-b border-gray-100 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <span>Business</span>
           <span>Place ID</span>
@@ -2004,9 +2013,31 @@ export default function AdminSites() {
             );
           })
         )}
+          </>
+        )}
       </div>
 
       <div className="overflow-visible rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-100 bg-gray-50 px-5 py-4">
+          <AdminCollapsibleSectionHeader
+            title={`Generated Sites (${filteredSites.length})`}
+            icon={Sparkles}
+            open={openSitesSection === "generated"}
+            onToggle={() => setOpenSitesSection(openSitesSection === "generated" ? "" : "generated")}
+            tooltip="Saved generated site JSON rows. Open this section when you want preview, repair, outreach, upgrade, recovery, or regeneration actions."
+            description="Generated-site queue, filters, repair actions, outreach, premium upgrade, and preview links."
+            iconClassName="text-indigo-700"
+            titleClassName="text-sm font-semibold text-gray-900"
+            descriptionClassName="mt-1 text-xs text-gray-500"
+            actions={(
+              <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 ring-1 ring-inset ring-gray-200">
+                {filteredSites.length} visible
+              </span>
+            )}
+          />
+        </div>
+        {openSitesSection === "generated" && (
+          <>
         <div className="grid grid-cols-[1.3fr_0.9fr_0.5fr_0.8fr_1.5fr] gap-4 border-b border-gray-100 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <span>Business</span>
           <span>Slug</span>
@@ -2563,6 +2594,8 @@ export default function AdminSites() {
               </div>
             </div>
           ))
+        )}
+          </>
         )}
       </div>
 
