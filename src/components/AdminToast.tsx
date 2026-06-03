@@ -5,13 +5,14 @@ import { interpretApiError, type ApiErrorInsight } from "../lib/apiErrorInsights
 import { setProviderCooldown } from "../lib/providerCooldown";
 
 type ToastKind = "success" | "error" | "warning" | "info";
+type ToastAction = string | { label: string; href: string };
 
 type AdminToast = {
   id: string;
   kind: ToastKind;
   title: string;
   message?: string;
-  actions?: string[];
+  actions?: ToastAction[];
   rawMessage?: string;
 };
 
@@ -88,7 +89,7 @@ export function AdminToastProvider({ children }: { children: ReactNode }) {
     const payload = [
       toast.title,
       toast.message || "",
-      ...(toast.actions || []).map((action) => `- ${action}`),
+      ...(toast.actions || []).map((action) => typeof action === "string" ? `- ${action}` : `- ${action.label}: ${action.href}`),
       toast.rawMessage ? `Raw error:\n${toast.rawMessage}` : "",
     ].filter(Boolean).join("\n");
     try {
@@ -118,7 +119,24 @@ export function AdminToastProvider({ children }: { children: ReactNode }) {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">{toast.title}</p>
                 {toast.message && <p className="mt-1 text-sm leading-relaxed opacity-90">{toast.message}</p>}
-                {toast.actions && toast.actions.length > 0 && (
+                {toast.actions && toast.actions.length > 0 && toast.actions.some((action) => typeof action !== "string") && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {toast.actions.map((action, index) => typeof action === "string" ? (
+                      <span key={`${toast.id}-${index}`} className="text-xs leading-relaxed opacity-90">{action}</span>
+                    ) : (
+                      <a
+                        key={`${toast.id}-${index}`}
+                        href={action.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex rounded-lg bg-white/70 px-2 py-1 text-xs font-semibold text-slate-800 hover:bg-white"
+                      >
+                        {action.label}
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {toast.actions && toast.actions.length > 0 && !toast.actions.some((action) => typeof action !== "string") && (
                   <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-relaxed opacity-90">
                     {toast.actions.map((action, index) => <li key={`${toast.id}-${index}`}>{action}</li>)}
                   </ul>

@@ -78,6 +78,8 @@ type SiteRow = {
   lastPreviewError?: string;
   lastPreviewErrorAt?: string;
   needsRecovery?: boolean;
+  auditSnapshotCount?: number;
+  latestAuditSnapshotAt?: string;
   latestGenerationJobId?: string;
   latestGenerationJobStatus?: string;
   latestGenerationJobUpdatedAt?: string;
@@ -88,6 +90,7 @@ type RegenerateMode = "resave" | "ai";
 const SERVICE_IMAGE_BATCH_REPAIR_LIMIT = 10;
 const VISUAL_VARIATION_BATCH_LIMIT = 10;
 const ABOUT_NAV_AI_BATCH_LIMIT = 5;
+const AUDIT_SNAPSHOT_BATCH_LIMIT = 10;
 const R2_HEALTH_SCAN_CHUNK_SIZE = 10;
 const R2_HEALTH_SCAN_MAX = 50;
 const FOLLOW_UP_AFTER_DAYS = 3;
@@ -167,6 +170,11 @@ type ProspectRow = {
   generatedBusinessId?: string;
 };
 
+type AuditSnapshotRow = {
+  id?: string;
+  createdAt?: string;
+};
+
 function gatheredSnapshot(siteData: any) {
   return {
     sourceData: siteData?.sourceData || {},
@@ -238,6 +246,18 @@ function siteNeedsRecovery(site: SiteRow) {
   return siteHasSummaryError(site) || site.needsRecovery === true || Boolean(site.lastPreviewError);
 }
 
+function siteHasAuditSnapshot(site: SiteRow) {
+  return Number(site.auditSnapshotCount || 0) > 0;
+}
+
+function siteNeedsAuditSnapshot(site: SiteRow) {
+  return !siteHasAuditSnapshot(site);
+}
+
+function siteIsOutreachReady(site: SiteRow) {
+  return siteHasAuditSnapshot(site) && !siteWasContacted(site);
+}
+
 function siteFullyPremiumUpgraded(site: SiteRow) {
   return site.premiumUpgradeComplete === true && Boolean(site.lastPremiumCopyUpgradeAt);
 }
@@ -256,7 +276,7 @@ export default function AdminSites() {
   const [gatheredProspects, setGatheredProspects] = useState<ProspectRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "recovery" | "images" | "content" | "contacted" | "followUp" | "downloaded" | "setupFollowUp" | "downloadedNoSetupFollowUp">("all");
+  const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "recovery" | "images" | "content" | "auditSaved" | "auditNeeded" | "outreachReady" | "contacted" | "followUp" | "downloaded" | "setupFollowUp" | "downloadedNoSetupFollowUp">("all");
   const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
   const [regeneratingId, setRegeneratingId] = useState("");
   const [repairingServiceImagesId, setRepairingServiceImagesId] = useState("");
@@ -266,6 +286,8 @@ export default function AdminSites() {
   const [refreshingVisualVariationId, setRefreshingVisualVariationId] = useState("");
   const [batchRefreshingVisualVariation, setBatchRefreshingVisualVariation] = useState(false);
   const [upgradingDesignId, setUpgradingDesignId] = useState("");
+  const [openingAuditId, setOpeningAuditId] = useState("");
+  const [batchGeneratingAuditSnapshots, setBatchGeneratingAuditSnapshots] = useState(false);
   const [batchAiFillingAboutNav, setBatchAiFillingAboutNav] = useState(false);
   const [scanningR2Health, setScanningR2Health] = useState(false);
   const [r2HealthScanProgress, setR2HealthScanProgress] = useState<{ scanned: number; failed: number; total: number } | null>(null);
@@ -274,6 +296,8 @@ export default function AdminSites() {
   const [openRegenerateMenu, setOpenRegenerateMenu] = useState("");
   const [openOutreachMenu, setOpenOutreachMenu] = useState("");
   const [outreachLoadingKey, setOutreachLoadingKey] = useState("");
+  const [copyingNextOutreach, setCopyingNextOutreach] = useState(false);
+  const [openingNextEmailDraft, setOpeningNextEmailDraft] = useState(false);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
@@ -428,16 +452,22 @@ export default function AdminSites() {
       ? sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0)
       : siteIssueFilter === "content"
         ? sites.filter(needsAboutNavRepair)
-        : siteIssueFilter === "contacted"
-          ? sites.filter(siteWasContacted)
-          : siteIssueFilter === "followUp"
-            ? sites.filter(siteNeedsFollowUp)
-            : siteIssueFilter === "downloaded"
-              ? sites.filter(siteDownloadedWithoutSetup)
-              : siteIssueFilter === "setupFollowUp"
-                ? sites.filter(siteSetupFollowUpSent)
-                : siteIssueFilter === "downloadedNoSetupFollowUp"
-                  ? sites.filter(siteDownloadedWithoutSetupFollowUp)
+        : siteIssueFilter === "auditSaved"
+          ? sites.filter(siteHasAuditSnapshot)
+          : siteIssueFilter === "auditNeeded"
+            ? sites.filter(siteNeedsAuditSnapshot)
+            : siteIssueFilter === "outreachReady"
+              ? sites.filter(siteIsOutreachReady)
+              : siteIssueFilter === "contacted"
+                ? sites.filter(siteWasContacted)
+                : siteIssueFilter === "followUp"
+                  ? sites.filter(siteNeedsFollowUp)
+                  : siteIssueFilter === "downloaded"
+                    ? sites.filter(siteDownloadedWithoutSetup)
+                    : siteIssueFilter === "setupFollowUp"
+                      ? sites.filter(siteSetupFollowUpSent)
+                      : siteIssueFilter === "downloadedNoSetupFollowUp"
+                        ? sites.filter(siteDownloadedWithoutSetupFollowUp)
       : sites;
     if (!needle) return issueFilteredSites;
     return issueFilteredSites.filter((site) => [
@@ -448,6 +478,8 @@ export default function AdminSites() {
       site.region,
       site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0 ? "missing duplicate service images" : "",
       needsAboutNavRepair(site) ? "missing about nav labels ai fill content" : "",
+      siteHasAuditSnapshot(site) ? "audit saved profile audit snapshot ready outreach point in time" : "needs audit missing profile audit snapshot outreach not ready",
+      siteIsOutreachReady(site) ? "outreach ready audit saved not contacted owner contact queue" : "",
       siteWasContacted(site) ? "contacted outreach follow up" : "",
       siteNeedsFollowUp(site) ? "needs follow up stale contacted not viewed not paid" : "",
       siteDownloadedWithoutSetup(site) ? "downloaded claimed free package warm owner no setup" : "",
@@ -484,6 +516,21 @@ export default function AdminSites() {
     [sites],
   );
 
+  const auditSavedSiteCount = useMemo(
+    () => sites.filter(siteHasAuditSnapshot).length,
+    [sites],
+  );
+
+  const auditNeededSiteCount = useMemo(
+    () => sites.filter(siteNeedsAuditSnapshot).length,
+    [sites],
+  );
+
+  const outreachReadySiteCount = useMemo(
+    () => sites.filter(siteIsOutreachReady).length,
+    [sites],
+  );
+
   const contactedSiteCount = useMemo(
     () => sites.filter(siteWasContacted).length,
     [sites],
@@ -516,6 +563,16 @@ export default function AdminSites() {
 
   const filteredMissingAboutNavSites = useMemo(
     () => filteredSites.filter(needsAboutNavRepair),
+    [filteredSites],
+  );
+
+  const filteredAuditNeededSites = useMemo(
+    () => filteredSites.filter(siteNeedsAuditSnapshot),
+    [filteredSites],
+  );
+
+  const filteredOutreachReadySites = useMemo(
+    () => filteredSites.filter(siteIsOutreachReady),
     [filteredSites],
   );
 
@@ -950,7 +1007,8 @@ export default function AdminSites() {
     return url.toString();
   };
 
-  const auditLinkForId = (id: string) => new URL(`/audit/${encodeURIComponent(id)}`, window.location.origin).toString();
+  const auditPathForId = (id: string) => `/audit/${encodeURIComponent(id)}`;
+  const auditLinkForId = (id: string) => new URL(auditPathForId(id), window.location.origin).toString();
 
   const handleCopyAuditLink = async (id: string, label = "Audit link") => {
     const link = auditLinkForId(id);
@@ -959,6 +1017,107 @@ export default function AdminSites() {
       notifyAction("success", `${label} copied`, link);
     } catch {
       notifyAction("warning", "Copy failed", `Could not copy automatically. Link: ${link}`);
+    }
+  };
+
+  const saveAuditSnapshotForSite = async (site: SiteRow, label = "Save audit snapshot") => {
+    const snapshotsPath = `/api/audits/${encodeURIComponent(site.businessId)}/snapshots`;
+    const saveResponse = await fetch(snapshotsPath, { method: "POST" });
+    const saveData = await readApiJson<{ snapshot?: AuditSnapshotRow; audit?: { snapshot?: AuditSnapshotRow } }>(saveResponse, label, snapshotsPath);
+    const snapshotId = saveData.snapshot?.id || saveData.audit?.snapshot?.id || "";
+    const snapshotCreatedAt = saveData.snapshot?.createdAt || saveData.audit?.snapshot?.createdAt || new Date().toISOString();
+    setSites((current) => current.map((item) => item.businessId === site.businessId
+      ? {
+          ...item,
+          auditSnapshotCount: Math.max(1, Number(item.auditSnapshotCount || 0)),
+          latestAuditSnapshotAt: snapshotCreatedAt,
+        }
+      : item));
+    return { snapshotId, snapshotCreatedAt };
+  };
+
+  const handleOpenOrGenerateAudit = async (site: SiteRow) => {
+    const auditPath = auditPathForId(site.businessId);
+    const auditWindow = window.open("", "_blank");
+    if (auditWindow) auditWindow.opener = null;
+    setOpeningAuditId(site.businessId);
+    try {
+      const snapshotsPath = `/api/audits/${encodeURIComponent(site.businessId)}/snapshots`;
+      const snapshotsResponse = await fetch(snapshotsPath, { cache: "no-store" });
+      const snapshotsData = await readApiJson<{ snapshots?: AuditSnapshotRow[] }>(snapshotsResponse, "Audit snapshots", snapshotsPath);
+      const hasSnapshot = Array.isArray(snapshotsData.snapshots) && snapshotsData.snapshots.some((snapshot) => snapshot?.id);
+      let targetPath = auditPath;
+
+      if (!hasSnapshot) {
+        const { snapshotId } = await saveAuditSnapshotForSite(site);
+        targetPath = snapshotId
+          ? `${auditPath}?admin=1&snapshot=${encodeURIComponent(snapshotId)}`
+          : `${auditPath}?admin=1`;
+        notifyAction("success", "Audit snapshot generated", `${site.businessName} now has a saved Google Business Profile audit.`);
+      }
+
+      if (auditWindow) {
+        auditWindow.location.href = targetPath;
+      } else {
+        window.open(targetPath, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      if (auditWindow) auditWindow.close();
+      showApiError(err, { source: "Profile audit" });
+    } finally {
+      setOpeningAuditId("");
+    }
+  };
+
+  const handleGenerateFilteredAuditSnapshots = async () => {
+    const targets = filteredAuditNeededSites.slice(0, AUDIT_SNAPSHOT_BATCH_LIMIT);
+    if (targets.length === 0) {
+      notifyAction("info", "No audit targets", "The current filtered list has no generated sites missing audit snapshots.");
+      return;
+    }
+
+    setBatchGeneratingAuditSnapshots(true);
+    let completed = 0;
+    const failures: string[] = [];
+    try {
+      for (let index = 0; index < targets.length; index += 1) {
+        const site = targets[index];
+        setOpeningAuditId(site.businessId);
+        try {
+          await saveAuditSnapshotForSite(site, "Batch audit snapshot");
+          completed += 1;
+        } catch (error) {
+          failures.push(`${site.businessName}: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          setOpeningAuditId("");
+        }
+        if (index < targets.length - 1) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 700));
+        }
+      }
+
+      const cappedMessage = filteredAuditNeededSites.length > targets.length
+        ? ` Capped at ${AUDIT_SNAPSHOT_BATCH_LIMIT}; ${filteredAuditNeededSites.length - targets.length} filtered row${filteredAuditNeededSites.length - targets.length === 1 ? "" : "s"} remain.`
+        : "";
+      if (failures.length > 0) {
+        notifyAction(
+          completed > 0 ? "warning" : "error",
+          completed > 0 ? "Audit batch partially completed" : "Audit batch failed",
+          `Created ${completed} audit snapshot${completed === 1 ? "" : "s"}. ${failures.length} failed.${cappedMessage}`,
+        );
+      } else {
+        notifyAction(
+          "success",
+          "Audit batch completed",
+          `Created ${completed} audit snapshot${completed === 1 ? "" : "s"} for the current filtered list.${cappedMessage}`,
+        );
+      }
+      fetchSites();
+    } catch (err) {
+      showApiError(err, { source: "Batch audit snapshots" });
+    } finally {
+      setOpeningAuditId("");
+      setBatchGeneratingAuditSnapshots(false);
     }
   };
 
@@ -1060,6 +1219,11 @@ export default function AdminSites() {
 
   const outreachPreviewForSite = (site: SiteRow) => outreachMessageForSite(site);
 
+  const outreachToastActionsForSite = (site: SiteRow) => [
+    { label: "Open site", href: site.previewUrl || `/${site.businessId}` },
+    { label: "Open audit", href: `${auditPathForId(site.businessId)}?admin=1` },
+  ];
+
   const contactInfoFromSiteJson = (siteJson: any) => {
     const contact = siteJson?.businessProfile?.contact || {};
     const sourceData = siteJson?.sourceData || {};
@@ -1085,6 +1249,8 @@ export default function AdminSites() {
   };
 
   const loadOutreachContactInfo = async (site: SiteRow) => contactInfoFromSiteJson(await fetchSiteJson(site));
+
+  const usableEmailFromContact = (email: string) => email.match(/[^\s<>@]+@[^\s<>@]+/)?.[0] || "";
 
   const markOutreachContacted = async (site: SiteRow, channel: string, action: string, contact = "") => {
     const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/outreach-contacted`;
@@ -1128,11 +1294,30 @@ export default function AdminSites() {
     try {
       await navigator.clipboard.writeText(message);
       await markOutreachContacted(site, "template", isSetupOutreach ? "setup_upsell_template_copied" : "outreach_template_copied");
-      notifyAction("success", isSetupOutreach ? "Setup follow-up copied" : "Outreach message copied", `${site.businessName} message is ready to paste.`);
+      showToast({
+        kind: "success",
+        title: isSetupOutreach ? "Setup follow-up copied" : "Outreach message copied",
+        message: `${site.businessName} message is ready to paste.`,
+        actions: outreachToastActionsForSite(site),
+      });
     } catch {
       notifyAction("warning", "Copy/mark failed", `Could not complete automatically. Message: ${message}`);
     } finally {
       setOpenOutreachMenu("");
+    }
+  };
+
+  const handleCopyNextOutreachReady = async () => {
+    const site = filteredOutreachReadySites[0];
+    if (!site) {
+      notifyAction("info", "No outreach-ready row", "There are no visible generated sites with a saved audit snapshot that have not been contacted yet.");
+      return;
+    }
+    setCopyingNextOutreach(true);
+    try {
+      await handleCopyOutreachMessage(site);
+    } finally {
+      setCopyingNextOutreach(false);
     }
   };
 
@@ -1145,7 +1330,7 @@ export default function AdminSites() {
         notifyAction("warning", "No email found", `${site.businessName} does not have an email saved in the generated site data.`);
         return;
       }
-      const emailAddress = contact.email.match(/[^\s<>@]+@[^\s<>@]+/)?.[0] || "";
+      const emailAddress = usableEmailFromContact(contact.email);
       if (!emailAddress) {
         notifyAction("warning", "Email is not usable", `${site.businessName} has an email-like value saved, but it is not a valid address.`);
         return;
@@ -1162,6 +1347,49 @@ export default function AdminSites() {
       showApiError(err, { source: "Open outreach email" });
     } finally {
       setOutreachLoadingKey("");
+    }
+  };
+
+  const handleCopyNextOutreachEmailDraft = async () => {
+    if (filteredOutreachReadySites.length === 0) {
+      notifyAction("info", "No outreach-ready row", "There are no visible generated sites with a saved audit snapshot that have not been contacted yet.");
+      return;
+    }
+
+    setOpeningNextEmailDraft(true);
+    try {
+      let skippedWithoutEmail = 0;
+      for (const site of filteredOutreachReadySites) {
+        const contact = await loadOutreachContactInfo(site);
+        const emailAddress = usableEmailFromContact(contact.email);
+        if (!emailAddress) {
+          skippedWithoutEmail += 1;
+          continue;
+        }
+
+        const message = outreachMessageForSite(site);
+        const isSetupOutreach = shouldUseSetupOutreachForSite(site);
+        await navigator.clipboard.writeText(message);
+        await markOutreachContacted(site, "email", isSetupOutreach ? "setup_upsell_email_draft_opened" : "email_draft_opened", emailAddress);
+        showToast({
+          kind: "success",
+          title: isSetupOutreach ? "Setup email draft opened" : "Outreach email draft opened",
+          message: `${site.businessName} template was copied and email draft is opening for ${emailAddress}.`,
+          actions: outreachToastActionsForSite(site),
+        });
+        window.location.href = `mailto:${encodeURI(emailAddress)}?subject=${encodeURIComponent(outreachSubjectForSite(site))}&body=${encodeURIComponent(message)}`;
+        return;
+      }
+
+      notifyAction(
+        "warning",
+        "No saved email found",
+        `Checked ${filteredOutreachReadySites.length} visible outreach-ready row${filteredOutreachReadySites.length === 1 ? "" : "s"}${skippedWithoutEmail ? ` and skipped ${skippedWithoutEmail} without a usable email` : ""}.`,
+      );
+    } catch (err) {
+      showApiError(err, { source: "Copy next email outreach" });
+    } finally {
+      setOpeningNextEmailDraft(false);
     }
   };
 
@@ -1661,7 +1889,7 @@ export default function AdminSites() {
             <button
               type="button"
               onClick={handleScanR2Health}
-              disabled={scanningR2Health || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || regeneratingId !== "" || r2BackedSiteCount === 0}
+              disabled={scanningR2Health || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || regeneratingId !== "" || r2BackedSiteCount === 0}
               className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
               aria-label="Scan R2 JSON health"
             >
@@ -1712,6 +1940,117 @@ export default function AdminSites() {
             <FileText size={14} />
             About/nav
             <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingAboutNavSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text="Show generated sites that already have at least one saved Google Business Profile audit snapshot. Use this as the outreach-ready audit queue.">
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "auditSaved" ? "all" : "auditSaved")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "auditSaved"
+                ? "border-teal-300 bg-teal-50 text-teal-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "auditSaved"}
+          >
+            <FileText size={14} />
+            Audit saved
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{auditSavedSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text="Show generated sites that do not have a saved profile audit snapshot yet. Click the row audit icon to create the first snapshot before outreach.">
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "auditNeeded" ? "all" : "auditNeeded")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "auditNeeded"
+                ? "border-orange-300 bg-orange-50 text-orange-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "auditNeeded"}
+          >
+            <ListChecks size={14} />
+            Needs audit
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{auditNeededSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text={`Create saved Google Business Profile audit snapshots for up to ${AUDIT_SNAPSHOT_BATCH_LIMIT} rows in the current filtered list that still need one. Runs sequentially and uses no AI.`}>
+          <button
+            type="button"
+            onClick={handleGenerateFilteredAuditSnapshots}
+            disabled={batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regeneratingId !== "" || filteredAuditNeededSites.length === 0}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+            aria-label="Create filtered missing audit snapshots"
+          >
+            {batchGeneratingAuditSnapshots ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <FileText size={14} />
+            )}
+            Create audits
+            <span className="rounded-full bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700">
+              {Math.min(filteredAuditNeededSites.length, AUDIT_SNAPSHOT_BATCH_LIMIT)}
+            </span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text="Show generated sites that already have a saved audit snapshot and have not been marked contacted yet. This is the next owner outreach queue.">
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "outreachReady" ? "all" : "outreachReady")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "outreachReady"
+                ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "outreachReady"}
+          >
+            <Send size={14} />
+            Outreach ready
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{outreachReadySiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text={filteredOutreachReadySites[0]
+          ? `Copy the owner outreach template for the first visible outreach-ready row: ${filteredOutreachReadySites[0].businessName}. This also marks the row contacted.`
+          : "No visible outreach-ready row to copy. Use Outreach ready or create audit snapshots first."
+        }>
+          <button
+            type="button"
+            onClick={handleCopyNextOutreachReady}
+            disabled={copyingNextOutreach || openingNextEmailDraft || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || filteredOutreachReadySites.length === 0}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            aria-label="Copy next outreach-ready template"
+          >
+            {copyingNextOutreach ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <Copy size={14} />
+            )}
+            Copy next
+            <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+              {filteredOutreachReadySites.length}
+            </span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text={filteredOutreachReadySites.length
+          ? "Scan the visible outreach-ready queue for the next row with a saved email, copy its template, mark it contacted, and open a prefilled email draft."
+          : "No visible outreach-ready row to email. Use Outreach ready or create audit snapshots first."
+        }>
+          <button
+            type="button"
+            onClick={handleCopyNextOutreachEmailDraft}
+            disabled={openingNextEmailDraft || copyingNextOutreach || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || filteredOutreachReadySites.length === 0}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            aria-label="Copy next outreach-ready template and open email draft"
+          >
+            {openingNextEmailDraft ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <Mail size={14} />
+            )}
+            Email next
+            <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-700">
+              {filteredOutreachReadySites.length}
+            </span>
           </button>
         </HoverTooltip>
         <HoverTooltip text="Show generated sites whose owner outreach template/link/email/message action has been copied or opened. Use this for follow-up review.">
@@ -1798,7 +2137,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleAiFillFilteredAboutNav}
-            disabled={batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regeneratingId !== "" || !activeRegenerateModel || filteredMissingAboutNavSites.length === 0}
+            disabled={batchAiFillingAboutNav || batchGeneratingAuditSnapshots || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regeneratingId !== "" || !activeRegenerateModel || filteredMissingAboutNavSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
             aria-label="AI fill filtered About and navigation label issues"
           >
@@ -1817,7 +2156,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleRepairFilteredServiceImages}
-            disabled={batchRepairingServiceImages || batchRefreshingVisualVariation || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
+            disabled={batchRepairingServiceImages || batchGeneratingAuditSnapshots || batchRefreshingVisualVariation || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50"
             aria-label="Repair filtered service image issues"
           >
@@ -1836,7 +2175,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleRefreshFilteredVisualVariation}
-            disabled={batchRefreshingVisualVariation || batchRepairingServiceImages || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || filteredSites.length === 0}
+            disabled={batchRefreshingVisualVariation || batchGeneratingAuditSnapshots || batchRepairingServiceImages || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || filteredSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50"
             aria-label="Refresh filtered visual variation"
           >
@@ -2119,6 +2458,14 @@ export default function AdminSites() {
                       </HoverTooltip>
                     );
                   })()}
+                  {Number(site.auditSnapshotCount || 0) > 0 && (
+                    <HoverTooltip text={`Saved Google Business Profile audit snapshot${Number(site.auditSnapshotCount || 0) === 1 ? "" : "s"}: ${site.auditSnapshotCount}${site.latestAuditSnapshotAt ? `. Latest saved at ${new Date(site.latestAuditSnapshotAt).toLocaleString()}.` : "."}`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold text-teal-800">
+                        <FileText size={11} />
+                        Audit saved {site.auditSnapshotCount}
+                      </span>
+                    </HoverTooltip>
+                  )}
                   {site.lastPreviewError && (
                     <HoverTooltip text={`Last preview full JSON read failed${site.lastPreviewErrorAt ? ` at ${new Date(site.lastPreviewErrorAt).toLocaleString()}` : ""}. Error: ${site.lastPreviewError}`}>
                       <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800">
@@ -2233,16 +2580,16 @@ export default function AdminSites() {
                     <Globe2 size={14} />
                   </a>
                 </HoverTooltip>
-                <HoverTooltip text="Open the Google Business Profile marketing audit for this generated site.">
-                  <a
-                    href={`/audit/${encodeURIComponent(site.businessId)}?admin=1`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
-                    aria-label="Open profile audit"
+                <HoverTooltip text="Open this Google Business Profile audit. If no saved audit snapshot exists yet, create the first one before opening it.">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenOrGenerateAudit(site)}
+                    disabled={openingAuditId === site.businessId || batchGeneratingAuditSnapshots}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    aria-label="Open or generate profile audit"
                   >
-                    <FileText size={14} />
-                  </a>
+                    {openingAuditId === site.businessId ? <RefreshCw size={14} className="animate-spin" /> : <FileText size={14} />}
+                  </button>
                 </HoverTooltip>
                 <HoverTooltip text="Copy the audit URL for outreach or PDF follow-up.">
                   <button

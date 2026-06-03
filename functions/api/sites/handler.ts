@@ -482,6 +482,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
           (SELECT l.download_count FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_download_count,
           (SELECT l.setup_followup_contacted_at FROM leads l WHERE l.business_id = s.business_id LIMIT 1) AS lead_setup_followup_contacted_at,
           (SELECT p.status FROM places_prospects p WHERE p.generated_business_id = s.business_id ORDER BY datetime(p.updated_at) DESC LIMIT 1) AS prospect_status,
+          (SELECT COUNT(*) FROM marketing_audits ma WHERE ma.business_id = s.business_id) AS audit_snapshot_count,
+          (SELECT ma.created_at FROM marketing_audits ma WHERE ma.business_id = s.business_id ORDER BY datetime(COALESCE(ma.created_at, '1970-01-01')) DESC LIMIT 1) AS latest_audit_snapshot_created_at,
           (SELECT j.id FROM generation_jobs j WHERE j.business_id = s.business_id ORDER BY datetime(j.created_at) DESC LIMIT 1) AS latest_generation_job_id,
           (SELECT j.status FROM generation_jobs j WHERE j.business_id = s.business_id ORDER BY datetime(j.created_at) DESC LIMIT 1) AS latest_generation_job_status,
           (SELECT j.updated_at FROM generation_jobs j WHERE j.business_id = s.business_id ORDER BY datetime(j.created_at) DESC LIMIT 1) AS latest_generation_job_updated_at
@@ -507,6 +509,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         lead_download_count?: number;
         lead_setup_followup_contacted_at?: string;
         prospect_status?: string;
+        audit_snapshot_count?: number;
+        latest_audit_snapshot_created_at?: string;
         latest_generation_job_id?: string;
         latest_generation_job_status?: string;
         latest_generation_job_updated_at?: string;
@@ -597,6 +601,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         lastPreviewError: row.last_preview_error || "",
         lastPreviewErrorAt: row.last_preview_error_at || "",
         needsRecovery: Boolean(row.last_preview_error),
+        auditSnapshotCount: Number(row.audit_snapshot_count || 0) || 0,
+        latestAuditSnapshotAt: row.latest_audit_snapshot_created_at || "",
         latestGenerationJobId: row.latest_generation_job_id || "",
         latestGenerationJobStatus: row.latest_generation_job_status || "",
         latestGenerationJobUpdatedAt: row.latest_generation_job_updated_at || "",
@@ -655,6 +661,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
           lastPreviewError: row.last_preview_error || "",
           lastPreviewErrorAt: row.last_preview_error_at || "",
           needsRecovery: true,
+          auditSnapshotCount: Number(row.audit_snapshot_count || 0) || 0,
+          latestAuditSnapshotAt: row.latest_audit_snapshot_created_at || "",
           latestGenerationJobId: row.latest_generation_job_id || "",
           latestGenerationJobStatus: row.latest_generation_job_status || "",
           latestGenerationJobUpdatedAt: row.latest_generation_job_updated_at || "",
