@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import FullPageScreenshotButton from "../../components/FullPageScreenshotButton";
 import SiteRenderer from "../../components/SiteRenderer";
 import { downloadOwnerSiteZip } from "../../lib/exportSiteHtml";
 
@@ -116,11 +117,14 @@ export default function PublicViewer() {
   }
 
   return (
-    <SiteRenderer
-      siteData={siteData}
-      publicLinks={publicLinks}
-      businessId={businessId}
-      onDownloadZip={handleDownloadZip}
-    />
+    <>
+      <SiteRenderer
+        siteData={siteData}
+        publicLinks={publicLinks}
+        businessId={businessId}
+        onDownloadZip={handleDownloadZip}
+      />
+      {businessId && <FullPageScreenshotButton businessId={businessId} />}
+    </>
   );
 }

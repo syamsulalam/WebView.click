@@ -16,6 +16,7 @@ Routes utama:
 - `/admin/leads` -> `AdminLeads`
 - `/admin/jobs` -> `AdminJobs`
 - `/admin/sites` -> `AdminSites`
+- `/admin/reachout` -> `AdminReachout`
 - `/admin/orders` -> `AdminOrders`
 - `/admin/schema` -> `AdminSchema`
 - `/admin/settings` -> `AdminSettings`
@@ -147,6 +148,38 @@ Logic penting:
 - Tooltip bubble juga dirender via portal body-level fixed layer `z-[100001]`, supaya tidak tertutup parent, modal, drawer, table overflow, atau card `overflow-hidden`.
 - Center position clamps against measured tooltip width, so icon-only actions near the left or right browser edge stay readable.
 - Untuk tooltip berbentuk icon/help text gunakan `HelpTooltip`; untuk tooltip pada elemen existing gunakan `HoverTooltip`.
+
+### `src/components/FullPageScreenshotButton.tsx`
+
+Fungsi:
+- Floating camera button untuk public preview `/:businessId`.
+- Mengambil full-page screenshot dari `[data-wv-site-canvas]`, mengompresi ke WebP, mengupload ke R2 lewat `POST /api/sites/:businessId/screenshot`, lalu mendownload file WebP yang sama ke browser.
+
+Logic penting:
+- Tombol berada di bawah-tengah viewport, diberi `data-wv-tool-ui="full-page-screenshot"` dan `data-export-remove="true"` supaya tidak ikut export/capture.
+- Capture memakai `html-to-image` `toCanvas`, `pixelRatio` maksimal 2 dengan guard max side 15000px agar screenshot tetap besar tetapi tidak terlalu mudah gagal karena canvas terlalu besar.
+- Upload hanya menerima `image/webp`; endpoint R2 menyimpan ke `sites/:businessId/screenshots/:businessId-full-page-*.webp`.
+
+Risiko debug:
+- Jika screenshot gagal, cek image CORS/asset yang dirender di `[data-wv-site-canvas]` dan ukuran halaman. Endpoint membatasi upload WebP terkompresi maksimal 15 MB.
+
+### `src/pages/admin/AdminReachout.tsx`
+
+Fungsi:
+- Command center email-first untuk target mengirim 10.000 website gratis.
+- Fokus ke lead CRM yang punya email valid; channel SMS/LinkedIn/Instagram tetap manual/compliance-gated.
+
+Logic penting:
+- Mengambil leads dari `GET /api/leads` dan event aggregate dari `GET /api/outreach/summary`.
+- Metrics: 10k progress, email-ready leads, owner views, paid conversion.
+- Filter table: `Ready`, `Sent`, `Viewed`, `Paid`.
+- Action row: copy first-touch email, copy tracked preview link, open tracked preview, dan mark manual email sent.
+- Tracked URL memakai `owner=1`, `wv_channel=email`, `wv_source=admin_reachout`, `wv_campaign=free_site_10000`, `wv_lead`, `wv_token`, plus UTM params.
+- Plan modal mengimpor `REACHOUT_PLAN.md?raw` agar admin bisa membaca plan tanpa meninggalkan app.
+
+Risiko debug:
+- Jika view tracking tidak naik, pastikan link mengandung `owner=1` dan public viewer memanggil `/api/leads/:businessId/ping` dengan query string yang sama.
+- Jika lead tidak muncul, cek `leads.email` valid dan filter active tab.
 
 ### `src/components/AdminSidebarFlyout.tsx`
 
@@ -997,7 +1030,7 @@ Logic penting:
 Fungsi:
 - Catch-all API production untuk `/api/*` di Cloudflare Pages.
 - Menggantikan Express API saat deploy di Cloudflare Pages.
-- Route handler ini sekarang terutama menyiapkan dependency wiring, menjalankan DB bootstrap, lalu dispatch ke focused modules seperti `functions/api/settings/handler.ts`, `functions/api/stats/handler.ts`, `functions/api/leads/handler.ts`, `functions/api/prospects/handler.ts`, `functions/api/sites/handler.ts`, `functions/api/places/handler.ts`, `functions/api/payments/handler.ts`, `functions/api/domains/handler.ts`, dan `functions/api/cloudflare/handler.ts`.
+- Route handler ini sekarang terutama menyiapkan dependency wiring, menjalankan DB bootstrap, lalu dispatch ke focused modules seperti `functions/api/settings/handler.ts`, `functions/api/stats/handler.ts`, `functions/api/leads/handler.ts`, `functions/api/outreach/handler.ts`, `functions/api/prospects/handler.ts`, `functions/api/sites/handler.ts`, `functions/api/places/handler.ts`, `functions/api/payments/handler.ts`, `functions/api/domains/handler.ts`, dan `functions/api/cloudflare/handler.ts`.
 - Cloudflare Pages deployment history logs can be brought into admin via the official Cloudflare API `GET /accounts/{account_id}/pages/projects/{project_name}/deployments/{deployment_id}/history/logs`, but it requires explicit env/settings credentials (`CLOUDFLARE_ACCOUNT_ID`, Pages project name, restricted API token). Live Functions tail logs are a separate dashboard/Wrangler streaming workflow and should not be presented as stored historical logs unless Cloudflare exposes a stored API source.
 
 Endpoint:
@@ -1011,7 +1044,9 @@ Endpoint:
 - `PUT /api/leads/:id/contact`
 - `GET /api/leads/payments`
 - `POST /api/leads/:id/payment-verified`
-- `POST /api/leads/:business_id/ping?owner=1` updates owner-only view fields and ignores normal preview/safe preview requests.
+- `POST /api/leads/:business_id/ping?owner=1` updates owner-only view fields, ignores normal preview/safe preview requests, and records `owner_viewed` in `outreach_events` when reachout tracking params are present.
+- `GET /api/outreach/summary`
+- `POST /api/outreach/events`
 - `GET /api/prospects`
 - `PUT /api/prospects/:placeId/status`
 - `PUT /api/prospects/:placeId/selection`
@@ -1028,6 +1063,7 @@ Endpoint:
 - `POST /api/sites/migrate-r2`
 - `POST /api/sites/:businessId/repair-service-images`
 - `POST /api/sites/:businessId/refresh-visual-variation`
+- `POST /api/sites/:businessId/screenshot`
 - `GET /api/sites`
 - `GET /api/sites/:business_id`
 - `POST /api/payments/checkout`
@@ -1045,11 +1081,13 @@ Logic D1:
 - Kolom penting tidak boleh diam-diam dilewati. Jika `ALTER TABLE` gagal atau kolom masih hilang setelah self-heal, Function mengembalikan error eksplisit agar schema D1 diperbaiki, bukan menyimpan data setengah lengkap.
 - `/api/stats`, `/api/activities`, dan `/api/settings` punya fallback JSON agar admin tidak blank saat DB belum sempurna.
 - `/api/stats` juga mengembalikan `dailyUsage` dari tabel `daily_usage_counters` untuk counter harian quota-sensitive, termasuk `history` 30 hari terakhir.
+- `outreach_events` menyimpan event reachout ringan: `lead_id`, `business_id`, `channel`, `campaign`, `source`, `event_type`, `tracking_token`, `url`, `metadata_json`, dan `created_at`. Tabel ini dipakai untuk tracking 10.000 free-site email campaign tanpa menunggu integrasi email provider penuh.
 
 Logic router modules:
 - Settings endpoints live in `functions/api/settings/handler.ts`: `GET/POST /api/settings` and `GET /api/public-settings`.
 - Dashboard stats/activity endpoints live in `functions/api/stats/handler.ts`: `GET /api/stats` and `GET /api/activities`.
 - Lead endpoints live in `functions/api/leads/handler.ts`: `GET /api/leads`, `PUT /api/leads/:id/status`, `GET /api/leads/payments`, `POST /api/leads/:id/payment-verified`, and `POST /api/leads/:business_id/ping`.
+- Outreach endpoints live in `functions/api/outreach/handler.ts`: `GET /api/outreach/summary` aggregates `outreach_events` by business for `/admin/reachout`; `POST /api/outreach/events` records `link_created`, `email_sent_manual`, `email_sent_api`, `owner_viewed`, reply, and opt-out events. Manual email sent updates `leads.last_contacted`, preserves paid/viewed states, and writes CRM activity.
 - Prospect endpoints live in `functions/api/prospects/handler.ts`: filtered `GET /api/prospects`, `PUT /api/prospects/:placeId/status`, and `PUT /api/prospects/:placeId/selection`.
 - Audit endpoint lives in `functions/api/audits/handler.ts`: `GET /api/audits/:businessId` builds deterministic Google Business Profile marketing audit JSON from generated site/prospect/lead fallback sources plus cached competitor rows. It supports generated `business_id` and prospect `place_id`, does not call AI, does not refresh Google Places, and returns confidence/missing-data notes.
 - Audit snapshots: `POST /api/audits/:businessId/snapshots` saves the current audit JSON to R2 under `audits/{businessId}/{auditId}.json` and writes metadata to `marketing_audits`; `GET /api/audits/:businessId/snapshots` lists recent metadata; `GET /api/audits/:businessId?snapshot={auditId}` reads saved JSON and marks it stale if the current live source hash differs.
@@ -1282,8 +1320,9 @@ Jika menambah laman atau komponen baru:
 - Jika menambah endpoint Function baru, update bagian `Cloudflare Pages Functions`.
 
 Build/Deploy Guard:
-- `npm run check:syntax` menjalankan `scripts/check-build-syntax.mjs`, yaitu parse-only esbuild transform untuk file `.ts/.tsx/.js/.jsx` di `src`, `functions`, `tests`, plus `server.ts` dan `vite.config.ts`. Ini menangkap syntax error Vite/esbuild seperti bracket/ternary rusak sebelum full build.
-- `prebuild` otomatis menjalankan `npm run check:syntax`, sehingga Cloudflare Pages command `npm run build` gagal lebih awal dengan pesan file/baris yang lebih langsung setelah `npm clean-install`.
+- `pnpm run check:syntax` menjalankan `scripts/check-build-syntax.mjs`, yaitu parse-only esbuild transform untuk file `.ts/.tsx/.js/.jsx` di `src`, `functions`, `tests`, plus `server.ts` dan `vite.config.ts`. Ini menangkap syntax error Vite/esbuild seperti bracket/ternary rusak sebelum full build.
+- `prebuild` otomatis menjalankan `pnpm run check:syntax`, sehingga Cloudflare Pages command `pnpm run build` gagal lebih awal dengan pesan file/baris yang lebih langsung setelah `pnpm install`.
+- Untuk verifikasi lokal, `pnpm install`, lint, dan build boleh dijalankan bila perlu, tetapi jangan start dev server dan hapus `dist`/build-only output setelah build selesai agar storage tetap hemat.
 
 ## Related Planning Docs
 

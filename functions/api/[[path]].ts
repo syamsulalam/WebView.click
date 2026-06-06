@@ -10,6 +10,7 @@ import { handleCloudflare, type CloudflareDeps } from "./cloudflare/handler";
 import { handleDomains, type DomainsDeps } from "./domains/handler";
 import { handleGenerationJobs, type GenerationJobsDeps } from "./generationJobs/handler";
 import { handleLeads, type LeadsDeps } from "./leads/handler";
+import { handleOutreach, type OutreachDeps } from "./outreach/handler";
 import { handlePayments, type PaymentsDeps } from "./payments/handler";
 import { handlePlacesCache, handlePlacesDetails, handlePlacesHistory, handlePlacesManualDuplicateMerge, handlePlacesManualDuplicates, handlePlacesManualImport, handlePlacesPhoto, handlePlacesSearch, placeIdFromPlace, type PlacesDeps } from "./places/handler";
 import { handleProspects, type ProspectsDeps } from "./prospects/handler";
@@ -42,6 +43,14 @@ const leadsDeps: LeadsDeps = {
   insertCrmActivitySafe,
   isMissingColumnError,
   ensureColumn,
+};
+
+const outreachDeps: OutreachDeps = {
+  json,
+  errorJson,
+  readJsonBody,
+  asString,
+  insertCrmActivitySafe,
 };
 
 const aiReadinessDeps: AiReadinessDeps = {
@@ -247,6 +256,10 @@ async function route(context: PagesContext): Promise<Response> {
 
     if (segments[0] === "leads") {
       return handleLeads(leadsDeps, request, db, segments);
+    }
+
+    if (segments[0] === "outreach") {
+      return handleOutreach(outreachDeps, request, db, segments);
     }
 
     if (segments[0] === "prospects") {

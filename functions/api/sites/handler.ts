@@ -909,6 +909,61 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     });
   }
 
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "screenshot") {
+    const businessId = segments[1];
+    if (!env.R2) return errorJson("R2 binding is not configured. Cannot save screenshot.", 400);
+
+    const existing = await db
+      .prepare(
+        `SELECT business_id FROM json_sites WHERE business_id = ?
+         UNION
+         SELECT business_id FROM leads WHERE business_id = ?
+         LIMIT 1`,
+      )
+      .bind(businessId, businessId)
+      .first<{ business_id: string }>();
+    if (!existing?.business_id) return errorJson("Site not found. Cannot save screenshot for an unknown business.", 404);
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("image/webp")) {
+      return errorJson("Screenshot upload must use image/webp.", 415);
+    }
+
+    const body = await request.arrayBuffer();
+    if (!body.byteLength) return errorJson("Screenshot upload is empty.", 400);
+    const maxBytes = 15 * 1024 * 1024;
+    if (body.byteLength > maxBytes) return errorJson("Screenshot is too large after compression. Try again after the page finishes loading.", 413);
+
+    const safeBusinessId = businessId.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "website";
+    const key = `sites/${safeBusinessId}/screenshots/${safeBusinessId}-full-page-${Date.now()}.webp`;
+    await env.R2.put(key, body, { httpMetadata: { contentType: "image/webp" } });
+    const publicUrl = publicR2Url(env, key);
+
+    try {
+      const lead = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
+      if (lead?.id) {
+        await insertCrmActivitySafe(db, {
+          id: crypto.randomUUID(),
+          lead_id: lead.id,
+          staff_id: "system",
+          activity_type: "screenshot_saved",
+          description: `Full-page WebP screenshot saved to R2: ${publicUrl}`,
+        });
+      }
+    } catch (error) {
+      console.error("Screenshot CRM activity insert failed, continuing:", error);
+    }
+
+    return json({
+      success: true,
+      businessId,
+      key,
+      publicUrl,
+      bytes: body.byteLength,
+      contentType: "image/webp",
+    });
+  }
+
   if (request.method === "POST" && segments.length === 3 && segments[2] === "ai-fill-about-nav-start") {
     const startStartedMs = Date.now();
     const businessId = segments[1];

@@ -341,6 +341,12 @@ export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Datab
   if (request.method === "POST" && segments.length === 3 && segments[2] === "ping") {
     const businessId = segments[1];
     if (!realOwnerRequest(request)) return deps.json({ success: true, tracked: false, reason: "not_owner_review_url" });
+    const url = new URL(request.url);
+    const channel = deps.asString(url.searchParams.get("wv_channel"), deps.asString(url.searchParams.get("utm_medium"), "unknown")).trim().slice(0, 80) || "unknown";
+    const source = deps.asString(url.searchParams.get("wv_source"), deps.asString(url.searchParams.get("utm_source"), "public_preview")).trim().slice(0, 120);
+    const campaign = deps.asString(url.searchParams.get("wv_campaign"), deps.asString(url.searchParams.get("utm_campaign"), "free_site_10000")).trim().slice(0, 120);
+    const trackingToken = deps.asString(url.searchParams.get("wv_token")).trim().slice(0, 160);
+    const leadIdParam = deps.asString(url.searchParams.get("wv_lead")).trim().slice(0, 160);
     try {
       await db
         .prepare(
@@ -351,6 +357,25 @@ export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Datab
            WHERE business_id = ?`,
         )
         .bind(businessId)
+        .run();
+      const lead = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
+      await db
+        .prepare(
+          `INSERT INTO outreach_events (
+            id, lead_id, business_id, channel, campaign, source, event_type, tracking_token, url, metadata_json, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 'owner_viewed', ?, ?, ?, CURRENT_TIMESTAMP)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          lead?.id || leadIdParam || null,
+          businessId,
+          channel,
+          campaign,
+          source,
+          trackingToken || null,
+          request.url,
+          JSON.stringify({ source: "public_owner_ping" }),
+        )
         .run();
     } catch (error) {
       if (!deps.isMissingColumnError(error)) throw error;

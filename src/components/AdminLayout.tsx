@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { FileText, Globe2, LayoutDashboard, ListChecks, Users, UserCircle, Webhook, Settings } from "lucide-react";
+import { FileText, Globe2, LayoutDashboard, ListChecks, Send, Users, UserCircle, Webhook, Settings } from "lucide-react";
 import { SignIn, useUser, useClerk } from "@clerk/clerk-react";
 import { AdminToastProvider, useAdminToast } from "./AdminToast";
 import AdminDocsReader from "./AdminDocsReader";
@@ -28,6 +28,7 @@ function NavContent({ onSignOut }: { onSignOut: () => void }) {
     { to: "/admin/leads", icon: <Users size={24} />, label: "CRM Leads", description: "Search Google Maps prospects, gather data, score, and generate demos." },
     { to: "/admin/jobs", icon: <ListChecks size={24} />, label: "Generation Jobs", description: "Audit failed, fallback, copy patch, and retry generation jobs." },
     { to: "/admin/sites", icon: <Globe2 size={24} />, label: "Generated Sites", description: "Preview, inspect, regenerate, and compare saved demo sites." },
+    { to: "/admin/reachout", icon: <Send size={24} />, label: "Reachout", description: "Track the 10,000 free-site email campaign, copy tracked links, and mark sends." },
     { to: "/admin/orders", icon: <FileText size={24} />, label: "Setup Orders", description: "Review checkout orders, payment status, and requested page add/edit notes." },
     { to: "/admin/schema", icon: <Webhook size={24} />, label: "JSON Schema Info", description: "View generator schema and run D1/R2 maintenance actions." },
     { to: "/admin/settings", icon: <Settings size={24} />, label: "Settings", description: "Manage API keys, checkout settings, pricing estimates, and scoring." }

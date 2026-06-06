@@ -31,11 +31,17 @@
 - Do not turn final answers into long roadmaps unless the user asks; keep the suggestion brief and actionable.
 - If a discovered issue directly blocks the product goal, fix it when it is small and in-scope; otherwise mention it as the suggested next improvement.
 
+## Package Manager
+- Use pnpm exclusively for scripts, installs, and tool execution in this project.
+- Run `pnpm install`, `pnpm run <script>`, and `pnpm exec <tool>`; do not use `npm`, `npm run`, `npm install`, `npx`, `yarn`, or alternate lockfiles.
+- Keep `pnpm-lock.yaml` committed and remove npm/yarn lockfiles if they appear.
+- If `node_modules` is needed, it must be pnpm-managed with `node_modules/.pnpm`; delete npm/yarn-style local installs instead of keeping duplicate dependency trees.
 ## Development Rules
 - Do not run a local development server for this repo.
-- Do not run `npm run dev`, `npm run preview`, `npm run start`, or other commands that start a local HTTP server unless the user explicitly asks to override this rule.
+- Do not run `pnpm run dev`, `pnpm run preview`, `pnpm run start`, or other commands that start a local HTTP server unless the user explicitly asks to override this rule.
 - The user intends to test changes directly in production at https://webview.click.
-- Do not run `npm run lint` for this repo anymore. The workspace intentionally may not have local TypeScript dependencies installed, and the user wants to avoid dependency/storage churn. Prefer lightweight checks such as `git diff --check`, JSON parsing, and targeted static inspection.
+- You may run `pnpm install`, lint, and build when they are useful for verification. To save storage, do not keep generated verification artifacts: after a successful build, delete `dist` and any other build-only output created by the verification run. Do not start a dev server for verification.
+- Prefer lightweight checks such as `git diff --check`, JSON parsing, and targeted static inspection when a full install/build is not needed.
 - Keep token use lean during routine changes: use small targeted file reads, avoid dumping long diffs unless needed for diagnosis, skip unnecessary explanation, and keep progress/final notes short unless deeper reasoning is required.
 
 ## AI Job Reliability Rule

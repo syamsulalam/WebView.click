@@ -2,10 +2,11 @@
   "name": "react-example",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "pnpm@10.34.1",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "prebuild": "npm run check:syntax",
+    "prebuild": "pnpm run check:syntax",
     "check:syntax": "node scripts/check-build-syntax.mjs",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
@@ -18,8 +19,8 @@
     "test:generation-job-state": "tsx tests/generationJobState.test.ts",
     "test:admin-generation": "tsx tests/adminSiteGeneration.test.ts",
     "test:api-handlers": "tsx tests/apiHandlers.test.ts",
-    "r2:cors": "npx wrangler r2 bucket cors set webview --file cloudflare/r2-cors-webview.json --force",
-    "r2:cors:list": "npx wrangler r2 bucket cors list webview"
+    "r2:cors": "pnpm exec wrangler r2 bucket cors set webview --file cloudflare/r2-cors-webview.json --force",
+    "r2:cors:list": "pnpm exec wrangler r2 bucket cors list webview"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.6",
