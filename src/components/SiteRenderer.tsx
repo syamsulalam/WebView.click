@@ -67,23 +67,27 @@ function contrastRatio(hexA: string, hexB: string) {
   return (light + 0.05) / (dark + 0.05);
 }
 
-function readableTextForBackground(hex: string) {
-  if (!hexToRgb(hex)) return "#0F172A";
-  const darkText = "#0F172A";
-  const lightText = "#FFFFFF";
-  return contrastRatio(hex, lightText) >= contrastRatio(hex, darkText) && contrastRatio(hex, lightText) >= 4.5
-    ? lightText
-    : darkText;
-}
-
 function rgbToHex(r: number, g: number, b: number) {
   return `#${[r, g, b].map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function mixColor(hexA: string, hexB: string, weightA: number) {
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  if (!a || !b) return hexA;
+  const clamped = Math.max(0, Math.min(1, weightA));
+  const other = 1 - clamped;
+  return rgbToHex(a.r * clamped + b.r * other, a.g * clamped + b.g * other, a.b * clamped + b.b * other);
 }
 
 function darkenColor(hex: string, factor: number) {
   const rgb = hexToRgb(hex);
   if (!rgb) return hex;
   return rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
+}
+
+function lightenColor(hex: string, amount: number) {
+  return mixColor(hex, "#F8FAFC", 1 - Math.max(0, Math.min(1, amount)));
 }
 
 function readableBrandColor(hex: string, surface = "#FFFFFF") {
@@ -95,6 +99,45 @@ function readableBrandColor(hex: string, surface = "#FFFFFF") {
     factor -= 0.1;
   }
   return current;
+}
+
+function ensureContrast(color: string, surface: string, minimum: number, direction: "darken" | "lighten") {
+  if (!hexToRgb(color) || !hexToRgb(surface)) return color;
+  let current = color;
+  let step = 0;
+  while (contrastRatio(current, surface) < minimum && step < 12) {
+    const amount = 0.16 + step * 0.06;
+    current = direction === "darken"
+      ? darkenColor(current, Math.max(0.18, 1 - amount))
+      : lightenColor(current, Math.min(0.92, amount));
+    step += 1;
+  }
+  return current;
+}
+
+function readablePaletteText(surface: string, primary: string, accent: string, minimum = 4.5) {
+  const lightSurface = relativeLuminance(surface) >= 0.46;
+  const paletteBlend = mixColor(primary, accent, 0.58);
+  const initial = lightSurface
+    ? mixColor(darkenColor(primary, 0.42), darkenColor(accent, 0.56), 0.64)
+    : mixColor(lightenColor(primary, 0.84), lightenColor(accent, 0.78), 0.58);
+  return ensureContrast(initial || paletteBlend, surface, minimum, lightSurface ? "darken" : "lighten");
+}
+
+function paletteMutedText(surface: string, primary: string, accent: string) {
+  const base = readablePaletteText(surface, primary, accent, 3.2);
+  const mixed = mixColor(base, surface, relativeLuminance(surface) >= 0.46 ? 0.76 : 0.7);
+  return contrastRatio(mixed, surface) >= 3 ? mixed : base;
+}
+
+function paletteBorder(surface: string, primary: string, accent: string) {
+  const tone = readablePaletteText(surface, primary, accent, 3);
+  return mixColor(tone, surface, 0.26);
+}
+
+function paletteSurface(surface: string, primary: string, accent: string, weight = 0.09) {
+  const tint = mixColor(primary, accent, 0.52);
+  return mixColor(surface, tint, 1 - weight);
 }
 
 function normalizeSiteData(siteData: any) {
@@ -189,6 +232,16 @@ function normalizeSiteData(siteData: any) {
   const primaryColor = readableBrandColor(normalizedColors.primary || "#111827", backgroundColor);
   const secondaryColor = normalizedColors.secondary || "#F3F4F6";
   const accentColor = readableBrandColor(normalizedColors.accent || "#4F46E5", backgroundColor);
+  const inkColor = readablePaletteText(backgroundColor, primaryColor, accentColor);
+  const mutedColor = paletteMutedText(backgroundColor, primaryColor, accentColor);
+  const accentTextColor = ensureContrast(accentColor, backgroundColor, 3.4, relativeLuminance(backgroundColor) >= 0.46 ? "darken" : "lighten");
+  const primaryTextColor = ensureContrast(primaryColor, backgroundColor, 3.4, relativeLuminance(backgroundColor) >= 0.46 ? "darken" : "lighten");
+  const cardBgColor = paletteSurface(backgroundColor, primaryColor, accentColor, 0.035);
+  const subtleSurfaceColor = paletteSurface(backgroundColor, primaryColor, accentColor, 0.08);
+  const capsuleBgColor = paletteSurface(backgroundColor, primaryColor, accentColor, 0.12);
+  const capsuleTextColor = readablePaletteText(capsuleBgColor, primaryColor, accentColor, 4.5);
+  const onPrimaryColor = readablePaletteText(primaryColor, primaryColor, accentColor, 4.5);
+  const onAccentColor = readablePaletteText(accentColor, primaryColor, accentColor, 4.5);
 
   return {
     meta: {
@@ -200,13 +253,27 @@ function normalizeSiteData(siteData: any) {
       primary: primaryColor,
       secondary: secondaryColor,
       accent: accentColor,
-      textMain: normalizedColors.textMain || "#1F2937",
-      textMuted: normalizedColors.textMuted || "#6B7280",
+      textMain: typeof normalizedColors.textMain === "string" && contrastRatio(backgroundColor, normalizedColors.textMain) >= 4.5 ? normalizedColors.textMain : inkColor,
+      textMuted: typeof normalizedColors.textMuted === "string" && contrastRatio(backgroundColor, normalizedColors.textMuted) >= 3 ? normalizedColors.textMuted : mutedColor,
       background: backgroundColor,
-      onPrimary: normalizedColors.onPrimary || normalizedColors.headerText || normalizedColors.buttonPrimaryText || readableTextForBackground(primaryColor),
-      onAccent: normalizedColors.onAccent || normalizedColors.buttonAccentText || readableTextForBackground(accentColor),
-      onSecondary: normalizedColors.onSecondary || readableTextForBackground(secondaryColor),
-      onBackground: normalizedColors.onBackground || readableTextForBackground(backgroundColor),
+      onPrimary: onPrimaryColor,
+      onAccent: onAccentColor,
+      onSecondary: readablePaletteText(secondaryColor, primaryColor, accentColor, 4.5),
+      onBackground: inkColor,
+      ink: inkColor,
+      inkSoft: paletteMutedText(backgroundColor, primaryColor, accentColor),
+      muted: mutedColor,
+      accentText: accentTextColor,
+      primaryText: primaryTextColor,
+      icon: accentTextColor,
+      cardBg: cardBgColor,
+      subtleSurface: subtleSurfaceColor,
+      subtleBorder: paletteBorder(backgroundColor, primaryColor, accentColor),
+      capsuleBg: capsuleBgColor,
+      capsuleBorder: paletteBorder(capsuleBgColor, primaryColor, accentColor),
+      capsuleText: capsuleTextColor,
+      footerMuted: paletteMutedText(primaryColor, primaryColor, accentColor),
+      footerBorder: paletteBorder(primaryColor, primaryColor, accentColor),
     },
     typography: {
       headingFont: normalizedTypography.headingFont || "'Inter', sans-serif",
@@ -267,7 +334,6 @@ function normalizeSiteData(siteData: any) {
     globalConfig: {
       ...globalConfig,
       header: {
-        ctaButton: { text: "Hubungi Kami", href: "#contact" },
         ...header,
         ctaButton: {
           text: header.ctaButton?.text || "Hubungi Kami",
@@ -1164,14 +1230,28 @@ export default function SiteRenderer({
     "--color-on-bg": colors.onBackground,
     "--color-text": colors.textMain,
     "--color-bg": colors.background,
-  } as React.CSSProperties;
+    "--wv-ink": colors.ink,
+    "--wv-ink-soft": colors.inkSoft,
+    "--wv-muted": colors.muted,
+    "--wv-primary-text": colors.primaryText,
+    "--wv-accent-text": colors.accentText,
+    "--wv-icon": colors.icon,
+    "--wv-card-bg": colors.cardBg,
+    "--wv-subtle-surface-token": colors.subtleSurface,
+    "--wv-subtle-border-token": colors.subtleBorder,
+    "--wv-capsule-bg": colors.capsuleBg,
+    "--wv-capsule-border": colors.capsuleBorder,
+    "--wv-capsule-text": colors.capsuleText,
+    "--wv-footer-muted-token": colors.footerMuted,
+    "--wv-footer-border-token": colors.footerBorder,
+  } as CSSProperties;
   const siteCanvasStyles = {
     "--wv-shader-opacity": Number.isFinite(Number(shaderConfig.opacity)) ? String(Math.max(0, Math.min(0.5, Number(shaderConfig.opacity)))) : String(shaderMeta.defaultOpacity),
     "--wv-shader-motion": Number.isFinite(Number(shaderConfig.motion)) ? String(Math.max(0, Math.min(1, Number(shaderConfig.motion)))) : String(shaderMeta.defaultMotion),
     fontFamily: activeFontPairing.bodyCss || typography.bodyFont,
     backgroundColor: "var(--color-bg)",
     color: "var(--color-text)",
-  } as React.CSSProperties;
+  } as CSSProperties;
 
   useEffect(() => {
     const canvas = document.querySelector<HTMLElement>("#rendered-site [data-wv-site-canvas]");
@@ -1589,13 +1669,13 @@ export default function SiteRenderer({
                     )}
                     <div className={heroGridClass}>
                       <div className={heroPanelClass}>
-                        <p className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: colors.accent }}>
+                        <p className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: isEmergencyHero ? colors.onPrimary : colors.accentText }}>
                           {editableText(`${section.id}.eyebrow`, businessProfile.typeLabel, "span")}
                         </p>
-                        <h1 data-wv-hero-heading="true" className={heroHeadingClass}>
+                        <h1 data-wv-hero-heading="true" className={heroHeadingClass} style={isEmergencyHero ? { color: colors.onPrimary } : undefined}>
                           {editableText(`${section.id}.headline`, heroHeadline, "span")}
                         </h1>
-                        <p className={heroBodyClass}>
+                        <p className={heroBodyClass} style={isEmergencyHero ? { color: colors.footerMuted } : undefined}>
                           {editableText(`${section.id}.subheadline`, heroSubheadline, "span", "", undefined, true)}
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3">
@@ -1609,8 +1689,8 @@ export default function SiteRenderer({
                                 data-wv-tab={tabPageId || undefined}
                                 style={{
                                   backgroundColor: btn.style === "primary" ? colors.accent : "transparent",
-                                  color: btn.style === "primary" ? colors.onAccent : isEmergencyHero ? "#fff" : colors.textMain,
-                                  border: `1px solid ${btn.style === "primary" ? colors.accent : isEmergencyHero ? "rgba(255,255,255,0.35)" : "#CBD5E1"}`,
+                                  color: btn.style === "primary" ? colors.onAccent : isEmergencyHero ? colors.onPrimary : colors.textMain,
+                                  border: `1px solid ${btn.style === "primary" ? colors.accent : isEmergencyHero ? colors.footerBorder : colors.subtleBorder}`,
                                 }}
                                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-semibold transition hover:translate-y-[-1px]"
                                 onClick={(event) => {
@@ -1628,8 +1708,8 @@ export default function SiteRenderer({
                           })}
                         </div>
                         {(trust.rating > 0 || displayPhone || (Array.isArray(conversion.proofBadges) && conversion.proofBadges.length > 0)) && (
-                          <div className={heroProofClass}>
-                            {trust.rating > 0 && <span className={heroProofItemClass}><span style={{ color: colors.accent }}>{editableSiteIcon("hero.rating", "star", 16)}</span> {trust.rating.toFixed(1)} {isIndonesian ? "dari" : "from"} {trust.reviewCount || labels.manyReviews} {labels.reviews}</span>}
+                          <div className={heroProofClass} style={isEmergencyHero ? { color: colors.footerMuted } : undefined}>
+                            {trust.rating > 0 && <span className={heroProofItemClass}><span style={{ color: isEmergencyHero ? colors.onPrimary : colors.icon }}>{editableSiteIcon("hero.rating", "star", 16)}</span> {trust.rating.toFixed(1)} {isIndonesian ? "dari" : "from"} {trust.reviewCount || labels.manyReviews} {labels.reviews}</span>}
                             {displayPhone && (
                               <a href={phoneHref(primaryPhone || displayPhone)} className={`${heroProofItemClass} hover:underline`}>
                                 {editableSiteIcon("hero.phone", "phone", 16)} {displayPhone}
@@ -1637,7 +1717,7 @@ export default function SiteRenderer({
                             )}
                             {Array.isArray(conversion.proofBadges) && conversion.proofBadges.slice(0, 3).map((badge: string, i: number) => (
                               <span key={`${badge}-${i}`} className={heroProofItemClass}>
-                                <span style={{ color: colors.accent }}>{editableSiteIcon(`hero.proof.${i}`, i === 0 ? "check" : "shield", 16)}</span>
+                                <span style={{ color: isEmergencyHero ? colors.onPrimary : colors.icon }}>{editableSiteIcon(`hero.proof.${i}`, i === 0 ? "check" : "shield", 16)}</span>
                                 {editableText(`${section.id}.proof.${i}`, badge, "span")}
                               </span>
                             ))}
@@ -1673,19 +1753,19 @@ export default function SiteRenderer({
                   : proofTreatment === "authority-bar"
                     ? "flex flex-col items-center justify-center gap-2 rounded-md bg-slate-50 border border-slate-200 px-4 py-4 text-center"
                     : "flex flex-col items-center justify-center gap-2 rounded-lg bg-white border border-slate-200 px-4 py-4 text-center";
-                const trustValueClass = proofTreatment === "emergency-rail" ? "text-xl font-bold text-white" : "text-xl font-bold text-slate-950";
-                const trustLabelClass = proofTreatment === "emergency-rail" ? "text-xs uppercase tracking-wide text-white/60" : "text-xs uppercase tracking-wide text-slate-500";
+                const trustValueClass = proofTreatment === "emergency-rail" ? "text-xl font-bold" : "text-xl font-bold text-slate-950";
+                const trustLabelClass = proofTreatment === "emergency-rail" ? "text-xs uppercase tracking-wide" : "text-xs uppercase tracking-wide text-slate-500";
                 return (
                   <section key={section.id} data-wv-proof-treatment={proofTreatment} className={trustSectionClass}>
                     <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {items.map((item: any, i: number) => (
                         <div key={i} className={trustCardClass}>
-                          <span data-wv-qa-icon="trustBar" className="inline-flex" style={{ color: colors.primary }}>
+                          <span data-wv-qa-icon="trustBar" className="inline-flex" style={{ color: proofTreatment === "emergency-rail" ? colors.onPrimary : colors.icon }}>
                             {editableSiteIcon(`${page.pageId}.${section.id}.trust.${i}`, copyIconId(item.label || item.icon || "", item.value || "", usedTrustIcons), 30, "shrink-0")}
                           </span>
                           <div>
-                            {editableText(`${section.id}.trust.${i}.value`, item.value, "p", trustValueClass)}
-                            {editableText(`${section.id}.trust.${i}.label`, item.label, "p", trustLabelClass)}
+                            {editableText(`${section.id}.trust.${i}.value`, item.value, "p", trustValueClass, proofTreatment === "emergency-rail" ? { color: colors.onPrimary } : undefined)}
+                            {editableText(`${section.id}.trust.${i}.label`, item.label, "p", trustLabelClass, proofTreatment === "emergency-rail" ? { color: colors.footerMuted } : undefined)}
                           </div>
                         </div>
                       ))}
@@ -1704,7 +1784,7 @@ export default function SiteRenderer({
                       <div className="grid md:grid-cols-3 gap-8">
                         {items.map((item: any, i: number) => (
                           <div key={i} className="bg-white p-7 rounded-xl shadow-sm hover:shadow-md transition border border-slate-100 text-center">
-                            <span data-wv-qa-icon="features" className="mx-auto mb-4 inline-flex text-[2.25rem]" style={{ color: colors.accent }}>
+                            <span data-wv-qa-icon="features" className="mx-auto mb-4 inline-flex text-[2.25rem]" style={{ color: colors.icon }}>
                               {editableSiteIcon(`${page.pageId}.${section.id}.feature.${i}`, copyIconId(item.title || item.label || "", item.description || "", usedFeatureIcons), 36, "shrink-0")}
                             </span>
                             {editableText(`${section.id}.item.${i}.title`, item.title, "h3", "text-xl font-semibold mb-2")}
@@ -1733,7 +1813,7 @@ export default function SiteRenderer({
                   <section key={section.id} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto">
                       <div className="max-w-2xl mb-10">
-                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{editableText(`${section.id}.eyebrow`, labels.offersEyebrow, "span")}</p>
+                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.eyebrow`, labels.offersEyebrow, "span")}</p>
                         {editableText(`${section.id}.title`, section.content?.title || labels.offersTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
                         {section.content?.description && editableText(`${section.id}.description`, section.content.description, "p", "mt-3 text-slate-600", undefined, true)}
                       </div>
@@ -1775,12 +1855,12 @@ export default function SiteRenderer({
                                         {...tabPropsForHref(priceHref)}
                                         onClick={(event) => handleSiteHrefClick(priceHref, event)}
                                         className="pointer-events-auto mt-4 inline-flex items-center justify-center gap-2 text-sm font-semibold hover:underline"
-                                        style={{ color: colors.accent }}
+                                  style={{ color: colors.accentText }}
                                       >
                                         {editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "span")}
                                       </a>
                                     ) : (
-                                      editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "p", "mt-4 text-sm font-semibold", { color: colors.accent })
+                                      editableText(`${section.id}.offer.${i}.price`, offer.priceHint, "p", "mt-4 text-sm font-semibold", { color: colors.accentText })
                                     )
                                   )}
                                   {ctaHref && ctaText && !ctaDuplicatesCard && (
@@ -1822,7 +1902,7 @@ export default function SiteRenderer({
                   <section key={section.id} className="py-20 px-6 bg-white">
                     <div className="max-w-6xl mx-auto grid gap-10 lg:grid-cols-[1.05fr_0.95fr]">
                       <div>
-                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
+                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
                         {editableText(`${section.id}.title`, detailTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
                         {editableText(`${section.id}.summary`, detail.summary || detail.description, "p", "mt-4 text-lg text-slate-600", undefined, true)}
                         {highlights.length > 0 && (
@@ -1840,12 +1920,12 @@ export default function SiteRenderer({
                         <div className="h-56 overflow-hidden rounded-xl bg-slate-200">
                           {editableImage(imageEditKey(page.pageId, section.id, "detail"), detail.image || brand.preferredHeroImage, detail.title, brandPhotoAttribution(detail.image || brand.preferredHeroImage), `detail-${detail.title || section.id}`)}
                         </div>
-                        {detail.priceHint && editableText(`${section.id}.price`, detail.priceHint, "p", "mt-5 text-lg font-bold", { color: colors.accent })}
+                        {detail.priceHint && editableText(`${section.id}.price`, detail.priceHint, "p", "mt-5 text-lg font-bold", { color: colors.accentText })}
                         {included.length > 0 && (
                           <div className="mt-5">
                             <p className="font-semibold text-slate-950">{isIndonesian ? "Yang termasuk" : "What's included"}</p>
                             <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                              {included.map((item: string, i: number) => <li key={item} className="flex gap-2"><span className="mt-0.5 shrink-0" style={{ color: colors.accent }}>{editableSiteIcon(`${page.pageId}.${section.id}.included.${i}`, "check", 16)}</span>{editableText(`${section.id}.included.${i}`, item, "span")}</li>)}
+                              {included.map((item: string, i: number) => <li key={item} className="flex gap-2"><span className="mt-0.5 shrink-0" style={{ color: colors.icon }}>{editableSiteIcon(`${page.pageId}.${section.id}.included.${i}`, "check", 16)}</span>{editableText(`${section.id}.included.${i}`, item, "span")}</li>)}
                             </ul>
                           </div>
                         )}
@@ -1871,7 +1951,7 @@ export default function SiteRenderer({
                     <div className="max-w-6xl mx-auto">
                       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
                         <div>
-                          <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accent }}>{editableText(`${section.id}.eyebrow`, labels.reviewsEyebrow, "span")}</p>
+                          <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.eyebrow`, labels.reviewsEyebrow, "span")}</p>
                           {editableText(`${section.id}.title`, section.content?.title || labels.reviewsTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
                         </div>
                         {trust.reviewSummary && editableText(`${section.id}.summary`, trust.reviewSummary, "p", "max-w-xl text-slate-600", undefined, true)}
@@ -1879,13 +1959,13 @@ export default function SiteRenderer({
                       <div className="grid md:grid-cols-3 gap-5">
                         {reviews.map((review: any, i: number) => (
                           <div key={i} className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-                            <div className="mb-4 flex justify-center gap-1" style={{ color: colors.accent }}>
+                            <div className="mb-4 flex justify-center gap-1" style={{ color: colors.icon }}>
                               {Array.from({ length: Math.round(review.rating || 5) }).map((_, idx) => <span key={idx}>{editableSiteIcon(`${page.pageId}.${section.id}.review.${i}.star.${idx}`, "star", 16)}</span>)}
                             </div>
                             <div className="text-slate-700">
-                              <span aria-hidden="true" className="wv-heading block text-left text-5xl font-bold leading-[0.72]" style={{ color: colors.accent }}>"</span>
+                              <span aria-hidden="true" className="wv-heading block text-left text-5xl font-bold leading-[0.72]" style={{ color: colors.accentText }}>"</span>
                               {editableText(`${section.id}.review.${i}.text`, review.text, "p", "-mt-1", undefined, true)}
-                              <span aria-hidden="true" className="wv-heading -mt-1 block text-right text-5xl font-bold leading-[0.72]" style={{ color: colors.accent }}>"</span>
+                              <span aria-hidden="true" className="wv-heading -mt-1 block text-right text-5xl font-bold leading-[0.72]" style={{ color: colors.accentText }}>"</span>
                             </div>
                             {editableText(`${section.id}.review.${i}.author`, review.authorName || review.author || "Google reviewer", "p", "mt-4 font-semibold text-slate-950")}
                           </div>
@@ -1908,7 +1988,7 @@ export default function SiteRenderer({
                     <div data-wv-hours-location-grid="true" className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
                         <div data-wv-hours-location-heading="true" className="mb-5 flex items-center gap-3 text-2xl">
-                          <span data-wv-qa-icon="hoursLocation" className="inline-flex h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }}>{editableSiteIcon(`${page.pageId}.${section.id}.hoursIcon`, "calendar", 20)}</span>
+                          <span data-wv-qa-icon="hoursLocation" className="inline-flex h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.icon }}>{editableSiteIcon(`${page.pageId}.${section.id}.hoursIcon`, "calendar", 20)}</span>
                           {editableText(`${section.id}.hoursTitle`, hoursTitle, "h2", "text-2xl font-bold text-slate-950", { ["--wv-title-chars" as any]: String(hoursTitle).length } as CSSProperties)}
                         </div>
                         {todayHours && (
@@ -1931,7 +2011,7 @@ export default function SiteRenderer({
                       </div>
                       <div className="rounded-xl border border-slate-200 p-8 bg-white">
                         <div data-wv-hours-location-heading="true" className="mb-5 flex items-center gap-3 text-2xl">
-                          <span data-wv-qa-icon="hoursLocation" className="inline-flex h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.accent }}>{editableSiteIcon(`${page.pageId}.${section.id}.locationIcon`, "map", 20)}</span>
+                          <span data-wv-qa-icon="hoursLocation" className="inline-flex h-[1.1em] w-[1.1em] shrink-0" style={{ color: colors.icon }}>{editableSiteIcon(`${page.pageId}.${section.id}.locationIcon`, "map", 20)}</span>
                           {editableText(`${section.id}.locationTitle`, labels.locationTitle, "h2", "text-2xl font-bold text-slate-950", { ["--wv-title-chars" as any]: labels.locationTitle.length } as CSSProperties)}
                         </div>
                         {editableText(`${section.id}.address`, section.content?.address || location.formattedAddress || businessProfile.address?.formatted || "Alamat belum tersedia.", "p", "text-slate-700", undefined, true)}
@@ -1995,30 +2075,31 @@ export default function SiteRenderer({
                         ? "px-6 py-16 bg-stone-950 text-white"
                         : ctaTreatment === "booking-pill"
                           ? "px-6 py-16 bg-indigo-950 text-white"
-                      : "px-6 py-16 bg-slate-950 text-white";
+                          : "px-6 py-16 bg-slate-950 text-white";
+                const finalCtaIsLight = ctaTreatment === "consultation-card";
                 const finalCtaPanelClass = ctaTreatment === "consultation-card"
                   ? "mx-auto grid max-w-6xl gap-8 rounded-xl border border-slate-200 bg-white p-7 shadow-xl shadow-slate-900/10 md:grid-cols-[1.1fr_0.9fr] md:p-10"
                   : ctaTreatment === "booking-pill"
                     ? "mx-auto grid max-w-6xl gap-8 rounded-[2rem] border border-white/10 bg-white/[0.08] p-7 shadow-2xl shadow-indigo-950/25 md:grid-cols-[1.1fr_0.9fr] md:p-10"
                   : "mx-auto grid max-w-6xl gap-8 rounded-2xl border border-white/10 bg-white/[0.06] p-7 shadow-2xl shadow-slate-950/25 md:grid-cols-[1.1fr_0.9fr] md:p-10";
-                const finalCtaMutedClass = ctaTreatment === "consultation-card" ? "mt-4 max-w-2xl text-slate-600" : "mt-4 max-w-2xl text-white/75";
-                const finalCtaProofClass = ctaTreatment === "consultation-card" ? "mt-4 text-sm font-semibold text-slate-600" : "mt-4 text-sm font-semibold text-white/80";
+                const finalCtaMutedClass = ctaTreatment === "consultation-card" ? "mt-4 max-w-2xl text-slate-600" : "mt-4 max-w-2xl";
+                const finalCtaProofClass = ctaTreatment === "consultation-card" ? "mt-4 text-sm font-semibold text-slate-600" : "mt-4 text-sm font-semibold";
                 const finalSecondaryClass = ctaTreatment === "consultation-card"
                   ? "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-5 py-3 text-sm font-bold text-slate-800 transition hover:-translate-y-0.5 hover:bg-slate-50"
-                  : "inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-white/10";
+                  : "inline-flex items-center justify-center gap-2 rounded-lg border px-5 py-3 text-sm font-bold transition hover:-translate-y-0.5";
                 const finalBadgeClass = ctaTreatment === "consultation-card"
                   ? "inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700"
-                  : "inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/85";
+                  : "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold";
                 return (
-                  <section key={section.id} data-wv-cta-treatment={ctaTreatment} className={finalCtaClass}>
+                  <section key={section.id} data-wv-cta-treatment={ctaTreatment} className={finalCtaClass} style={finalCtaIsLight ? undefined : { color: colors.onPrimary }}>
                     <div className={finalCtaPanelClass}>
                       <div>
-                        <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: colors.accent }}>
+                        <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: finalCtaIsLight ? colors.accentText : colors.onPrimary }}>
                           {editableText(`${section.id}.eyebrow`, content.eyebrow || (isIndonesian ? "Langkah berikutnya" : "Next step"), "span")}
                         </p>
                         {editableText(`${section.id}.headline`, content.headline || (isIndonesian ? "Siap membahas kebutuhan Anda?" : "Ready to discuss your next step?"), "h2", "mt-3 text-3xl font-bold leading-tight md:text-4xl")}
-                        {editableText(`${section.id}.description`, content.description || businessProfile.shortPitch, "p", finalCtaMutedClass, undefined, true)}
-                        {content.proofLine && editableText(`${section.id}.proofLine`, content.proofLine, "p", finalCtaProofClass, undefined, true)}
+                        {editableText(`${section.id}.description`, content.description || businessProfile.shortPitch, "p", finalCtaMutedClass, { color: finalCtaIsLight ? colors.muted : colors.footerMuted }, true)}
+                        {content.proofLine && editableText(`${section.id}.proofLine`, content.proofLine, "p", finalCtaProofClass, { color: finalCtaIsLight ? colors.muted : colors.footerMuted }, true)}
                       </div>
                       <div className="flex flex-col justify-center gap-4">
                         <div className="flex flex-col gap-3 sm:flex-row md:flex-col lg:flex-row">
@@ -2050,6 +2131,7 @@ export default function SiteRenderer({
                                 handleSiteHrefClick(secondaryHref, event);
                               }}
                               className={finalSecondaryClass}
+                              style={{ color: finalCtaIsLight ? colors.textMain : colors.onPrimary, borderColor: finalCtaIsLight ? colors.subtleBorder : colors.footerBorder }}
                             >
                               {editableButtonIcon(`${page.pageId}.${section.id}.secondary`, secondaryCta.text || (isIndonesian ? "Lihat lokasi" : "View location"), secondaryHref, 16)}
                               {editableButtonText(`${page.pageId}.${section.id}.secondary`, secondaryCta.text || (isIndonesian ? "Lihat lokasi" : "View location"))}
@@ -2059,7 +2141,7 @@ export default function SiteRenderer({
                         {badges.length > 0 && (
                           <div className="flex flex-wrap gap-2">
                             {badges.map((badge: string, i: number) => (
-                              <span key={`${badge}-${i}`} className={finalBadgeClass}>
+                              <span key={`${badge}-${i}`} className={finalBadgeClass} style={{ backgroundColor: finalCtaIsLight ? colors.capsuleBg : "transparent", borderColor: finalCtaIsLight ? colors.capsuleBorder : colors.footerBorder, color: finalCtaIsLight ? colors.capsuleText : colors.footerMuted }}>
                                 {editableSiteIcon(`${page.pageId}.${section.id}.badge.${i}`, i === 0 ? "shield" : "check", 14)}
                                 {editableText(`${section.id}.badge.${i}`, badge, "span")}
                               </span>
@@ -2325,7 +2407,7 @@ export default function SiteRenderer({
               <section id="areas-served" data-wv-section="areas-served" className="px-6 py-14 bg-white">
                 <div className="mx-auto grid max-w-6xl gap-6 rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm md:grid-cols-[0.85fr_1.15fr] md:p-8">
                   <div>
-                    <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: colors.accent }}>
+                    <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: colors.accentText }}>
                       {editableText("areasServed.eyebrow", labels.areasServedEyebrow, "span")}
                     </p>
                     {editableText("areasServed.title", labels.areasServedTitle, "h2", "mt-2 text-2xl font-bold text-slate-950 md:text-3xl")}
@@ -2333,8 +2415,8 @@ export default function SiteRenderer({
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {servedAreas.map((area: string, i: number) => (
-                      <span key={area} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm">
-                        <span className="shrink-0" style={{ color: colors.accent }}>{editableSiteIcon(`areasServed.${i}`, "map", 15)}</span>
+                      <span key={area} className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold shadow-sm" style={{ backgroundColor: colors.capsuleBg, borderColor: colors.capsuleBorder, color: colors.capsuleText }}>
+                        <span data-wv-capsule-icon="true" className="shrink-0" style={{ color: colors.icon }}>{editableSiteIcon(`areasServed.${i}`, "map", 15)}</span>
                         {editableText(`areasServed.area.${i}`, area, "span")}
                       </span>
                     ))}
@@ -2357,7 +2439,7 @@ export default function SiteRenderer({
             {editableText("footer.shortPitch", businessProfile.shortPitch || meta.seoDescription || globalConfig.footer.text, "p", "max-w-sm opacity-80", undefined, true)}
             <div className="mt-5 flex gap-2">
               {footerSocials.map((social: any) => (
-                <a key={social.platform} href={social.href || "#"} className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20" aria-label={social.platform}>
+                <a key={social.platform} href={social.href || "#"} className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:opacity-85" style={{ backgroundColor: colors.footerBorder, color: colors.onPrimary }} aria-label={social.platform}>
                   {editableSiteIcon(`footer.social.${social.platform}`, inferSocialIconId(social.platform), 18)}
                 </a>
               ))}
@@ -2423,7 +2505,7 @@ export default function SiteRenderer({
             </div>
           </div>
         </div>
-        <div className="mx-auto mt-10 max-w-6xl border-t border-white/15 pt-6 text-xs opacity-70">
+        <div className="mx-auto mt-10 max-w-6xl border-t pt-6 text-xs opacity-70">
           <p>{globalConfig.footer.text}</p>
         </div>
       </footer>
@@ -2669,8 +2751,8 @@ export default function SiteRenderer({
           }
         }
         #rendered-site [data-wv-site-footer] {
-          --wv-footer-muted: rgba(255, 255, 255, 0.78);
-          --wv-footer-border: rgba(255, 255, 255, 0.16);
+          --wv-footer-muted: var(--wv-footer-muted-token);
+          --wv-footer-border: var(--wv-footer-border-token);
           position: relative;
           z-index: 1;
           overflow: hidden;
@@ -2693,6 +2775,7 @@ export default function SiteRenderer({
           clip-path: none !important;
         }
         #rendered-site [data-wv-site-footer] :where(a, button) {
+          color: inherit;
           box-shadow: none !important;
           transform: none !important;
           transition: opacity 160ms ease, color 160ms ease, background-color 160ms ease;
@@ -2702,6 +2785,7 @@ export default function SiteRenderer({
           transform: none !important;
         }
         #rendered-site [data-wv-site-footer] :where(p, a, button, span) {
+          color: inherit;
           letter-spacing: 0;
         }
         #rendered-site [data-wv-site-footer] > div:first-child {
@@ -2712,6 +2796,7 @@ export default function SiteRenderer({
         }
         #rendered-site [data-wv-site-footer] svg {
           flex: none;
+          color: currentColor;
         }
         #rendered-site [data-wv-site-footer] .opacity-85 {
           opacity: 1;
@@ -2723,7 +2808,7 @@ export default function SiteRenderer({
         }
         #rendered-site [data-wv-site-footer] .opacity-70 {
           opacity: 1;
-          color: rgba(255, 255, 255, 0.68);
+          color: var(--wv-footer-muted);
         }
         #rendered-site [data-wv-tool-ui],
         #rendered-site [data-wv-tool-ui] *,

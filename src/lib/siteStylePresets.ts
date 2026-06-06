@@ -343,25 +343,35 @@ export const siteStylePresetCss = `
     --wv-card-shadow: 0 18px 46px rgba(15, 23, 42, 0.10);
     --wv-lift-shadow: 0 26px 64px rgba(15, 23, 42, 0.16);
     --wv-focus-ring: rgba(79, 70, 229, 0.22);
-    --wv-subtle-surface: var(--color-secondary);
-    --wv-subtle-border: rgba(15, 23, 42, 0.12);
+    --wv-ink: var(--color-text);
+    --wv-ink-soft: var(--color-text);
+    --wv-muted: var(--color-text);
+    --wv-primary-text: var(--color-primary);
+    --wv-accent-text: var(--color-accent);
+    --wv-icon: var(--color-accent);
+    --wv-card-bg: var(--color-bg);
+    --wv-subtle-surface: var(--wv-subtle-surface-token, var(--color-secondary));
+    --wv-subtle-border: var(--wv-subtle-border-token, rgba(15, 23, 42, 0.12));
+    --wv-capsule-bg: var(--color-bg);
+    --wv-capsule-border: var(--wv-subtle-border);
+    --wv-capsule-text: var(--wv-ink);
     --wv-gradient-primary: linear-gradient(135deg, var(--color-primary), var(--color-accent));
     --wv-gradient-accent: linear-gradient(135deg, var(--color-accent), var(--color-secondary));
     --wv-header-treatment: solid;
     --wv-header-bg: var(--color-primary);
     --wv-header-bg-compact: var(--color-primary);
-    --wv-header-text: var(--color-on-primary, #ffffff);
-    --wv-header-border: rgba(255, 255, 255, 0.14);
-    --wv-header-border-compact: rgba(255, 255, 255, 0.18);
+    --wv-header-text: var(--color-on-primary);
+    --wv-header-border: var(--wv-footer-border-token, rgba(255, 255, 255, 0.14));
+    --wv-header-border-compact: var(--wv-footer-border-token, rgba(255, 255, 255, 0.18));
     --wv-header-shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
     --wv-header-shadow-compact: 0 1px 2px rgba(15, 23, 42, 0.08);
     --wv-header-blur: 0px;
     --wv-header-accent-line: transparent;
     --wv-header-link-hover-bg: rgba(255, 255, 255, 0.10);
-    --wv-header-submenu-bg: #ffffff;
-    --wv-header-submenu-text: #0f172a;
-    --wv-header-submenu-muted: #64748b;
-    --wv-header-submenu-border: rgba(15, 23, 42, 0.12);
+    --wv-header-submenu-bg: var(--wv-card-bg);
+    --wv-header-submenu-text: var(--wv-ink);
+    --wv-header-submenu-muted: var(--wv-muted);
+    --wv-header-submenu-border: var(--wv-subtle-border);
     --wv-header-submenu-shadow: 0 22px 50px rgba(15, 23, 42, 0.18);
     --wv-header-submenu-radius: 14px;
     --wv-header-submenu-hover-bg: rgba(15, 23, 42, 0.055);
@@ -549,14 +559,49 @@ export const siteStylePresetCss = `
   @supports (color: color-mix(in oklab, white, black)) {
     [data-wv-site-canvas] {
       --wv-focus-ring: color-mix(in oklab, var(--color-accent) 34%, transparent);
-      --wv-subtle-surface: color-mix(in oklab, var(--color-secondary) 72%, white);
-      --wv-subtle-border: color-mix(in oklab, var(--color-primary) 15%, transparent);
+      --wv-subtle-surface: var(--wv-subtle-surface-token, color-mix(in oklab, var(--color-secondary) 72%, var(--color-bg)));
+      --wv-subtle-border: var(--wv-subtle-border-token, color-mix(in oklab, var(--color-primary) 15%, var(--color-bg)));
       --wv-gradient-primary: linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 62%, var(--color-accent)));
       --wv-gradient-accent: linear-gradient(135deg, var(--color-accent), color-mix(in oklab, var(--color-accent) 58%, white));
       --wv-header-bg: color-mix(in oklab, var(--color-primary) 96%, black);
       --wv-header-bg-compact: color-mix(in oklab, var(--color-primary) 92%, black);
       --wv-header-submenu-border: color-mix(in oklab, var(--color-primary) 16%, transparent);
     }
+  }
+
+  [data-wv-site-canvas] :where(.text-slate-950, .text-slate-900, .text-gray-900) {
+    color: var(--wv-ink) !important;
+  }
+
+  [data-wv-site-canvas] :where(.text-slate-800, .text-slate-700, .text-gray-700) {
+    color: var(--wv-ink-soft) !important;
+  }
+
+  [data-wv-site-canvas] :where(.text-slate-600, .text-slate-500, .text-gray-600, .text-gray-500) {
+    color: var(--wv-muted) !important;
+  }
+
+  [data-wv-site-canvas] :where(.bg-white) {
+    background-color: var(--wv-card-bg) !important;
+  }
+
+  [data-wv-site-canvas] :where(.bg-slate-50, .bg-slate-100, .bg-gray-100, .bg-gray-200, .bg-stone-50, .bg-orange-50, .bg-black\\/5) {
+    background-color: var(--wv-subtle-surface) !important;
+  }
+
+  [data-wv-site-canvas] :where(.border-slate-100, .border-slate-200, .border-slate-300, .border-gray-100, .border-gray-200, .border-gray-300, .border-stone-200, .border-orange-200, .border-orange-100) {
+    border-color: var(--wv-subtle-border) !important;
+  }
+
+  [data-wv-site-canvas] :where(.rounded-full.border.bg-white, .rounded-full.border.bg-slate-50) {
+    background-color: var(--wv-capsule-bg) !important;
+    border-color: var(--wv-capsule-border) !important;
+    color: var(--wv-capsule-text) !important;
+  }
+
+  [data-wv-site-canvas] [data-wv-qa-icon],
+  [data-wv-site-canvas] [data-wv-capsule-icon] {
+    color: var(--wv-icon) !important;
   }
 
   [data-wv-site-canvas] .tracking-tight {

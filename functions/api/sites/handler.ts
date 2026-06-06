@@ -305,15 +305,6 @@ function contrastRatio(hexA: string, hexB: string) {
   return (light + 0.05) / (dark + 0.05);
 }
 
-function readableTextForBackground(hex: string) {
-  if (!hexToRgb(hex)) return "#0F172A";
-  const darkText = "#0F172A";
-  const lightText = "#FFFFFF";
-  return contrastRatio(hex, lightText) >= contrastRatio(hex, darkText) && contrastRatio(hex, lightText) >= 4.5
-    ? lightText
-    : darkText;
-}
-
 function darkenForWhiteText(hex: string) {
   const rgb = hexToRgb(hex);
   if (!rgb) return hex;
@@ -324,6 +315,63 @@ function darkenForWhiteText(hex: string) {
     factor -= 0.12;
   }
   return current;
+}
+
+function mixColor(hexA: string, hexB: string, weightA: number) {
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  if (!a || !b) return hexA;
+  const clamped = Math.max(0, Math.min(1, weightA));
+  const other = 1 - clamped;
+  return rgbToHex(a.r * clamped + b.r * other, a.g * clamped + b.g * other, a.b * clamped + b.b * other);
+}
+
+function lightenColor(hex: string, amount: number) {
+  return mixColor(hex, "#F8FAFC", 1 - Math.max(0, Math.min(1, amount)));
+}
+
+function darkenColor(hex: string, factor: number) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
+}
+
+function ensureContrast(color: string, surface: string, minimum: number, direction: "darken" | "lighten") {
+  if (!hexToRgb(color) || !hexToRgb(surface)) return color;
+  let current = color;
+  let step = 0;
+  while (contrastRatio(current, surface) < minimum && step < 12) {
+    const amount = 0.16 + step * 0.06;
+    current = direction === "darken"
+      ? darkenColor(current, Math.max(0.18, 1 - amount))
+      : lightenColor(current, Math.min(0.92, amount));
+    step += 1;
+  }
+  return current;
+}
+
+function readablePaletteText(surface: string, primary: string, accent: string, minimum = 4.5) {
+  const lightSurface = relativeLuminance(surface) >= 0.46;
+  const initial = lightSurface
+    ? mixColor(darkenForLightSurface(primary, "#FFFFFF"), darkenForLightSurface(accent, "#FFFFFF"), 0.64)
+    : mixColor(lightenColor(primary, 0.84), lightenColor(accent, 0.78), 0.58);
+  return ensureContrast(initial, surface, minimum, lightSurface ? "darken" : "lighten");
+}
+
+function paletteMutedText(surface: string, primary: string, accent: string) {
+  const base = readablePaletteText(surface, primary, accent, 3.2);
+  const mixed = mixColor(base, surface, relativeLuminance(surface) >= 0.46 ? 0.76 : 0.7);
+  return contrastRatio(mixed, surface) >= 3 ? mixed : base;
+}
+
+function paletteBorder(surface: string, primary: string, accent: string) {
+  const tone = readablePaletteText(surface, primary, accent, 3);
+  return mixColor(tone, surface, 0.26);
+}
+
+function paletteSurface(surface: string, primary: string, accent: string, weight = 0.09) {
+  const tint = mixColor(primary, accent, 0.52);
+  return mixColor(surface, tint, 1 - weight);
 }
 
 function darkenForLightSurface(hex: string, surface = "#FFFFFF") {
@@ -358,19 +406,36 @@ function normalizeSiteColorContrast(finalJson: Record<string, unknown>) {
   const primary = typeof colors.primary === "string" ? colors.primary : "#111827";
   const accent = typeof colors.accent === "string" ? colors.accent : "#4F46E5";
   const secondary = typeof colors.secondary === "string" ? colors.secondary : "#F3F4F6";
-  colors.onPrimary = readableTextForBackground(primary);
-  colors.onAccent = readableTextForBackground(accent);
-  colors.onSecondary = readableTextForBackground(secondary);
-  colors.onBackground = readableTextForBackground(background);
+  const ink = readablePaletteText(background, primary, accent);
+  const muted = paletteMutedText(background, primary, accent);
+  const capsuleBg = paletteSurface(background, primary, accent, 0.12);
+  colors.onPrimary = readablePaletteText(primary, primary, accent);
+  colors.onAccent = readablePaletteText(accent, primary, accent);
+  colors.onSecondary = readablePaletteText(secondary, primary, accent);
+  colors.onBackground = ink;
   colors.headerText = colors.onPrimary;
   colors.buttonPrimaryText = colors.onPrimary;
   colors.buttonAccentText = colors.onAccent;
   if (typeof colors.textMain !== "string" || contrastRatio(background, colors.textMain) < 4.5) {
-    colors.textMain = readableTextForBackground(background);
+    colors.textMain = ink;
   }
   if (typeof colors.textMuted !== "string" || contrastRatio(background, colors.textMuted) < 3) {
-    colors.textMuted = relativeLuminance(background) > 0.5 ? "#475569" : "#CBD5E1";
+    colors.textMuted = muted;
   }
+  colors.ink = ink;
+  colors.inkSoft = paletteMutedText(background, primary, accent);
+  colors.muted = muted;
+  colors.primaryText = ensureContrast(primary, background, 3.4, relativeLuminance(background) >= 0.46 ? "darken" : "lighten");
+  colors.accentText = ensureContrast(accent, background, 3.4, relativeLuminance(background) >= 0.46 ? "darken" : "lighten");
+  colors.icon = colors.accentText;
+  colors.cardBg = paletteSurface(background, primary, accent, 0.035);
+  colors.subtleSurface = paletteSurface(background, primary, accent, 0.08);
+  colors.subtleBorder = paletteBorder(background, primary, accent);
+  colors.capsuleBg = capsuleBg;
+  colors.capsuleBorder = paletteBorder(capsuleBg, primary, accent);
+  colors.capsuleText = readablePaletteText(capsuleBg, primary, accent);
+  colors.footerMuted = paletteMutedText(primary, primary, accent);
+  colors.footerBorder = paletteBorder(primary, primary, accent);
   themeVariables.colors = colors;
   design.themeVariables = themeVariables;
   finalJson.design = design;
