@@ -40,6 +40,63 @@ type SiteRendererProps = {
   onDownloadZip?: (siteData?: any) => void;
 };
 
+function hexToRgb(hex: string) {
+  const normalized = hex.trim().replace("#", "");
+  const expanded = normalized.length === 3 ? normalized.split("").map((char) => char + char).join("") : normalized;
+  if (!/^[0-9a-f]{6}$/i.test(expanded)) return null;
+  return {
+    r: parseInt(expanded.slice(0, 2), 16),
+    g: parseInt(expanded.slice(2, 4), 16),
+    b: parseInt(expanded.slice(4, 6), 16),
+  };
+}
+
+function relativeLuminance(hex: string) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const channel = (value: number) => {
+    const normalized = value / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+}
+
+function contrastRatio(hexA: string, hexB: string) {
+  const light = Math.max(relativeLuminance(hexA), relativeLuminance(hexB));
+  const dark = Math.min(relativeLuminance(hexA), relativeLuminance(hexB));
+  return (light + 0.05) / (dark + 0.05);
+}
+
+function readableTextForBackground(hex: string) {
+  if (!hexToRgb(hex)) return "#0F172A";
+  const darkText = "#0F172A";
+  const lightText = "#FFFFFF";
+  return contrastRatio(hex, lightText) >= contrastRatio(hex, darkText) && contrastRatio(hex, lightText) >= 4.5
+    ? lightText
+    : darkText;
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+  return `#${[r, g, b].map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function darkenColor(hex: string, factor: number) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
+}
+
+function readableBrandColor(hex: string, surface = "#FFFFFF") {
+  if (!hexToRgb(hex)) return hex;
+  let current = hex;
+  let factor = 0.86;
+  while (contrastRatio(current, surface) < 3 && factor > 0.28) {
+    current = darkenColor(hex, factor);
+    factor -= 0.1;
+  }
+  return current;
+}
+
 function normalizeSiteData(siteData: any) {
   const meta = siteData?.meta || {};
   const design = siteData?.design || {};
@@ -128,6 +185,11 @@ function normalizeSiteData(siteData: any) {
     ? [...headerMenu, { label: isIndonesian ? "Area Layanan" : "Areas Served", href: "#areas-served" }]
     : headerMenu;
 
+  const backgroundColor = normalizedColors.background || "#FFFFFF";
+  const primaryColor = readableBrandColor(normalizedColors.primary || "#111827", backgroundColor);
+  const secondaryColor = normalizedColors.secondary || "#F3F4F6";
+  const accentColor = readableBrandColor(normalizedColors.accent || "#4F46E5", backgroundColor);
+
   return {
     meta: {
       businessName: meta.businessName || "Demo Business",
@@ -135,12 +197,16 @@ function normalizeSiteData(siteData: any) {
       ...meta,
     },
     colors: {
-      primary: normalizedColors.primary || "#111827",
-      secondary: normalizedColors.secondary || "#F3F4F6",
-      accent: normalizedColors.accent || "#4F46E5",
+      primary: primaryColor,
+      secondary: secondaryColor,
+      accent: accentColor,
       textMain: normalizedColors.textMain || "#1F2937",
       textMuted: normalizedColors.textMuted || "#6B7280",
-      background: normalizedColors.background || "#FFFFFF",
+      background: backgroundColor,
+      onPrimary: normalizedColors.onPrimary || normalizedColors.headerText || normalizedColors.buttonPrimaryText || readableTextForBackground(primaryColor),
+      onAccent: normalizedColors.onAccent || normalizedColors.buttonAccentText || readableTextForBackground(accentColor),
+      onSecondary: normalizedColors.onSecondary || readableTextForBackground(secondaryColor),
+      onBackground: normalizedColors.onBackground || readableTextForBackground(backgroundColor),
     },
     typography: {
       headingFont: normalizedTypography.headingFont || "'Inter', sans-serif",
@@ -1092,6 +1158,10 @@ export default function SiteRenderer({
     "--color-primary": colors.primary,
     "--color-secondary": colors.secondary,
     "--color-accent": colors.accent,
+    "--color-on-primary": colors.onPrimary,
+    "--color-on-secondary": colors.onSecondary,
+    "--color-on-accent": colors.onAccent,
+    "--color-on-bg": colors.onBackground,
     "--color-text": colors.textMain,
     "--color-bg": colors.background,
   } as React.CSSProperties;
@@ -1352,7 +1422,7 @@ export default function SiteRenderer({
                 <button
                   onClick={() => changeTab(pageId)}
                   data-wv-tab={pageId}
-                  className={`${headerCompact ? "h-8" : "h-10"} text-[11px] font-bold uppercase tracking-[0.14em] leading-none hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-white" : ""}`}
+                  className={`${headerCompact ? "h-8" : "h-10"} text-[11px] font-bold uppercase tracking-[0.14em] leading-none hover:opacity-80 transition inline-flex items-center gap-1.5 ${activeTab === pageId ? "border-b-2 border-current" : ""}`}
                 >
                   {editableSiteIcon(`nav.${idx}`, inferMenuIconId(`${menu.label} ${menu.href}`), 16)}
                   {menu.label}
@@ -1376,8 +1446,8 @@ export default function SiteRenderer({
               changeTab(href.replace("#", ""));
             }
           }}
-          style={{ backgroundColor: colors.accent }}
-          className={`${headerCompact ? "h-9" : "h-11"} justify-self-end shrink-0 px-4 py-0 rounded-lg text-white font-medium hover:opacity-90 transition text-sm leading-none inline-flex items-center gap-2`}
+          style={{ backgroundColor: colors.accent, color: colors.onAccent }}
+          className={`${headerCompact ? "h-9" : "h-11"} justify-self-end shrink-0 px-4 py-0 rounded-lg font-medium hover:opacity-90 transition text-sm leading-none inline-flex items-center gap-2`}
         >
           {editableButtonIcon("header.cta", globalConfig.header.ctaButton.text, globalConfig.header.ctaButton.href)}
           {editableButtonText("header.cta", globalConfig.header.ctaButton.text)}
@@ -1539,7 +1609,7 @@ export default function SiteRenderer({
                                 data-wv-tab={tabPageId || undefined}
                                 style={{
                                   backgroundColor: btn.style === "primary" ? colors.accent : "transparent",
-                                  color: btn.style === "primary" ? "#fff" : isEmergencyHero ? "#fff" : colors.textMain,
+                                  color: btn.style === "primary" ? colors.onAccent : isEmergencyHero ? "#fff" : colors.textMain,
                                   border: `1px solid ${btn.style === "primary" ? colors.accent : isEmergencyHero ? "rgba(255,255,255,0.35)" : "#CBD5E1"}`,
                                 }}
                                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-semibold transition hover:translate-y-[-1px]"
@@ -1724,8 +1794,8 @@ export default function SiteRenderer({
                                         }
                                         handleSiteHrefClick(ctaHref, event);
                                       }}
-                                      className="pointer-events-auto mt-5 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-                                      style={{ backgroundColor: colors.primary }}
+                                      className="pointer-events-auto mt-5 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition hover:opacity-90"
+                                      style={{ backgroundColor: colors.primary, color: colors.onPrimary }}
                                     >
                                       {editableButtonIcon(`${page.pageId}.${section.id}.offer.${i}.cta`, ctaText, ctaHref, 15)}
                                       {editableButtonText(`${page.pageId}.${section.id}.offer.${i}.cta`, ctaText)}
@@ -1876,8 +1946,8 @@ export default function SiteRenderer({
                           <a
                             href={section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl}
                             onClick={editMode ? (event) => event.preventDefault() : undefined}
-                            className="mt-5 inline-flex w-fit items-center gap-2 px-5 py-3 rounded-lg text-white font-semibold"
-                            style={{ backgroundColor: colors.primary }}
+                            className="mt-5 inline-flex w-fit items-center gap-2 px-5 py-3 rounded-lg font-semibold"
+                            style={{ backgroundColor: colors.primary, color: colors.onPrimary }}
                           >
                             {editableButtonIcon(`${page.pageId}.${section.id}.directions`, labels.openMaps, section.content?.directionsUrl || businessProfile.contact?.directionsUrl || location.directionsUrl, 16)}
                             {editableButtonText(`${page.pageId}.${section.id}.directions`, labels.openMaps)}
@@ -1962,8 +2032,8 @@ export default function SiteRenderer({
                               }
                               handleSiteHrefClick(primaryHref, event);
                             }}
-                            className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5"
-                            style={{ backgroundColor: colors.accent }}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold transition hover:-translate-y-0.5"
+                            style={{ backgroundColor: colors.accent, color: colors.onAccent }}
                           >
                             {editableButtonIcon(`${page.pageId}.${section.id}.primary`, primaryCta.text || globalConfig.header.ctaButton.text, primaryHref, 16)}
                             {editableButtonText(`${page.pageId}.${section.id}.primary`, primaryCta.text || globalConfig.header.ctaButton.text)}
@@ -2151,7 +2221,7 @@ export default function SiteRenderer({
                             className="w-full rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                           {!feedbackEmail && <p className="text-xs font-medium text-amber-700">{labels.feedbackNoEmail}</p>}
-                          <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: colors.primary }}>
+                          <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold hover:opacity-90" style={{ backgroundColor: colors.primary, color: colors.onPrimary }}>
                             {editableButtonIcon(`${page.pageId}.${section.id}.feedbackSubmit`, labels.feedbackSend, `mailto:${feedbackEmail}`, 16)}
                             {editableButtonText(`${page.pageId}.${section.id}.feedbackSubmit`, labels.feedbackSend)}
                           </button>
@@ -2175,7 +2245,7 @@ export default function SiteRenderer({
                 return (
                   <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className="py-20 px-6">
                     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row border border-gray-100">
-                      <div style={{ backgroundColor: colors.primary, color: "#fff" }} className="p-10 md:w-2/5">
+                      <div style={{ backgroundColor: colors.primary, color: colors.onPrimary }} className="p-10 md:w-2/5">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-2xl font-bold mb-6")}
                         <div className="space-y-4 text-sm opacity-90">
                           <p><strong>{labels.address}:</strong><br />{editableText(`${section.id}.contactAddress`, section.content.address, "span", "", undefined, true)}</p>
@@ -2238,7 +2308,7 @@ export default function SiteRenderer({
                               </div>
                             );
                           })}
-                          <button type="submit" style={{ backgroundColor: colors.accent, color: "#fff" }} className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium hover:opacity-90 transition pt-2">
+                          <button type="submit" style={{ backgroundColor: colors.accent, color: colors.onAccent }} className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium hover:opacity-90 transition pt-2">
                             {editableButtonIcon(`${page.pageId}.${section.id}.contactSubmit`, formConfig.buttonText || (isIndonesian ? "Kirim Pesan" : "Send Message"), `mailto:${contactEmail}`, 16)}
                             {editableButtonText(`${page.pageId}.${section.id}.contactSubmit`, formConfig.buttonText || (isIndonesian ? "Kirim Pesan" : "Send Message"))}
                           </button>
@@ -2276,7 +2346,7 @@ export default function SiteRenderer({
         ))}
       </main>
 
-      <footer data-wv-site-footer="true" style={{ backgroundColor: colors.primary, color: "#fff" }} className="px-6 py-14 text-sm">
+      <footer data-wv-site-footer="true" style={{ backgroundColor: colors.primary, color: colors.onPrimary }} className="px-6 py-14 text-sm">
         <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1.3fr_0.8fr_0.8fr_1fr]">
           <div>
             <button type="button" data-wv-tab={homePageId} onClick={() => changeTab(homePageId)} className="mb-4 flex items-center gap-3 text-left text-lg font-bold hover:opacity-85">
@@ -2363,8 +2433,8 @@ export default function SiteRenderer({
           <a
             href={conversion.primaryCta?.href || globalConfig.header.ctaButton.href}
             onClick={editMode ? (event) => event.preventDefault() : undefined}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 text-white font-semibold"
-            style={{ backgroundColor: colors.accent }}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 font-semibold"
+            style={{ backgroundColor: colors.accent, color: colors.onAccent }}
           >
             {editableButtonIcon("sticky.primary", conversion.primaryCta?.text || globalConfig.header.ctaButton.text, conversion.primaryCta?.href || globalConfig.header.ctaButton.href)}
             {editableButtonText("sticky.primary", conversion.primaryCta?.text || globalConfig.header.ctaButton.text)}

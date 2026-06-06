@@ -1,4 +1,6 @@
 import { Check, Copy, ExternalLink, Mail, MousePointerClick } from "lucide-react";
+import { useState } from "react";
+import FullPageScreenshotButton, { formatBytes, type ScreenshotMetadata } from "../../../components/FullPageScreenshotButton";
 import HoverTooltip from "../../../components/HoverTooltip";
 import { emailFirstTouch, formatDateTime, trackedPreviewUrl, type OutreachBusinessSummary, type ReachoutLead } from "./reachoutUtils";
 
@@ -19,6 +21,8 @@ function leadStatus(lead: ReachoutLead, summary?: OutreachBusinessSummary) {
 }
 
 export default function ReachoutLeadTable({ leads, summaries, copiedKey, markingSentId, onCopy, onRecordEvent }: ReachoutLeadTableProps) {
+  const [screenshotByBusinessId, setScreenshotByBusinessId] = useState<Record<string, ScreenshotMetadata | null>>({});
+
   if (!leads.length) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
@@ -69,9 +73,17 @@ export default function ReachoutLeadTable({ leads, summaries, copiedKey, marking
                   <td className="px-4 py-3 text-xs text-slate-500">
                     <p>Sent: {formatDateTime(summary?.last_sent_at || lead.last_contacted)}</p>
                     <p className="mt-1">Viewed: {formatDateTime(summary?.last_owner_viewed_at || lead.owner_last_viewed_at)}</p>
+                    <p className="mt-1">Screenshot: {screenshotByBusinessId[lead.business_id]?.exists ? formatBytes(screenshotByBusinessId[lead.business_id]?.bytes || 0) : "-"}</p>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
+                      <FullPageScreenshotButton
+                        businessId={lead.business_id}
+                        mode="icon"
+                        captureSource="iframe"
+                        tooltip="Create screenshot if missing, or copy/download/retake the existing R2 screenshot."
+                        onMetadataChange={(metadata) => setScreenshotByBusinessId((current) => ({ ...current, [lead.business_id]: metadata }))}
+                      />
                       <HoverTooltip text="Copy the first-touch email with tracked preview link.">
                         <button
                           type="button"

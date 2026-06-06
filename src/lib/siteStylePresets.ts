@@ -350,7 +350,7 @@ export const siteStylePresetCss = `
     --wv-header-treatment: solid;
     --wv-header-bg: var(--color-primary);
     --wv-header-bg-compact: var(--color-primary);
-    --wv-header-text: #ffffff;
+    --wv-header-text: var(--color-on-primary, #ffffff);
     --wv-header-border: rgba(255, 255, 255, 0.14);
     --wv-header-border-compact: rgba(255, 255, 255, 0.18);
     --wv-header-shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
@@ -728,6 +728,12 @@ export const siteStylePresetCss = `
     [data-wv-site-canvas] main section:not(:first-child) {
       content-visibility: auto;
       contain-intrinsic-size: auto 720px;
+    }
+
+    [data-wv-site-canvas][data-wv-capturing-screenshot="true"] main section {
+      content-visibility: visible !important;
+      contain-intrinsic-size: auto !important;
+      contain: none !important;
     }
   }
 

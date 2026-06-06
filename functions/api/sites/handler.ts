@@ -36,7 +36,10 @@ type D1DatabaseLike = {
 
 type R2BucketLike = {
   put: (key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string, options?: { httpMetadata?: { contentType?: string } }) => Promise<unknown>;
-  get?: (key: string) => Promise<{ text: () => Promise<string> } | null>;
+  get?: (key: string) => Promise<{ text: () => Promise<string>; size?: number; uploaded?: Date; httpMetadata?: { contentType?: string } } | null>;
+  head?: (key: string) => Promise<{ size?: number; uploaded?: Date; httpMetadata?: { contentType?: string } } | null>;
+  list?: (options?: { prefix?: string; limit?: number }) => Promise<{ objects?: Array<{ key: string }> }>;
+  delete?: (keys: string | string[]) => Promise<unknown>;
 };
 
 type SitesEnv = Record<string, unknown> & {
@@ -122,6 +125,39 @@ function validBackfillPhone(value: unknown) {
   if (!text || digits.length < 7 || digits.length > 15) return "";
   if (/^0+$/.test(digits) || /^1?0{7,}$/.test(digits)) return "";
   return /^\+?[0-9\s().-]{7,24}$/.test(text) ? text : "";
+}
+
+function safeScreenshotBusinessId(businessId: string) {
+  return businessId.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "website";
+}
+
+function fullPageScreenshotKey(businessId: string) {
+  const safeBusinessId = safeScreenshotBusinessId(businessId);
+  return `sites/${safeBusinessId}/screenshots/${safeBusinessId}-full-page.webp`;
+}
+
+function fullPageScreenshotPrefix(businessId: string) {
+  return `sites/${safeScreenshotBusinessId(businessId)}/screenshots/`;
+}
+
+async function screenshotObjectMetadata(env: SitesEnv, key: string) {
+  if (!env.R2) return null;
+  if (env.R2.head) return env.R2.head(key);
+  const object = await env.R2.get?.(key);
+  return object ? { size: object.size, uploaded: object.uploaded, httpMetadata: object.httpMetadata } : null;
+}
+
+async function cleanupOldScreenshots(env: SitesEnv, businessId: string, keepKey: string) {
+  if (!env.R2?.list || !env.R2.delete) return 0;
+  try {
+    const listed = await env.R2.list({ prefix: fullPageScreenshotPrefix(businessId), limit: 100 });
+    const oldKeys = (listed.objects || []).map((object) => object.key).filter((key) => key && key !== keepKey);
+    if (oldKeys.length) await env.R2.delete(oldKeys);
+    return oldKeys.length;
+  } catch (error) {
+    console.error("Old screenshot cleanup failed, continuing:", error);
+    return 0;
+  }
 }
 
 function phoneFromSavedSite(siteJson: Record<string, unknown>) {
@@ -263,6 +299,21 @@ function relativeLuminance(hex: string) {
   return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
 }
 
+function contrastRatio(hexA: string, hexB: string) {
+  const light = Math.max(relativeLuminance(hexA), relativeLuminance(hexB));
+  const dark = Math.min(relativeLuminance(hexA), relativeLuminance(hexB));
+  return (light + 0.05) / (dark + 0.05);
+}
+
+function readableTextForBackground(hex: string) {
+  if (!hexToRgb(hex)) return "#0F172A";
+  const darkText = "#0F172A";
+  const lightText = "#FFFFFF";
+  return contrastRatio(hex, lightText) >= contrastRatio(hex, darkText) && contrastRatio(hex, lightText) >= 4.5
+    ? lightText
+    : darkText;
+}
+
 function darkenForWhiteText(hex: string) {
   const rgb = hexToRgb(hex);
   if (!rgb) return hex;
@@ -271,6 +322,18 @@ function darkenForWhiteText(hex: string) {
   while (relativeLuminance(current) > 0.32 && factor > 0.32) {
     current = rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
     factor -= 0.12;
+  }
+  return current;
+}
+
+function darkenForLightSurface(hex: string, surface = "#FFFFFF") {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  let factor = 0.86;
+  let current = hex;
+  while (contrastRatio(current, surface) < 3 && factor > 0.28) {
+    current = rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
+    factor -= 0.1;
   }
   return current;
 }
@@ -284,6 +347,29 @@ function normalizeSiteColorContrast(finalJson: Record<string, unknown>) {
     if (typeof value === "string" && value.startsWith("#") && relativeLuminance(value) > 0.32) {
       colors[key] = darkenForWhiteText(value);
     }
+  }
+  const background = typeof colors.background === "string" ? colors.background : "#FFFFFF";
+  for (const key of ["primary", "accent"]) {
+    const value = colors[key];
+    if (typeof value === "string" && value.startsWith("#")) {
+      colors[key] = darkenForLightSurface(value, background);
+    }
+  }
+  const primary = typeof colors.primary === "string" ? colors.primary : "#111827";
+  const accent = typeof colors.accent === "string" ? colors.accent : "#4F46E5";
+  const secondary = typeof colors.secondary === "string" ? colors.secondary : "#F3F4F6";
+  colors.onPrimary = readableTextForBackground(primary);
+  colors.onAccent = readableTextForBackground(accent);
+  colors.onSecondary = readableTextForBackground(secondary);
+  colors.onBackground = readableTextForBackground(background);
+  colors.headerText = colors.onPrimary;
+  colors.buttonPrimaryText = colors.onPrimary;
+  colors.buttonAccentText = colors.onAccent;
+  if (typeof colors.textMain !== "string" || contrastRatio(background, colors.textMain) < 4.5) {
+    colors.textMain = readableTextForBackground(background);
+  }
+  if (typeof colors.textMuted !== "string" || contrastRatio(background, colors.textMuted) < 3) {
+    colors.textMuted = relativeLuminance(background) > 0.5 ? "#475569" : "#CBD5E1";
   }
   themeVariables.colors = colors;
   design.themeVariables = themeVariables;
@@ -909,9 +995,9 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     });
   }
 
-  if (request.method === "POST" && segments.length === 3 && segments[2] === "screenshot") {
+  if ((request.method === "GET" || request.method === "POST") && segments.length === 3 && segments[2] === "screenshot") {
     const businessId = segments[1];
-    if (!env.R2) return errorJson("R2 binding is not configured. Cannot save screenshot.", 400);
+    if (!env.R2) return errorJson("R2 binding is not configured. Cannot read or save screenshots.", 400);
 
     const existing = await db
       .prepare(
@@ -922,7 +1008,23 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       )
       .bind(businessId, businessId)
       .first<{ business_id: string }>();
-    if (!existing?.business_id) return errorJson("Site not found. Cannot save screenshot for an unknown business.", 404);
+    if (!existing?.business_id) return errorJson("Site not found. Cannot read or save screenshot for an unknown business.", 404);
+
+    const key = fullPageScreenshotKey(businessId);
+
+    if (request.method === "GET") {
+      const object = await screenshotObjectMetadata(env, key);
+      return json({
+        success: true,
+        businessId,
+        exists: Boolean(object),
+        key,
+        publicUrl: object ? publicR2Url(env, key) : "",
+        bytes: Number(object?.size || 0) || 0,
+        uploadedAt: object?.uploaded instanceof Date ? object.uploaded.toISOString() : object?.uploaded || "",
+        contentType: object?.httpMetadata?.contentType || (object ? "image/webp" : ""),
+      });
+    }
 
     const contentType = request.headers.get("content-type") || "";
     if (!contentType.toLowerCase().includes("image/webp")) {
@@ -934,8 +1036,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const maxBytes = 15 * 1024 * 1024;
     if (body.byteLength > maxBytes) return errorJson("Screenshot is too large after compression. Try again after the page finishes loading.", 413);
 
-    const safeBusinessId = businessId.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "website";
-    const key = `sites/${safeBusinessId}/screenshots/${safeBusinessId}-full-page-${Date.now()}.webp`;
+    const deletedOldScreenshotCount = await cleanupOldScreenshots(env, businessId, key);
     await env.R2.put(key, body, { httpMetadata: { contentType: "image/webp" } });
     const publicUrl = publicR2Url(env, key);
 
@@ -961,6 +1062,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       publicUrl,
       bytes: body.byteLength,
       contentType: "image/webp",
+      overwritten: true,
+      deletedOldScreenshotCount,
     });
   }
 

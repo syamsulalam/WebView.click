@@ -50,7 +50,9 @@ Implementasi awal difokuskan ke email-first workflow:
 7. Manual send button di `/admin/reachout` mengupdate `leads.last_contacted`, menjaga status paid/viewed tidak diturunkan, dan menulis CRM activity.
 8. Public `/:businessId` sekarang punya floating camera button bawah-tengah untuk full-page screenshot. Screenshot dicapture dari `[data-wv-site-canvas]`, dikompresi ke WebP, diupload ke `POST /api/sites/:businessId/screenshot`, disimpan di R2 pada `sites/:businessId/screenshots/`, lalu didownload ke browser.
 
-Tahap ini sengaja belum mengirim email otomatis via provider. Tujuannya adalah memastikan lead quality, copy, tracking, screenshot, dan conversion attribution valid sebelum Brevo/Resend sender diaktifkan.
+Tahap ini sengaja belum mengirim email otomatis via provider. Tujuannya adalah memastikan lead quality, copy, tracking, screenshot, dan conversion attribution valid sebelum Sendy/Amazon SES sender diaktifkan.
+
+Email provider direction sekarang pindah ke Sendy + Amazon SES. Detail setup, sandbox/production access, quota, custom fields, dan phased integration ada di `EMAIL.md`.
 
 ## Catatan Compliance Penting
 
@@ -78,10 +80,10 @@ Provider yang layak dites:
 | Mailgun | Trial/free sering berubah | Ya | Transactional fallback | Perlu cek ulang saat signup karena free offer berubah-ubah. |
 | Amazon SES | Tidak benar-benar free untuk akun baru di luar kondisi AWS tertentu; sangat murah | Ya | Scale berbayar murah setelah validasi | Setup DNS, domain reputation, suppression, bounce handling harus rapi. |
 
-Rekomendasi awal:
+Rekomendasi awal yang direvisi:
 
-1. Pakai Brevo free untuk batch pertama 300/hari.
-2. Pakai Resend untuk email transactional-style yang sangat personal dan tracking link demo.
+1. Pakai Sendy + Amazon SES untuk campaign utama setelah SES production access approved.
+2. Gunakan Sendy untuk list, unsubscribe, custom fields, campaign UI, dan reporting.
 3. Jangan kirim dari domain utama `webview.click` langsung untuk cold volume. Siapkan domain/subdomain outbound terpisah agar reputasi domain utama aman.
 4. Limit awal: 50-100/hari/domain, naik perlahan jika bounce dan spam complaint rendah.
 5. Wajib email verification sebelum send. Target bounce harus di bawah 3%, ideal di bawah 1%.
@@ -293,7 +295,7 @@ Fitur:
 
 Catatan deliverability: jangan attach JPG besar di email batch awal. Pakai hosted image/link. Attach manual hanya untuk LinkedIn/IG jika operator melakukannya satu per satu.
 
-Update implementasi: format output screenshot sekarang WebP saja, bukan JPG, agar ukuran R2 lebih hemat. Tombol kamera public `/:businessId` menyimpan full-page WebP ke R2 dan mendownload file lokal untuk operator. Untuk email batch awal tetap lebih aman kirim tracked link/thumbnail, bukan attachment besar.
+Update implementasi: format output screenshot sekarang WebP saja, bukan JPG, agar ukuran R2 lebih hemat. Hanya ada satu screenshot R2 aktif per `businessId`: `sites/:businessId/screenshots/:businessId-full-page.webp`. Jika screenshot sudah ada, tombol kamera menawarkan copy R2 URL, download existing, atau retake; retake menimpa file lama dan mencoba membersihkan screenshot timestamp lama di prefix yang sama. Untuk email batch awal tetap lebih aman kirim tracked link/thumbnail, bukan attachment besar.
 
 ### 5. Provider-Agnostic Outreach Layer
 
@@ -429,19 +431,18 @@ Success criteria:
 
 ## Provider Shortlist
 
-Free-first:
+Free/low-cost first:
 
-1. Brevo email API: primary free batch sender.
-2. Resend email API: transactional-style personalized sender.
-3. LinkedIn Sales Navigator trial: high-value manual outreach.
-4. Instagram Private Replies: only after comments/inbound.
-5. Twilio/Vonage/Plivo trial: SMS API testing, not cold blast.
+1. Amazon SES sandbox/testing + Sendy setup; production access wajib sebelum cold outreach eksternal.
+2. LinkedIn Sales Navigator trial: high-value manual outreach.
+3. Instagram Private Replies: only after comments/inbound.
+4. Twilio/Vonage/Plivo trial: SMS API testing, not cold blast.
 
 Paid-after-validation:
 
-1. Smartlead or Instantly for email scale.
-2. lemlist for personalization experiments.
-3. Apollo for lead/contact discovery, with verification.
+1. Sendy license + SES production sending.
+2. Apollo for lead/contact discovery, with verification.
+3. Smartlead/Instantly/lemlist only if Sendy/SES workflow is operationally insufficient.
 4. Plivo/Telnyx for SMS only after consent/A2P approval.
 5. CIENCE/DFY only after WebView.click has proven conversion numbers.
 

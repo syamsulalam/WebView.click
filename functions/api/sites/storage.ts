@@ -9,7 +9,10 @@ type D1DatabaseLike = {
 
 type R2BucketLike = {
   put: (key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string, options?: { httpMetadata?: { contentType?: string } }) => Promise<unknown>;
-  get?: (key: string) => Promise<{ text: () => Promise<string> } | null>;
+  get?: (key: string) => Promise<{ text: () => Promise<string>; size?: number; uploaded?: Date; httpMetadata?: { contentType?: string } } | null>;
+  head?: (key: string) => Promise<{ size?: number; uploaded?: Date; httpMetadata?: { contentType?: string } } | null>;
+  list?: (options?: { prefix?: string; limit?: number }) => Promise<{ objects?: Array<{ key: string }> }>;
+  delete?: (keys: string | string[]) => Promise<unknown>;
 };
 
 type SiteStorageEnv = {

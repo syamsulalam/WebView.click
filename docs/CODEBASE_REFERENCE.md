@@ -74,6 +74,7 @@ Logic penting:
 - Renderer mendukung `conversion.pagePattern`, `conversion.primaryAction`, `conversion.primaryActionReason`, `conversion.proofBadges`, dan `conversion.conversionAudit` yang diisi oleh post-process generation. Hero menampilkan proof badges source-safe di area above-the-fold saat tersedia.
 - Renderer membaca deterministic design intent dari `design.designIntent` / top-level `design.compositionPattern`, `design.heroLayout`, `design.mediaStrategy`, `design.proofTreatment`, `design.cardDensity`, `design.ctaTreatment`, `design.sectionRhythm`, `design.detailLayout`, dan `design.motionLevel`. Nilai ini menjadi `data-wv-*` attributes/class di `[data-wv-site-canvas]`, mengubah hero layout, proof strip, media frame, offer card density, and final CTA treatment tanpa AI tambahan.
 - Renderer membaca `design.stylePreset` untuk niche style modifier dan `design.visualStyle` / `design.shapeStyle` untuk shape/image treatment. Registry dan CSS preset ada di `src/lib/siteStylePresets.ts`.
+- Renderer memakai token kontras warna `onPrimary`, `onAccent`, `onSecondary`, dan `onBackground` dari `design.themeVariables.colors`; jika JSON lama belum punya token ini, renderer menghitung fallback dari luminance/contrast. Palette-driven navbar, CTA, footer, sticky CTA, dan form/offer buttons tidak boleh lagi hard-code white text di atas warna brand yang mungkin terang.
 - Renderer membaca `design.shaderPreset` dan `design.shaderConfig`; registry shader procedural ada di `src/lib/siteStylePresets.ts` dan guide teknis di `docs/SHADERS_GUIDE.md`.
 - Renderer membaca `design.fontPairing` dan `design.fontPairingConfig`; registry Google Font pairing ada di `src/lib/fontPairings.ts` dan ringkasannya di `docs/FONT_PAIRING_GUIDE.md`.
 - Root `#rendered-site` hanya menyimpan CSS variables palette aktif; website client dirender di child `[data-wv-site-canvas]` dengan class `wv-preset-*` dan `wv-visual-*`.
@@ -158,10 +159,13 @@ Fungsi:
 Logic penting:
 - Tombol berada di bawah-tengah viewport, diberi `data-wv-tool-ui="full-page-screenshot"` dan `data-export-remove="true"` supaya tidak ikut export/capture.
 - Capture memakai `html-to-image` `toCanvas`, `pixelRatio` maksimal 2 dengan guard max side 15000px agar screenshot tetap besar tetapi tidak terlalu mudah gagal karena canvas terlalu besar.
-- Upload hanya menerima `image/webp`; endpoint R2 menyimpan ke `sites/:businessId/screenshots/:businessId-full-page-*.webp`.
+- Saat capture, renderer memberi `data-wv-capturing-screenshot="true"` pada canvas. CSS preset mematikan `content-visibility: auto` untuk semua section sementara supaya optimasi render tidak membuat section bawah hilang dari screenshot.
+- Upload hanya menerima `image/webp`; endpoint R2 menyimpan satu file stabil per business di `sites/:businessId/screenshots/:businessId-full-page.webp`. Retake menimpa file lama, bukan membuat file timestamp baru, dan mencoba membersihkan screenshot lama di prefix yang sama jika binding R2 mendukung `list/delete`.
+- `GET /api/sites/:businessId/screenshot` mengembalikan metadata screenshot: exists, publicUrl, R2 key, byte size, upload time, dan content type.
+- `mode="icon"` + `captureSource="iframe"` dipakai di `/admin/reachout`: tombol kamera row-level membuka opsi copy R2 URL, download existing, atau retake; jika belum ada screenshot, tombol membuat screenshot dari hidden same-origin iframe public preview.
 
 Risiko debug:
-- Jika screenshot gagal, cek image CORS/asset yang dirender di `[data-wv-site-canvas]` dan ukuran halaman. Endpoint membatasi upload WebP terkompresi maksimal 15 MB.
+- Jika screenshot gagal, cek image CORS/asset yang dirender di `[data-wv-site-canvas]`, ukuran halaman, dan apakah iframe `/businessId?ownerPreview=1&screenshot=1` berhasil render. Endpoint membatasi upload WebP terkompresi maksimal 15 MB.
 
 ### `src/pages/admin/AdminReachout.tsx`
 
@@ -174,6 +178,7 @@ Logic penting:
 - Metrics: 10k progress, email-ready leads, owner views, paid conversion.
 - Filter table: `Ready`, `Sent`, `Viewed`, `Paid`.
 - Action row: copy first-touch email, copy tracked preview link, open tracked preview, dan mark manual email sent.
+- Action row juga punya satu camera icon untuk screenshot R2: create jika missing, atau copy URL/download/retake jika sudah ada. Last-touch column menampilkan file size screenshot bila metadata ada.
 - Tracked URL memakai `owner=1`, `wv_channel=email`, `wv_source=admin_reachout`, `wv_campaign=free_site_10000`, `wv_lead`, `wv_token`, plus UTM params.
 - Plan modal mengimpor `REACHOUT_PLAN.md?raw` agar admin bisa membaca plan tanpa meninggalkan app.
 
@@ -1063,7 +1068,7 @@ Endpoint:
 - `POST /api/sites/migrate-r2`
 - `POST /api/sites/:businessId/repair-service-images`
 - `POST /api/sites/:businessId/refresh-visual-variation`
-- `POST /api/sites/:businessId/screenshot`
+- `GET/POST /api/sites/:businessId/screenshot`
 - `GET /api/sites`
 - `GET /api/sites/:business_id`
 - `POST /api/payments/checkout`
@@ -1326,6 +1331,7 @@ Build/Deploy Guard:
 
 ## Related Planning Docs
 
+- `EMAIL.md`: rencana Sendy + Amazon SES untuk campaign email 10.000 free-site outreach, termasuk SES sandbox/production access, quota, custom fields, dan integrasi bertahap dengan `/admin/reachout`.
 - `docs/GOOGLE_PLACES_DATA_INVENTORY.md`: inventaris data Google Places yang bisa dipakai untuk CRM lead scoring dan site generation.
 - `docs/GOOGLE_PLACES_PHOTO_STRATEGY.md`: strategi foto Google Places untuk free preview vs paid website.
 - `docs/GOOGLE_BUSINESS_PROFILE_MARKETING_AUDIT_PLAN.md`: tracker untuk `/audit/:businessId`, deterministic Google Business Profile marketing audit, competitor comparison, PDF export, and WebView.click service positioning.
