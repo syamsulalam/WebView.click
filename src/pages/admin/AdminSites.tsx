@@ -138,6 +138,13 @@ function latestJobActionClass(status?: string) {
   return "border-gray-200 text-gray-700 hover:bg-gray-50";
 }
 
+function formatSavedDate(value?: string, mode: "date" | "datetime" = "date") {
+  const timestamp = Date.parse(value || "");
+  if (!Number.isFinite(timestamp)) return "";
+  const date = new Date(timestamp);
+  return mode === "datetime" ? date.toLocaleString() : date.toLocaleDateString();
+}
+
 const providerApiKeyMap: Record<string, string> = {
   OpenRouter: "OPENROUTER_API_KEY",
   OpenAI: "OPENAI_API_KEY",
@@ -285,6 +292,16 @@ function siteNeedsMorePhotos(site: SiteRow) {
   return typeof site.availableImageCount === "number" && site.availableImageCount <= 1;
 }
 
+function siteNeedsServiceCardImageRepair(site: SiteRow) {
+  return site.needsServiceCardImageRepair === true
+    || Number(site.missingServiceCardImageCount || 0) > 0
+    || Number(site.duplicateServiceCardImageCount || 0) > 0;
+}
+
+function siteHasFixableIssues(site: SiteRow) {
+  return siteNeedsMorePhotos(site) || siteNeedsServiceCardImageRepair(site) || siteNeedsPaletteOptions(site);
+}
+
 function siteHasActionableDebug(site: SiteRow) {
   return siteNeedsRecovery(site) || !siteFullyPremiumUpgraded(site);
 }
@@ -300,6 +317,7 @@ export default function AdminSites() {
   const [regeneratingId, setRegeneratingId] = useState("");
   const [regatheringPhotosId, setRegatheringPhotosId] = useState("");
   const [repairingServiceImagesId, setRepairingServiceImagesId] = useState("");
+  const [fixingIssuesId, setFixingIssuesId] = useState("");
   const [repairingSummaryId, setRepairingSummaryId] = useState("");
   const [restoringFromJobId, setRestoringFromJobId] = useState("");
   const [batchRepairingServiceImages, setBatchRepairingServiceImages] = useState(false);
@@ -1908,7 +1926,7 @@ export default function AdminSites() {
   };
 
   useEffect(() => {
-    if (isLoading || autoRepairingPalettes || batchRefreshingVisualVariation || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || scanningR2Health) return;
+    if (isLoading || autoRepairingPalettes || batchRefreshingVisualVariation || regeneratingId || regatheringPhotosId || repairingServiceImagesId || fixingIssuesId || batchRepairingServiceImages || batchAiFillingAboutNav || scanningR2Health) return;
     const targets = sites
       .filter((site) => siteCanAutoRepairPaletteOptions(site) || site.paletteOptionCount === null || site.paletteOptionCount === undefined)
       .slice(0, VISUAL_VARIATION_BATCH_LIMIT);
@@ -1964,7 +1982,9 @@ export default function AdminSites() {
     autoPaletteRepairDoneKey,
     batchRefreshingVisualVariation,
     regeneratingId,
+    regatheringPhotosId,
     repairingServiceImagesId,
+    fixingIssuesId,
     batchRepairingServiceImages,
     batchAiFillingAboutNav,
     scanningR2Health,
@@ -1984,6 +2004,88 @@ export default function AdminSites() {
       showApiError(err, { source: "Refresh visual variation" });
     } finally {
       setRefreshingVisualVariationId("");
+    }
+  };
+
+  const handleFixSiteIssues = async (site: SiteRow) => {
+    if (!siteHasFixableIssues(site)) {
+      notifyAction("info", "No row issues", `${site.businessName} does not currently have photo, image-card, or palette issues flagged.`);
+      return;
+    }
+
+    setFixingIssuesId(site.businessId);
+    const completed: string[] = [];
+    const failures: string[] = [];
+    let previousImageCount = Number(site.availableImageCount || 0);
+    let nextImageCount = previousImageCount;
+
+    try {
+      if (siteNeedsMorePhotos(site)) {
+        setRegatheringPhotosId(site.businessId);
+        try {
+          await runRegenerateSite(site, "resave", "Fix issues: Google photos");
+          try {
+            const refreshedSiteJson = await fetchSiteJson(site);
+            nextImageCount = siteGalleryImages(refreshedSiteJson).length;
+          } catch (countError) {
+            console.error(`Could not count images after fix-issues re-gather for ${site.businessId}:`, countError);
+          }
+          completed.push(`photos ${previousImageCount} -> ${nextImageCount}`);
+        } catch (error) {
+          failures.push(`photos: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          clearGenerationProgress(site.businessId);
+          setRegatheringPhotosId("");
+        }
+      }
+
+      if (siteNeedsServiceCardImageRepair(site)) {
+        setRepairingServiceImagesId(site.businessId);
+        try {
+          const result = await postRepairServiceImages(site);
+          completed.push(`service images ${Number(result?.changed || 0)} changed`);
+        } catch (error) {
+          failures.push(`service images: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          setRepairingServiceImagesId("");
+        }
+      }
+
+      if (siteNeedsPaletteOptions(site)) {
+        setRefreshingVisualVariationId(site.businessId);
+        try {
+          const result = await postRefreshVisualVariation(site);
+          completed.push(result?.paletteOptionsChanged
+            ? `palettes ${result.paletteOptionCount || "updated"} saved`
+            : "palettes reviewed");
+        } catch (error) {
+          failures.push(`palettes: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          setRefreshingVisualVariationId("");
+        }
+      }
+
+      if (failures.length > 0) {
+        notifyAction(
+          completed.length > 0 ? "warning" : "error",
+          completed.length > 0 ? "Fix issues partially completed" : "Fix issues failed",
+          `${site.businessName}: ${completed.length > 0 ? completed.join(", ") : "no steps completed"}. ${failures.length} step${failures.length === 1 ? "" : "s"} failed.`,
+          failures.slice(0, 4),
+        );
+      } else {
+        notifyAction(
+          "success",
+          "Fix issues completed",
+          `${site.businessName}: ${completed.join(", ")}.`,
+        );
+      }
+      fetchSites();
+    } finally {
+      setRegatheringPhotosId("");
+      setRepairingServiceImagesId("");
+      setRefreshingVisualVariationId("");
+      setFixingIssuesId("");
+      clearGenerationProgress(site.businessId);
     }
   };
 
@@ -2714,34 +2816,52 @@ export default function AdminSites() {
                     </HoverTooltip>
                   )}
                   {(Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0 || site.needsServiceCardImageRepair === true) && (
-                    <HoverTooltip text={`${site.missingServiceCardImageCount || 0} missing and ${site.duplicateServiceCardImageCount || 0} duplicate saved homepage/services offer card image${Number(site.duplicateServiceCardImageCount || 0) === 1 ? "" : "s"} out of ${site.serviceCardImageTotal || "unknown"} cards. Use the image action to repair without AI regeneration.`}>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                    <HoverTooltip text={`${site.missingServiceCardImageCount || 0} missing and ${site.duplicateServiceCardImageCount || 0} duplicate saved homepage/services offer card image${Number(site.duplicateServiceCardImageCount || 0) === 1 ? "" : "s"} out of ${site.serviceCardImageTotal || "unknown"} cards. Click to repair service-card images without AI regeneration.`}>
+                      <button
+                        type="button"
+                        onClick={() => handleRepairServiceImages(site)}
+                        disabled={Boolean(fixingIssuesId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId || regatheringPhotosId || upgradingDesignId)}
+                        className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800 hover:bg-sky-200 disabled:opacity-50"
+                        aria-label="Repair service-card images"
+                      >
                         <ImageIcon size={11} />
-                        Fix {Number(site.missingServiceCardImageCount || 0) + Number(site.duplicateServiceCardImageCount || 0)} img
-                      </span>
+                        {repairingServiceImagesId === site.businessId ? "Fixing img" : `Fix ${Number(site.missingServiceCardImageCount || 0) + Number(site.duplicateServiceCardImageCount || 0)} img`}
+                      </button>
                     </HoverTooltip>
                   )}
                   {siteNeedsMorePhotos(site) && (
-                    <HoverTooltip text={`${site.businessName} has ${site.availableImageCount || 0} saved image${Number(site.availableImageCount || 0) === 1 ? "" : "s"}. Re-gather Google data or add manual images before outreach so the owner sees a richer site and gets more meaningful palette choices.`}>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                    <HoverTooltip text={`${site.businessName} has ${site.availableImageCount || 0} saved image${Number(site.availableImageCount || 0) === 1 ? "" : "s"}. Click to re-gather Google data/photos without AI. If Google still returns one photo, add manual images before outreach.`}>
+                      <button
+                        type="button"
+                        onClick={() => handleRegatherPhotos(site)}
+                        disabled={Boolean(fixingIssuesId || regatheringPhotosId || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 hover:bg-amber-200 disabled:opacity-50"
+                        aria-label="Re-gather Google photos"
+                      >
                         <Images size={11} />
-                        Add photos {site.availableImageCount || 0}
-                      </span>
+                        {regatheringPhotosId === site.businessId ? "Gathering photos" : `Add photos ${site.availableImageCount || 0}`}
+                      </button>
                     </HoverTooltip>
                   )}
                   {siteNeedsPaletteOptions(site) && (
                     <HoverTooltip text={siteCanAutoRepairPaletteOptions(site)
-                      ? `${site.paletteOptionCount || 0} saved palette option${Number(site.paletteOptionCount || 0) === 1 ? "" : "s"} from ${site.availableImageCount || "multiple"} image${Number(site.availableImageCount || 0) === 1 ? "" : "s"}. This row can auto-repair on refresh or with Visual filtered.`
-                      : `${site.paletteOptionCount || 0} saved palette option${Number(site.paletteOptionCount || 0) === 1 ? "" : "s"} and only ${site.availableImageCount || 0} saved image${Number(site.availableImageCount || 0) === 1 ? "" : "s"}. Manual palette extraction can create tonal variants, but one image will not give truly diverse brand palettes.`
+                      ? `${site.paletteOptionCount || 0} saved palette option${Number(site.paletteOptionCount || 0) === 1 ? "" : "s"} from ${site.availableImageCount || "multiple"} image${Number(site.availableImageCount || 0) === 1 ? "" : "s"}. Click to extract/backfill palette options now.`
+                      : `${site.paletteOptionCount || 0} saved palette option${Number(site.paletteOptionCount || 0) === 1 ? "" : "s"} and only ${site.availableImageCount || 0} saved image${Number(site.availableImageCount || 0) === 1 ? "" : "s"}. Click to create tonal variants, but one image will not give truly diverse brand palettes.`
                     }>
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      <button
+                        type="button"
+                        onClick={() => handleRefreshVisualVariation(site)}
+                        disabled={Boolean(fixingIssuesId || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId || regatheringPhotosId || upgradingDesignId)}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold hover:brightness-95 disabled:opacity-50 ${
                         siteCanAutoRepairPaletteOptions(site)
                           ? "bg-violet-100 text-violet-800"
                           : "bg-amber-100 text-amber-800"
-                      }`}>
+                        }`}
+                        aria-label="Create missing palette options"
+                      >
                         <Shuffle size={11} />
-                        Palette {site.paletteOptionCount || 0}/{MIN_OWNER_PALETTE_OPTIONS}
-                      </span>
+                        {refreshingVisualVariationId === site.businessId ? "Palette fixing" : `Palette ${site.paletteOptionCount || 0}/${MIN_OWNER_PALETTE_OPTIONS}`}
+                      </button>
                     </HoverTooltip>
                   )}
                   {needsAboutNavRepair(site) && (
@@ -2788,18 +2908,30 @@ export default function AdminSites() {
                     </HoverTooltip>
                   )}
                   {site.lastImageRepairAt && (
-                    <HoverTooltip text={`Service card image repair last ran at ${new Date(site.lastImageRepairAt).toLocaleString()}.`}>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                    <HoverTooltip text={formatSavedDate(site.lastImageRepairAt, "datetime")
+                      ? `Service card image repair last ran at ${formatSavedDate(site.lastImageRepairAt, "datetime")}. Click to run the repair/audit again.`
+                      : "This row has an old invalid repair timestamp. Click to run the image repair again and refresh the timestamp."
+                    }>
+                      <button
+                        type="button"
+                        onClick={() => handleRepairServiceImages(site)}
+                        disabled={Boolean(fixingIssuesId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId || regatheringPhotosId || upgradingDesignId)}
+                        className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-200 disabled:opacity-50"
+                        aria-label="Run service-card image repair again"
+                      >
                         <Wrench size={11} />
-                        Repaired {new Date(site.lastImageRepairAt).toLocaleDateString()}
-                      </span>
+                        {repairingServiceImagesId === site.businessId ? "Repairing" : `Repaired${formatSavedDate(site.lastImageRepairAt) ? ` ${formatSavedDate(site.lastImageRepairAt)}` : ""}`}
+                      </button>
                     </HoverTooltip>
                   )}
                   {site.lastVisualVariationAt && (
-                    <HoverTooltip text={`Visual variation last refreshed at ${new Date(site.lastVisualVariationAt).toLocaleString()}. Font pairing: ${site.fontPairingLabel || site.fontPairing || "seeded variant"}.`}>
+                    <HoverTooltip text={formatSavedDate(site.lastVisualVariationAt, "datetime")
+                      ? `Visual variation last refreshed at ${formatSavedDate(site.lastVisualVariationAt, "datetime")}. Font pairing: ${site.fontPairingLabel || site.fontPairing || "seeded variant"}.`
+                      : `Visual variation timestamp is invalid. Font pairing: ${site.fontPairingLabel || site.fontPairing || "seeded variant"}.`
+                    }>
                       <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-800">
                         <Shuffle size={11} />
-                        Visual {new Date(site.lastVisualVariationAt).toLocaleDateString()}
+                        Visual{formatSavedDate(site.lastVisualVariationAt) ? ` ${formatSavedDate(site.lastVisualVariationAt)}` : ""}
                       </span>
                     </HoverTooltip>
                   )}
@@ -3025,7 +3157,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleAboutNavAiFillSite(site)}
-                      disabled={!activeRegenerateModel || Boolean(regeneratingId || regatheringPhotosId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
+                      disabled={!activeRegenerateModel || Boolean(fixingIssuesId || regeneratingId || regatheringPhotosId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
                       aria-label={regeneratingId === site.businessId
                         ? `Generating About/nav: ${generationProgress[site.businessId]?.shortText || "running"}`
@@ -3040,12 +3172,29 @@ export default function AdminSites() {
                     </button>
                   </HoverTooltip>
                 )}
-                {(site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0) && (
+                {siteHasFixableIssues(site) && (
+                  <HoverTooltip text="Fix this row's outreach-readiness issues in order: re-gather Google photos when there is only one saved image, repair service-card images, then backfill palette options. Each step is skipped when it is already clean.">
+                    <button
+                      type="button"
+                      onClick={() => handleFixSiteIssues(site)}
+                      disabled={Boolean(fixingIssuesId || regatheringPhotosId || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                      aria-label="Fix row issues"
+                    >
+                      {fixingIssuesId === site.businessId ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                      ) : (
+                        <Wrench size={14} />
+                      )}
+                    </button>
+                  </HoverTooltip>
+                )}
+                {siteNeedsServiceCardImageRepair(site) && (
                   <HoverTooltip text="Repair only homepage/services grid card images when cards are missing images or repeat the same image. No AI call and no full site regeneration.">
                     <button
                       type="button"
                       onClick={() => handleRepairServiceImages(site)}
-                      disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId || regatheringPhotosId || upgradingDesignId)}
+                      disabled={Boolean(fixingIssuesId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId || regatheringPhotosId || upgradingDesignId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
                       aria-label="Repair service card images"
                     >
@@ -3062,7 +3211,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleRegatherPhotos(site)}
-                      disabled={Boolean(regatheringPhotosId || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
+                      disabled={Boolean(fixingIssuesId || regatheringPhotosId || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
                       aria-label="Re-gather Google photos and re-save site"
                     >
@@ -3082,7 +3231,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleRefreshVisualVariation(site)}
-                      disabled={Boolean(refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId || regatheringPhotosId || upgradingDesignId)}
+                      disabled={Boolean(fixingIssuesId || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId || regatheringPhotosId || upgradingDesignId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
                       aria-label="Refresh visual variation"
                     >
@@ -3099,7 +3248,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleUpgradeExistingSite(site)}
-                      disabled={!activeRegenerateModel || Boolean(upgradingDesignId || regeneratingId || regatheringPhotosId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
+                      disabled={!activeRegenerateModel || Boolean(fixingIssuesId || upgradingDesignId || regeneratingId || regatheringPhotosId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                       aria-label="Premium-upgrade existing site with design and AI copy"
                     >
@@ -3128,7 +3277,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => setOpenRegenerateMenu(openRegenerateMenu === site.businessId ? "" : site.businessId)}
-                      disabled={Boolean(regeneratingId || regatheringPhotosId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
+                      disabled={Boolean(fixingIssuesId || regeneratingId || regatheringPhotosId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       aria-label="Open regenerate menu"
                     >
@@ -3218,7 +3367,7 @@ export default function AdminSites() {
                               setOpenRegenerateMenu("");
                               handleRegenerate(site, "ai");
                             }}
-                            disabled={!activeRegenerateModel || Boolean(regeneratingId || regatheringPhotosId || batchAiFillingAboutNav)}
+                            disabled={!activeRegenerateModel || Boolean(fixingIssuesId || regeneratingId || regatheringPhotosId || batchAiFillingAboutNav)}
                             className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                           >
                             <Brain size={14} />
@@ -3240,7 +3389,7 @@ export default function AdminSites() {
                               setOpenRegenerateMenu("");
                               handleRegenerate(site, "resave");
                             }}
-                            disabled={Boolean(regeneratingId || regatheringPhotosId || batchAiFillingAboutNav || upgradingDesignId)}
+                            disabled={Boolean(fixingIssuesId || regeneratingId || regatheringPhotosId || batchAiFillingAboutNav || upgradingDesignId)}
                             className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                           >
                             <RotateCw size={14} />
@@ -3259,7 +3408,7 @@ export default function AdminSites() {
                             setOpenRegenerateMenu("");
                             handleRestoreSiteFromLatestJob(site);
                           }}
-                          disabled={Boolean(regeneratingId || regatheringPhotosId || repairingSummaryId || restoringFromJobId || batchAiFillingAboutNav || upgradingDesignId)}
+                          disabled={Boolean(fixingIssuesId || regeneratingId || regatheringPhotosId || repairingSummaryId || restoringFromJobId || batchAiFillingAboutNav || upgradingDesignId)}
                           className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
                         >
                           {restoringFromJobId === site.businessId ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}
