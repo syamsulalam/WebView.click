@@ -140,6 +140,51 @@ function paletteSurface(surface: string, primary: string, accent: string, weight
   return mixColor(surface, tint, 1 - weight);
 }
 
+function deriveSiteColors(rawColors: any) {
+  const normalizedColors = rawColors || {};
+  const backgroundColor = normalizedColors.background || "#FFFFFF";
+  const primaryColor = readableBrandColor(normalizedColors.primary || "#111827", backgroundColor);
+  const secondaryColor = normalizedColors.secondary || "#F3F4F6";
+  const accentColor = readableBrandColor(normalizedColors.accent || "#4F46E5", backgroundColor);
+  const inkColor = readablePaletteText(backgroundColor, primaryColor, accentColor);
+  const mutedColor = paletteMutedText(backgroundColor, primaryColor, accentColor);
+  const accentTextColor = ensureContrast(accentColor, backgroundColor, 3.4, relativeLuminance(backgroundColor) >= 0.46 ? "darken" : "lighten");
+  const primaryTextColor = ensureContrast(primaryColor, backgroundColor, 3.4, relativeLuminance(backgroundColor) >= 0.46 ? "darken" : "lighten");
+  const cardBgColor = paletteSurface(backgroundColor, primaryColor, accentColor, 0.035);
+  const subtleSurfaceColor = paletteSurface(backgroundColor, primaryColor, accentColor, 0.08);
+  const capsuleBgColor = paletteSurface(backgroundColor, primaryColor, accentColor, 0.12);
+  const capsuleTextColor = readablePaletteText(capsuleBgColor, primaryColor, accentColor, 4.5);
+  const onPrimaryColor = readablePaletteText(primaryColor, primaryColor, accentColor, 4.5);
+  const onAccentColor = readablePaletteText(accentColor, primaryColor, accentColor, 4.5);
+
+  return {
+    primary: primaryColor,
+    secondary: secondaryColor,
+    accent: accentColor,
+    textMain: typeof normalizedColors.textMain === "string" && contrastRatio(backgroundColor, normalizedColors.textMain) >= 4.5 ? normalizedColors.textMain : inkColor,
+    textMuted: typeof normalizedColors.textMuted === "string" && contrastRatio(backgroundColor, normalizedColors.textMuted) >= 3 ? normalizedColors.textMuted : mutedColor,
+    background: backgroundColor,
+    onPrimary: onPrimaryColor,
+    onAccent: onAccentColor,
+    onSecondary: readablePaletteText(secondaryColor, primaryColor, accentColor, 4.5),
+    onBackground: inkColor,
+    ink: inkColor,
+    inkSoft: paletteMutedText(backgroundColor, primaryColor, accentColor),
+    muted: mutedColor,
+    accentText: accentTextColor,
+    primaryText: primaryTextColor,
+    icon: accentTextColor,
+    cardBg: cardBgColor,
+    subtleSurface: subtleSurfaceColor,
+    subtleBorder: paletteBorder(backgroundColor, primaryColor, accentColor),
+    capsuleBg: capsuleBgColor,
+    capsuleBorder: paletteBorder(capsuleBgColor, primaryColor, accentColor),
+    capsuleText: capsuleTextColor,
+    footerMuted: paletteMutedText(primaryColor, primaryColor, accentColor),
+    footerBorder: paletteBorder(primaryColor, primaryColor, accentColor),
+  };
+}
+
 function normalizeSiteData(siteData: any) {
   const meta = siteData?.meta || {};
   const design = siteData?.design || {};
@@ -228,20 +273,7 @@ function normalizeSiteData(siteData: any) {
     ? [...headerMenu, { label: isIndonesian ? "Area Layanan" : "Areas Served", href: "#areas-served" }]
     : headerMenu;
 
-  const backgroundColor = normalizedColors.background || "#FFFFFF";
-  const primaryColor = readableBrandColor(normalizedColors.primary || "#111827", backgroundColor);
-  const secondaryColor = normalizedColors.secondary || "#F3F4F6";
-  const accentColor = readableBrandColor(normalizedColors.accent || "#4F46E5", backgroundColor);
-  const inkColor = readablePaletteText(backgroundColor, primaryColor, accentColor);
-  const mutedColor = paletteMutedText(backgroundColor, primaryColor, accentColor);
-  const accentTextColor = ensureContrast(accentColor, backgroundColor, 3.4, relativeLuminance(backgroundColor) >= 0.46 ? "darken" : "lighten");
-  const primaryTextColor = ensureContrast(primaryColor, backgroundColor, 3.4, relativeLuminance(backgroundColor) >= 0.46 ? "darken" : "lighten");
-  const cardBgColor = paletteSurface(backgroundColor, primaryColor, accentColor, 0.035);
-  const subtleSurfaceColor = paletteSurface(backgroundColor, primaryColor, accentColor, 0.08);
-  const capsuleBgColor = paletteSurface(backgroundColor, primaryColor, accentColor, 0.12);
-  const capsuleTextColor = readablePaletteText(capsuleBgColor, primaryColor, accentColor, 4.5);
-  const onPrimaryColor = readablePaletteText(primaryColor, primaryColor, accentColor, 4.5);
-  const onAccentColor = readablePaletteText(accentColor, primaryColor, accentColor, 4.5);
+  const derivedColors = deriveSiteColors(normalizedColors);
 
   return {
     meta: {
@@ -250,30 +282,7 @@ function normalizeSiteData(siteData: any) {
       ...meta,
     },
     colors: {
-      primary: primaryColor,
-      secondary: secondaryColor,
-      accent: accentColor,
-      textMain: typeof normalizedColors.textMain === "string" && contrastRatio(backgroundColor, normalizedColors.textMain) >= 4.5 ? normalizedColors.textMain : inkColor,
-      textMuted: typeof normalizedColors.textMuted === "string" && contrastRatio(backgroundColor, normalizedColors.textMuted) >= 3 ? normalizedColors.textMuted : mutedColor,
-      background: backgroundColor,
-      onPrimary: onPrimaryColor,
-      onAccent: onAccentColor,
-      onSecondary: readablePaletteText(secondaryColor, primaryColor, accentColor, 4.5),
-      onBackground: inkColor,
-      ink: inkColor,
-      inkSoft: paletteMutedText(backgroundColor, primaryColor, accentColor),
-      muted: mutedColor,
-      accentText: accentTextColor,
-      primaryText: primaryTextColor,
-      icon: accentTextColor,
-      cardBg: cardBgColor,
-      subtleSurface: subtleSurfaceColor,
-      subtleBorder: paletteBorder(backgroundColor, primaryColor, accentColor),
-      capsuleBg: capsuleBgColor,
-      capsuleBorder: paletteBorder(capsuleBgColor, primaryColor, accentColor),
-      capsuleText: capsuleTextColor,
-      footerMuted: paletteMutedText(primaryColor, primaryColor, accentColor),
-      footerBorder: paletteBorder(primaryColor, primaryColor, accentColor),
+      ...derivedColors,
     },
     typography: {
       headingFont: normalizedTypography.headingFont || "'Inter', sans-serif",
@@ -873,12 +882,12 @@ export default function SiteRenderer({
   const activePaletteOption = paletteOptions.find((option: any) => option.id === selectedPaletteOptionId) || paletteOptions[0];
   const activePalette = Array.isArray(activePaletteOption?.colors) ? activePaletteOption.colors : [];
   const colors = activePalette.length > 0
-    ? {
+    ? deriveSiteColors({
         ...baseColors,
         primary: activePalette[0] || baseColors.primary,
         accent: activePalette[1] || baseColors.accent,
         secondary: activePalette[2] || baseColors.secondary,
-      }
+      })
     : baseColors;
   const normalizedSiteData = {
     ...siteData,
