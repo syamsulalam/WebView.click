@@ -8,7 +8,7 @@ import {
   saveProspectSelection,
   sortedPhotosForPlace,
 } from "../../../lib/adminSiteGeneration";
-import { normalizePaletteRoles } from "../../../lib/colorPaletteRoles";
+import { buildPaletteRoleOptions, normalizePaletteRoles } from "../../../lib/colorPaletteRoles";
 import { placeMapsUrl, placePhone } from "../../../lib/generatedSiteScaffold";
 
 type UseProspectDetailsParams = {
@@ -214,6 +214,24 @@ export default function useProspectDetails({ getPlaceKey, setGenerationMessages 
         sourceImageUrl,
         businessName: place.name || "Business",
       }));
+    }
+    if (options.length === 1) {
+      const existingKeys = new Set(options.map((option) => option.colors.join("|").toLowerCase()));
+      buildPaletteRoleOptions({
+        palette: options[0].colors,
+        idPrefix: `${options[0].id}-variant`,
+        labelPrefix: "Photo palette",
+        sourceImageUrl: options[0].sourceImageUrl,
+        photoReference: options[0].photoReference,
+        priorityLabel: options[0].priorityLabel,
+        startIndex: 2,
+        maxOptions: 3,
+      }).forEach((option) => {
+        const key = option.colors.join("|").toLowerCase();
+        if (options.length >= 2 || existingKeys.has(key)) return;
+        existingKeys.add(key);
+        options.push(option);
+      });
     }
     if (options.length > 0) {
       setPaletteOptionsByPlace(prev => ({ ...prev, [placeKey]: options }));

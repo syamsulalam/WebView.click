@@ -9,7 +9,7 @@ import {
   siteVisualStyles,
 } from "./siteStylePresets";
 import { applyGeneratedSitePageInserts } from "./generatedSitePostProcess";
-import { normalizePaletteRoles } from "./colorPaletteRoles";
+import { buildPaletteRoleOptions, normalizePaletteRoles } from "./colorPaletteRoles";
 
 type ScaffoldOptions = {
   businessId: string;
@@ -335,6 +335,22 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
         return { ...option, colors: normalizePaletteRoles({ palette: option.colors }).orderedPalette };
       })
     : [];
+  if (paletteOptions.filter((option) => option && typeof option === "object" && Array.isArray(option.colors)).length < 2) {
+    const existingKeys = new Set(paletteOptions.map((option) => Array.isArray(option?.colors) ? option.colors.join("|").toLowerCase() : "").filter(Boolean));
+    buildPaletteRoleOptions({
+      palette: normalizedPalette,
+      idPrefix: "generated-palette",
+      labelPrefix: "Generated palette",
+      sourceImageUrl: imageUrl,
+      startIndex: paletteOptions.length + 1,
+      maxOptions: 3,
+    }).forEach((option) => {
+      const key = option.colors.join("|").toLowerCase();
+      if (existingKeys.has(key)) return;
+      existingKeys.add(key);
+      paletteOptions.push(option);
+    });
+  }
   const primaryColor = rolePalette.primary;
   const accentColor = rolePalette.accent;
   const secondaryColor = rolePalette.secondary;

@@ -1,6 +1,6 @@
 import { applyGeneratedSitePageInserts, repairOfferingNavLabels, repairServiceCardImages } from "../../../src/lib/generatedSitePostProcess";
 import { fontPairingsForText, fontPairingVariantForText } from "../../../src/lib/fontPairings";
-import { normalizePaletteRoles } from "../../../src/lib/colorPaletteRoles";
+import { buildPaletteRoleOptions, normalizePaletteRoles } from "../../../src/lib/colorPaletteRoles";
 import { asString } from "../_shared/response";
 import {
   applyAiCopyPatch,
@@ -723,6 +723,10 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
               parsed.needsAboutNavRepair === undefined ||
               parsed.lastImageRepairAt === undefined ||
               parsed.lastVisualVariationAt === undefined ||
+              parsed.paletteOptionCount === undefined ||
+              parsed.availableImageCount === undefined ||
+              parsed.needsPaletteOptions === undefined ||
+              parsed.canAutoRepairPaletteOptions === undefined ||
               parsed.premiumUpgradeComplete === undefined ||
               parsed.lastPremiumCopyUpgradeAt === undefined
             ) &&
@@ -774,6 +778,10 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         fontPairing: asString(summary.fontPairing, ""),
         fontPairingLabel: asString(summary.fontPairingLabel, ""),
         lastVisualVariationAt: asString(summary.lastVisualVariationAt, ""),
+        availableImageCount: typeof summary.availableImageCount === "number" ? summary.availableImageCount : null,
+        paletteOptionCount: typeof summary.paletteOptionCount === "number" ? summary.paletteOptionCount : null,
+        needsPaletteOptions: summary.needsPaletteOptions === true,
+        canAutoRepairPaletteOptions: summary.canAutoRepairPaletteOptions === true,
         leadStatus: row.lead_status || "",
         lastContactedAt: row.lead_last_contacted || "",
         lastViewedAt: row.lead_last_viewed_at || "",
@@ -834,6 +842,10 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
           fontPairing: "",
           fontPairingLabel: "",
           lastVisualVariationAt: "",
+          availableImageCount: null,
+          paletteOptionCount: null,
+          needsPaletteOptions: false,
+          canAutoRepairPaletteOptions: false,
           leadStatus: row.lead_status || "",
           lastContactedAt: row.lead_last_contacted || "",
           lastViewedAt: row.lead_last_viewed_at || "",
@@ -1782,22 +1794,54 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const incomingPaletteOptions = Array.isArray(body.paletteOptions)
       ? body.paletteOptions.filter((option) => option && typeof option === "object" && Array.isArray((option as Record<string, unknown>).colors))
       : [];
+    const allowSingleImagePaletteVariants = body.allowSingleImagePaletteVariants !== false;
     let paletteOptionsChanged = false;
-    if (incomingPaletteOptions.length > 0) {
+    {
       const brand = siteJson.brand && typeof siteJson.brand === "object" ? siteJson.brand as Record<string, unknown> : {};
       const existingPaletteOptions = Array.isArray(brand.paletteOptions) ? brand.paletteOptions : [];
-      const existingKeys = new Set(existingPaletteOptions.map((option) => {
+      const paletteOptionKey = (option: unknown) => {
         const record = option && typeof option === "object" ? option as Record<string, unknown> : {};
-        return asString(record.sourceImageUrl, asString(record.photoReference, asString(record.id)));
+        const source = asString(record.sourceImageUrl, asString(record.photoReference, asString(record.id)));
+        const variant = asString(record.variant);
+        return [source, variant].filter(Boolean).join("::");
+      };
+      const existingKeys = new Set(existingPaletteOptions.map(paletteOptionKey).filter(Boolean));
+      const existingColorKeys = new Set(existingPaletteOptions.map((option) => {
+        const record = option && typeof option === "object" ? option as Record<string, unknown> : {};
+        return Array.isArray(record.colors) ? record.colors.join("|").toLowerCase() : "";
       }).filter(Boolean));
       const mergedPaletteOptions = [...existingPaletteOptions];
       incomingPaletteOptions.forEach((option) => {
         const record = option as Record<string, unknown>;
-        const key = asString(record.sourceImageUrl, asString(record.photoReference, asString(record.id)));
+        const key = paletteOptionKey(option);
+        const colorKey = Array.isArray(record.colors) ? record.colors.join("|").toLowerCase() : "";
         if (key && existingKeys.has(key)) return;
+        if (colorKey && existingColorKeys.has(colorKey)) return;
         if (key) existingKeys.add(key);
+        if (colorKey) existingColorKeys.add(colorKey);
         mergedPaletteOptions.push(option);
       });
+      if (allowSingleImagePaletteVariants && mergedPaletteOptions.length < 2) {
+        const basePalette = Array.isArray(brand.palette) && brand.palette.length > 0
+          ? brand.palette
+          : Array.isArray(meta.brandPalette) && meta.brandPalette.length > 0
+            ? meta.brandPalette
+            : [];
+        buildPaletteRoleOptions({
+          palette: basePalette,
+          idPrefix: "server-palette-variant",
+          labelPrefix: "Palette option",
+          startIndex: mergedPaletteOptions.length + 1,
+          maxOptions: 3,
+        }).forEach((option) => {
+          const key = paletteOptionKey(option);
+          const colorKey = option.colors.join("|").toLowerCase();
+          if (mergedPaletteOptions.length >= 2 || existingKeys.has(key) || existingColorKeys.has(colorKey)) return;
+          existingKeys.add(key);
+          existingColorKeys.add(colorKey);
+          mergedPaletteOptions.push(option);
+        });
+      }
       if (mergedPaletteOptions.length > existingPaletteOptions.length) {
         paletteOptionsChanged = true;
         brand.paletteOptions = mergedPaletteOptions;
@@ -1810,6 +1854,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     }
     const visualVariationAt = new Date().toISOString();
     siteJson.meta = { ...meta, lastVisualVariationAt: visualVariationAt };
+    normalizeSiteColorContrast(siteJson);
     const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
     let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
     let r2JsonUrl = asString(storage.r2JsonUrl);

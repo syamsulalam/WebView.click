@@ -252,6 +252,38 @@ function aboutNavSummary(deps: Pick<SiteStorageDeps, "asString">, parsed: Record
   };
 }
 
+function siteVisualAssetSummary(deps: Pick<SiteStorageDeps, "asString">, parsed: Record<string, unknown>) {
+  const images = new Set<string>();
+  const addImage = (value: unknown) => {
+    const image = deps.asString(value).trim();
+    if (!image || image.startsWith("data:")) return;
+    if (image.startsWith("http") || image.startsWith("/") || image.startsWith("/api/")) images.add(image);
+  };
+  const walk = (value: unknown, keyHint = "") => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => walk(item, keyHint));
+      return;
+    }
+    if (typeof value === "string") {
+      if (isImageAssetField(keyHint)) addImage(value);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    Object.entries(value as Record<string, unknown>).forEach(([key, childValue]) => walk(childValue, key));
+  };
+  walk(parsed);
+  const brand = parsed.brand && typeof parsed.brand === "object" ? parsed.brand as Record<string, unknown> : {};
+  const paletteOptions = Array.isArray(brand.paletteOptions)
+    ? brand.paletteOptions.filter((option) => option && typeof option === "object" && Array.isArray((option as Record<string, unknown>).colors) && ((option as Record<string, unknown>).colors as unknown[]).length > 0)
+    : [];
+  return {
+    availableImageCount: images.size,
+    paletteOptionCount: paletteOptions.length,
+    needsPaletteOptions: paletteOptions.length < 2,
+    canAutoRepairPaletteOptions: images.size > 1 && paletteOptions.length < 2,
+  };
+}
+
 export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, parsed: Record<string, unknown>, businessId: string) {
   const { asString } = deps;
   const meta = parsed.meta && typeof parsed.meta === "object" ? parsed.meta as Record<string, unknown> : {};
@@ -263,6 +295,7 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
   const contact = businessProfile.contact && typeof businessProfile.contact === "object" ? businessProfile.contact as Record<string, unknown> : {};
   const serviceImageSummary = serviceCardImageSummary(deps, parsed);
   const contentSummary = aboutNavSummary(deps, parsed);
+  const visualAssetSummary = siteVisualAssetSummary(deps, parsed);
   return {
     businessName: asString(meta.businessName, asString(businessProfile.name, businessId)),
     niche: asString(meta.niche, asString(businessProfile.typeLabel, "")),
@@ -295,6 +328,10 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
     fontPairing: asString(design.fontPairing),
     fontPairingLabel: asString(fontPairingConfig.label),
     lastVisualVariationAt: asString(meta.lastVisualVariationAt),
+    availableImageCount: visualAssetSummary.availableImageCount,
+    paletteOptionCount: visualAssetSummary.paletteOptionCount,
+    needsPaletteOptions: visualAssetSummary.needsPaletteOptions,
+    canAutoRepairPaletteOptions: visualAssetSummary.canAutoRepairPaletteOptions,
   };
 }
 

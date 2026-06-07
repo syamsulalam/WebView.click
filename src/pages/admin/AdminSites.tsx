@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, Copy, Database, Download, Eye, FileText, Globe2, Image as ImageIcon, Link2, ListChecks, Mail, MapPin, MessageCircle, Play, RefreshCw, RotateCw, Search, Send, Shuffle, Sparkles, Wrench, X } from "lucide-react";
+import { Brain, Copy, Database, Download, Eye, FileText, Globe2, Image as ImageIcon, Images, Link2, ListChecks, Mail, MapPin, MessageCircle, Play, RefreshCw, RotateCw, Search, Send, Shuffle, Sparkles, Wrench, X } from "lucide-react";
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { readApiJson } from "../../lib/apiResponse";
-import { normalizePaletteRoles } from "../../lib/colorPaletteRoles";
+import { buildPaletteRoleOptions, normalizePaletteRoles } from "../../lib/colorPaletteRoles";
 import { isPlaceholderPhone } from "../../lib/generatedSiteScaffold";
 import {
   buildScaffoldGeneratePayload,
@@ -84,6 +84,10 @@ type SiteRow = {
   latestGenerationJobId?: string;
   latestGenerationJobStatus?: string;
   latestGenerationJobUpdatedAt?: string;
+  availableImageCount?: number | null;
+  paletteOptionCount?: number | null;
+  needsPaletteOptions?: boolean;
+  canAutoRepairPaletteOptions?: boolean;
 };
 
 type RegenerateMode = "resave" | "ai";
@@ -95,6 +99,8 @@ const AUDIT_SNAPSHOT_BATCH_LIMIT = 10;
 const R2_HEALTH_SCAN_CHUNK_SIZE = 10;
 const R2_HEALTH_SCAN_MAX = 50;
 const FOLLOW_UP_AFTER_DAYS = 3;
+const MIN_OWNER_PALETTE_OPTIONS = 2;
+const MAX_OWNER_PALETTE_OPTIONS = 5;
 
 function generationBadge(site: SiteRow) {
   if (site.generationMode === "ai_copy_patch" || site.generatedWithAi) {
@@ -264,7 +270,19 @@ function siteFullyPremiumUpgraded(site: SiteRow) {
 }
 
 function siteNeedsVisualVariation(site: SiteRow) {
-  return !siteFullyPremiumUpgraded(site) && !site.lastVisualVariationAt;
+  return !siteFullyPremiumUpgraded(site) && (!site.lastVisualVariationAt || siteNeedsPaletteOptions(site));
+}
+
+function siteNeedsPaletteOptions(site: SiteRow) {
+  return site.needsPaletteOptions === true || Number(site.paletteOptionCount || 0) < MIN_OWNER_PALETTE_OPTIONS;
+}
+
+function siteCanAutoRepairPaletteOptions(site: SiteRow) {
+  return site.canAutoRepairPaletteOptions === true || (siteNeedsPaletteOptions(site) && Number(site.availableImageCount || 0) > 1);
+}
+
+function siteNeedsMorePhotos(site: SiteRow) {
+  return typeof site.availableImageCount === "number" && site.availableImageCount <= 1;
 }
 
 function siteHasActionableDebug(site: SiteRow) {
@@ -277,15 +295,18 @@ export default function AdminSites() {
   const [gatheredProspects, setGatheredProspects] = useState<ProspectRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "recovery" | "images" | "content" | "auditSaved" | "auditNeeded" | "outreachReady" | "contacted" | "followUp" | "downloaded" | "setupFollowUp" | "downloadedNoSetupFollowUp">("all");
+  const [siteIssueFilter, setSiteIssueFilter] = useState<"all" | "recovery" | "images" | "needsPhotos" | "paletteMissing" | "content" | "auditSaved" | "auditNeeded" | "outreachReady" | "contacted" | "followUp" | "downloaded" | "setupFollowUp" | "downloadedNoSetupFollowUp">("all");
   const [activeData, setActiveData] = useState<{ title: string; subtitle: string; data: any } | null>(null);
   const [regeneratingId, setRegeneratingId] = useState("");
+  const [regatheringPhotosId, setRegatheringPhotosId] = useState("");
   const [repairingServiceImagesId, setRepairingServiceImagesId] = useState("");
   const [repairingSummaryId, setRepairingSummaryId] = useState("");
   const [restoringFromJobId, setRestoringFromJobId] = useState("");
   const [batchRepairingServiceImages, setBatchRepairingServiceImages] = useState(false);
   const [refreshingVisualVariationId, setRefreshingVisualVariationId] = useState("");
   const [batchRefreshingVisualVariation, setBatchRefreshingVisualVariation] = useState(false);
+  const [autoRepairingPalettes, setAutoRepairingPalettes] = useState(false);
+  const [autoPaletteRepairDoneKey, setAutoPaletteRepairDoneKey] = useState("");
   const [upgradingDesignId, setUpgradingDesignId] = useState("");
   const [openingAuditId, setOpeningAuditId] = useState("");
   const [batchGeneratingAuditSnapshots, setBatchGeneratingAuditSnapshots] = useState(false);
@@ -400,6 +421,7 @@ export default function AdminSites() {
 
   const fetchSites = async () => {
     setIsLoading(true);
+    setAutoPaletteRepairDoneKey("");
     try {
       const sitesPath = "/api/sites";
       const response = await fetch(sitesPath);
@@ -451,24 +473,28 @@ export default function AdminSites() {
       ? sites.filter(siteNeedsRecovery)
       : siteIssueFilter === "images"
       ? sites.filter((site) => site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0)
-      : siteIssueFilter === "content"
-        ? sites.filter(needsAboutNavRepair)
-        : siteIssueFilter === "auditSaved"
-          ? sites.filter(siteHasAuditSnapshot)
-          : siteIssueFilter === "auditNeeded"
-            ? sites.filter(siteNeedsAuditSnapshot)
-            : siteIssueFilter === "outreachReady"
-              ? sites.filter(siteIsOutreachReady)
-              : siteIssueFilter === "contacted"
-                ? sites.filter(siteWasContacted)
-                : siteIssueFilter === "followUp"
-                  ? sites.filter(siteNeedsFollowUp)
-                  : siteIssueFilter === "downloaded"
-                    ? sites.filter(siteDownloadedWithoutSetup)
-                    : siteIssueFilter === "setupFollowUp"
-                      ? sites.filter(siteSetupFollowUpSent)
-                      : siteIssueFilter === "downloadedNoSetupFollowUp"
-                        ? sites.filter(siteDownloadedWithoutSetupFollowUp)
+      : siteIssueFilter === "needsPhotos"
+        ? sites.filter(siteNeedsMorePhotos)
+        : siteIssueFilter === "paletteMissing"
+          ? sites.filter(siteNeedsPaletteOptions)
+          : siteIssueFilter === "content"
+            ? sites.filter(needsAboutNavRepair)
+            : siteIssueFilter === "auditSaved"
+              ? sites.filter(siteHasAuditSnapshot)
+              : siteIssueFilter === "auditNeeded"
+                ? sites.filter(siteNeedsAuditSnapshot)
+                : siteIssueFilter === "outreachReady"
+                  ? sites.filter(siteIsOutreachReady)
+                  : siteIssueFilter === "contacted"
+                    ? sites.filter(siteWasContacted)
+                    : siteIssueFilter === "followUp"
+                      ? sites.filter(siteNeedsFollowUp)
+                      : siteIssueFilter === "downloaded"
+                        ? sites.filter(siteDownloadedWithoutSetup)
+                        : siteIssueFilter === "setupFollowUp"
+                          ? sites.filter(siteSetupFollowUpSent)
+                          : siteIssueFilter === "downloadedNoSetupFollowUp"
+                            ? sites.filter(siteDownloadedWithoutSetupFollowUp)
       : sites;
     if (!needle) return issueFilteredSites;
     return issueFilteredSites.filter((site) => [
@@ -487,6 +513,9 @@ export default function AdminSites() {
       site.setupFollowUpContactedAt ? "downloaded follow up sent setup upsell domain hosting" : "",
       siteDownloadedWithoutSetupFollowUp(site) ? "downloaded no setup follow up needs setup message upsell queue" : "",
       siteNeedsRecovery(site) ? "recovery summary error r2 preview failed missing json restore repair" : "",
+      siteNeedsMorePhotos(site) ? "add photos one image zero image google photo re-gather manual image enrichment before outreach" : "",
+      siteNeedsPaletteOptions(site) ? "palette missing color options owner choices visual filtered" : "",
+      siteCanAutoRepairPaletteOptions(site) ? "auto repair palette multiple images" : "",
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [query, siteIssueFilter, sites]);
 
@@ -514,6 +543,21 @@ export default function AdminSites() {
 
   const missingAboutNavSiteCount = useMemo(
     () => sites.filter(needsAboutNavRepair).length,
+    [sites],
+  );
+
+  const missingPaletteOptionSiteCount = useMemo(
+    () => sites.filter(siteNeedsPaletteOptions).length,
+    [sites],
+  );
+
+  const needsMorePhotosSiteCount = useMemo(
+    () => sites.filter(siteNeedsMorePhotos).length,
+    [sites],
+  );
+
+  const autoRepairablePaletteSiteCount = useMemo(
+    () => sites.filter(siteCanAutoRepairPaletteOptions).length,
     [sites],
   );
 
@@ -562,6 +606,11 @@ export default function AdminSites() {
     [filteredSites],
   );
 
+  const filteredMissingPaletteSites = useMemo(
+    () => filteredSites.filter(siteNeedsPaletteOptions),
+    [filteredSites],
+  );
+
   const filteredMissingAboutNavSites = useMemo(
     () => filteredSites.filter(needsAboutNavRepair),
     [filteredSites],
@@ -576,6 +625,8 @@ export default function AdminSites() {
     () => filteredSites.filter(siteIsOutreachReady),
     [filteredSites],
   );
+
+  const visualFilteredTargetCount = siteIssueFilter === "paletteMissing" ? filteredMissingPaletteSites.length : filteredSites.length;
 
   const activeBatchAboutNavProgress = batchAiFillingAboutNav && regeneratingId
     ? generationProgress[regeneratingId]
@@ -701,27 +752,40 @@ export default function AdminSites() {
       if (!image || images.includes(image)) return;
       images.push(image);
     };
-    const pages = Array.isArray(siteJson?.pages) ? siteJson.pages : [];
-    pages.forEach((page: any) => {
-      const sections = Array.isArray(page?.sections) ? page.sections : [];
-      sections.forEach((section: any) => {
-        if (section?.type === "imageGallery" && Array.isArray(section?.content?.images)) {
-          section.content.images.forEach(addImage);
-        }
-      });
-    });
+    const walkImages = (value: any, key = "") => {
+      if (images.length >= MAX_OWNER_PALETTE_OPTIONS) return;
+      if (typeof value === "string") {
+        if (/(image|photo|logo|hero|gallery)/i.test(key)) addImage(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((item) => walkImages(item, key));
+        return;
+      }
+      if (!value || typeof value !== "object") return;
+      Object.entries(value).forEach(([childKey, childValue]) => walkImages(childValue, childKey));
+    };
+    walkImages(siteJson);
     addImage(siteJson?.brand?.preferredHeroImage);
     addImage(siteJson?.brand?.logoImageUrl);
-    return images.filter((image) => image.startsWith("/") || image.startsWith("http")).slice(0, 5);
+    return images
+      .filter((image) => (image.startsWith("/") || image.startsWith("http")) && !image.startsWith("data:"))
+      .slice(0, MAX_OWNER_PALETTE_OPTIONS);
   };
 
-  const buildMissingPaletteOptionsForSite = async (site: SiteRow) => {
+  const buildMissingPaletteOptionsForSite = async (
+    site: SiteRow,
+    buildOptions: { allowSingleImageVariants?: boolean; requireMultipleImages?: boolean } = {},
+  ) => {
     const siteJson = await fetchSiteJson(site);
     const images = siteGalleryImages(siteJson);
     const existingOptions = Array.isArray(siteJson?.brand?.paletteOptions) ? siteJson.brand.paletteOptions : [];
-    if (images.length <= existingOptions.length) return [];
-    const existingSources = new Set(existingOptions.map((option: any) => String(option?.sourceImageUrl || option?.photoReference || "").trim()).filter(Boolean));
-    const targets = images.filter((image) => !existingSources.has(image)).slice(0, Math.max(0, images.length - existingOptions.length));
+    if (existingOptions.length >= MIN_OWNER_PALETTE_OPTIONS) return [];
+    if (buildOptions.requireMultipleImages && images.length <= 1) return [];
+    const targetCount = Math.min(MAX_OWNER_PALETTE_OPTIONS, Math.max(MIN_OWNER_PALETTE_OPTIONS, images.length));
+    const existingSources = new Set(existingOptions.map((option: any) => String(option?.sourceImageUrl || "").trim()).filter(Boolean));
+    const existingColorKeys = new Set(existingOptions.map((option: any) => Array.isArray(option?.colors) ? option.colors.join("|").toLowerCase() : "").filter(Boolean));
+    const targets = images.filter((image) => !existingSources.has(image)).slice(0, Math.max(0, targetCount - existingOptions.length));
     const options: any[] = [];
     for (let index = 0; index < targets.length; index += 1) {
       const sourceImageUrl = targets[index];
@@ -733,12 +797,40 @@ export default function AdminSites() {
       } catch {
         // Browser canvas can be blocked by cross-origin images; keep a seeded fallback so older sites still get distinct palette options.
       }
+      const colorKey = colors.join("|").toLowerCase();
+      if (existingColorKeys.has(colorKey)) continue;
+      existingColorKeys.add(colorKey);
       options.push({
         id: `site-gallery-${existingOptions.length + index + 1}`,
         label: `Gallery palette ${existingOptions.length + index + 1}`,
         colors,
         sourceImageUrl,
         priorityLabel,
+        variant: "balanced",
+      });
+    }
+    const totalOptions = () => existingOptions.length + options.length;
+    const firstPalette = (...values: unknown[]) => values.find((value) => Array.isArray(value) && value.length > 0) as string[] | undefined;
+    const basePalette = firstPalette(
+      options[0]?.colors,
+      existingOptions[0]?.colors,
+      siteJson?.brand?.palette,
+      siteJson?.meta?.brandPalette,
+      colorsFromSiteData(siteJson),
+    ) || ["#111827", "#4F46E5", "#F3F4F6"];
+    if (totalOptions() < MIN_OWNER_PALETTE_OPTIONS && buildOptions.allowSingleImageVariants !== false) {
+      buildPaletteRoleOptions({
+        palette: basePalette,
+        idPrefix: "site-palette-variant",
+        labelPrefix: "Palette option",
+        sourceImageUrl: images[0],
+        startIndex: existingOptions.length + options.length + 1,
+        maxOptions: MAX_OWNER_PALETTE_OPTIONS,
+      }).forEach((option) => {
+        const colorKey = option.colors.join("|").toLowerCase();
+        if (totalOptions() >= MIN_OWNER_PALETTE_OPTIONS || existingColorKeys.has(colorKey)) return;
+        existingColorKeys.add(colorKey);
+        options.push(option);
       });
     }
     return options;
@@ -1479,6 +1571,37 @@ export default function AdminSites() {
     }
   };
 
+  const handleRegatherPhotos = async (site: SiteRow) => {
+    setRegatheringPhotosId(site.businessId);
+    const previousImageCount = Number(site.availableImageCount || 0);
+    try {
+      await runRegenerateSite(site, "resave", "Re-gather Google photos");
+      let nextImageCount = previousImageCount;
+      try {
+        const refreshedSiteJson = await fetchSiteJson(site);
+        nextImageCount = siteGalleryImages(refreshedSiteJson).length;
+      } catch (countError) {
+        console.error(`Could not count images after re-gather for ${site.businessId}:`, countError);
+      }
+      const gainedPhotos = nextImageCount > previousImageCount;
+      const stillNeedsManualPhotos = nextImageCount <= 1;
+      notifyAction(
+        stillNeedsManualPhotos ? "warning" : "success",
+        gainedPhotos ? "Google photos increased" : "Google photos re-gathered",
+        gainedPhotos
+          ? `${site.businessName} image count changed ${previousImageCount} -> ${nextImageCount}.`
+          : stillNeedsManualPhotos
+            ? `${site.businessName} is still at ${previousImageCount} -> ${nextImageCount} image${nextImageCount === 1 ? "" : "s"}; manual image enrichment is still needed before outreach.`
+            : `${site.businessName} stayed at ${previousImageCount} -> ${nextImageCount} images; enough photos are saved, but Google did not add new ones.`,
+      );
+      fetchSites();
+    } catch (err) {
+      showApiError(err, { source: "Re-gather Google photos" });
+    } finally {
+      setRegatheringPhotosId("");
+    }
+  };
+
   const handleAboutNavAiFillSite = async (site: SiteRow) => {
     setRegeneratingId(site.businessId);
     try {
@@ -1761,16 +1884,91 @@ export default function AdminSites() {
     }
   };
 
-  const postRefreshVisualVariation = async (site: SiteRow) => {
-    const paletteOptions = await buildMissingPaletteOptionsForSite(site);
+  const postRefreshVisualVariation = async (
+    site: SiteRow,
+    options: { allowSingleImageVariants?: boolean; requireMultipleImages?: boolean; skipIfNoPaletteOptions?: boolean } = {},
+  ) => {
+    const paletteOptions = await buildMissingPaletteOptionsForSite(site, {
+      allowSingleImageVariants: options.allowSingleImageVariants,
+      requireMultipleImages: options.requireMultipleImages,
+    });
+    if (options.skipIfNoPaletteOptions && paletteOptions.length === 0) {
+      return { skipped: true, changed: false, paletteOptionsChanged: false };
+    }
     const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/refresh-visual-variation`;
     const response = await fetch(requestPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paletteOptions }),
+      body: JSON.stringify({
+        paletteOptions,
+        allowSingleImagePaletteVariants: options.allowSingleImageVariants !== false,
+      }),
     });
-    return readApiJson<{ changed?: boolean; paletteOptionsChanged?: boolean; fontPairing?: string; fontPairingLabel?: string; paletteOptionCount?: number; lastVisualVariationAt?: string }>(response, "Refresh visual variation", requestPath);
+    return readApiJson<{ skipped?: boolean; changed?: boolean; paletteOptionsChanged?: boolean; fontPairing?: string; fontPairingLabel?: string; paletteOptionCount?: number; lastVisualVariationAt?: string }>(response, "Refresh visual variation", requestPath);
   };
+
+  useEffect(() => {
+    if (isLoading || autoRepairingPalettes || batchRefreshingVisualVariation || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || scanningR2Health) return;
+    const targets = sites
+      .filter((site) => siteCanAutoRepairPaletteOptions(site) || site.paletteOptionCount === null || site.paletteOptionCount === undefined)
+      .slice(0, VISUAL_VARIATION_BATCH_LIMIT);
+    if (targets.length === 0) return;
+    const repairKey = targets.map((site) => `${site.businessId}:${site.paletteOptionCount || 0}:${site.availableImageCount || 0}:${site.updatedAt || ""}`).join("|");
+    if (!repairKey || repairKey === autoPaletteRepairDoneKey) return;
+    setAutoPaletteRepairDoneKey(repairKey);
+    let cancelled = false;
+    const runAutoRepair = async () => {
+      setAutoRepairingPalettes(true);
+      let repaired = 0;
+      let failed = 0;
+      try {
+        for (const site of targets) {
+          if (cancelled) return;
+          setRefreshingVisualVariationId(site.businessId);
+          try {
+            const result = await postRefreshVisualVariation(site, {
+              allowSingleImageVariants: false,
+              requireMultipleImages: true,
+              skipIfNoPaletteOptions: true,
+            });
+            if (result?.skipped) continue;
+            if (result?.paletteOptionsChanged) repaired += 1;
+          } catch (error) {
+            failed += 1;
+            console.error(`Auto palette repair failed for ${site.businessId}:`, error);
+          }
+        }
+        if (!cancelled && repaired > 0) {
+          notifyAction(
+            failed > 0 ? "warning" : "success",
+            failed > 0 ? "Palette auto-repair partially completed" : "Palette options auto-repaired",
+            `Expanded saved palette options for ${repaired} multi-image site${repaired === 1 ? "" : "s"}${failed > 0 ? `; ${failed} failed` : ""}.`,
+          );
+          fetchSites();
+        }
+      } finally {
+        if (!cancelled) {
+          setRefreshingVisualVariationId("");
+          setAutoRepairingPalettes(false);
+        }
+      }
+    };
+    runAutoRepair();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isLoading,
+    sites,
+    autoRepairingPalettes,
+    autoPaletteRepairDoneKey,
+    batchRefreshingVisualVariation,
+    regeneratingId,
+    repairingServiceImagesId,
+    batchRepairingServiceImages,
+    batchAiFillingAboutNav,
+    scanningR2Health,
+  ]);
 
   const handleRefreshVisualVariation = async (site: SiteRow) => {
     setRefreshingVisualVariationId(site.businessId);
@@ -1790,7 +1988,8 @@ export default function AdminSites() {
   };
 
   const handleRefreshFilteredVisualVariation = async () => {
-    const targets = filteredSites.slice(0, VISUAL_VARIATION_BATCH_LIMIT);
+    const batchSource = siteIssueFilter === "paletteMissing" ? filteredMissingPaletteSites : filteredSites;
+    const targets = batchSource.slice(0, VISUAL_VARIATION_BATCH_LIMIT);
     if (targets.length === 0) {
       notifyAction("info", "No filtered sites", "The current filtered list has no generated sites to refresh.");
       return;
@@ -1814,8 +2013,8 @@ export default function AdminSites() {
         }
       }
 
-      const cappedMessage = filteredSites.length > targets.length
-        ? ` Capped at ${VISUAL_VARIATION_BATCH_LIMIT}; ${filteredSites.length - targets.length} filtered row${filteredSites.length - targets.length === 1 ? "" : "s"} remain.`
+      const cappedMessage = batchSource.length > targets.length
+        ? ` Capped at ${VISUAL_VARIATION_BATCH_LIMIT}; ${batchSource.length - targets.length} filtered row${batchSource.length - targets.length === 1 ? "" : "s"} remain.`
         : "";
       if (failures.length > 0) {
         notifyAction(
@@ -1890,7 +2089,7 @@ export default function AdminSites() {
             <button
               type="button"
               onClick={handleScanR2Health}
-              disabled={scanningR2Health || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || regeneratingId !== "" || r2BackedSiteCount === 0}
+              disabled={scanningR2Health || autoRepairingPalettes || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || regeneratingId !== "" || regatheringPhotosId !== "" || r2BackedSiteCount === 0}
               className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
               aria-label="Scan R2 JSON health"
             >
@@ -1927,6 +2126,45 @@ export default function AdminSites() {
             <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingServiceImageSiteCount}</span>
           </button>
         </HoverTooltip>
+        <HoverTooltip text="Show generated sites with zero or one saved image. Prioritize these for Google photo re-gather or manual image enrichment before owner outreach, because one image limits palette variety and page credibility.">
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "needsPhotos" ? "all" : "needsPhotos")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "needsPhotos"
+                ? "border-amber-300 bg-amber-50 text-amber-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "needsPhotos"}
+          >
+            <Images size={14} />
+            Add photos
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{needsMorePhotosSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        <HoverTooltip text={`Show sites with fewer than ${MIN_OWNER_PALETTE_OPTIONS} saved palette options. Multi-image sites are auto-repaired on refresh; one-image sites stay here for manual visual review because one image cannot produce truly diverse palettes.`}>
+          <button
+            type="button"
+            onClick={() => setSiteIssueFilter(siteIssueFilter === "paletteMissing" ? "all" : "paletteMissing")}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              siteIssueFilter === "paletteMissing"
+                ? "border-violet-300 bg-violet-50 text-violet-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+            aria-pressed={siteIssueFilter === "paletteMissing"}
+          >
+            <Shuffle size={14} />
+            Palette missing
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-600">{missingPaletteOptionSiteCount}</span>
+          </button>
+        </HoverTooltip>
+        {autoRepairingPalettes && (
+          <span className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800">
+            <RefreshCw size={14} className="animate-spin" />
+            Auto palette repair
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-violet-700">{Math.min(autoRepairablePaletteSiteCount, VISUAL_VARIATION_BATCH_LIMIT)}</span>
+          </span>
+        )}
         <HoverTooltip text="Show generated sites missing a saved About page, missing AI-written short service submenu labels, or missing the new About/nav audit. Use Generate About/nav on each row or the batch button on these rows.">
           <button
             type="button"
@@ -1979,7 +2217,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleGenerateFilteredAuditSnapshots}
-            disabled={batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regeneratingId !== "" || filteredAuditNeededSites.length === 0}
+            disabled={batchGeneratingAuditSnapshots || autoRepairingPalettes || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regeneratingId !== "" || regatheringPhotosId !== "" || filteredAuditNeededSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 disabled:opacity-50"
             aria-label="Create filtered missing audit snapshots"
           >
@@ -2017,7 +2255,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleCopyNextOutreachReady}
-            disabled={copyingNextOutreach || openingNextEmailDraft || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || filteredOutreachReadySites.length === 0}
+            disabled={copyingNextOutreach || openingNextEmailDraft || autoRepairingPalettes || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regatheringPhotosId !== "" || filteredOutreachReadySites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
             aria-label="Copy next outreach-ready template"
           >
@@ -2039,7 +2277,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleCopyNextOutreachEmailDraft}
-            disabled={openingNextEmailDraft || copyingNextOutreach || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || filteredOutreachReadySites.length === 0}
+            disabled={openingNextEmailDraft || copyingNextOutreach || autoRepairingPalettes || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regatheringPhotosId !== "" || filteredOutreachReadySites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
             aria-label="Copy next outreach-ready template and open email draft"
           >
@@ -2138,7 +2376,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleAiFillFilteredAboutNav}
-            disabled={batchAiFillingAboutNav || batchGeneratingAuditSnapshots || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regeneratingId !== "" || !activeRegenerateModel || filteredMissingAboutNavSites.length === 0}
+            disabled={batchAiFillingAboutNav || autoRepairingPalettes || batchGeneratingAuditSnapshots || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regeneratingId !== "" || regatheringPhotosId !== "" || !activeRegenerateModel || filteredMissingAboutNavSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
             aria-label="AI fill filtered About and navigation label issues"
           >
@@ -2157,7 +2395,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleRepairFilteredServiceImages}
-            disabled={batchRepairingServiceImages || batchGeneratingAuditSnapshots || batchRefreshingVisualVariation || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || filteredMissingServiceImageSites.length === 0}
+            disabled={batchRepairingServiceImages || autoRepairingPalettes || batchGeneratingAuditSnapshots || batchRefreshingVisualVariation || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || regatheringPhotosId !== "" || filteredMissingServiceImageSites.length === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50"
             aria-label="Repair filtered service image issues"
           >
@@ -2176,7 +2414,7 @@ export default function AdminSites() {
           <button
             type="button"
             onClick={handleRefreshFilteredVisualVariation}
-            disabled={batchRefreshingVisualVariation || batchGeneratingAuditSnapshots || batchRepairingServiceImages || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || filteredSites.length === 0}
+            disabled={batchRefreshingVisualVariation || autoRepairingPalettes || batchGeneratingAuditSnapshots || batchRepairingServiceImages || batchAiFillingAboutNav || scanningR2Health || regeneratingId !== "" || regatheringPhotosId !== "" || visualFilteredTargetCount === 0}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50"
             aria-label="Refresh filtered visual variation"
           >
@@ -2187,7 +2425,7 @@ export default function AdminSites() {
             )}
             Visual filtered
             <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-700">
-              {Math.min(filteredSites.length, VISUAL_VARIATION_BATCH_LIMIT)}
+              {Math.min(visualFilteredTargetCount, VISUAL_VARIATION_BATCH_LIMIT)}
             </span>
           </button>
         </HoverTooltip>
@@ -2483,6 +2721,29 @@ export default function AdminSites() {
                       </span>
                     </HoverTooltip>
                   )}
+                  {siteNeedsMorePhotos(site) && (
+                    <HoverTooltip text={`${site.businessName} has ${site.availableImageCount || 0} saved image${Number(site.availableImageCount || 0) === 1 ? "" : "s"}. Re-gather Google data or add manual images before outreach so the owner sees a richer site and gets more meaningful palette choices.`}>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                        <Images size={11} />
+                        Add photos {site.availableImageCount || 0}
+                      </span>
+                    </HoverTooltip>
+                  )}
+                  {siteNeedsPaletteOptions(site) && (
+                    <HoverTooltip text={siteCanAutoRepairPaletteOptions(site)
+                      ? `${site.paletteOptionCount || 0} saved palette option${Number(site.paletteOptionCount || 0) === 1 ? "" : "s"} from ${site.availableImageCount || "multiple"} image${Number(site.availableImageCount || 0) === 1 ? "" : "s"}. This row can auto-repair on refresh or with Visual filtered.`
+                      : `${site.paletteOptionCount || 0} saved palette option${Number(site.paletteOptionCount || 0) === 1 ? "" : "s"} and only ${site.availableImageCount || 0} saved image${Number(site.availableImageCount || 0) === 1 ? "" : "s"}. Manual palette extraction can create tonal variants, but one image will not give truly diverse brand palettes.`
+                    }>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        siteCanAutoRepairPaletteOptions(site)
+                          ? "bg-violet-100 text-violet-800"
+                          : "bg-amber-100 text-amber-800"
+                      }`}>
+                        <Shuffle size={11} />
+                        Palette {site.paletteOptionCount || 0}/{MIN_OWNER_PALETTE_OPTIONS}
+                      </span>
+                    </HoverTooltip>
+                  )}
                   {needsAboutNavRepair(site) && (
                     <HoverTooltip text={site.aboutNavAuditKnown === false
                       ? "This saved summary predates the About/nav audit. Use Generate About/nav to save the About page and short service submenu labels, or resave to refresh the audit."
@@ -2764,7 +3025,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleAboutNavAiFillSite(site)}
-                      disabled={!activeRegenerateModel || Boolean(regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
+                      disabled={!activeRegenerateModel || Boolean(regeneratingId || regatheringPhotosId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
                       aria-label={regeneratingId === site.businessId
                         ? `Generating About/nav: ${generationProgress[site.businessId]?.shortText || "running"}`
@@ -2784,7 +3045,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleRepairServiceImages(site)}
-                      disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId || upgradingDesignId)}
+                      disabled={Boolean(repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || regeneratingId || regatheringPhotosId || upgradingDesignId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
                       aria-label="Repair service card images"
                     >
@@ -2796,12 +3057,32 @@ export default function AdminSites() {
                     </button>
                   </HoverTooltip>
                 )}
+                {siteNeedsMorePhotos(site) && (
+                  <HoverTooltip text="Re-gather fresh Google Place Details and re-save this site without AI, specifically to pull any newly available Google Business photos into the saved site/palette flow. If Google still returns one photo, add manual images later before outreach.">
+                    <button
+                      type="button"
+                      onClick={() => handleRegatherPhotos(site)}
+                      disabled={Boolean(regatheringPhotosId || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                      aria-label="Re-gather Google photos and re-save site"
+                    >
+                      {regatheringPhotosId === site.businessId ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                      ) : (
+                        <Images size={14} />
+                      )}
+                    </button>
+                  </HoverTooltip>
+                )}
                 {(showHiddenSiteActions || siteNeedsVisualVariation(site)) && (
-                  <HoverTooltip text="Refresh only this site's saved font pairing to the stable seeded visual variation. Hidden after visual pass or full premium upgrade unless actions=all or debug=sites is in the URL.">
+                  <HoverTooltip text={siteNeedsPaletteOptions(site) && !siteCanAutoRepairPaletteOptions(site)
+                    ? "Manual palette refresh: this site appears to have only one saved image, so extraction can create tonal variants but will not produce truly diverse palettes. Add more business photos later for better palette options."
+                    : "Refresh only this site's saved font pairing to the stable seeded visual variation and backfill missing palette options. Hidden after visual pass or full premium upgrade unless actions=all or debug=sites is in the URL."
+                  }>
                     <button
                       type="button"
                       onClick={() => handleRefreshVisualVariation(site)}
-                      disabled={Boolean(refreshingVisualVariationId || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId || upgradingDesignId)}
+                      disabled={Boolean(refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || repairingServiceImagesId || batchRepairingServiceImages || batchAiFillingAboutNav || regeneratingId || regatheringPhotosId || upgradingDesignId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
                       aria-label="Refresh visual variation"
                     >
@@ -2818,7 +3099,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => handleUpgradeExistingSite(site)}
-                      disabled={!activeRegenerateModel || Boolean(upgradingDesignId || regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
+                      disabled={!activeRegenerateModel || Boolean(upgradingDesignId || regeneratingId || regatheringPhotosId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                       aria-label="Premium-upgrade existing site with design and AI copy"
                     >
@@ -2847,7 +3128,7 @@ export default function AdminSites() {
                     <button
                       type="button"
                       onClick={() => setOpenRegenerateMenu(openRegenerateMenu === site.businessId ? "" : site.businessId)}
-                      disabled={Boolean(regeneratingId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
+                      disabled={Boolean(regeneratingId || regatheringPhotosId || repairingServiceImagesId || batchRepairingServiceImages || refreshingVisualVariationId || autoRepairingPalettes || batchRefreshingVisualVariation || batchAiFillingAboutNav || upgradingDesignId)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       aria-label="Open regenerate menu"
                     >
@@ -2937,7 +3218,7 @@ export default function AdminSites() {
                               setOpenRegenerateMenu("");
                               handleRegenerate(site, "ai");
                             }}
-                            disabled={!activeRegenerateModel || Boolean(regeneratingId || batchAiFillingAboutNav)}
+                            disabled={!activeRegenerateModel || Boolean(regeneratingId || regatheringPhotosId || batchAiFillingAboutNav)}
                             className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                           >
                             <Brain size={14} />
@@ -2959,7 +3240,7 @@ export default function AdminSites() {
                               setOpenRegenerateMenu("");
                               handleRegenerate(site, "resave");
                             }}
-                            disabled={Boolean(regeneratingId || batchAiFillingAboutNav || upgradingDesignId)}
+                            disabled={Boolean(regeneratingId || regatheringPhotosId || batchAiFillingAboutNav || upgradingDesignId)}
                             className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                           >
                             <RotateCw size={14} />
@@ -2978,7 +3259,7 @@ export default function AdminSites() {
                             setOpenRegenerateMenu("");
                             handleRestoreSiteFromLatestJob(site);
                           }}
-                          disabled={Boolean(regeneratingId || repairingSummaryId || restoringFromJobId || batchAiFillingAboutNav || upgradingDesignId)}
+                          disabled={Boolean(regeneratingId || regatheringPhotosId || repairingSummaryId || restoringFromJobId || batchAiFillingAboutNav || upgradingDesignId)}
                           className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
                         >
                           {restoringFromJobId === site.businessId ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}

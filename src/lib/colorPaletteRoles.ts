@@ -26,6 +26,16 @@ export type PaletteRoleResult = {
   neutralColors: string[];
 };
 
+export type PaletteRoleOption = {
+  id: string;
+  label: string;
+  colors: string[];
+  sourceImageUrl?: string;
+  photoReference?: string;
+  priorityLabel?: string;
+  variant?: string;
+};
+
 function hexToRgb(hex: string): Rgb | null {
   const normalized = hex.trim().replace("#", "");
   const expanded = normalized.length === 3 ? normalized.split("").map((char) => char + char).join("") : normalized;
@@ -140,6 +150,20 @@ function synthesizeAccent(primary: ColorStats | null) {
   return hslToHex(primary.hue + hueOffset, Math.max(0.55, primary.saturation), Math.min(0.48, Math.max(0.34, primary.lightness)));
 }
 
+function adjustedColor(hex: string, hueDelta: number, saturationDelta: number, lightnessDelta: number) {
+  const stats = statsFor(hex);
+  if (!stats || stats.neutral) return hex;
+  return hslToHex(
+    stats.hue + hueDelta,
+    Math.max(0.24, Math.min(0.86, stats.saturation + saturationDelta)),
+    Math.max(0.16, Math.min(0.82, stats.lightness + lightnessDelta)),
+  );
+}
+
+function paletteSignature(colors: string[]) {
+  return colors.map((color) => normalizeHex(color)).filter(Boolean).join("|").toLowerCase();
+}
+
 export function normalizePaletteRoles(input: PaletteRoleInput): PaletteRoleResult {
   const palette = Array.isArray(input.palette) ? input.palette : [];
   const colors = uniqueColors([input.primary, input.accent, input.secondary, ...palette]);
@@ -172,4 +196,82 @@ export function normalizePaletteRoles(input: PaletteRoleInput): PaletteRoleResul
     colorfulColors: colorful.map((color) => color.hex),
     neutralColors: neutral.map((color) => color.hex),
   };
+}
+
+export function buildPaletteRoleOptions(input: {
+  palette?: unknown;
+  idPrefix?: string;
+  labelPrefix?: string;
+  sourceImageUrl?: string;
+  photoReference?: string;
+  priorityLabel?: string;
+  startIndex?: number;
+  maxOptions?: number;
+}): PaletteRoleOption[] {
+  const idPrefix = input.idPrefix || "palette";
+  const labelPrefix = input.labelPrefix || "Palette";
+  const startIndex = Math.max(1, input.startIndex || 1);
+  const maxOptions = Math.max(1, Math.min(5, input.maxOptions || 3));
+  const base = normalizePaletteRoles({ palette: input.palette });
+  const primary = base.primary;
+  const accent = base.accent;
+  const secondary = base.secondary;
+  const variants = [
+    { label: "balanced", colors: base.orderedPalette },
+    {
+      label: "warm",
+      colors: normalizePaletteRoles({
+        primary: adjustedColor(primary, 18, 0.05, -0.02),
+        accent: adjustedColor(accent, 34, 0.08, 0.02),
+        secondary,
+        palette: base.orderedPalette,
+      }).orderedPalette,
+    },
+    {
+      label: "cool",
+      colors: normalizePaletteRoles({
+        primary: adjustedColor(primary, -28, 0.04, -0.01),
+        accent: adjustedColor(accent, 82, 0.07, 0.01),
+        secondary,
+        palette: base.orderedPalette,
+      }).orderedPalette,
+    },
+    {
+      label: "bold",
+      colors: normalizePaletteRoles({
+        primary: adjustedColor(primary, 0, 0.1, -0.1),
+        accent: adjustedColor(accent, 128, 0.12, -0.04),
+        secondary,
+        palette: base.orderedPalette,
+      }).orderedPalette,
+    },
+    {
+      label: "soft",
+      colors: normalizePaletteRoles({
+        primary: adjustedColor(primary, -10, -0.05, 0.08),
+        accent: adjustedColor(accent, 24, -0.04, 0.08),
+        secondary,
+        palette: base.orderedPalette,
+      }).orderedPalette,
+    },
+  ];
+  const seen = new Set<string>();
+  const options: PaletteRoleOption[] = [];
+  variants.forEach((variant) => {
+    if (options.length >= maxOptions) return;
+    const signature = paletteSignature(variant.colors);
+    if (!signature || seen.has(signature)) return;
+    seen.add(signature);
+    const index = startIndex + options.length;
+    options.push({
+      id: `${idPrefix}-${variant.label}-${index}`,
+      label: `${labelPrefix} ${index}${variant.label === "balanced" ? "" : ` (${variant.label})`}`,
+      colors: variant.colors,
+      ...(input.sourceImageUrl ? { sourceImageUrl: input.sourceImageUrl } : {}),
+      ...(input.photoReference ? { photoReference: input.photoReference } : {}),
+      ...(input.priorityLabel ? { priorityLabel: input.priorityLabel } : {}),
+      variant: variant.label,
+    });
+  });
+  return options;
 }

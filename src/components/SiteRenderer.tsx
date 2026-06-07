@@ -29,7 +29,7 @@ import {
 import { getShaderPreset, normalizeShaderPreset, normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, googleFontImportUrl } from "../lib/fontPairings";
 import { applyGeneratedSitePageInserts } from "../lib/generatedSitePostProcess";
-import { normalizePaletteRoles } from "../lib/colorPaletteRoles";
+import { buildPaletteRoleOptions, normalizePaletteRoles } from "../lib/colorPaletteRoles";
 import EditableText, { type EditableTextTag } from "./EditableText";
 import WebsiteActionPanel from "./WebsiteActionPanel";
 
@@ -750,7 +750,21 @@ function normalizedPaletteOptionsFromBrand(brand: any, siteData: any) {
   const options = Array.isArray(brand.paletteOptions)
     ? brand.paletteOptions.filter((option: any) => Array.isArray(option?.colors) && option.colors.length > 0)
     : [];
-  if (options.length > 0) return options;
+  if (options.length >= 2) return options;
+  if (options.length === 1) {
+    const existingKey = options[0].colors.join("|").toLowerCase();
+    const variants = buildPaletteRoleOptions({
+      palette: options[0].colors,
+      idPrefix: `${options[0].id || "saved-palette"}-variant`,
+      labelPrefix: "Palette option",
+      sourceImageUrl: options[0].sourceImageUrl,
+      photoReference: options[0].photoReference,
+      priorityLabel: options[0].priorityLabel,
+      startIndex: 2,
+      maxOptions: 3,
+    }).filter((option) => option.colors.join("|").toLowerCase() !== existingKey);
+    return [...options, ...variants].slice(0, 3);
+  }
 
   const fallbackPalettes = [
     { id: "brand-palette", label: "Saved brand palette", colors: Array.isArray(brand.palette) ? brand.palette : [] },
@@ -758,7 +772,7 @@ function normalizedPaletteOptionsFromBrand(brand: any, siteData: any) {
     { id: "theme-colors", label: "Current site colors", colors: colorsFromSiteData(siteData) },
   ];
   const seen = new Set<string>();
-  return fallbackPalettes
+  const normalizedFallbacks = fallbackPalettes
     .map((option) => ({ ...option, colors: option.colors.filter((color: unknown) => typeof color === "string" && color.trim()).slice(0, 5) }))
     .filter((option) => {
       if (option.colors.length === 0) return false;
@@ -767,6 +781,14 @@ function normalizedPaletteOptionsFromBrand(brand: any, siteData: any) {
       seen.add(key);
       return true;
     });
+  if (normalizedFallbacks.length >= 2) return normalizedFallbacks;
+  const basePalette = normalizedFallbacks[0]?.colors || colorsFromSiteData(siteData);
+  return buildPaletteRoleOptions({
+    palette: basePalette,
+    idPrefix: "runtime-palette",
+    labelPrefix: "Palette option",
+    maxOptions: 3,
+  });
 }
 
 function imageReplacementStorageKey(businessId: string, metaBusinessId = "") {
