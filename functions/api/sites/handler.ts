@@ -1,5 +1,6 @@
 import { applyGeneratedSitePageInserts, repairOfferingNavLabels, repairServiceCardImages } from "../../../src/lib/generatedSitePostProcess";
 import { fontPairingsForText, fontPairingVariantForText } from "../../../src/lib/fontPairings";
+import { normalizePaletteRoles } from "../../../src/lib/colorPaletteRoles";
 import { asString } from "../_shared/response";
 import {
   applyAiCopyPatch,
@@ -390,6 +391,39 @@ function normalizeSiteColorContrast(finalJson: Record<string, unknown>) {
   const design = finalJson.design && typeof finalJson.design === "object" ? finalJson.design as Record<string, unknown> : {};
   const themeVariables = design.themeVariables && typeof design.themeVariables === "object" ? design.themeVariables as Record<string, unknown> : {};
   const colors = themeVariables.colors && typeof themeVariables.colors === "object" ? themeVariables.colors as Record<string, unknown> : {};
+  const brand = finalJson.brand && typeof finalJson.brand === "object" ? finalJson.brand as Record<string, unknown> : {};
+  const meta = finalJson.meta && typeof finalJson.meta === "object" ? finalJson.meta as Record<string, unknown> : {};
+  const paletteCandidates = [
+    colors.primary,
+    colors.accent,
+    colors.secondary,
+    ...(Array.isArray(brand.palette) ? brand.palette : []),
+    ...(Array.isArray(meta.brandPalette) ? meta.brandPalette : []),
+    ...(Array.isArray(brand.paletteOptions)
+      ? brand.paletteOptions.flatMap((option) => option && typeof option === "object" && Array.isArray((option as Record<string, unknown>).colors) ? (option as Record<string, unknown>).colors as unknown[] : [])
+      : []),
+  ];
+  const roleColors = normalizePaletteRoles({
+    primary: colors.primary,
+    accent: colors.accent,
+    secondary: colors.secondary,
+    palette: paletteCandidates,
+  });
+  colors.primary = roleColors.primary;
+  colors.accent = roleColors.accent;
+  colors.secondary = roleColors.secondary;
+  brand.palette = roleColors.orderedPalette;
+  meta.brandPalette = roleColors.orderedPalette;
+  if (Array.isArray(brand.paletteOptions)) {
+    brand.paletteOptions = brand.paletteOptions.map((option) => {
+      if (!option || typeof option !== "object" || !Array.isArray((option as Record<string, unknown>).colors)) return option;
+      const optionRecord = option as Record<string, unknown>;
+      return {
+        ...optionRecord,
+        colors: normalizePaletteRoles({ palette: optionRecord.colors }).orderedPalette,
+      };
+    });
+  }
   for (const key of ["primary", "accent"]) {
     const value = colors[key];
     if (typeof value === "string" && value.startsWith("#") && relativeLuminance(value) > 0.32) {
@@ -439,6 +473,8 @@ function normalizeSiteColorContrast(finalJson: Record<string, unknown>) {
   themeVariables.colors = colors;
   design.themeVariables = themeVariables;
   finalJson.design = design;
+  finalJson.brand = brand;
+  finalJson.meta = meta;
 }
 
 function recordValue(value: unknown): Record<string, unknown> {

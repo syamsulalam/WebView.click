@@ -9,6 +9,7 @@ import {
   siteVisualStyles,
 } from "./siteStylePresets";
 import { applyGeneratedSitePageInserts } from "./generatedSitePostProcess";
+import { normalizePaletteRoles } from "./colorPaletteRoles";
 
 type ScaffoldOptions = {
   businessId: string;
@@ -326,10 +327,17 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
   const businessId = options.businessId;
   const imageUrl = options.imageUrl || "";
   const palette = Array.isArray(options.palette) ? options.palette : [];
-  const paletteOptions = Array.isArray(options.paletteOptions) ? options.paletteOptions : [];
-  const primaryColor = palette[0] || "#111827";
-  const accentColor = palette[1] || "#4F46E5";
-  const secondaryColor = palette[2] || "#F3F4F6";
+  const rolePalette = normalizePaletteRoles({ palette });
+  const normalizedPalette = rolePalette.orderedPalette;
+  const paletteOptions = Array.isArray(options.paletteOptions)
+    ? options.paletteOptions.map((option) => {
+        if (!option || typeof option !== "object" || !Array.isArray(option.colors)) return option;
+        return { ...option, colors: normalizePaletteRoles({ palette: option.colors }).orderedPalette };
+      })
+    : [];
+  const primaryColor = rolePalette.primary;
+  const accentColor = rolePalette.accent;
+  const secondaryColor = rolePalette.secondary;
   const phone = placePhone(place);
   const mapsUrl = placeMapsUrl(place);
   const address = place.formatted_address || place.formattedAddress || "";
@@ -483,7 +491,7 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
       region: locale.region,
       seoDescription: isEnglish ? `Official website for ${businessName}.` : `Website resmi untuk ${businessName}.`,
       faviconSvg: faviconSvgForBusiness(businessName, primaryColor),
-      brandPalette: palette,
+      brandPalette: normalizedPalette,
       generatedWithAi: false,
       generationMode: "google_places_fallback",
       generationNote: "Generated from gathered Google Places data because AI output was unavailable or not required.",
@@ -516,7 +524,7 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
       logoImageUrl: imageUrl,
       logoSvg: "",
       faviconSvg: faviconSvgForBusiness(businessName, primaryColor),
-      palette,
+      palette: normalizedPalette,
       paletteOptions,
       preferredHeroImage: imageUrl,
       photoSource: imageUrl ? (options.selectedPhotoSource || "google_places") : "",

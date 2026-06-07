@@ -29,6 +29,7 @@ import {
 import { getShaderPreset, normalizeShaderPreset, normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
 import { fontPairingsForText, getFontPairing, googleFontImportUrl } from "../lib/fontPairings";
 import { applyGeneratedSitePageInserts } from "../lib/generatedSitePostProcess";
+import { normalizePaletteRoles } from "../lib/colorPaletteRoles";
 import EditableText, { type EditableTextTag } from "./EditableText";
 import WebsiteActionPanel from "./WebsiteActionPanel";
 
@@ -142,10 +143,16 @@ function paletteSurface(surface: string, primary: string, accent: string, weight
 
 function deriveSiteColors(rawColors: any) {
   const normalizedColors = rawColors || {};
+  const roleColors = normalizePaletteRoles({
+    primary: normalizedColors.primary,
+    accent: normalizedColors.accent,
+    secondary: normalizedColors.secondary,
+    palette: normalizedColors.palette || normalizedColors.colors,
+  });
   const backgroundColor = normalizedColors.background || "#FFFFFF";
-  const primaryColor = readableBrandColor(normalizedColors.primary || "#111827", backgroundColor);
-  const secondaryColor = normalizedColors.secondary || "#F3F4F6";
-  const accentColor = readableBrandColor(normalizedColors.accent || "#4F46E5", backgroundColor);
+  const primaryColor = readableBrandColor(roleColors.primary, backgroundColor);
+  const secondaryColor = roleColors.secondary;
+  const accentColor = readableBrandColor(roleColors.accent, backgroundColor);
   const inkColor = readablePaletteText(backgroundColor, primaryColor, accentColor);
   const mutedColor = paletteMutedText(backgroundColor, primaryColor, accentColor);
   const accentTextColor = ensureContrast(accentColor, backgroundColor, 3.4, relativeLuminance(backgroundColor) >= 0.46 ? "darken" : "lighten");
@@ -273,7 +280,16 @@ function normalizeSiteData(siteData: any) {
     ? [...headerMenu, { label: isIndonesian ? "Area Layanan" : "Areas Served", href: "#areas-served" }]
     : headerMenu;
 
-  const derivedColors = deriveSiteColors(normalizedColors);
+  const derivedColors = deriveSiteColors({
+    ...normalizedColors,
+    palette: [
+      normalizedColors.primary,
+      normalizedColors.accent,
+      normalizedColors.secondary,
+      ...(Array.isArray(brand.palette) ? brand.palette : []),
+      ...(Array.isArray(meta.brandPalette) ? meta.brandPalette : []),
+    ],
+  });
 
   return {
     meta: {
@@ -884,6 +900,7 @@ export default function SiteRenderer({
   const colors = activePalette.length > 0
     ? deriveSiteColors({
         ...baseColors,
+        palette: activePalette,
         primary: activePalette[0] || baseColors.primary,
         accent: activePalette[1] || baseColors.accent,
         secondary: activePalette[2] || baseColors.secondary,

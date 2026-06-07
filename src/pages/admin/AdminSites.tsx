@@ -3,6 +3,7 @@ import { Brain, Copy, Database, Download, Eye, FileText, Globe2, Image as ImageI
 import { aiModelPrices } from "../../lib/aiPricing";
 import { useLocalStorageState } from "../../lib/localStorageState";
 import { readApiJson } from "../../lib/apiResponse";
+import { normalizePaletteRoles } from "../../lib/colorPaletteRoles";
 import { isPlaceholderPhone } from "../../lib/generatedSiteScaffold";
 import {
   buildScaffoldGeneratePayload,
@@ -634,7 +635,7 @@ export default function AdminSites() {
       }
       return current;
     };
-    const next = [...palette];
+    const next = normalizePaletteRoles({ palette }).orderedPalette;
     if (next[0]) next[0] = darkenForWhiteText(next[0]);
     if (next[1]) next[1] = darkenForWhiteText(next[1]);
     return next;

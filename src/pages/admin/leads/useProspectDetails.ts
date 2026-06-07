@@ -8,6 +8,7 @@ import {
   saveProspectSelection,
   sortedPhotosForPlace,
 } from "../../../lib/adminSiteGeneration";
+import { normalizePaletteRoles } from "../../../lib/colorPaletteRoles";
 import { placeMapsUrl, placePhone } from "../../../lib/generatedSiteScaffold";
 
 type UseProspectDetailsParams = {
@@ -156,7 +157,7 @@ export default function useProspectDetails({ getPlaceKey, setGenerationMessages 
   };
 
   const normalizePaletteForContrast = (palette: string[]) => {
-    const next = [...palette];
+    const next = normalizePaletteRoles({ palette }).orderedPalette;
     if (next[0]) next[0] = darkenForWhiteText(next[0]);
     if (next[1]) next[1] = darkenForWhiteText(next[1]);
     return next;
