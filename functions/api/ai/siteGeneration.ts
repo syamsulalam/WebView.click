@@ -902,11 +902,9 @@ function businessFactsForAiCopy(originData: unknown, siteJson: Record<string, un
 
   const currentHours = objectValue(firstDefined(origin.currentOpeningHours, origin.current_opening_hours));
   const legacyHours = objectValue(firstDefined(origin.opening_hours, origin.openingHours));
-  const openNow = typeof currentHours.openNow === "boolean"
-    ? currentHours.openNow
-    : typeof legacyHours.open_now === "boolean"
-      ? legacyHours.open_now
-      : null;
+  let openNow: boolean | null = null;
+  if (typeof currentHours.openNow === "boolean") openNow = currentHours.openNow;
+  else if (typeof legacyHours.open_now === "boolean") openNow = legacyHours.open_now;
   const plusCodeRecord = objectValue(firstDefined(origin.plus_code, origin.plusCode));
 
   return {
