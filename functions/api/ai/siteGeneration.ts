@@ -737,6 +737,153 @@ export function applyAiOfferingOutline(siteJson: Record<string, unknown>, outlin
   return { applied: true, count: offerings.length };
 }
 
+function firstDefined(...values: unknown[]) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+// Extracts prose from Google's variably-shaped summary objects
+// ({overview}, {text:{text}}, plain strings) without assuming one casing.
+function deepBriefText(value: unknown, depth = 0): string {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (!value || typeof value !== "object" || Array.isArray(value) || depth > 2) return "";
+  const record = value as Record<string, unknown>;
+  for (const key of ["overview", "text", "summary", "description"]) {
+    const text = deepBriefText(record[key], depth + 1);
+    if (text) return text;
+  }
+  return "";
+}
+
+function humanizeOptionKey(key: string) {
+  const words = String(key || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
+}
+
+// Boolean service/amenity flags across Places API casings (camelCase new,
+// snake_case legacy). Only strict `true` counts as enabled.
+const AMENITY_FLAG_ENTRIES: Array<{ keys: string[]; label: string }> = [
+  { keys: ["takeout"], label: "Takeout" },
+  { keys: ["delivery"], label: "Delivery" },
+  { keys: ["dineIn", "dine_in"], label: "Dine-in" },
+  { keys: ["curbsidePickup", "curbside_pickup"], label: "Curbside pickup" },
+  { keys: ["reservable"], label: "Reservations" },
+  { keys: ["servesBreakfast", "serves_breakfast"], label: "Breakfast" },
+  { keys: ["servesLunch", "serves_lunch"], label: "Lunch" },
+  { keys: ["servesDinner", "serves_dinner"], label: "Dinner" },
+  { keys: ["servesBrunch", "serves_brunch"], label: "Brunch" },
+  { keys: ["servesBeer", "serves_beer"], label: "Beer" },
+  { keys: ["servesWine", "serves_wine"], label: "Wine" },
+  { keys: ["servesCocktails", "serves_cocktails"], label: "Cocktails" },
+  { keys: ["servesCoffee", "serves_coffee"], label: "Coffee" },
+  { keys: ["servesDessert", "serves_dessert"], label: "Dessert" },
+  { keys: ["servesVegetarianFood", "serves_vegetarian_food"], label: "Vegetarian options" },
+  { keys: ["outdoorSeating", "outdoor_seating"], label: "Outdoor seating" },
+  { keys: ["liveMusic", "live_music"], label: "Live music" },
+  { keys: ["goodForChildren", "good_for_children"], label: "Good for children" },
+  { keys: ["goodForGroups", "good_for_groups"], label: "Good for groups" },
+  { keys: ["goodForWatchingSports", "good_for_watching_sports"], label: "Good for watching sports" },
+  { keys: ["allowsDogs", "allows_dogs"], label: "Dogs allowed" },
+  { keys: ["restroom"], label: "Restroom" },
+];
+
+function enabledAmenityLabels(origin: Record<string, unknown>) {
+  const labels: string[] = [];
+  for (const entry of AMENITY_FLAG_ENTRIES) {
+    if (entry.keys.some((key) => (origin as Record<string, unknown>)[key] === true)) labels.push(entry.label);
+  }
+  const optionGroups: Array<{ value: unknown; prefix: string }> = [
+    { value: firstDefined(origin.paymentOptions, origin.payment_options), prefix: "" },
+    { value: firstDefined(origin.parkingOptions, origin.parking_options), prefix: "Parking: " },
+    { value: firstDefined(origin.accessibilityOptions, origin.accessibility_options), prefix: "Accessible: " },
+  ];
+  for (const group of optionGroups) {
+    if (Array.isArray(group.value)) {
+      safeCopyArray(group.value, 4, 60).forEach((item) => labels.push(`${group.prefix}${item}`));
+      continue;
+    }
+    const record = objectValue(group.value);
+    Object.entries(record)
+      .filter(([, flagValue]) => flagValue === true)
+      .slice(0, 4)
+      .forEach(([flagKey]) => {
+        const label = humanizeOptionKey(flagKey);
+        if (label) labels.push(`${group.prefix}${label}`);
+      });
+  }
+  return labels.slice(0, 14);
+}
+
+function priceLevelLabel(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return ["Free", "Inexpensive", "Moderate", "Expensive", "Very expensive"][Math.max(0, Math.min(4, Math.floor(value)))] || "";
+  }
+  const text = safeCopyText(value, 40);
+  const stripped = text.replace(/^PRICE_LEVEL_/i, "").replace(/_/g, " ").trim().toLowerCase();
+  return stripped ? stripped.charAt(0).toUpperCase() + stripped.slice(1) : "";
+}
+
+function priceRangeLabel(value: unknown) {
+  const record = objectValue(value);
+  const amount = (part: unknown) => {
+    const amountRecord = objectValue(part);
+    const units = asString(amountRecord.units, typeof part === "string" || typeof part === "number" ? String(part) : "");
+    const code = asString(amountRecord.currencyCode, amountRecord.currency_code);
+    return { units: units.trim(), code: code.trim() };
+  };
+  const start = amount(firstDefined(record.startPrice, record.start_price));
+  const end = amount(firstDefined(record.endPrice, record.end_price));
+  if (start.units && end.units) return safeCopyText(`${start.units}\u2013${end.units}${end.code || start.code ? ` ${end.code || start.code}` : ""}`, 40);
+  if (end.units) return safeCopyText(`Up to ${end.units}${end.code ? ` ${end.code}` : ""}`, 40);
+  return "";
+}
+
+function secondaryHoursLines(value: unknown) {
+  const list = Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
+  const lines: string[] = [];
+  for (const entry of list.slice(0, 4)) {
+    const record = objectValue(entry);
+    const kind = safeCopyText(firstDefined(record.type, record.openingType), 40);
+    const days = safeCopyArray(firstDefined(record.weekdayDescriptions, record.weekday_descriptions), 7, 120);
+    if (days.length) lines.push(safeCopyText(`${kind ? `${kind}: ` : ""}${days.join("; ")}`, 160));
+  }
+  return lines;
+}
+
+function utcOffsetLabel(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  const hours = value / 60;
+  return `UTC${hours >= 0 ? "+" : ""}${Number.isInteger(hours) ? hours : hours.toFixed(1)}`;
+}
+
+function photoReferenceLike(photo: unknown) {
+  const record = objectValue(photo);
+  return asString(record.photo_reference || record.name || record.reference);
+}
+
+function photoAttributionTexts(photo: unknown) {
+  const record = objectValue(photo);
+  const html = record.html_attributions;
+  if (Array.isArray(html)) {
+    return html.map((item) => safeCopyText(item, 80)).filter(Boolean).slice(0, 2);
+  }
+  const authors = record.authorAttributions;
+  if (Array.isArray(authors)) {
+    return (authors as Array<Record<string, unknown>>)
+      .map((item) => safeCopyText(objectValue(item).displayName || objectValue(item).uri, 80))
+      .filter(Boolean)
+      .slice(0, 2);
+  }
+  return [];
+}
+
 function businessFactsForAiCopy(originData: unknown, siteJson: Record<string, unknown>, businessName: string) {
   const origin = objectValue(originData);
   const meta = objectValue(siteJson.meta);
@@ -752,6 +899,15 @@ function businessFactsForAiCopy(originData: unknown, siteJson: Record<string, un
       authorName: safeCopyText(review.authorName || review.author, 80),
     }))
     : [];
+
+  const currentHours = objectValue(firstDefined(origin.currentOpeningHours, origin.current_opening_hours));
+  const legacyHours = objectValue(firstDefined(origin.opening_hours, origin.openingHours));
+  const openNow = typeof currentHours.openNow === "boolean"
+    ? currentHours.openNow
+    : typeof legacyHours.open_now === "boolean"
+      ? legacyHours.open_now
+      : null;
+  const plusCodeRecord = objectValue(firstDefined(origin.plus_code, origin.plusCode));
 
   return {
     businessName,
@@ -770,6 +926,28 @@ function businessFactsForAiCopy(originData: unknown, siteJson: Record<string, un
     reviewCount: typeof trust.reviewCount === "number" ? trust.reviewCount : typeof origin.user_ratings_total === "number" ? origin.user_ratings_total : typeof origin.userRatingCount === "number" ? origin.userRatingCount : null,
     hours: Array.isArray(hours.regular) ? hours.regular.map((item) => safeCopyText(item, 120)).filter(Boolean).slice(0, 8) : [],
     reviews,
+    summaries: {
+      editorial: safeCopyText(deepBriefText(firstDefined(origin.editorialSummary, origin.editorial_summary)), 300),
+      generative: safeCopyText(deepBriefText(firstDefined(origin.generativeSummary, origin.generative_summary)), 300),
+      review: safeCopyText(deepBriefText(firstDefined(origin.reviewSummary, origin.review_summary)) || asString(trust.reviewSummary), 300),
+      neighborhood: safeCopyText(deepBriefText(firstDefined(origin.neighborhoodSummary, origin.neighborhood_summary)), 200),
+    },
+    amenities: enabledAmenityLabels(origin),
+    price: {
+      level: priceLevelLabel(firstDefined(origin.priceLevel, origin.price_level)),
+      range: priceRangeLabel(firstDefined(origin.priceRange, origin.price_range)),
+    },
+    hoursDetail: {
+      timezone: safeCopyText(firstDefined(origin.timeZone, origin.timezone, origin.time_zone), 80) || utcOffsetLabel(firstDefined(origin.utcOffsetMinutes, origin.utc_offset_minutes)),
+      openNow,
+      secondary: secondaryHoursLines(firstDefined(origin.regularSecondaryOpeningHours, origin.regular_secondary_opening_hours, origin.currentSecondaryOpeningHours, origin.current_secondary_opening_hours)),
+      current: safeCopyArray(firstDefined(currentHours.weekdayDescriptions, currentHours.weekday_descriptions), 7, 120),
+    },
+    photos: (Array.isArray(origin.photos) ? (origin.photos as unknown[]) : []).slice(0, 4).map((photo) => ({
+      reference: safeCopyText(photoReferenceLike(photo), 160),
+      attributions: photoAttributionTexts(photo),
+    })).filter((photo) => photo.reference),
+    plusCode: safeCopyText(firstDefined(plusCodeRecord.global_code, plusCodeRecord.globalCode), 40),
   };
 }
 
@@ -839,6 +1017,58 @@ function premiumConversionBriefForAi(siteJson: Record<string, unknown>) {
   };
 }
 
+function sectionHasRenderImage(section: Record<string, unknown>) {
+  const content = objectValue(section.content);
+  const image = content.image;
+  const images = content.images;
+  return (typeof image === "string" && image.trim() !== "")
+    || (Array.isArray(images) && images.length > 0);
+}
+
+// Read-only map of the real rendered structure for copy grounding (PRD.md B2).
+// Deliberately structural only: page/section ids and titles, layout and style
+// mood names, CTA slot texts, and per-section image presence. No hrefs, image
+// or maps URLs, sourceData, palette hexes, fonts, CSS, or storage — the AI can
+// reference what exists but cannot invent or change structure, and
+// applyAiCopyPatch only accepts copy text for listed targets anyway.
+function buildRenderContextForAi(siteJson: Record<string, unknown>) {
+  const pages = (Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : []).slice(0, 12);
+  const sectionsOf = (page: Record<string, unknown>) =>
+    (Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : []).slice(0, 12);
+  const allTypes = new Set(pages.flatMap((page) => sectionsOf(page).map((section) => asString(section.type))));
+  const conversion = objectValue(siteJson.conversion);
+  const design = objectValue(siteJson.design);
+  const primaryCta = objectValue(conversion.primaryCta);
+  const secondaryCta = objectValue(conversion.secondaryCta);
+  return {
+    note: "Read-only map of the real page structure. Reference these page titles, section kinds, gallery/FAQ/contact presence, and CTA slots in copy. Do not invent, rename, reorder, or remove pages, sections, hrefs, images, or CTAs.",
+    styleMood: {
+      stylePreset: safeCopyText(design.stylePreset, 80),
+      visualStyle: safeCopyText(design.visualStyle || design.shapeStyle, 80),
+      heroLayout: safeCopyText(design.heroLayout, 80),
+      ctaTreatment: safeCopyText(design.ctaTreatment, 80),
+    },
+    primaryCta: safeCopyText(primaryCta.text || conversion.primaryAction, 80),
+    secondaryCta: safeCopyText(secondaryCta.text, 80),
+    presence: {
+      gallery: allTypes.has("imageGallery"),
+      faq: allTypes.has("faq"),
+      reviews: allTypes.has("reviews"),
+      contactForm: allTypes.has("contactForm"),
+      offers: allTypes.has("offers"),
+    },
+    pages: pages.map((page) => ({
+      pageId: asString(page.pageId),
+      pageTitle: safeCopyText(page.pageTitle, 80),
+      sections: sectionsOf(page).map((section) => ({
+        id: asString(section.id),
+        type: asString(section.type),
+        hasImage: sectionHasRenderImage(section),
+      })),
+    })),
+  };
+}
+
 export function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, originData: unknown, businessName: string, options: { focus?: string; offeringIndex?: number; offeringBatchSize?: number } = {}) {
   const pages = Array.isArray(siteJson.pages) ? siteJson.pages as Array<Record<string, unknown>> : [];
   const offers = Array.isArray(siteJson.offers) ? siteJson.offers as Array<Record<string, unknown>> : [];
@@ -879,6 +1109,7 @@ export function buildAiCopyTargetBrief(siteJson: Record<string, unknown>, origin
   return {
     facts: businessFactsForAiCopy(originData, siteJson, businessName),
     premiumConversionBrief: premiumConversionBriefForAi(siteJson),
+    renderContext: buildRenderContextForAi(siteJson),
     focus,
     metaCopyTargets: {
       seoTitle: safeCopyText(objectValue(siteJson.meta).seoTitle, 160),
@@ -1360,7 +1591,7 @@ export async function generateAiCopyPatch(
     `${JSON.stringify(copyPatchSchema)}\n\n` +
     `This request focus is "${copyPatchFocus}". ` +
     offeringFocusInstruction +
-    "Critical rules: you are not given full website JSON, page IDs, navigation hrefs, image URLs, maps URLs, sourceData, palette, font, visual style, favicon, CSS, or storage fields. Do not mention or create them. " +
+    "Critical rules: copyTargetBrief.renderContext is a read-only map of the real page structure: page and section ids with titles, layout and style mood, CTA slots, and which sections already show images. Ground references in it: point readers at the actual gallery, FAQ, contact page, and primary action by their real titles, and only promise visuals the hasImage flags confirm. You are still not given full website JSON, navigation hrefs, image URLs, maps URLs, sourceData, palette hexes, fonts, favicon, CSS, or storage fields. Do not invent, rename, reorder, or change any page, section, href, image, CTA, or style value: the merge layer accepts only copy text for listed targets and discards everything else. " +
     "Use verified facts from the provided copy target brief for business identity, address, phone, rating, reviews, hours, status, and location. You may also use conservative industry knowledge to explain common customer problems and service outcomes for the business category, as long as you do not invent certifications, years in business, warranties, brand partnerships, equipment, staff size, exact prices, or completed projects. If a fact is missing, write honest copy like 'contact for availability' instead of inventing. " +
     "Use copyTargetBrief.premiumConversionBrief as the conversion strategy. Keep the page aligned to its pagePattern, primaryAction, primaryActionReason, proofBadges, and sourceSafeProofInputs. The hero, primary CTA text, service/detail pages, FAQ, and final conversion copy should all support that same primary action. " +
     "High-ticket page requirements: write a specific hero, add source-backed proof early, explain concrete benefits and included details, answer objections near conversion points, and make the bottom CTA feel low-risk. Keep the structure scannable: 3-6 benefits, 3-5 process/next-step details, 5-8 FAQs on general pages, and 3-5 FAQs on detail pages. " +

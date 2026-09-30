@@ -4,6 +4,7 @@ import {
   applyAiCopyPatch,
   applyAiOfferingOutline,
   buildAiCopyAudit,
+  buildAiCopyTargetBrief,
   collectAiCopyAuditTargets,
 } from "../functions/api/ai/siteGeneration";
 
@@ -144,4 +145,94 @@ test("applyAiCopyPatch updates editable copy and buildAiCopyAudit classifies rew
   assert.equal((site.meta as any).seoTitle, "Driveway Crack Repair in Dallas");
   assert.equal((site.businessProfile as any).shortPitch, "We help Dallas property owners repair concrete cracks with practical scheduling and clear communication.");
   assert.equal((site.services as any[])[0].summary, "We repair visible driveway cracks with a practical plan for safer daily use.");
+});
+
+function richOriginFixture() {
+  return {
+    editorialSummary: { overview: "Family-run shop pouring driveways across Dallas County." },
+    generativeSummary: { overview: "Known for quick scheduling and tidy job sites." },
+    reviewSummary: { text: { text: "Reviewers praise punctual arrivals." } },
+    neighborhoodSummary: "Oak Lawn",
+    priceLevel: "PRICE_LEVEL_MODERATE",
+    priceRange: { startPrice: { units: "25", currencyCode: "USD" }, endPrice: { units: "400", currencyCode: "USD" } },
+    servesCoffee: true,
+    serves_breakfast: true,
+    outdoorSeating: true,
+    paymentOptions: ["Credit cards", "Cash"],
+    parkingOptions: { freeParkingLot: true, paidParkingLot: false },
+    timeZone: "America/Chicago",
+    currentOpeningHours: { openNow: true, weekdayDescriptions: ["Monday: 8:00 AM - 5:00 PM"] },
+    regularSecondaryOpeningHours: [{ type: "Drive-through", weekdayDescriptions: ["Saturday: 9:00 AM - 1:00 PM"] }],
+    photos: [
+      { photo_reference: "ref-1", html_attributions: ["<a href='x'>Google User</a>"] },
+      { name: "ref-2" },
+      { reference: "ref-3" },
+      { photo_reference: "ref-4" },
+    ],
+    plus_code: { global_code: "8655V2 Dallas" },
+  } as Record<string, unknown>;
+}
+
+test("buildAiCopyTargetBrief grounds facts in rich Places data across casings (B1)", () => {
+  const brief = buildAiCopyTargetBrief(baseSite(), richOriginFixture(), "Metro Concrete Repair");
+  const facts = brief.facts as any;
+  const surfaced = [
+    facts.summaries.editorial.includes("Family-run"),
+    facts.summaries.generative.includes("tidy job sites"),
+    facts.summaries.review.includes("punctual"),
+    facts.summaries.neighborhood === "Oak Lawn",
+    facts.price.level === "Moderate",
+    facts.price.range.includes("25") && facts.price.range.includes("400"),
+    facts.amenities.includes("Coffee") && facts.amenities.includes("Breakfast") && facts.amenities.includes("Outdoor seating"),
+    facts.amenities.some((item: string) => item.includes("Credit cards")),
+    facts.amenities.some((item: string) => item.includes("Free parking lot")),
+    facts.hoursDetail.timezone === "America/Chicago",
+    facts.hoursDetail.openNow === true,
+    facts.hoursDetail.secondary.some((item: string) => item.includes("Drive-through")),
+    facts.hoursDetail.current.some((item: string) => item.includes("Monday")),
+    facts.photos.length === 4 && facts.photos[0].reference === "ref-1" && facts.photos[0].attributions[0] === "Google User",
+    facts.plusCode.includes("8655V2"),
+    !facts.amenities.includes("Takeout"),
+  ];
+  const hitCount = surfaced.filter(Boolean).length;
+  assert.ok(hitCount >= Math.ceil(surfaced.length * 0.8), `B1 grounding surfaced ${hitCount}/${surfaced.length} rich fields`);
+});
+
+test("buildAiCopyTargetBrief exposes a structural-only render context (B2)", () => {
+  const site = baseSite();
+  ((site.pages as any[])[0].sections[0].content as any).image = "hero.jpg";
+  const brief = buildAiCopyTargetBrief(site, {}, "Metro Concrete Repair");
+  const renderContext = brief.renderContext as any;
+  assert.equal(renderContext.pages[0].pageId, "home");
+  assert.deepEqual(
+    renderContext.pages[0].sections.map((section: any) => `${section.type}:${section.hasImage ? "img" : "noimg"}`),
+    ["hero:img", "offers:noimg"],
+  );
+  assert.equal(renderContext.presence.offers, true);
+  assert.equal(renderContext.presence.gallery, false);
+  const keys = new Set<string>();
+  const walk = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(walk);
+    if (!value || typeof value !== "object") return;
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      keys.add(key);
+      walk(child);
+    }
+  };
+  walk(renderContext);
+  for (const forbidden of ["href", "image", "images", "imageUrl", "mapsUrl", "sourceData", "palette", "font", "css", "storage", "url", "reference"]) {
+    assert.ok(!keys.has(forbidden), `renderContext must not leak ${forbidden}`);
+  }
+});
+
+test("applyAiCopyPatch ignores structural echoes from render context (B2 enforcement)", () => {
+  const site = baseSite();
+  const beforeIds = (site.pages as any[]).map((page) => page.pageId);
+  applyAiCopyPatch(site, {
+    hero: { headline: "Patched headline" },
+    renderContext: { pages: [{ pageId: "evil", sections: [] }] },
+    sections: { "non-existent": { title: "Nowhere" } },
+  } as Record<string, unknown>);
+  assert.deepEqual((site.pages as any[]).map((page) => page.pageId), beforeIds);
+  assert.equal((((site.pages as any[])[0].sections as any[])[0].content as any).headline, "Patched headline");
 });
