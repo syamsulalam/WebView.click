@@ -663,6 +663,12 @@ function mediaStrategyFor(finalJson: GeneratedSiteRecord, originData: GeneratedS
 }
 
 function patternLayoutDefaults(pattern: string): Omit<DesignIntent, "mediaStrategy"> {
+  // Note (A1): antiPatterns below are advisory prompt/AI context, not render
+  // input. The mechanically checkable ones are enforced by conversion-audit
+  // flags (multiple primary CTAs → competing_primary_ctas, generic CTA →
+  // generic_primary_cta plus rewrite, missing proof → missing_proof_above_fold,
+  // image-free hero → weak_image_hero / weak_media_strategy). Style-level ones
+  // are enforced by the preset/visual CSS choice, verifiable in /demo.
   const defaults: Record<string, Omit<DesignIntent, "mediaStrategy">> = {
     "emergency-service": {
       compositionPattern: "emergency-phone",

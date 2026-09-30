@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { getShaderPreset, normalizeShaderPreset, normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
+import { detailLayoutGroup, motionLevelClass, sectionRhythmPadClass } from "../lib/siteIntentMaps";
 import { fontPairingsForText, getFontPairing, googleFontImportUrl } from "../lib/fontPairings";
 import { applyGeneratedSitePageInserts } from "../lib/generatedSitePostProcess";
 import { buildPaletteRoleOptions, normalizePaletteRoles } from "../lib/colorPaletteRoles";
@@ -977,6 +978,9 @@ export default function SiteRenderer({
   const ctaTreatment = String(intent.ctaTreatment || "solid-contrast");
   const sectionRhythm = String(intent.sectionRhythm || "balanced-local");
   const detailLayout = String(intent.detailLayout || "scope-detail");
+  const rhythmPad = sectionRhythmPadClass(sectionRhythm);
+  const detailGroup = detailLayoutGroup(detailLayout);
+  const motionClass = motionLevelClass(String(intent.motionLevel || "standard"));
   const homePageId = pages[0]?.pageId || "home";
   const isIndonesian = meta.language === "id";
   const labels = {
@@ -1267,6 +1271,8 @@ export default function SiteRenderer({
   const googleReviewHref = sourcePlaceId
     ? `https://search.google.com/local/writereview?placeid=${encodeURIComponent(sourcePlaceId)}`
     : String(sourceData.googleMapsUri || businessProfile.contact?.directionsUrl || location.directionsUrl || "").trim();
+  const directionsHref = String(businessProfile.contact?.directionsUrl || location.directionsUrl || sourceData.googleMapsUri || "").trim();
+  const heroAddress = String(location.formattedAddress || "").trim();
 
   const customStyles = {
     "--color-primary": colors.primary,
@@ -1514,7 +1520,7 @@ export default function SiteRenderer({
         data-wv-section-rhythm={sectionRhythm}
         data-wv-detail-layout={detailLayout}
         style={siteCanvasStyles}
-        className={`min-h-screen flex flex-col ${presetClass} ${visualClass} ${shaderClass} ${compositionClass}`}
+        className={`min-h-screen flex flex-col ${presetClass} ${visualClass} ${shaderClass} ${compositionClass} ${motionClass}`}
       >
       <div data-wv-site-shader="true" aria-hidden="true" />
       <header
@@ -1649,11 +1655,13 @@ export default function SiteRenderer({
                         : isConsultationHero
                           ? "relative overflow-hidden px-6 py-16 md:py-24 bg-slate-50"
                           : "relative overflow-hidden px-6 py-16 md:py-24 bg-white";
-                const heroGridClass = isAuthorityHero || isConsultationHero
+                const heroGridBase = isAuthorityHero || isConsultationHero
                   ? "relative z-10 max-w-6xl mx-auto grid md:grid-cols-[0.9fr_1.1fr] gap-10 items-center"
                   : isEmergencyHero
                     ? "relative z-10 max-w-6xl mx-auto grid md:grid-cols-[1.2fr_0.8fr] gap-8 items-center"
                     : "relative z-10 max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center";
+                const showHeroMedia = mediaStrategy !== "minimal-no-photo";
+                const heroGridClass = showHeroMedia ? heroGridBase : "relative z-10 max-w-4xl mx-auto";
                 const heroPanelClass = isEmergencyHero
                   ? "rounded-xl border border-white/10 bg-white/10 p-6 shadow-xl shadow-black/20 backdrop-blur md:p-8"
                   : isAuthorityHero
@@ -1692,6 +1700,44 @@ export default function SiteRenderer({
                     : isGalleryHero || mediaStrategy === "gallery-grid"
                       ? "h-[360px] md:h-[540px] rounded-xl overflow-hidden border border-stone-200 shadow-xl bg-stone-100"
                       : "h-[360px] md:h-[520px] rounded-2xl overflow-hidden border border-slate-200 shadow-xl bg-slate-100";
+                const heroLogoMark = brand.logoSvg
+                  ? <span className="h-24 w-24 shrink-0 [&>svg]:h-full [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} />
+                  : isUsableImage(brand.logoImageUrl)
+                    ? <img src={brand.logoImageUrl} alt={meta.businessName} data-wv-image-role="logo" className="h-24 w-24 rounded-full object-cover" />
+                    : <span className="flex h-24 w-24 items-center justify-center rounded-full text-4xl font-bold" style={{ backgroundColor: colors.primary, color: colors.onPrimary }}>{String(meta.businessName || "?").trim().slice(0, 1).toUpperCase()}</span>;
+                const heroMediaPanel = mediaStrategy === "logo-proof" ? (
+                  <div className={heroMediaClass}>
+                    <div className="flex h-full flex-col items-center justify-center gap-3 bg-white/60 p-8 text-center">
+                      {heroLogoMark}
+                      <p className="text-lg font-bold text-slate-950">{editableText(`${section.id}.brandName`, meta.businessName, "span")}</p>
+                      {businessProfile.typeLabel && <p className="text-sm text-slate-600">{editableText(`${section.id}.brandType`, businessProfile.typeLabel, "span")}</p>}
+                    </div>
+                  </div>
+                ) : mediaStrategy === "map-contact" ? (
+                  <div className={heroMediaClass}>
+                    <div className="flex h-full flex-col justify-center gap-4 bg-white/70 p-8">
+                      <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: colors.accentText }}>{isIndonesian ? "Lokasi" : "Location"}</p>
+                      {heroAddress && <p className="text-xl font-bold text-slate-950">{editableText(`${section.id}.mapAddress`, heroAddress, "span")}</p>}
+                      {directionsHref && <a href={directionsHref} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold" style={{ backgroundColor: colors.primary, color: colors.onPrimary }}>{isIndonesian ? "Buka Google Maps" : "Open Google Maps"}</a>}
+                      {displayPhone && <a href={phoneHref(primaryPhone || displayPhone)} className="text-sm font-semibold hover:underline" style={{ color: colors.accentText }}>{displayPhone}</a>}
+                    </div>
+                  </div>
+                ) : mediaStrategy === "icon-card" ? (
+                  <div className={heroMediaClass}>
+                    <div className="grid h-full grid-cols-2 content-center gap-3 bg-white/60 p-8">
+                      {capabilities.filter((cap: any) => cap && (cap.label || cap.title)).slice(0, 4).map((cap: any, i: number) => (
+                        <div key={i} className="rounded-xl border border-slate-200 bg-white p-4 text-center">
+                          <span className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.capsuleBg, color: colors.icon }}>{editableSiteIcon(`${page.pageId}.${section.id}.cap.${i}`, "check", 18)}</span>
+                          <p className="text-sm font-semibold text-slate-950">{editableText(`${section.id}.cap.${i}`, cap.label || cap.title, "span")}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className={heroMediaClass}>
+                    {editableImage(imageEditKey(page.pageId, section.id, "hero"), heroImage, heroContent.image || meta.businessName, brandPhotoAttribution(heroImage), "hero")}
+                  </div>
+                );
                 return (
                   <section
                     key={section.id}
@@ -1715,8 +1761,8 @@ export default function SiteRenderer({
                         />
                       </>
                     )}
-                    <div className={heroGridClass}>
-                      <div className={heroPanelClass}>
+                      <div className={heroGridClass}>
+                        <div className={heroPanelClass}>
                         <p className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: isEmergencyHero ? colors.onPrimary : colors.accentText }}>
                           {editableText(`${section.id}.eyebrow`, businessProfile.typeLabel, "span")}
                         </p>
@@ -1772,9 +1818,7 @@ export default function SiteRenderer({
                           </div>
                         )}
                       </div>
-                      <div className={heroMediaClass}>
-                        {editableImage(imageEditKey(page.pageId, section.id, "hero"), heroImage, heroContent.image || meta.businessName, brandPhotoAttribution(heroImage), "hero")}
-                      </div>
+                      {showHeroMedia && heroMediaPanel}
                     </div>
                   </section>
                 );
@@ -1826,7 +1870,7 @@ export default function SiteRenderer({
                 const items = section.content?.items || capabilities.filter((item: any) => item.enabled !== false).map((item: any) => ({ title: item.label, description: item.description || labels.capabilityFallback }));
                 const usedFeatureIcons = new Set<string>();
                 return (
-                  <section key={section.id} className="py-20 px-6 bg-black/5">
+                  <section key={section.id} className={`${rhythmPad} bg-black/5`}>
                     <div className="max-w-6xl mx-auto">
                       {editableText(`${section.id}.title`, section.content?.title || labels.featuresFallback, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid md:grid-cols-3 gap-8">
@@ -1858,7 +1902,7 @@ export default function SiteRenderer({
                 const offerImageClass = cardDensity === "compact" ? "h-32" : cardDensity === "editorial" ? "h-52" : cardDensity === "image-led" ? "h-60" : "h-44";
                 const offerBodyClass = cardDensity === "compact" ? "p-4 text-center" : cardDensity === "image-led" ? "p-6 text-left" : "p-6 text-center";
                 return (
-                  <section key={section.id} className="py-20 px-6 bg-white">
+                  <section key={section.id} className={`${rhythmPad} bg-white`}>
                     <div className="max-w-6xl mx-auto">
                       <div className="max-w-2xl mb-10">
                         <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.eyebrow`, labels.offersEyebrow, "span")}</p>
@@ -1947,8 +1991,104 @@ export default function SiteRenderer({
                 const included = Array.isArray(detail.included) ? detail.included : [];
                 const bestFor = Array.isArray(detail.bestFor) ? detail.bestFor : [];
                 const detailTitle = formatOfferHeading(detail.title);
+                const detailContactHref = primaryPhone ? phoneHref(primaryPhone) : displayPhone ? phoneHref(displayPhone) : contactActionHref;
+                const detailContactLabel = primaryPhone || displayPhone ? (isIndonesian ? "Hubungi Sekarang" : "Call Now") : conversion.primaryCta?.text || (isIndonesian ? "Hubungi" : "Contact Us");
+                const detailAside = (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm lg:sticky lg:top-24">
+                    <div className="h-48 overflow-hidden rounded-xl bg-slate-200">
+                      {editableImage(imageEditKey(page.pageId, section.id, "detail"), detail.image || brand.preferredHeroImage, detail.title, brandPhotoAttribution(detail.image || brand.preferredHeroImage), `detail-${detail.title || section.id}`)}
+                    </div>
+                    {detail.priceHint && editableText(`${section.id}.price`, detail.priceHint, "p", "mt-5 text-lg font-bold", { color: colors.accentText })}
+                    {trust.rating > 0 && <p className="mt-3 text-sm font-semibold text-slate-700">{trust.rating.toFixed(1)} {isIndonesian ? "dari" : "from"} {trust.reviewCount || labels.manyReviews} {labels.reviews}</p>}
+                    {included.length > 0 && (
+                      <div className="mt-5">
+                        <p className="font-semibold text-slate-950">{isIndonesian ? "Yang termasuk" : "What's included"}</p>
+                        <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                          {included.map((item: string, i: number) => <li key={item} className="flex gap-2"><span className="mt-0.5 shrink-0" style={{ color: colors.icon }}>{editableSiteIcon(`${page.pageId}.${section.id}.included.${i}`, "check", 16)}</span>{editableText(`${section.id}.included.${i}`, item, "span")}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {bestFor.length > 0 && (
+                      <div className="mt-5">
+                        <p className="font-semibold text-slate-950">{isIndonesian ? "Cocok untuk" : "Best for"}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {bestFor.map((item: string, i: number) => <span key={item} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">{editableText(`${section.id}.bestFor.${i}`, item, "span")}</span>)}
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-6 grid gap-2">
+                      {detailContactHref && <a href={detailContactHref} className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-bold" style={{ backgroundColor: colors.accent, color: colors.onAccent }}>{detailContactLabel}</a>}
+                      {directionsHref && <a href={directionsHref} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 text-sm font-bold text-slate-800">{isIndonesian ? "Rute" : "Directions"}</a>}
+                    </div>
+                  </div>
+                );
+                if (detailGroup === "rail") {
+                  return (
+                    <section key={section.id} className={`${rhythmPad} bg-white`}>
+                      <div className="max-w-6xl mx-auto grid gap-10 lg:grid-cols-[1fr_360px]">
+                        <div>
+                          <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
+                          {editableText(`${section.id}.title`, detailTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
+                          {editableText(`${section.id}.summary`, detail.summary || detail.description, "p", "mt-4 text-lg text-slate-600", undefined, true)}
+                          {highlights.length > 0 && (
+                            <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                              {highlights.map((item: any, i: number) => (
+                                <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                  {editableText(`${section.id}.highlight.${i}.title`, item.title || item, "p", "font-semibold text-slate-950")}
+                                  {item.description && editableText(`${section.id}.highlight.${i}.description`, item.description, "p", "mt-1 text-sm text-slate-600", undefined, true)}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <aside>{detailAside}</aside>
+                      </div>
+                    </section>
+                  );
+                }
+                if (detailGroup === "editorial") {
+                  return (
+                    <section key={section.id} className={`${rhythmPad} bg-white`}>
+                      <div className="max-w-4xl mx-auto">
+                        <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
+                        {editableText(`${section.id}.title`, detailTitle, "h2", "text-4xl md:text-5xl font-bold text-slate-950")}
+                        {editableText(`${section.id}.summary`, detail.summary || detail.description, "p", "mt-5 text-xl text-slate-600", undefined, true)}
+                        <div className="mt-8 h-72 overflow-hidden rounded-2xl bg-slate-200">
+                          {editableImage(imageEditKey(page.pageId, section.id, "detail"), detail.image || brand.preferredHeroImage, detail.title, brandPhotoAttribution(detail.image || brand.preferredHeroImage), `detail-${detail.title || section.id}`)}
+                        </div>
+                        {detail.priceHint && editableText(`${section.id}.price`, detail.priceHint, "p", "mt-6 text-xl font-bold", { color: colors.accentText })}
+                        {highlights.length > 0 && (
+                          <div className="mt-8 grid gap-3">
+                            {highlights.map((item: any, i: number) => (
+                              <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+                                {editableText(`${section.id}.highlight.${i}.title`, item.title || item, "p", "text-lg font-semibold text-slate-950")}
+                                {item.description && editableText(`${section.id}.highlight.${i}.description`, item.description, "p", "mt-1 text-slate-600", undefined, true)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {included.length > 0 && (
+                          <div className="mt-8">
+                            <p className="text-lg font-semibold text-slate-950">{isIndonesian ? "Yang termasuk" : "What's included"}</p>
+                            <ul className="mt-3 space-y-2 text-slate-700">
+                              {included.map((item: string, i: number) => <li key={item} className="flex gap-2"><span className="mt-0.5 shrink-0" style={{ color: colors.icon }}>{editableSiteIcon(`${page.pageId}.${section.id}.included.${i}`, "check", 16)}</span>{editableText(`${section.id}.included.${i}`, item, "span")}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {bestFor.length > 0 && (
+                          <div className="mt-8">
+                            <p className="text-lg font-semibold text-slate-950">{isIndonesian ? "Cocok untuk" : "Best for"}</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {bestFor.map((item: string, i: number) => <span key={item} className="rounded-full bg-slate-100 px-4 py-1.5 text-sm font-semibold text-slate-700">{editableText(`${section.id}.bestFor.${i}`, item, "span")}</span>)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  );
+                }
                 return (
-                  <section key={section.id} className="py-20 px-6 bg-white">
+                  <section key={section.id} className={`${rhythmPad} bg-white`}>
                     <div className="max-w-6xl mx-auto grid gap-10 lg:grid-cols-[1.05fr_0.95fr]">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
@@ -1996,7 +2136,7 @@ export default function SiteRenderer({
                 const reviewsSource = section.content?.reviews || trust.reviews;
                 const reviews = Array.isArray(reviewsSource) ? reviewsSource : [];
                 return (
-                  <section key={section.id} className="py-20 px-6 bg-slate-50">
+                  <section key={section.id} className={`${rhythmPad} bg-slate-50`}>
                     <div className="max-w-6xl mx-auto">
                       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
                         <div>
@@ -2033,7 +2173,7 @@ export default function SiteRenderer({
                 const todayHours = hoursGroups.find((group) => group.days.some((day) => day.toLowerCase().startsWith(todayLabel.toLowerCase().slice(0, 3)))) || hoursGroups[0];
                 const hoursTitle = section.content?.hoursTitle || section.content?.openingHoursTitle || labels.hoursTitle;
                 return (
-                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className="py-20 px-6 bg-white">
+                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className={`${rhythmPad} bg-white`}>
                     <div data-wv-hours-location-grid="true" className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
                         <div data-wv-hours-location-heading="true" className="mb-5 flex items-center gap-3 text-2xl">
@@ -2091,7 +2231,7 @@ export default function SiteRenderer({
               if (section.type === "faq") {
                 const items = section.content?.items || [];
                 return (
-                  <section key={section.id} className="py-20 px-6 bg-slate-50">
+                  <section key={section.id} className={`${rhythmPad} bg-slate-50`}>
                     <div className="max-w-4xl mx-auto">
                       {editableText(`${section.id}.title`, section.content?.title || "Pertanyaan Umum", "h2", "text-3xl md:text-4xl font-bold text-slate-950 mb-8")}
                       <div className="space-y-3">
@@ -2205,7 +2345,7 @@ export default function SiteRenderer({
 
               if (section.type === "textImageBlock") {
                 return (
-                  <section key={section.id} className="py-20 px-6">
+                  <section key={section.id} className={rhythmPad}>
                     <div className={`max-w-6xl mx-auto flex flex-col md:flex-row gap-12 items-center ${section.content.layout === "imageRight" ? "md:flex-row-reverse" : ""}`}>
                       <div className="flex-1">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold mb-6")}
@@ -2221,7 +2361,7 @@ export default function SiteRenderer({
 
               if (section.type === "teamGrid") {
                 return (
-                  <section key={section.id} className="py-20 px-6 bg-black/5">
+                  <section key={section.id} className={`${rhythmPad} bg-black/5`}>
                     <div className="max-w-6xl mx-auto">
                       {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -2242,7 +2382,7 @@ export default function SiteRenderer({
 
               if (section.type === "gridCards") {
                 return (
-                  <section key={section.id} className="py-20 px-6">
+                  <section key={section.id} className={rhythmPad}>
                     <div className="max-w-6xl mx-auto">
                       <div className="text-center mb-12">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold mb-4")}
@@ -2269,7 +2409,7 @@ export default function SiteRenderer({
 
               if (section.type === "imageGallery") {
                 return (
-                  <section key={section.id} className="py-20 px-6 bg-black/5">
+                  <section key={section.id} className={`${rhythmPad} bg-black/5`}>
                     <div className="max-w-6xl mx-auto">
                       {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -2296,7 +2436,7 @@ export default function SiteRenderer({
                     data-wv-section={sectionId(section, "feedback")}
                     data-wv-feedback="true"
                     data-wv-review-url={googleReviewHref}
-                    className="py-20 px-6 bg-slate-50"
+                    className={`${rhythmPad} bg-slate-50`}
                   >
                     <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
                       {editableText(`${section.id}.title`, section.content?.title || labels.feedbackTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
@@ -2374,7 +2514,7 @@ export default function SiteRenderer({
                   { label: isIndonesian ? "Pesan" : "Message", type: "textarea", required: true },
                 ];
                 return (
-                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className="py-20 px-6">
+                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className={rhythmPad}>
                     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row border border-gray-100">
                       <div style={{ backgroundColor: colors.primary, color: colors.onPrimary }} className="p-10 md:w-2/5">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-2xl font-bold mb-6")}

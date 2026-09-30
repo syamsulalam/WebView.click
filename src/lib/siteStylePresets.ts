@@ -857,6 +857,62 @@ export const siteStylePresetCss = `
     }
   }
 
+  /* Composition patterns (A1): page-level rhythm systems keyed by conversion
+     pattern. quote-service is the baseline and needs no overrides. */
+  [data-wv-site-canvas].wv-composition-emergency-phone main section + section {
+    border-top: 2px solid var(--color-accent);
+  }
+
+  [data-wv-site-canvas].wv-composition-trust-authority main section + section {
+    border-top: 1px solid var(--wv-subtle-border);
+  }
+
+  [data-wv-site-canvas].wv-composition-consultation-premium main section > div[class*="max-w-"] {
+    max-width: 56rem;
+  }
+
+  @supports (color: color-mix(in oklab, white, black)) {
+    [data-wv-site-canvas].wv-composition-menu-visit main section:nth-of-type(even):not([data-wv-hero-section]),
+    [data-wv-site-canvas].wv-composition-booking-service main section:nth-of-type(even):not([data-wv-hero-section]),
+    [data-wv-site-canvas].wv-composition-gallery-craft main section:nth-of-type(even):not([data-wv-hero-section]) {
+      background-color: color-mix(in oklab, var(--color-accent) 6%, white);
+    }
+  }
+
+  /* Motion levels (A1): standard is the current behavior. subtle keeps card
+     lift and image zoom but drops scroll-rise, button lifts, and shader drift.
+     none additionally drops all lifts, zooms, and shader animation. */
+  [data-wv-site-canvas].wv-motion-none main section > *,
+  [data-wv-site-canvas].wv-motion-subtle main section > * {
+    animation: none;
+  }
+
+  [data-wv-site-canvas].wv-motion-none [data-wv-site-shader]::before,
+  [data-wv-site-canvas].wv-motion-none [data-wv-site-shader]::after,
+  [data-wv-site-canvas].wv-motion-subtle [data-wv-site-shader]::before,
+  [data-wv-site-canvas].wv-motion-subtle [data-wv-site-shader]::after {
+    animation: none;
+  }
+
+  [data-wv-site-canvas].wv-motion-none :where(.rounded-xl, .rounded-2xl, .rounded-3xl).border:hover,
+  [data-wv-site-canvas].wv-motion-none :where(.rounded-xl, .rounded-2xl, .rounded-3xl).shadow-sm:hover,
+  [data-wv-site-canvas].wv-motion-none :where(.rounded-xl, .rounded-2xl, .rounded-3xl).shadow-md:hover,
+  [data-wv-site-canvas].wv-motion-none :where(.rounded-xl, .rounded-2xl, .rounded-3xl).shadow-xl:hover {
+    transform: none;
+  }
+
+  [data-wv-site-canvas].wv-motion-none a[class*="rounded"]:hover,
+  [data-wv-site-canvas].wv-motion-none button[class*="rounded"]:hover,
+  [data-wv-site-canvas].wv-motion-subtle a[class*="rounded"]:hover,
+  [data-wv-site-canvas].wv-motion-subtle button[class*="rounded"]:hover {
+    transform: none;
+  }
+
+  [data-wv-site-canvas].wv-motion-none [data-wv-image-role]:hover {
+    transform: none;
+    filter: none;
+  }
+
   .wv-preset-local-clean,
   .wv-preset-pool-aqua,
   .wv-preset-dental-clean,
