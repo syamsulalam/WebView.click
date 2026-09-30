@@ -595,3 +595,25 @@ test("specificity check reads markup body fields for legacy sections (B4)", () =
   const audit = conversion.conversionAudit as any;
   assert.ok(!audit.copySpecificity.genericPaths.includes("about:about-story"), "markup body prose with anchors must pass");
 });
+
+test("explicit admin preset survives the pattern default upgrade (A3)", () => {
+  const base = {
+    meta: { businessName: "Metro Concrete Repair", language: "en" },
+    businessProfile: { name: "Metro Concrete Repair", contact: {}, address: { city: "Dallas" } },
+    trust: { rating: 4.8, reviewCount: 120, reviews: [] },
+    location: {},
+    conversion: { primaryCta: { text: "Request an Estimate" }, secondaryCta: { text: "Explore Services" } },
+    global: { header: { ctaButton: { text: "Request an Estimate" } }, footer: {} },
+    services: [],
+    products: [],
+    offers: [],
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    pages: [{ pageId: "home", pageTitle: "Home", sections: [] }],
+  } as Record<string, unknown>;
+  const explicit = { ...base, design: { stylePreset: "legal-authority", stylePresetExplicit: true } } as Record<string, unknown>;
+  ensureConversionMetadata(explicit, {});
+  assert.equal((explicit.design as any).stylePreset, "legal-authority");
+  const inferred = { ...base, design: {} } as Record<string, unknown>;
+  ensureConversionMetadata(inferred, {});
+  assert.ok((inferred.design as any).stylePreset && (inferred.design as any).stylePreset !== "legal-authority");
+});

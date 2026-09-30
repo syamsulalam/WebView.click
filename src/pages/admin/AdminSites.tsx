@@ -24,6 +24,7 @@ import AdminAiReadinessBadge from "../../components/AdminAiReadinessBadge";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import { useAdminToast } from "../../components/AdminToast";
 import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
+import StylePresetOverrideSelect, { STYLE_PRESET_OVERRIDE_KEY } from "../../components/StylePresetOverrideSelect";
 import AdminCollapsibleSectionHeader from "../../components/AdminCollapsibleSectionHeader";
 import { formatCooldownRemaining } from "../../lib/providerCooldown";
 
@@ -379,6 +380,7 @@ export default function AdminSites() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [regenerateProvider, setRegenerateProvider] = useLocalStorageState("webview.adminSites.regenerateProvider", "OpenRouter");
   const [regenerateModel, setRegenerateModel] = useLocalStorageState("webview.adminSites.regenerateModel", "~anthropic/claude-sonnet-latest");
+  const [stylePresetOverride, setStylePresetOverride] = useLocalStorageState(STYLE_PRESET_OVERRIDE_KEY, "");
   const [openSitesSection, setOpenSitesSection] = useLocalStorageState<"ready" | "generated" | "">("webview.adminSites.openSection", "generated");
   const [r2HealthScanOffset, setR2HealthScanOffset] = useLocalStorageState("webview.adminSites.r2HealthScanOffset", 0);
   const [lastR2HealthScanAt, setLastR2HealthScanAt] = useLocalStorageState("webview.adminSites.lastR2HealthScanAt", "");
@@ -975,6 +977,7 @@ export default function AdminSites() {
         businessName: prospect.name || originData.name || "Untitled Business",
         phone: prospectPhone({ ...prospect, ...originData }),
         imageUrl: selection.selectedImageUrl,
+        stylePresetOverride,
         palette: selection.brandPalette,
         paletteOptions: selection.paletteOptions,
         selectedPhotoReference: selection.selectedReference,
@@ -2608,6 +2611,7 @@ export default function AdminSites() {
                 <option key={model.model} value={model.model}>{model.label}</option>
               ))}
             </select>
+            <StylePresetOverrideSelect value={stylePresetOverride} onChange={setStylePresetOverride} id="sites-style-preset-override" />
             <AdminAiReadinessRefreshButton
               className="border-emerald-200 py-2"
               onRefresh={() => notifyAction(

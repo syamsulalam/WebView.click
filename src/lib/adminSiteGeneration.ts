@@ -129,6 +129,7 @@ export type GenerateSitePayloadInput = {
   businessName?: string;
   phone?: string;
   imageUrl?: string;
+  stylePresetOverride?: string;
   palette?: string[];
   paletteOptions?: any[];
   selectedPhotoReference?: string;
@@ -157,6 +158,7 @@ export function buildScaffoldGeneratePayload(input: GenerateSitePayloadInput) {
     businessId,
     imageUrl: input.imageUrl || "",
     photoPool,
+    stylePresetOverride: input.stylePresetOverride || "",
     palette,
     paletteOptions,
     selectedPhotoReference: input.selectedPhotoReference || "",
@@ -342,6 +344,7 @@ export function buildSelectedPhotoGeneratePayload(input: {
   businessId?: string;
   businessName?: string;
   phone?: string;
+  stylePresetOverride?: string;
   palette?: string[];
   paletteOptions?: any[];
   searchQuery?: string;
@@ -364,6 +367,7 @@ export function buildSelectedPhotoGeneratePayload(input: {
     businessName: input.businessName,
     phone: input.phone,
     imageUrl: selectedImageUrl,
+    stylePresetOverride: input.stylePresetOverride || "",
     palette: input.palette,
     paletteOptions: input.paletteOptions,
     selectedPhotoReference: selectedReference,

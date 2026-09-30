@@ -13,6 +13,7 @@ type UseSiteGenerationQueueParams = {
   activeProviderKey: string;
   activeModel: string;
   searchQuery: string;
+  stylePresetOverride: string;
   logoSelections: Record<string, any>;
   paletteOptionsByPlace: Record<string, any[]>;
   showToast: (toast: any) => void;
@@ -32,6 +33,7 @@ export default function useSiteGenerationQueue({
   activeProviderKey,
   activeModel,
   searchQuery,
+  stylePresetOverride,
   logoSelections,
   paletteOptionsByPlace,
   showToast,
@@ -94,6 +96,7 @@ export default function useSiteGenerationQueue({
         provider: activeProviderKey,
         model: activeModel,
         imageUrl: selection.selectedImageUrl,
+        stylePresetOverride,
         palette: selection.brandPalette,
         paletteOptions: selection.paletteOptions,
         selectedPhotoReference: selection.selectedReference,

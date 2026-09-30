@@ -165,9 +165,39 @@ export function getStylePreset(value = "local-clean") {
   return siteStylePresets.find((preset) => preset.id === normalizeStylePreset(value)) || siteStylePresets[0];
 }
 
-export function inferStylePresetFromText(value: string) {
-  const text = value.toLowerCase();
-  return siteStylePresets.find((preset) => preset.id !== "local-clean" && preset.keywords.test(text))?.id || "local-clean";
+export function inferStylePresetFromText(value: string, primaryType = "", types: string[] = []) {
+  // Scored match (A3): exact industry-token hits on the Google primaryType win
+  // over keyword scans, so a "plumber" primaryType beats a misleading business
+  // name; free-text keywords count distinct hits (capped) so "salon, spa,
+  // massage" resolves to salon-soft-luxe instead of tying with pool-aqua on
+  // "spa". Review prose folded into `value` by callers counts as signal.
+  const normalizedType = String(primaryType || "").toLowerCase();
+  const typeTokens = new Set(
+    [normalizedType, ...types.map((type) => String(type || ""))].flatMap((entry) =>
+      entry.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2),
+    ),
+  );
+  const typesText = types.map((type) => String(type || "")).join(" ");
+  const text = String(value || "");
+  const keywordHits = (preset: SiteStylePreset, haystack: string) => {
+    if (!haystack) return 0;
+    const matches = haystack.match(new RegExp(preset.keywords.source, "gi"));
+    return Math.min(3, matches ? matches.length : 0);
+  };
+  let best: { id: string; score: number } = { id: "local-clean", score: 0 };
+  for (const preset of siteStylePresets) {
+    if (preset.id === "local-clean") continue;
+    const industryTokens = preset.industries.flatMap((industry) =>
+      industry.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2),
+    );
+    let score = 0;
+    if (industryTokens.some((token) => typeTokens.has(token))) score += 3;
+    if (normalizedType && preset.keywords.test(normalizedType)) score += 2;
+    if (typesText && preset.keywords.test(typesText)) score += 2;
+    score += keywordHits(preset, text);
+    if (score > best.score) best = { id: preset.id, score };
+  }
+  return best.id;
 }
 
 export const siteVisualStyles: SiteVisualStyle[] = [

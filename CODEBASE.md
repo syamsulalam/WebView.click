@@ -1029,6 +1029,7 @@ Fungsi:
 
 Logic penting:
 - `inferStylePresetFromText()` dipakai CRM generate untuk memilih preset dari nama bisnis, alamat, dan Places types.
+- Sejak A3 (2026-10-01) inference memakai skor: exact industry-token match pada Google `primaryType` (+3) mengalahkan keyword scan pada primaryType/types (+2) dan teks bebas/review themes (+1, dihitung per hit dibatasi 3) — semua 15 preset non-default terbukti reachable via fixture. Admin dapat mengoverride lewat `StylePresetOverrideSelect` (Auto + 16 preset, tersimpan di localStorage `webview.stylePresetOverride`) di `/admin/leads` dan `/admin/sites`; override mengalir lewat `GenerateSitePayloadInput.stylePresetOverride` → `ScaffoldOptions` → `design.stylePreset` + flag `design.stylePresetExplicit` yang dihormati postprocess (pattern default tidak menimpa pilihan eksplisit).
 - `normalizeStylePreset()` memastikan nilai JSON yang tidak dikenal fallback ke `local-clean`.
 - `inferVisualStyleFromText()` memilih visual treatment dari niche; `industrial-diagonal` memberi boxy/diagonal image edge untuk contractor/auto/security.
 - `siteShaderPresets`, `normalizeShaderPreset()`, `getShaderPreset()`, dan `inferShaderPresetFromText()` mengatur shader procedural seperti `local-aurora`, `industrial-grid`, `aqua-caustics`, `organic-dapple`, `cafe-heat`, `salon-silk`, `fitness-pulse`, `legal-vellum`, dan `property-depth`.

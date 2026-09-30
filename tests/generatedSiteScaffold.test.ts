@@ -164,3 +164,24 @@ test("buildGeneratedSiteScaffold records factual price positioning from Places d
   );
   assert.equal((unpriced.businessProfile as any).pricePositioning, "");
 });
+
+test("explicit style preset override wins over inference and marks itself explicit (A3)", () => {
+  const place = {
+    place_id: "place-override",
+    name: "Metro Concrete Repair",
+    formatted_address: "100 Main St, Dallas, TX 75201, USA",
+    types: ["concrete_contractor", "establishment"],
+  };
+  const overridden = buildGeneratedSiteScaffold(place, {
+    businessId: "metro-concrete-repair",
+    stylePresetOverride: "legal-authority",
+    searchQuery: "concrete contractor dallas",
+  });
+  assert.equal((overridden.design as any).stylePreset, "legal-authority");
+  assert.equal((overridden.design as any).stylePresetExplicit, true);
+  const inferred = buildGeneratedSiteScaffold(place, {
+    businessId: "metro-concrete-repair",
+    searchQuery: "concrete contractor dallas",
+  });
+  assert.equal((inferred.design as any).stylePreset, "contractor-rugged");
+});

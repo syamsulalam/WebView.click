@@ -5,6 +5,7 @@ import {
   inferShaderPresetFromText,
   inferStylePresetFromText,
   inferVisualStyleFromText,
+  normalizeStylePreset,
   siteShaderPresets,
   siteVisualStyles,
 } from "./siteStylePresets";
@@ -15,6 +16,7 @@ type ScaffoldOptions = {
   businessId: string;
   imageUrl?: string;
   photoPool?: string[];
+  stylePresetOverride?: string;
   palette?: string[];
   paletteOptions?: any[];
   selectedPhotoReference?: string;
@@ -405,7 +407,17 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
     place.searchQuery,
     options.searchQuery,
   ].filter(Boolean).join(" ");
-  const stylePreset = inferStylePresetFromText(context);
+  const primaryType = place.primaryType || place.primary_type || "";
+  const placeTypes = Array.isArray(place.types) ? place.types.map((type: any) => String(type || "")) : [];
+  const reviewThemes = (Array.isArray(place.reviews) ? place.reviews : [])
+    .slice(0, 3)
+    .map((review: any) => String(review?.text || ""))
+    .join(" ")
+    .slice(0, 600);
+  const explicitPreset = typeof options.stylePresetOverride === "string" && options.stylePresetOverride.trim()
+    ? normalizeStylePreset(options.stylePresetOverride.trim())
+    : "";
+  const stylePreset = explicitPreset || inferStylePresetFromText(`${context} ${reviewThemes}`, primaryType, placeTypes);
   const stylePresetMeta = getStylePreset(stylePreset);
   const visualStyle = inferVisualStyleFromText(context);
   const visualStyleMeta = siteVisualStyles.find((item) => item.id === visualStyle) || siteVisualStyles[0];
@@ -571,6 +583,7 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
     },
     design: {
       stylePreset,
+      stylePresetExplicit: Boolean(explicitPreset),
       stylePresetConfig: { label: stylePresetMeta.label, mood: stylePresetMeta.mood, industries: stylePresetMeta.industries, recommendedColors: stylePresetMeta.recommendedColors },
       visualStyle,
       visualStyleConfig: { label: visualStyleMeta.label, description: visualStyleMeta.description, allowedValues: siteVisualStyles.map((item) => item.id), selectionRule: "Choose the visual structure that best matches the industry and desired feel." },

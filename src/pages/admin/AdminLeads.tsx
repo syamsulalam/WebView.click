@@ -16,6 +16,7 @@ import AdminWorkspaceTabs from "../../components/AdminWorkspaceTabs";
 import AdminAiReadinessRefreshButton from "../../components/AdminAiReadinessRefreshButton";
 import { useAdminToast } from "../../components/AdminToast";
 import AdminProviderCooldownBadge from "../../components/AdminProviderCooldownBadge";
+import StylePresetOverrideSelect, { STYLE_PRESET_OVERRIDE_KEY } from "../../components/StylePresetOverrideSelect";
 import BatchGenerateToolbar from "./leads/BatchGenerateToolbar";
 import ManualImportPanel from "./leads/ManualImportPanel";
 import ManualDuplicateReviewPanel from "./leads/ManualDuplicateReviewPanel";
@@ -47,6 +48,7 @@ export default function AdminLeads() {
   const [generationMessages, setGenerationMessages] = useState<Record<string, { type: "success" | "error"; text: string; businessId?: string }>>({});
   const [aiProvider, setAiProvider] = useLocalStorageState("webview.adminLeads.aiProvider", "OpenRouter");
   const [aiModel, setAiModel] = useLocalStorageState("webview.adminLeads.aiModel", "~anthropic/claude-sonnet-latest");
+  const [stylePresetOverride, setStylePresetOverride] = useLocalStorageState(STYLE_PRESET_OVERRIDE_KEY, "");
   const [settings, setSettings] = useState<any>({});
   const [loadingSettings, setLoadingSettings] = useState(true);
   const {
@@ -356,6 +358,7 @@ export default function AdminLeads() {
     activeProviderKey,
     activeModel,
     searchQuery,
+    stylePresetOverride,
     logoSelections,
     paletteOptionsByPlace,
     showToast,
@@ -481,6 +484,7 @@ export default function AdminLeads() {
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
+            <StylePresetOverrideSelect value={stylePresetOverride} onChange={setStylePresetOverride} />
             <AdminAiReadinessRefreshButton
               className="py-1.5"
               onRefresh={() => setBatchMessage("AI readiness cache cleared. Badges are rechecking the selected provider/model.")}
