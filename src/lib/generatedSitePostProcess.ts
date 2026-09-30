@@ -613,7 +613,9 @@ function applyHighTicketStyleDirection(finalJson: GeneratedSiteRecord, pattern: 
   const design = objectValue(finalJson.design);
   const currentStyle = asString(design.stylePreset);
   const currentVisual = asString(design.visualStyle || design.shapeStyle);
-  if (!currentStyle || currentStyle === "local-clean") design.stylePreset = direction.stylePreset;
+  // An explicit admin preset choice (design.stylePresetExplicit) wins over the
+  // pattern default; inference fallbacks still upgrade to the pattern preset.
+  if ((!currentStyle || currentStyle === "local-clean") && !design.stylePresetExplicit) design.stylePreset = direction.stylePreset;
   if (!currentVisual || currentVisual === "soft-rounded") design.visualStyle = direction.visualStyle;
   design.highTicketStyleDirection = {
     pagePattern: pattern,
