@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
+import { heroRefitScript, hoistFontImports } from "./exportSiteParity";
 
 function absoluteUrl(value: string) {
   if (!value || value.startsWith("#") || value.startsWith("mailto:") || value.startsWith("tel:") || value.startsWith("sms:")) {
@@ -216,6 +217,7 @@ async function inlineImagesIntoZip(zip: JSZip, clone: HTMLElement, businessId: s
 function ownerInlineScript() {
   return `<script>
 (function () {
+${heroRefitScript()}
   function pages() {
     return Array.prototype.slice.call(document.querySelectorAll("[data-wv-page]"));
   }
@@ -253,6 +255,7 @@ function ownerInlineScript() {
       button.classList.toggle("border-white", active);
       button.setAttribute("aria-current", active ? "page" : "false");
     });
+    scheduleHeroRefit();
     if (history.replaceState) history.replaceState(null, "", "#" + pageId);
     if (shouldScroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -1080,6 +1083,11 @@ export async function downloadOwnerSiteZip(siteData: any, businessId = "website"
     .join("\n");
   const bodyHtml = clone.querySelector("body")?.innerHTML || clone.innerHTML;
   const styleTags = Array.from(clone.querySelectorAll("style")).map((style) => style.outerHTML).join("\n");
+  // Hoist @import font URLs into render-blocking <link> tags first in <head>:
+  // an @import buried after other rules inside a moved <style> block is ignored
+  // by the CSS parser, which silently fell back to system fonts in owner zips.
+  const { fontLinks, cleanedHtml: cleanedStyleTags } = hoistFontImports(styleTags);
+  const fontLinkTags = fontLinks.map((href) => `<link rel="stylesheet" href="${escapeHtml(href)}">`).join("\n");
   const jsonLd = localBusinessStructuredData(siteData);
   const html = `<!doctype html>
 <html lang="${lang}">
@@ -1089,12 +1097,12 @@ export async function downloadOwnerSiteZip(siteData: any, businessId = "website"
   <title>${escapeHtml(String(title))}</title>
   ${description ? `<meta name="description" content="${escapeHtml(String(description))}">` : ""}
   <link rel="icon" href="${faviconHref(siteData)}">
-  <link rel="preconnect" href="https://cdn.tailwindcss.com">
+  ${fontLinkTags ? `${fontLinkTags}\n  ` : ""}<link rel="preconnect" href="https://cdn.tailwindcss.com">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <script src="https://cdn.tailwindcss.com"></script>
   ${stylesheetLinks}
   ${jsonLd ? `<script type="application/ld+json">${safeJsonForScript(jsonLd)}</script>` : ""}
-  ${styleTags}
+  ${cleanedStyleTags}
 </head>
 <body>
 ${bodyHtml}

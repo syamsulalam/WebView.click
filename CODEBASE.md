@@ -1346,6 +1346,7 @@ Logic Owner HTML Export:
 - Export JS juga mengaktifkan hover-persistent submenu dan contact form `mailto:` supaya HTML owner tetap interaktif tanpa React.
 - Favicon export memakai inline SVG dari `meta.faviconSvg` / `brand.faviconSvg` / `brand.logoSvg`, atau fallback SVG monogram; tidak memanggil favicon remote WebView.click.
 - Jika gambar gagal di-fetch saat export karena network/CORS/provider error, exporter mencatat warning di console dan mempertahankan URL absolute sebagai fallback terakhir.
+- Sejak A4 (2026-10-01) export meng-hoist font `@import` URLs menjadi render-blocking `<link>` tags di urutan pertama `<head>` (helper murni `src/lib/exportSiteParity.ts:hoistFontImports`, fixture `tests/exportSiteParity.test.ts`), karena `@import` yang terkubur setelah rules lain di `<style>` pindahan diabaikan parser dan jatuh ke system fonts. Baked `--wv-hero-heading-size` tetap sebagai fallback no-JS, tetapi `heroRefitScript()` menghitung ulang per viewport (caps sama dengan live fitter: 3 baris, 1.36x mobile / 1.62x desktop, floor 0.58x) saat load, resize, font-ready, dan setiap tab activation.
 
 Logic Payments:
 - `/api/payments/checkout` lives in `functions/api/payments/handler.ts` and reads `PAYMENT_PROCESSOR` from Settings. Mode live yang didukung: Xendit hosted invoice, Midtrans Snap Redirect, DOKU Checkout, PayPal Orders v2 Checkout, Wise link, Payoneer link, dan legacy Lemon Squeezy.
@@ -1482,7 +1483,7 @@ Why generated sites feel "not quite good enough", grouped by track. Severity: �
 
 1. ★ Feed `reviewSummary`/`generativeSummary`, amenity booleans, `priceLevel`/`paymentOptions`, secondary hours + timezone, and top 3–4 photo references into `businessFactsForAiCopy`.
 2. ★ Make `sectionRhythm` / `detailLayout` / `mediaStrategy` / `compositionPattern` actually branch layout — or stop generating them.
-3. ★ Fix export font `@import` + hero-size refit so owner zips match preview.
+3. ★ Fix export font `@import` + hero-size refit so owner zips match preview. (done 2026-10-01, A4)
 4. ★ Multi-photo pick at generate time (hero + gallery + card pool) instead of single-photo fallback.
 5. ★ Composite `outreach-ready` gate in `AdminSites` (audit + conversion + design + media + contact).
 6. Fail outline loudly (or block) instead of silently advancing on null; never wipe offering progress on `siteCopy` retry.
