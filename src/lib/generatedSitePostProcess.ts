@@ -1125,7 +1125,9 @@ function factAnchorsForSpecificity(finalJson: GeneratedSiteRecord) {
 
 function sectionSpecificityText(section: Record<string, unknown>) {
   const content = objectValue(section.content);
+  const stripMarkup = (value: unknown) => safeCopyText(value, 2000).replace(/<[^>]+>/g, " ");
   const texts: unknown[] = [content.title, content.headline, content.subheadline, content.description, content.summary];
+  texts.push(stripMarkup(content.body), stripMarkup(content.bodyHtml), stripMarkup(content.text));
   for (const key of ["items", "cards", "highlights", "buttons", "members", "included", "bestFor"]) {
     const list = content[key];
     if (Array.isArray(list)) {
@@ -1160,7 +1162,7 @@ function genericCopyPaths(finalJson: GeneratedSiteRecord, anchors: Set<string>) 
     const isDetail = sections.some((section) => asString(section.type) === "offeringDetail");
     sections.forEach((section) => {
       const type = asString(section.type);
-      const inScope = isAbout || (pageId === "home" && type === "faq") || (isDetail && (type === "offeringDetail" || type === "faq"));
+      const inScope = isAbout || (pageId.toLowerCase() === "home" && type === "faq") || (isDetail && (type === "offeringDetail" || type === "faq"));
       if (!inScope) return;
       if (!isAnchored(sectionSpecificityText(section))) paths.push(`${pageId}:${asString(section.id) || type}`);
     });

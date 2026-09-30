@@ -560,3 +560,38 @@ test("secondary CTA falls back to Open Maps when a maps URL exists (B5)", () => 
   const conversion = ensureConversionMetadata(site, {});
   assert.equal((conversion.secondaryCta as any).text, "Open Maps");
 });
+
+test("specificity check reads markup body fields for legacy sections (B4)", () => {
+  const site: Record<string, unknown> = {
+    meta: { businessName: "Metro Concrete Repair", language: "en" },
+    businessProfile: { name: "Metro Concrete Repair", contact: {}, address: { city: "Dallas" } },
+    trust: { rating: 0, reviewCount: 0, reviews: [] },
+    location: {},
+    conversion: { primaryCta: { text: "Request a Quote" }, secondaryCta: { text: "Explore Services" } },
+    global: { header: { ctaButton: { text: "Request a Quote" } }, footer: {} },
+    services: [],
+    products: [],
+    offers: [],
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    pages: [
+      {
+        pageId: "home",
+        pageTitle: "Home",
+        sections: [
+          { type: "hero", id: "hero-1", content: { headline: "Metro Concrete Repair", subheadline: "Dallas concrete help.", buttons: [{ text: "Request a Quote", style: "primary" }] } },
+        ],
+      },
+      {
+        pageId: "about",
+        pageTitle: "About",
+        sections: [
+          { type: "textImageBlock", id: "about-story", content: { title: "Our story", bodyHtml: "<p>Metro Concrete Repair serves Dallas homeowners with careful surface work.</p>" } },
+        ],
+      },
+    ],
+  };
+  const conversion = ensureConversionMetadata(site, {});
+  const audit = conversion.conversionAudit as any;
+  assert.ok(!audit.copySpecificity.genericPaths.includes("about:about-story"), "markup body prose with anchors must pass");
+});
