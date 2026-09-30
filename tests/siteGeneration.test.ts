@@ -236,3 +236,10 @@ test("applyAiCopyPatch ignores structural echoes from render context (B2 enforce
   assert.deepEqual((site.pages as any[]).map((page) => page.pageId), beforeIds);
   assert.equal((((site.pages as any[])[0].sections as any[])[0].content as any).headline, "Patched headline");
 });
+
+test("copy brief carries the saved price positioning cue for grounded pricing copy (B5)", () => {
+  const site = baseSite();
+  (site.businessProfile as any).pricePositioning = "Moderate · 25–400 USD";
+  const brief = buildAiCopyTargetBrief(site, {}, "Metro Concrete Repair");
+  assert.equal((brief.facts as any).price.positioning, "Moderate · 25–400 USD");
+});

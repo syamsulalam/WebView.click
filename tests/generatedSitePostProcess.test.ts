@@ -408,3 +408,155 @@ test("applyGeneratedSitePageInserts applies services, contact, feedback, and gal
   const home = (site.pages as Array<Record<string, unknown>>).find((page) => page.pageId === "home");
   assert.ok((home?.sections as Array<Record<string, unknown>>).some((section) => section.type === "finalCta"));
 });
+
+function specificityFixtureSite(anchored: boolean) {
+  const anchor = (text: string) => (anchored ? `Metro Concrete Repair ${text} in Dallas` : text);
+  const genericFaq = [
+    "Share the scope and timing so the next step stays clear for everyone involved.",
+    "Prepare the main need, location, preferred timing, and any special requirements.",
+    "Use the contact form so the message includes enough detail for a useful reply.",
+    "Discuss availability windows and confirm scheduling preferences in advance.",
+    "Review the general process overview before reaching out with questions.",
+  ];
+  return {
+    meta: { businessName: "Metro Concrete Repair", language: "en" },
+    businessProfile: {
+      name: "Metro Concrete Repair",
+      contact: {},
+      address: { city: "Dallas", state: "TX" },
+    },
+    trust: { rating: 0, reviewCount: 0, reviews: [] },
+    location: {},
+    conversion: {
+      primaryCta: { text: "Request a Quote", href: "#contact" },
+      secondaryCta: { text: "Explore Services", href: "#services" },
+    },
+    global: { header: { ctaButton: { text: "Request a Quote", href: "#contact" } }, footer: {} },
+    services: [],
+    products: [],
+    offers: [],
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    pages: [
+      {
+        pageId: "home",
+        pageTitle: "Home",
+        sections: [
+          { type: "hero", id: "hero-1", content: { headline: anchor("Quality work you can trust"), subheadline: anchor("Reliable help for your next project."), buttons: [{ text: "Request a Quote", style: "primary" }] } },
+          {
+            type: "faq",
+            id: "home-faq",
+            content: {
+              title: "Questions",
+              items: genericFaq.map((answer, index) => ({ question: anchor(`General question ${index + 1}?`), answer: anchor(answer) })),
+            },
+          },
+        ],
+      },
+      {
+        pageId: "about",
+        pageTitle: "About",
+        sections: [
+          {
+            type: "features",
+            id: "about-values",
+            content: {
+              title: "How we help customers",
+              items: [
+                { title: "Local focus", description: anchor("Built around customers in the local service area.") },
+                { title: "Clear next steps", description: anchor("Review services and reach out when ready.") },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  } as Record<string, unknown>;
+}
+
+test("conversion audit flags generic-only About and FAQ copy without business anchors (B4)", () => {
+  const site = specificityFixtureSite(false);
+  const conversion = ensureConversionMetadata(site, {});
+  const audit = conversion.conversionAudit as any;
+  assert.ok(audit.copySpecificity.genericPaths.includes("about:about-values"), "generic about section must be listed");
+  assert.ok(audit.copySpecificity.genericPaths.includes("home:home-faq"), "generic home FAQ must be listed");
+  assert.ok((audit.flags as string[]).includes("generic_detail_copy"));
+});
+
+test("conversion audit passes fact-anchored About and FAQ copy (B4)", () => {
+  const site = specificityFixtureSite(true);
+  const conversion = ensureConversionMetadata(site, {});
+  const audit = conversion.conversionAudit as any;
+  assert.deepEqual(audit.copySpecificity.genericPaths, []);
+  assert.ok(!(audit.flags as string[]).includes("generic_detail_copy"));
+});
+
+test("generic scaffold CTA labels are rewritten while navigational vagueness is only reported (B5)", () => {
+  const site: Record<string, unknown> = {
+    meta: { businessName: "Metro Concrete Repair", language: "en" },
+    businessProfile: { name: "Metro Concrete Repair", contact: {}, address: { city: "Dallas" } },
+    trust: { rating: 0, reviewCount: 0, reviews: [] },
+    location: {},
+    conversion: {
+      primaryCta: { text: "Request a Quote", href: "#contact" },
+      secondaryCta: { text: "View Details", href: "#services" },
+    },
+    global: { header: { ctaButton: { text: "Hubungi", href: "#contact" } }, footer: {} },
+    services: [],
+    products: [],
+    offers: [{ title: "Driveway Repair", description: "Fixes.", image: "", cta: { text: "Lihat detail", href: "#service-driveway-repair" } }],
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    pages: [
+      {
+        pageId: "home",
+        pageTitle: "Home",
+        sections: [
+          { type: "hero", id: "hero-1", content: { headline: "Metro Concrete Repair keeps Dallas driveways safer", subheadline: "Call Metro Concrete Repair in Dallas for cracks and surface wear.", buttons: [{ text: "Request a Quote", style: "primary" }] } },
+          {
+            type: "offers",
+            id: "home-offers",
+            content: { title: "Services", items: [{ title: "Driveway Repair", description: "Metro Concrete Repair fixes Dallas driveways.", image: "", cta: { text: "Lihat detail", href: "#service-driveway-repair" } }] },
+          },
+        ],
+      },
+      {
+        pageId: "service-driveway-repair",
+        pageTitle: "Driveway Repair",
+        sections: [
+          { type: "offeringDetail", id: "driveway-detail", content: { title: "Driveway Repair by Metro Concrete Repair", summary: "Dallas homeowners call us for cracks.", description: "We repair Dallas driveways.", included: ["Inspect", "Prepare", "Repair"], bestFor: ["Owners"], highlights: [{ title: "Care", description: "Dallas care." }] } },
+          { type: "hero", id: "driveway-hero", content: { headline: "Driveway Repair", buttons: [{ text: "Back to offers", style: "outline", href: "#services" }] } },
+        ],
+      },
+    ],
+  };
+
+  const conversion = ensureConversionMetadata(site, {});
+  assert.equal((conversion.secondaryCta as any).text, "Explore Services");
+  assert.equal(((site.global as any).header.ctaButton as any).text, "Request an Estimate");
+  const homeOffers = (((site.pages as any[])[0].sections as any[]).find((section: any) => section.type === "offers").content as any);
+  assert.equal(homeOffers.items[0].cta.text, "Request an Estimate");
+  const audit = conversion.conversionAudit as any;
+  assert.ok(audit.vagueNavigationalCtas.some((entry: string) => entry.includes("Back to offers")), "navigational vagueness must be reported");
+  assert.ok(!(audit.flags as string[]).includes("generic_primary_cta"));
+});
+
+test("secondary CTA falls back to Open Maps when a maps URL exists (B5)", () => {
+  const site: Record<string, unknown> = {
+    meta: { businessName: "Metro Concrete Repair", language: "en" },
+    businessProfile: { name: "Metro Concrete Repair", contact: {}, address: {} },
+    trust: { rating: 0, reviewCount: 0, reviews: [] },
+    location: {},
+    sourceData: { googleMapsUri: "https://maps.example/atlas" },
+    conversion: { primaryCta: { text: "Request a Quote" }, secondaryCta: { text: "Lihat detail" } },
+    global: { header: { ctaButton: { text: "Request a Quote" } }, footer: {} },
+    services: [],
+    products: [],
+    offers: [],
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    pages: [{ pageId: "home", pageTitle: "Home", sections: [] }],
+  };
+  const conversion = ensureConversionMetadata(site, {});
+  assert.equal((conversion.secondaryCta as any).text, "Open Maps");
+});

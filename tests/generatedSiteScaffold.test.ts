@@ -138,3 +138,29 @@ test("buildGeneratedSiteScaffold keeps hero image on single-photo fallback", () 
   const cardImages = services.map((service) => service.image).filter(Boolean);
   assert.ok(cardImages.every((image) => image === "/api/places/photo?reference=only-1&maxwidth=960"));
 });
+
+test("buildGeneratedSiteScaffold records factual price positioning from Places data (B5)", () => {
+  const priced = buildGeneratedSiteScaffold(
+    {
+      place_id: "place-priced",
+      name: "Metro Concrete Repair",
+      formatted_address: "100 Main St, Dallas, TX 75201, USA",
+      types: ["concrete_contractor", "establishment"],
+      priceLevel: "PRICE_LEVEL_MODERATE",
+      priceRange: { startPrice: { units: "25", currencyCode: "USD" }, endPrice: { units: "400", currencyCode: "USD" } },
+    },
+    { businessId: "metro-concrete-repair", searchQuery: "concrete contractor dallas" },
+  );
+  assert.equal((priced.businessProfile as any).pricePositioning, "Moderate · 25–400 USD");
+
+  const unpriced = buildGeneratedSiteScaffold(
+    {
+      place_id: "place-unpriced",
+      name: "Metro Concrete Repair",
+      formatted_address: "100 Main St, Dallas, TX 75201, USA",
+      types: ["concrete_contractor", "establishment"],
+    },
+    { businessId: "metro-concrete-repair", searchQuery: "concrete contractor dallas" },
+  );
+  assert.equal((unpriced.businessProfile as any).pricePositioning, "");
+});

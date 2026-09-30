@@ -696,6 +696,13 @@ export default function GenerationJobsTable({
                               </span>
                             </HoverTooltip>
                           )}
+                          {job.metadata?.outlineFailed === true && (
+                            <HoverTooltip text={`AI offering outline failed${job.metadata?.offeringOutlineError ? `: ${job.metadata.offeringOutlineError}` : ""}. Scaffold offerings were kept — rerun the outline step or regenerate before outreach.`} widthClass="w-80">
+                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800">
+                                outline failed
+                              </span>
+                            </HoverTooltip>
+                          )}
                           {job.metadata?.conversionAudit && (
                             <HoverTooltip
                               text={`Pattern: ${job.metadata?.conversionPagePattern || job.metadata.conversionAudit.pagePattern || "-"}; primary action: ${job.metadata?.conversionPrimaryAction || job.metadata.conversionAudit.primaryAction || "-"}; flags: ${(job.metadata.conversionAudit.flags || []).join(", ") || "none"}`}

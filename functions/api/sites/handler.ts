@@ -2059,12 +2059,20 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
           jobMetadata.offeringOutline = outlineResult.outline;
           jobMetadata.offeringOutlineHash = outlineResult.outlineHash;
           jobMetadata.offeringOutlineApplied = outlineApplyResult.applied;
+          jobMetadata.outlineFailed = false;
           jobMetadata.offeringOutlineCount = outlineApplyResult.count;
           jobMetadata.offeringOutlineRepairAttempted = Boolean(outlineResult.repairAttempted);
           if (outlineResult.repairError) jobMetadata.offeringOutlineInitialParseError = outlineResult.repairError;
+        } else {
+          // B3 loud-not-blocking: scaffold offerings survive, but the failure is
+          // recorded so Jobs triage can see scaffold-grade output.
+          jobMetadata.offeringOutlineApplied = false;
+          jobMetadata.outlineFailed = true;
+          jobMetadata.offeringOutlineError = "AI offering outline returned no usable JSON.";
         }
       } catch (error) {
         jobMetadata.offeringOutlineApplied = false;
+        jobMetadata.outlineFailed = true;
         jobMetadata.offeringOutlineError = error instanceof Error ? error.message : String(error);
         console.error("AI offering outline failed, continuing with scaffold offerings:", error);
       }

@@ -934,6 +934,7 @@ function businessFactsForAiCopy(originData: unknown, siteJson: Record<string, un
     price: {
       level: priceLevelLabel(firstDefined(origin.priceLevel, origin.price_level)),
       range: priceRangeLabel(firstDefined(origin.priceRange, origin.price_range)),
+      positioning: safeCopyText(profile.pricePositioning, 80),
     },
     hoursDetail: {
       timezone: safeCopyText(firstDefined(origin.timeZone, origin.timezone, origin.time_zone), 80) || utcOffsetLabel(firstDefined(origin.utcOffsetMinutes, origin.utc_offset_minutes)),

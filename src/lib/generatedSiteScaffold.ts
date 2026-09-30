@@ -331,6 +331,34 @@ function buildOfferings(place: any, isEnglish: boolean, mode: string, imageUrl: 
   return serviceBase;
 }
 
+function pricePositioningForPlace(place: any, isEnglish: boolean) {
+  const rawLevel = place.priceLevel ?? place.price_level;
+  const levelNames = isEnglish
+    ? ["Free", "Inexpensive", "Moderate", "Expensive", "Very expensive"]
+    : ["Gratis", "Terjangkau", "Menengah", "Mahal", "Sangat mahal"];
+  let level = "";
+  if (typeof rawLevel === "number" && Number.isFinite(rawLevel)) {
+    level = levelNames[Math.max(0, Math.min(4, Math.floor(rawLevel)))] || "";
+  } else if (typeof rawLevel === "string") {
+    const cleaned = rawLevel.replace(/^PRICE_LEVEL_/i, "").replace(/_/g, " ").trim().toLowerCase();
+    level = cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : "";
+  }
+  const range = place.priceRange ?? place.price_range;
+  const rangeRecord = range && typeof range === "object" && !Array.isArray(range) ? range as Record<string, unknown> : null;
+  const rangeAmount = (part: unknown) => {
+    const partRecord = part && typeof part === "object" && !Array.isArray(part) ? part as Record<string, unknown> : null;
+    const units = String(partRecord?.units ?? (typeof part === "string" || typeof part === "number" ? part : "")).trim();
+    const code = String(partRecord?.currencyCode ?? partRecord?.currency_code ?? "").trim();
+    return { units, code };
+  };
+  const start = rangeAmount(rangeRecord?.startPrice ?? rangeRecord?.start_price);
+  const end = rangeAmount(rangeRecord?.endPrice ?? rangeRecord?.end_price);
+  const rangeText = start.units && end.units
+    ? `${start.units}\u2013${end.units}${end.code || start.code ? ` ${end.code || start.code}` : ""}`
+    : end.units ? `${isEnglish ? "Up to " : "Hingga "}${end.units}${end.code ? ` ${end.code}` : ""}` : "";
+  return [level, rangeText].filter(Boolean).join(" · ");
+}
+
 export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions) {
   const businessName = placeDisplayName(place);
   const businessId = options.businessId;
@@ -571,6 +599,7 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
       typeLabel,
       categories: Array.isArray(place.types) ? place.types : [],
       shortPitch: isEnglish ? `A trusted ${typeLabel} serving customers around ${address || "the local area"}.` : `Layanan lokal terpercaya di ${address || "area sekitar"}.`,
+      pricePositioning: pricePositioningForPlace(place, isEnglish),
       address: { formatted: address },
       serviceAreas: servedAreas,
       contact: { phoneNational: phone, phoneInternational: phone, directionsUrl: mapsUrl },

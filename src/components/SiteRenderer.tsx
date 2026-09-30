@@ -1864,6 +1864,7 @@ export default function SiteRenderer({
                         <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.eyebrow`, labels.offersEyebrow, "span")}</p>
                         {editableText(`${section.id}.title`, section.content?.title || labels.offersTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
                         {section.content?.description && editableText(`${section.id}.description`, section.content.description, "p", "mt-3 text-slate-600", undefined, true)}
+                        {businessProfile.pricePositioning && editableText(`${section.id}.pricePositioning`, businessProfile.pricePositioning, "p", "mt-3 text-sm font-medium", { color: colors.accentText })}
                       </div>
                       <div className={offersGridClass}>
                         {items.map((offer: any, i: number) => {

@@ -193,6 +193,28 @@ function mergeCopyAudits(...audits: Array<{ summary?: Record<string, unknown>; i
   return { summary, items: items.slice(0, 160) };
 }
 
+// B3: decides whether a siteCopy retry may keep completed offering work.
+// Preserves only when progress exists AND the new site patch leaves offerings
+// alone; otherwise the caller falls back to the full offering reset below.
+export function applySiteCopyOfferingPreserve(
+  metadata: Record<string, unknown>,
+  sitePatch: Record<string, unknown>,
+  siteCopyAudit: { summary: Record<string, unknown>; items: unknown[] },
+): boolean {
+  const preservedOfferingPatch = objectPatch(metadata.offeringCopyPatch);
+  const hadOfferingProgress = Number(metadata.offeringCopyCursor) > 0 || preservedOfferingPatch;
+  const sitePatchTouchesOfferings = Array.isArray(sitePatch.offerings) && (sitePatch.offerings as unknown[]).length > 0;
+  if (!hadOfferingProgress || sitePatchTouchesOfferings || !preservedOfferingPatch) return false;
+  metadata.copyPatch = mergeCopyPatch(objectPatch(sitePatch), preservedOfferingPatch);
+  const preservedAudit = mergeCopyAudits(siteCopyAudit, {
+    summary: objectPatch(metadata.offeringCopyAuditSummary) || undefined,
+    items: Array.isArray(metadata.offeringCopyAuditItems) ? metadata.offeringCopyAuditItems : [],
+  });
+  metadata.copyAuditSummary = preservedAudit.summary;
+  metadata.copyAuditItems = preservedAudit.items;
+  return true;
+}
+
 async function sha256Json(value: unknown) {
   const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
   return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -406,11 +428,16 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
           metadata.offeringOutline = outlineResult.outline;
           metadata.offeringOutlineHash = outlineResult.outlineHash;
           metadata.offeringOutlineApplied = outlineApplyResult.applied;
+          metadata.outlineFailed = false;
           metadata.offeringOutlineCount = outlineApplyResult.count;
           metadata.offeringOutlineRepairAttempted = Boolean(outlineResult.repairAttempted);
           if (outlineResult.repairError) metadata.offeringOutlineInitialParseError = outlineResult.repairError;
         } else {
+          // Loud, not blocking (B3): the job continues on scaffold offerings so a
+          // transient outline failure never kills generation, but outlineFailed
+          // stays on the row so Jobs triage can see scaffold-grade output.
           metadata.offeringOutlineApplied = false;
+          metadata.outlineFailed = true;
           metadata.offeringOutlineError = "AI offering outline returned no usable JSON.";
         }
         metadata.step = "outline_complete";
@@ -442,16 +469,21 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         metadata.copyPatchApplied = true;
         metadata.copyAuditSummary = copyAudit.summary;
         metadata.copyAuditItems = copyAudit.items;
-        delete metadata.offeringCopyPatch;
-        delete metadata.offeringCopyBriefHash;
-        delete metadata.offeringCopyPatchHash;
-        delete metadata.offeringCopyAuditSummary;
-        delete metadata.offeringCopyAuditItems;
-        delete metadata.offeringCopyCoverage;
-        delete metadata.offeringCopyBriefHashes;
-        delete metadata.offeringCopyPatchHashes;
-        metadata.offeringCopyCursor = 0;
-        metadata.offeringCopyTotal = 0;
+        const preserved = applySiteCopyOfferingPreserve(metadata, objectPatch(copyPatchResult.patch) || {}, { summary: copyAudit.summary as Record<string, unknown>, items: copyAudit.items });
+        if (preserved) {
+          metadata.copyPatchHash = await sha256Json(metadata.copyPatch);
+        } else {
+          delete metadata.offeringCopyPatch;
+          delete metadata.offeringCopyBriefHash;
+          delete metadata.offeringCopyPatchHash;
+          delete metadata.offeringCopyAuditSummary;
+          delete metadata.offeringCopyAuditItems;
+          delete metadata.offeringCopyCoverage;
+          delete metadata.offeringCopyBriefHashes;
+          delete metadata.offeringCopyPatchHashes;
+          metadata.offeringCopyCursor = 0;
+          metadata.offeringCopyTotal = 0;
+        }
         metadata.step = "siteCopy_complete";
         metadata.nextStep = "offeringCopy";
         metadata.updatedAt = new Date().toISOString();

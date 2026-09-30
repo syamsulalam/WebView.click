@@ -892,7 +892,18 @@ function mergeTrustBadges(finalJson: GeneratedSiteRecord, badges: Array<{ label:
 }
 
 function isGenericCta(value: unknown) {
-  return /^(submit|send|send message|learn more|contact|contact us|get started|click here|more info|inquire|book now)$/i.test(safeCopyText(value, 80));
+  return /^(submit|send|send message|learn more|contact|contact us|hubungi|hubungi kami|get started|click here|more info|inquire|book now|view details|lihat detail)$/i.test(safeCopyText(value, 80));
+}
+
+// Navigational vagueness is audit-only (B5): rewriting a back-link into a sales
+// CTA would corrupt navigation semantics, so these labels are reported in
+// vagueNavigationalCtas instead of being rewritten like conversion CTAs.
+function isVagueNavigationalCta(value: unknown) {
+  return /^(back to offers|lihat pilihan lain|ask about this|tanya layanan\/produk ini|see more|lihat lainnya|selengkapnya)$/i.test(safeCopyText(value, 80));
+}
+
+function isVagueCtaLabel(value: unknown) {
+  return isGenericCta(value) || isVagueNavigationalCta(value);
 }
 
 function isPrimaryActionLike(value: unknown) {
@@ -1083,6 +1094,80 @@ function ensureFinalCtaSections(finalJson: GeneratedSiteRecord, originData: Gene
   });
 }
 
+function factAnchorsForSpecificity(finalJson: GeneratedSiteRecord) {
+  const profile = objectValue(finalJson.businessProfile);
+  const meta = objectValue(finalJson.meta);
+  const location = objectValue(finalJson.location);
+  const contact = objectValue(profile.contact);
+  const address = objectValue(profile.address);
+  const trust = objectValue(finalJson.trust);
+  const anchors = new Set<string>();
+  const addAnchor = (value: unknown) => {
+    const text = safeCopyText(value, 120).toLowerCase();
+    if (text) anchors.add(text);
+  };
+  const name = safeCopyText(meta.businessName || profile.name, 120);
+  if (name) {
+    anchors.add(name.toLowerCase());
+    name.split(/\s+/).filter((word) => word.length > 3).forEach((word) => anchors.add(word.toLowerCase()));
+  }
+  [address.city, address.state, address.country, location.formattedAddress].forEach(addAnchor);
+  normalizeStringList(location.servedAreas || location.serviceAreas || profile.serviceAreas).forEach(addAnchor);
+  const phoneDigits = safeCopyText(contact.phoneNational || contact.phoneInternational, 40).replace(/\D/g, "");
+  if (phoneDigits.length >= 7) anchors.add(phoneDigits);
+  if (typeof trust.rating === "number") anchors.add(String(trust.rating));
+  for (const key of ["products", "services"]) {
+    const offerings = Array.isArray(finalJson[key]) ? finalJson[key] as Array<Record<string, unknown>> : [];
+    offerings.forEach((item) => addAnchor(objectValue(item).title));
+  }
+  return anchors;
+}
+
+function sectionSpecificityText(section: Record<string, unknown>) {
+  const content = objectValue(section.content);
+  const texts: unknown[] = [content.title, content.headline, content.subheadline, content.description, content.summary];
+  for (const key of ["items", "cards", "highlights", "buttons", "members", "included", "bestFor"]) {
+    const list = content[key];
+    if (Array.isArray(list)) {
+      list.forEach((entry) => {
+        const record = objectValue(entry);
+        texts.push(record.title, record.description, record.question, record.answer, record.label, record.value, record.text);
+      });
+    }
+  }
+  return texts.map((text) => safeCopyText(text, 2000)).filter((text) => text.length >= 20).join("\n").toLowerCase();
+}
+
+// B4 filler ban: About, home FAQ, and detail-page copy must carry at least one
+// business-specific anchor (name, place, offering, phone, rating). Generic-only
+// filler fails even when section counts look complete.
+function genericCopyPaths(finalJson: GeneratedSiteRecord, anchors: Set<string>) {
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  const paths: string[] = [];
+  const isAnchored = (text: string) => {
+    if (!text) return true;
+    const textDigits = text.replace(/\D/g, "");
+    return [...anchors].some((anchor) => {
+      if (!anchor) return false;
+      if (text.includes(anchor)) return true;
+      return /^\d{7,}$/.test(anchor) && textDigits.includes(anchor);
+    });
+  };
+  pages.forEach((page) => {
+    const pageId = asString(page.pageId);
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    const isAbout = pageId.toLowerCase() === "about";
+    const isDetail = sections.some((section) => asString(section.type) === "offeringDetail");
+    sections.forEach((section) => {
+      const type = asString(section.type);
+      const inScope = isAbout || (pageId === "home" && type === "faq") || (isDetail && (type === "offeringDetail" || type === "faq"));
+      if (!inScope) return;
+      if (!isAnchored(sectionSpecificityText(section))) paths.push(`${pageId}:${asString(section.id) || type}`);
+    });
+  });
+  return paths.slice(0, 8);
+}
+
 function buildConversionAudit(finalJson: GeneratedSiteRecord) {
   const conversion = objectValue(finalJson.conversion);
   const primaryCta = objectValue(conversion.primaryCta);
@@ -1115,16 +1200,34 @@ function buildConversionAudit(finalJson: GeneratedSiteRecord) {
   const heroButtons = Array.isArray(heroContent.buttons) ? heroContent.buttons as Array<Record<string, unknown>> : [];
   const primaryButtonLabels = heroButtons.filter((button) => asString(button.style) === "primary" || isPrimaryActionLike(button.text)).map((button) => safeCopyText(button.text, 80).toLowerCase()).filter(Boolean);
   const uniquePrimaryLabels = new Set(primaryButtonLabels);
+  const specificityAnchors = factAnchorsForSpecificity(finalJson);
+  const genericPaths = genericCopyPaths(finalJson, specificityAnchors);
+  const vagueNavigationalCtas = pages.flatMap((page) => {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    return sections.flatMap((section) => {
+      const content = objectValue(section.content);
+      const buttons = Array.isArray(content.buttons) ? content.buttons as Array<Record<string, unknown>> : [];
+      return buttons
+        .map((button) => safeCopyText(button.text, 80))
+        .filter((text) => isVagueNavigationalCta(text))
+        .map((text) => `${asString(page.pageId)}:${text}`);
+    });
+  }).slice(0, 8);
   const summary = {
     pagePattern: asString(conversion.pagePattern),
     primaryAction: safeCopyText(conversion.primaryAction || primaryCta.text, 80),
-    primaryCtaSpecific: !isGenericCta(primaryCta.text),
+    primaryCtaSpecific: !isVagueCtaLabel(primaryCta.text),
     proofAboveFold: proofBadges.length > 0 || firstTwoTypes.includes("trustBar"),
     objectionsCovered: faqItemCount >= 5,
     finalCtaPresent: pages.some((page) => Array.isArray(page.sections) && (page.sections as Array<Record<string, unknown>>).some((section) => asString(section.type) === "finalCta")),
     heroSpecific: Boolean(safeCopyText(heroContent.headline, 160) && safeCopyText(heroContent.subheadline, 240)),
     competingPrimaryCtas: uniquePrimaryLabels.size > 1,
     thinServicePages,
+    copySpecificity: {
+      anchorCount: specificityAnchors.size,
+      genericPaths,
+    },
+    vagueNavigationalCtas,
     proofBadgeCount: proofBadges.length,
     faqItemCount,
     checkedAt: new Date().toISOString(),
@@ -1137,6 +1240,7 @@ function buildConversionAudit(finalJson: GeneratedSiteRecord) {
     !summary.heroSpecific ? "non_specific_hero" : "",
     summary.competingPrimaryCtas ? "competing_primary_ctas" : "",
     summary.thinServicePages.length ? "thin_service_pages" : "",
+    summary.copySpecificity.genericPaths.length ? "generic_detail_copy" : "",
   ].filter(Boolean);
   return { ...summary, flags };
 }
@@ -1195,10 +1299,10 @@ export function ensureConversionMetadata(finalJson: GeneratedSiteRecord, originD
   const mapsUrl = mapsUrlFromSite(finalJson, originData);
   const primaryText = primaryActionForPattern(pattern, Boolean(phone), isIndonesian);
   const secondaryText = pattern === "menu-led-restaurant"
-    ? (isIndonesian ? "Hubungi" : "Contact")
+    ? (isIndonesian ? "Lihat Menu" : "View Menu")
     : mapsUrl
       ? (isIndonesian ? "Buka Maps" : "Open Maps")
-      : (isIndonesian ? "Lihat detail" : "View Details");
+      : (isIndonesian ? "Lihat Layanan" : "Explore Services");
   const proofBadges = sourceSafeProofBadges(finalJson, originData);
   applyHighTicketStyleDirection(finalJson, pattern, text);
   applyDesignIntent(finalJson, originData, pattern, text);
