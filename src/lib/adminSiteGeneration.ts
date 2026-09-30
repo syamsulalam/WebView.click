@@ -146,9 +146,17 @@ export function buildScaffoldGeneratePayload(input: GenerateSitePayloadInput) {
   const scaffoldPlace = input.businessName && !input.place?.displayName
     ? { ...input.place, displayName: { text: businessName } }
     : input.place;
+  // Priority-sorted generate-time photo pool (A2): owner-like photos first so
+  // offering cards cycle distinct, best-ranked imagery instead of recycling
+  // the single hero fallback.
+  const photoPool = sortedPhotosForPlace(scaffoldPlace)
+    .slice(0, 8)
+    .map((photo) => googlePlacePhotoUrlForPhoto(photo, 960))
+    .filter(Boolean);
   const jsonContent = buildGeneratedSiteScaffold(scaffoldPlace, {
     businessId,
     imageUrl: input.imageUrl || "",
+    photoPool,
     palette,
     paletteOptions,
     selectedPhotoReference: input.selectedPhotoReference || "",

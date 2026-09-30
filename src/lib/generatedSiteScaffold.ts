@@ -14,6 +14,7 @@ import { buildPaletteRoleOptions, normalizePaletteRoles } from "./colorPaletteRo
 type ScaffoldOptions = {
   businessId: string;
   imageUrl?: string;
+  photoPool?: string[];
   palette?: string[];
   paletteOptions?: any[];
   selectedPhotoReference?: string;
@@ -272,8 +273,16 @@ function inferredProductTitles(place: any, typeLabel: string, isEnglish: boolean
   return [`Featured ${base}`, "Popular Options", "Current Availability", "Ordering Help"];
 }
 
-function buildOfferings(place: any, isEnglish: boolean, mode: string, imageUrl: string, fallbackQuery = "") {
+function buildOfferings(place: any, isEnglish: boolean, mode: string, imageUrl: string, fallbackQuery = "", photoPool: string[] = []) {
   const typeLabel = titleCaseLabel(meaningfulTypeLabel(place, isEnglish, fallbackQuery));
+  // Distinct image per offering from the generate-time photo pool (A2): the hero
+  // keeps imageUrl (pool head), cards cycle through the rest instead of leaving
+  // every card after the first imageless. Single-photo behavior is unchanged.
+  const pool = [imageUrl, ...photoPool.filter((url) => typeof url === "string" && url && url !== imageUrl)].filter(Boolean);
+  const imageFor = (index: number) => {
+    if (pool.length > 1) return pool[index % pool.length];
+    return index === 0 ? imageUrl : "";
+  };
   const serviceBase = inferredServiceTitles(place, typeLabel, isEnglish, fallbackQuery).slice(0, 6).map((title, index) => {
     const id = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `service-${index + 1}`;
     return {
@@ -286,7 +295,7 @@ function buildOfferings(place: any, isEnglish: boolean, mode: string, imageUrl: 
         ? `A focused service page for customers comparing options, timing, scope, and next steps for ${title.toLowerCase()}.`
         : `Halaman layanan untuk pelanggan yang ingin memahami pilihan, jadwal, cakupan, dan langkah berikutnya.`,
       priceHint: isEnglish ? "Contact for estimate" : "Hubungi untuk estimasi",
-      image: index === 0 ? imageUrl : "",
+      image: imageFor(index),
       detailPageId: `service-${id}`,
       bestFor: isEnglish ? ["Property owners", "Local projects", "Clear next steps"] : ["Pelanggan lokal", "Tanya cepat", "Kebutuhan khusus"],
       included: isEnglish ? ["Project discussion", "Scope guidance", "Availability check"] : ["Diskusi kebutuhan", "Arahan cakupan", "Cek ketersediaan"],
@@ -307,7 +316,7 @@ function buildOfferings(place: any, isEnglish: boolean, mode: string, imageUrl: 
       summary: isEnglish ? `A practical option for customers comparing ${title.toLowerCase()}.` : `Pilihan praktis untuk pelanggan yang membandingkan ${title.toLowerCase()}.`,
       description: isEnglish ? "A product-led page for customers who want to understand availability, fit, and ordering steps before visiting or buying." : "Halaman produk untuk pelanggan yang ingin memahami ketersediaan, kecocokan, dan cara pesan sebelum membeli.",
       priceHint: isEnglish ? "Ask for current price" : "Tanya harga terbaru",
-      image: index === 0 ? imageUrl : "",
+      image: imageFor(index),
       detailPageId: `product-${id}`,
       bestFor: isEnglish ? ["First-time buyers", "Local pickup", "Popular choice"] : ["Pembeli pertama", "Pickup lokal", "Pilihan populer"],
       included: isEnglish ? ["Product overview", "Current availability", "How to order"] : ["Ringkasan produk", "Ketersediaan terbaru", "Cara pesan"],
@@ -385,20 +394,27 @@ export function buildGeneratedSiteScaffold(place: any, options: ScaffoldOptions)
   const fontPairingMeta = getFontPairing(fontPairing);
   const googleReviews = Array.isArray(place.reviews) ? place.reviews : [];
   const offeringMode = inferProductServiceMode(place);
-  const offerings = buildOfferings(place, isEnglish, offeringMode, imageUrl, options.searchQuery);
-  const typeLabel = meaningfulTypeLabel(place, isEnglish, options.searchQuery);
-  const businessStatus = place.business_status || place.businessStatus || "";
-  const websiteUrl = place.website || place.websiteUri || "";
-  const servedAreas = placeServedAreas(place, options.searchQuery || place.searchQuery || "");
-  const products = offerings.filter((item) => item.type === "product");
-  const services = offerings.filter((item) => item.type === "service");
-  const photoUrls = Array.isArray(place.photos)
+  const placePhotoUrls = Array.isArray(place.photos)
     ? place.photos
         .map((photo: any) => photoReference(photo))
         .filter(Boolean)
         .slice(0, 8)
         .map((reference: string) => `/api/places/photo?reference=${encodeURIComponent(reference)}&maxwidth=960`)
     : [];
+  // Hero keeps the selected imageUrl; cards cycle the generate-time pool
+  // (explicit caller pool first, then place photos) so each offering renders
+  // distinct imagery instead of recycling one photo everywhere.
+  const offeringPhotoPool = [imageUrl, ...(Array.isArray(options.photoPool) ? options.photoPool : []), ...placePhotoUrls]
+    .filter((url, index, all) => typeof url === "string" && url && all.indexOf(url) === index)
+    .slice(0, 8);
+  const offerings = buildOfferings(place, isEnglish, offeringMode, imageUrl, options.searchQuery, offeringPhotoPool);
+  const typeLabel = meaningfulTypeLabel(place, isEnglish, options.searchQuery);
+  const businessStatus = place.business_status || place.businessStatus || "";
+  const websiteUrl = place.website || place.websiteUri || "";
+  const servedAreas = placeServedAreas(place, options.searchQuery || place.searchQuery || "");
+  const products = offerings.filter((item) => item.type === "product");
+  const services = offerings.filter((item) => item.type === "service");
+  const photoUrls = offeringPhotoPool;
   const reviews = googleReviews.slice(0, 3).map((review: any) => ({
     authorName: review.author_name || review.authorName || "Google reviewer",
     rating: Number(review.rating || 5),

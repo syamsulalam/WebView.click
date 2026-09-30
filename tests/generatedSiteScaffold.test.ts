@@ -86,3 +86,55 @@ test("buildGeneratedSiteScaffold varies font pairing for same-industry businesse
     assert.equal((site.design as any).fontPairingConfig.selectionMode, "stable_seeded_business_variant");
   }
 });
+
+test("buildGeneratedSiteScaffold distributes distinct pool photos across offerings", () => {
+  const photos = ["pool-1", "pool-2", "pool-3", "pool-4"].map((reference) => ({ photo_reference: reference }));
+  const site = buildGeneratedSiteScaffold(
+    {
+      place_id: "place-pool",
+      name: "Metro Concrete Repair",
+      formatted_address: "100 Main St, Dallas, TX 75201, USA",
+      types: ["concrete_contractor", "establishment"],
+      photos,
+    },
+    {
+      businessId: "metro-concrete-repair",
+      imageUrl: "/api/places/photo?reference=pool-1&maxwidth=960",
+      searchQuery: "concrete contractor dallas",
+    },
+  );
+
+  const services = (site as any).services as any[];
+  assert.ok(services.length > 1);
+  assert.equal(services[0].image, "/api/places/photo?reference=pool-1&maxwidth=960");
+  const cardImages = services.map((service) => service.image).filter(Boolean);
+  assert.ok(cardImages.length > 1, "more than one card should carry an image");
+  assert.ok(cardImages.every((image) => image.includes("/api/places/photo?reference=pool-")));
+  const distinctHead = cardImages.slice(0, 4);
+  assert.equal(new Set(distinctHead).size, distinctHead.length, "first pool-sized cards must carry distinct photos");
+});
+
+test("buildGeneratedSiteScaffold keeps hero image on single-photo fallback", () => {
+  const site = buildGeneratedSiteScaffold(
+    {
+      place_id: "place-single",
+      name: "Metro Concrete Repair",
+      formatted_address: "100 Main St, Dallas, TX 75201, USA",
+      types: ["concrete_contractor", "establishment"],
+      photos: [{ photo_reference: "only-1" }],
+    },
+    {
+      businessId: "metro-concrete-repair",
+      imageUrl: "/api/places/photo?reference=only-1&maxwidth=960",
+      searchQuery: "concrete contractor dallas",
+    },
+  );
+
+  const services = (site as any).services as any[];
+  assert.equal(services[0].image, "/api/places/photo?reference=only-1&maxwidth=960");
+  // Single-photo backfill of later cards stays owned by postprocess rotation;
+  // the C1 outreach gate (mediaReady needs 2+ images) keeps such sites out of
+  // the outreach queue until more photos exist.
+  const cardImages = services.map((service) => service.image).filter(Boolean);
+  assert.ok(cardImages.every((image) => image === "/api/places/photo?reference=only-1&maxwidth=960"));
+});

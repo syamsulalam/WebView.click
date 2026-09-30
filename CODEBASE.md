@@ -1067,6 +1067,7 @@ Logic penting:
 - The builder calls `applyGeneratedSitePageInserts()` so services/contact/feedback/gallery pages are centralized with post-processing.
 - `/admin/leads` and `/admin/sites` both use this builder before calling `/api/sites/generate`, so first generate and regenerate-from-gathered flows no longer maintain separate fallback JSON shapes.
 - Utility helpers include `businessSlug`, `placeDisplayName`, `placePhone`, `placeMapsUrl`, `photoReference`, and `photoAttributions`.
+- Sejak A2 (2026-10-01) `buildOfferings` mendistribusikan photo pool generate-time ke setiap offering card/detail hero (hero tetap memakai selected `imageUrl` sebagai pool head; caller pool dari priority-sorted Places photos didahulukan, lalu foto place; round-robin bila offerings melebihi pool). `buildScaffoldGeneratePayload` membangun pool dari `sortedPhotosForPlace().slice(0, 8)` agar `/admin/leads` dan `/admin/sites` memakai foto terbaik lebih dulu. Single-photo output tidak berubah dan tetap tertahan gate `mediaReady`.
 - Fixture tests live in `tests/generatedSiteScaffold.test.ts`; run `npm run test:scaffold` when local dependencies are installed.
 
 ### `src/lib/adminSiteGeneration.ts`
@@ -1484,7 +1485,7 @@ Why generated sites feel "not quite good enough", grouped by track. Severity: �
 1. ★ Feed `reviewSummary`/`generativeSummary`, amenity booleans, `priceLevel`/`paymentOptions`, secondary hours + timezone, and top 3–4 photo references into `businessFactsForAiCopy`.
 2. ★ Make `sectionRhythm` / `detailLayout` / `mediaStrategy` / `compositionPattern` actually branch layout — or stop generating them.
 3. ★ Fix export font `@import` + hero-size refit so owner zips match preview. (done 2026-10-01, A4)
-4. ★ Multi-photo pick at generate time (hero + gallery + card pool) instead of single-photo fallback.
-5. ★ Composite `outreach-ready` gate in `AdminSites` (audit + conversion + design + media + contact).
+4. ★ Multi-photo pick at generate time (hero + gallery + card pool) instead of single-photo fallback. (done 2026-10-01, A2: pool distribution in scaffold; zero-photo proof-led layouts still open)
+5. ★ Composite `outreach-ready` gate in `AdminSites` (audit + conversion + design + media + contact). (done 2026-10-01, C1 `b302ec9`)
 6. Fail outline loudly (or block) instead of silently advancing on null; never wipe offering progress on `siteCopy` retry.
 7. Mobile nav + safe-area sticky CTA; accordion FAQ; `mailto:` success state.
