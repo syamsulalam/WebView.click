@@ -88,6 +88,18 @@ type SiteRow = {
   paletteOptionCount?: number | null;
   needsPaletteOptions?: boolean;
   canAutoRepairPaletteOptions?: boolean;
+  conversionAuditKnown?: boolean;
+  conversionReady?: boolean;
+  conversionFlagCount?: number | null;
+  conversionFlags?: string[];
+  designAuditKnown?: boolean;
+  designReady?: boolean;
+  designFlagCount?: number | null;
+  designFlags?: string[];
+  mediaReady?: boolean;
+  hasUsablePhone?: boolean;
+  hasUsableEmail?: boolean;
+  contactReady?: boolean;
 };
 
 type RegenerateMode = "resave" | "ai";
@@ -269,7 +281,32 @@ function siteNeedsAuditSnapshot(site: SiteRow) {
 }
 
 function siteIsOutreachReady(site: SiteRow) {
-  return siteHasAuditSnapshot(site) && !siteWasContacted(site);
+  return siteHasAuditSnapshot(site) && siteOutreachGate(site).ready && !siteWasContacted(site);
+}
+
+// Composite outreach-ready gate (PRD.md C1): audit + conversion + design + media + contact.
+// Unknown audits fail closed — a saved summary that predates audits must be resaved/upgraded first.
+function siteOutreachGate(site: SiteRow): { ready: boolean; blockers: string[] } {
+  const blockers: string[] = [];
+  if (!siteHasAuditSnapshot(site)) blockers.push("No audit snapshot");
+  if (site.conversionReady !== true) {
+    blockers.push(!site.conversionAuditKnown
+      ? "Conversion audit unknown — resave or upgrade the site"
+      : `Conversion ${Number(site.conversionFlagCount || 0)} flag${Number(site.conversionFlagCount || 0) === 1 ? "" : "s"}${site.conversionFlags?.length ? `: ${site.conversionFlags.join(", ")}` : ""}`);
+  }
+  if (site.designReady !== true) {
+    blockers.push(!site.designAuditKnown
+      ? "Design audit unknown — resave or upgrade the site"
+      : `Design ${Number(site.designFlagCount || 0)} flag${Number(site.designFlagCount || 0) === 1 ? "" : "s"}${site.designFlags?.length ? `: ${site.designFlags.join(", ")}` : ""}`);
+  }
+  if (site.mediaReady !== true) {
+    if (typeof site.availableImageCount === "number" && site.availableImageCount < 2) blockers.push(`Only ${site.availableImageCount} saved image${site.availableImageCount === 1 ? "" : "s"} — needs 2+`);
+    else if (siteNeedsServiceCardImageRepair(site)) blockers.push("Service-card images need repair");
+    else if (siteNeedsPaletteOptions(site)) blockers.push("Needs 2+ palette options");
+    else blockers.push("Media not ready — resave the site");
+  }
+  if (site.contactReady !== true) blockers.push("No usable phone or email");
+  return { ready: blockers.length === 0, blockers };
 }
 
 function siteFullyPremiumUpgraded(site: SiteRow) {
@@ -524,7 +561,7 @@ export default function AdminSites() {
       site.needsServiceCardImageRepair === true || Number(site.missingServiceCardImageCount || 0) > 0 || Number(site.duplicateServiceCardImageCount || 0) > 0 ? "missing duplicate service images" : "",
       needsAboutNavRepair(site) ? "missing about nav labels ai fill content" : "",
       siteHasAuditSnapshot(site) ? "audit saved profile audit snapshot ready outreach point in time" : "needs audit missing profile audit snapshot outreach not ready",
-      siteIsOutreachReady(site) ? "outreach ready audit saved not contacted owner contact queue" : "",
+      siteIsOutreachReady(site) ? "outreach ready quality gate green conversion design media contact queue" : "outreach blocked quality gate conversion design media contact flags",
       siteWasContacted(site) ? "contacted outreach follow up" : "",
       siteNeedsFollowUp(site) ? "needs follow up stale contacted not viewed not paid" : "",
       siteDownloadedWithoutSetup(site) ? "downloaded claimed free package warm owner no setup" : "",
@@ -2334,7 +2371,7 @@ export default function AdminSites() {
             </span>
           </button>
         </HoverTooltip>
-        <HoverTooltip text="Show generated sites that already have a saved audit snapshot and have not been marked contacted yet. This is the next owner outreach queue.">
+        <HoverTooltip text="Show generated sites that pass the outreach quality gate and have not been contacted yet: audit snapshot saved, conversion and design audits flag-free, 2+ images with 2+ palettes and clean service-card images, and a usable phone or email. This is the next owner outreach queue.">
           <button
             type="button"
             onClick={() => setSiteIssueFilter(siteIssueFilter === "outreachReady" ? "all" : "outreachReady")}
@@ -2807,6 +2844,24 @@ export default function AdminSites() {
                       </span>
                     </HoverTooltip>
                   )}
+                  {(() => {
+                    const gate = siteOutreachGate(site);
+                    return gate.ready ? (
+                      <HoverTooltip text="Outreach quality gate is green: audit snapshot saved, conversion and design audits have zero flags, media has 2+ images with 2+ palettes and clean service-card images, and a usable phone or email is saved.">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                          <Send size={11} />
+                          Gate ready
+                        </span>
+                      </HoverTooltip>
+                    ) : (
+                      <HoverTooltip text={`Outreach blocked by ${gate.blockers.length} check${gate.blockers.length === 1 ? "" : "s"}: ${gate.blockers.join(" · ")}. Fix the flagged rows above, then resave or upgrade the site so the summary recomputes.`}>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                          <Send size={11} />
+                          Gate {gate.blockers.length}
+                        </span>
+                      </HoverTooltip>
+                    );
+                  })()}
                   {site.lastPreviewError && (
                     <HoverTooltip text={`Last preview full JSON read failed${site.lastPreviewErrorAt ? ` at ${new Date(site.lastPreviewErrorAt).toLocaleString()}` : ""}. Error: ${site.lastPreviewError}`}>
                       <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800">
@@ -3048,6 +3103,13 @@ export default function AdminSites() {
                           <X size={14} />
                         </button>
                       </div>
+                      {!siteOutreachGate(site).ready && (
+                        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-amber-800">
+                          <p className="font-semibold">Quality gate: outreach blocked</p>
+                          <p className="mt-1">{siteOutreachGate(site).blockers.join(" · ")}</p>
+                          <p className="mt-1">Safe countdown preview below stays available for QA.</p>
+                        </div>
+                      )}
                       <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
                         <div className="mb-2 flex items-center justify-between gap-2">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Template preview</p>
@@ -3063,7 +3125,9 @@ export default function AdminSites() {
                         <button
                           type="button"
                           onClick={() => handleCopyOutreachMessage(site)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                          disabled={!siteOutreachGate(site).ready}
+                          aria-disabled={!siteOutreachGate(site).ready}
+                          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Copy size={14} />
                           {outreachTemplateLabelForSite(site)}
@@ -3071,7 +3135,9 @@ export default function AdminSites() {
                         <button
                           type="button"
                           onClick={() => handleCopyOwnerReviewLink(site)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                          disabled={!siteOutreachGate(site).ready}
+                          aria-disabled={!siteOutreachGate(site).ready}
+                          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Link2 size={14} />
                           <span className="inline-flex items-center gap-1.5">
@@ -3093,7 +3159,7 @@ export default function AdminSites() {
                         <button
                           type="button"
                           onClick={() => handleOpenOutreachEmail(site)}
-                          disabled={outreachLoadingKey === `${site.businessId}:email`}
+                          disabled={outreachLoadingKey === `${site.businessId}:email` || !siteOutreachGate(site).ready}
                           className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-xs font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-60"
                         >
                           {outreachLoadingKey === `${site.businessId}:email` ? <RefreshCw size={14} className="animate-spin" /> : <Mail size={14} />}
@@ -3102,7 +3168,7 @@ export default function AdminSites() {
                         <button
                           type="button"
                           onClick={() => handleOpenOutreachMessage(site)}
-                          disabled={outreachLoadingKey === `${site.businessId}:message`}
+                          disabled={outreachLoadingKey === `${site.businessId}:message` || !siteOutreachGate(site).ready}
                           className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
                         >
                           {outreachLoadingKey === `${site.businessId}:message` ? <RefreshCw size={14} className="animate-spin" /> : <MessageCircle size={14} />}

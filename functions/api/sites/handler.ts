@@ -728,7 +728,11 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
               parsed.needsPaletteOptions === undefined ||
               parsed.canAutoRepairPaletteOptions === undefined ||
               parsed.premiumUpgradeComplete === undefined ||
-              parsed.lastPremiumCopyUpgradeAt === undefined
+              parsed.lastPremiumCopyUpgradeAt === undefined ||
+              parsed.conversionReady === undefined ||
+              parsed.designReady === undefined ||
+              parsed.mediaReady === undefined ||
+              parsed.contactReady === undefined
             ) &&
             jsonContent.storageOnly !== true &&
             Array.isArray(jsonContent.pages)
@@ -782,6 +786,18 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         paletteOptionCount: typeof summary.paletteOptionCount === "number" ? summary.paletteOptionCount : null,
         needsPaletteOptions: summary.needsPaletteOptions === true,
         canAutoRepairPaletteOptions: summary.canAutoRepairPaletteOptions === true,
+        conversionAuditKnown: summary.conversionAuditKnown === true,
+        conversionReady: summary.conversionReady === true,
+        conversionFlagCount: typeof summary.conversionFlagCount === "number" ? summary.conversionFlagCount : null,
+        conversionFlags: Array.isArray(summary.conversionFlags) ? summary.conversionFlags.map((flag) => asString(flag)).filter(Boolean) : [],
+        designAuditKnown: summary.designAuditKnown === true,
+        designReady: summary.designReady === true,
+        designFlagCount: typeof summary.designFlagCount === "number" ? summary.designFlagCount : null,
+        designFlags: Array.isArray(summary.designFlags) ? summary.designFlags.map((flag) => asString(flag)).filter(Boolean) : [],
+        mediaReady: summary.mediaReady === true,
+        hasUsablePhone: summary.hasUsablePhone === true,
+        hasUsableEmail: summary.hasUsableEmail === true,
+        contactReady: summary.contactReady === true,
         leadStatus: row.lead_status || "",
         lastContactedAt: row.lead_last_contacted || "",
         lastViewedAt: row.lead_last_viewed_at || "",
@@ -846,6 +862,18 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
           paletteOptionCount: null,
           needsPaletteOptions: false,
           canAutoRepairPaletteOptions: false,
+          conversionAuditKnown: false,
+          conversionReady: false,
+          conversionFlagCount: null,
+          conversionFlags: [],
+          designAuditKnown: false,
+          designReady: false,
+          designFlagCount: null,
+          designFlags: [],
+          mediaReady: false,
+          hasUsablePhone: false,
+          hasUsableEmail: false,
+          contactReady: false,
           leadStatus: row.lead_status || "",
           lastContactedAt: row.lead_last_contacted || "",
           lastViewedAt: row.lead_last_viewed_at || "",

@@ -198,6 +198,51 @@ function isUsableImageUrl(deps: Pick<SiteStorageDeps, "asString">, value: unknow
   return Boolean(url && (url.startsWith("http") || url.startsWith("/") || url.startsWith("data:")));
 }
 
+function auditFlagList(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const flags = (value as Record<string, unknown>).flags;
+  return Array.isArray(flags) ? flags.map((flag) => String(flag ?? "")).filter(Boolean) : [];
+}
+
+function recordField(parsed: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const value = parsed[key];
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+// Gate-strict audit readiness for the outreach-ready gate (PRD.md C1).
+// Unlike the upgrade-preview `ready` in handler.ts (which treats a missing audit as ready so old
+// sites can flow into upgrade), unknown audits FAIL here: a site whose saved JSON predates audits
+// must be resaved/upgraded before it can enter the outreach queue.
+function gateAuditReadiness(parent: Record<string, unknown> | null, auditKey: string) {
+  const audit = parent ? recordField(parent, auditKey) : null;
+  const flags = audit ? auditFlagList(audit) : [];
+  const known = audit !== null;
+  return { known, flags, ready: known && flags.length === 0 };
+}
+
+export function siteOutreachReadiness(deps: Pick<SiteStorageDeps, "asString">, parsed: Record<string, unknown>) {
+  const { asString } = deps;
+  const conversion = gateAuditReadiness(recordField(parsed, "conversion"), "conversionAudit");
+  const design = gateAuditReadiness(recordField(parsed, "design"), "designAudit");
+  const businessProfile = recordField(parsed, "businessProfile");
+  const contact = businessProfile ? recordField(businessProfile, "contact") : null;
+  const hasUsablePhone = Boolean(asString(contact?.phoneNational, asString(contact?.phoneInternational)).trim());
+  const hasUsableEmail = Boolean(asString(contact?.email).trim());
+  return {
+    conversionAuditKnown: conversion.known,
+    conversionReady: conversion.ready,
+    conversionFlagCount: conversion.flags.length,
+    conversionFlags: conversion.flags,
+    designAuditKnown: design.known,
+    designReady: design.ready,
+    designFlagCount: design.flags.length,
+    designFlags: design.flags,
+    hasUsablePhone,
+    hasUsableEmail,
+    contactReady: hasUsablePhone || hasUsableEmail,
+  };
+}
+
 function serviceCardImageSummary(deps: Pick<SiteStorageDeps, "asString">, parsed: Record<string, unknown>) {
   const visibleCards: Array<Record<string, unknown>> = [];
   const pages = Array.isArray(parsed.pages) ? parsed.pages as Array<Record<string, unknown>> : [];
@@ -296,6 +341,11 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
   const serviceImageSummary = serviceCardImageSummary(deps, parsed);
   const contentSummary = aboutNavSummary(deps, parsed);
   const visualAssetSummary = siteVisualAssetSummary(deps, parsed);
+  const gateReadiness = siteOutreachReadiness(deps, parsed);
+  const mediaReady = visualAssetSummary.availableImageCount >= 2
+    && visualAssetSummary.paletteOptionCount >= 2
+    && serviceImageSummary.missing === 0
+    && serviceImageSummary.duplicate === 0;
   return {
     businessName: asString(meta.businessName, asString(businessProfile.name, businessId)),
     niche: asString(meta.niche, asString(businessProfile.typeLabel, "")),
@@ -332,6 +382,18 @@ export function siteSummaryFromJson(deps: Pick<SiteStorageDeps, "asString">, par
     paletteOptionCount: visualAssetSummary.paletteOptionCount,
     needsPaletteOptions: visualAssetSummary.needsPaletteOptions,
     canAutoRepairPaletteOptions: visualAssetSummary.canAutoRepairPaletteOptions,
+    conversionAuditKnown: gateReadiness.conversionAuditKnown,
+    conversionReady: gateReadiness.conversionReady,
+    conversionFlagCount: gateReadiness.conversionFlagCount,
+    conversionFlags: gateReadiness.conversionFlags,
+    designAuditKnown: gateReadiness.designAuditKnown,
+    designReady: gateReadiness.designReady,
+    designFlagCount: gateReadiness.designFlagCount,
+    designFlags: gateReadiness.designFlags,
+    mediaReady,
+    hasUsablePhone: gateReadiness.hasUsablePhone,
+    hasUsableEmail: gateReadiness.hasUsableEmail,
+    contactReady: gateReadiness.contactReady,
   };
 }
 
