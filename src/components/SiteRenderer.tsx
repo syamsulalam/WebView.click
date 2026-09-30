@@ -857,6 +857,7 @@ export default function SiteRenderer({
   const initialPage = siteData?.pages?.[0]?.pageId || "home";
   const [activeTab, setActiveTab] = useState(initialPage);
   const [openMenuKey, setOpenMenuKey] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [navSubmenuPosition, setNavSubmenuPosition] = useState({ left: 0, top: 0 });
   const [headerCompact, setHeaderCompact] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -1527,7 +1528,7 @@ export default function SiteRenderer({
         data-wv-site-header="true"
         data-wv-header-compact={headerCompact ? "true" : undefined}
         style={{ background: "var(--wv-header-bg)", color: "var(--wv-header-text)" }}
-        className={`${headerCompact ? "px-5 py-2.5" : "px-5 py-4"} md:px-12 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 sticky top-0 z-50 shadow-sm`}
+        className={`${headerCompact ? "px-5 py-2.5" : "px-5 py-4"} md:px-12 grid max-md:grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 sticky top-0 z-50 shadow-sm`}
       >
         <button
           type="button"
@@ -1539,6 +1540,17 @@ export default function SiteRenderer({
           {brand.logoSvg ? <span className="h-8 w-8 shrink-0 [&>svg]:h-full [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
           {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
           {editableText("header.businessName", meta.businessName, "span", "min-w-0 truncate leading-tight")}
+        </button>
+        <button
+          type="button"
+          data-wv-mobile-nav-toggle="true"
+          aria-expanded={mobileNavOpen}
+          aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+          onClick={() => setMobileNavOpen(!mobileNavOpen)}
+          className="inline-flex h-10 w-10 items-center justify-center justify-self-start rounded-lg border border-slate-200 text-xl font-bold leading-none md:hidden"
+          style={{ color: colors.textMain }}
+        >
+          {mobileNavOpen ? "×" : "☰"}
         </button>
         <nav className="hidden min-w-0 justify-self-center md:flex items-center justify-center gap-4">
           {navigation.headerMenu.map((menu: any, idx: number) => {
@@ -1564,8 +1576,46 @@ export default function SiteRenderer({
                 </button>
               </div>
             );
-          })}
-        </nav>
+            })}
+          </nav>
+          {/* Always rendered (hidden when closed) so the owner HTML export keeps a working mobile menu via its inline script. */}
+          <div data-wv-mobile-nav-panel="true" className={`${mobileNavOpen ? "" : "hidden "}absolute inset-x-0 top-full z-50 max-h-[70vh] overflow-y-auto border-t border-slate-200 shadow-xl md:hidden`} style={{ backgroundColor: "var(--wv-header-submenu-bg, #fff)" }}>
+              {headerMenuWithAreas.map((menu: any, idx: number) => {
+                const menuPageId = String(menu.href || "").replace("#", "");
+                const menuChildren = Array.isArray(menu.children) ? menu.children : [];
+                return (
+                  <div key={idx} className="border-b border-slate-100 last:border-0">
+                    <button
+                      type="button"
+                      data-wv-tab={menuPageId}
+                      onClick={() => { changeTab(menuPageId); setMobileNavOpen(false); }}
+                      className={`flex w-full items-center justify-between px-5 py-3 text-left text-sm font-bold uppercase tracking-wide ${activeTab === menuPageId ? "" : "text-slate-700"}`}
+                      style={activeTab === menuPageId ? { color: colors.accentText } : undefined}
+                    >
+                      <span>{menu.label}</span>
+                    </button>
+                    {menuChildren.length > 0 && (
+                      <div className="pb-2">
+                        {menuChildren.map((child: any, childIdx: number) => {
+                          const childPageId = String(child.href || "").replace("#", "");
+                          return (
+                            <button
+                              key={childIdx}
+                              type="button"
+                              data-wv-tab={childPageId}
+                              onClick={() => { changeTab(childPageId); setMobileNavOpen(false); }}
+                              className="flex w-full items-center px-8 py-2 text-left text-sm text-slate-600"
+                            >
+                              <span>{child.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
         <a
           href={globalConfig.header.ctaButton.href}
           data-wv-tab={tabPageIdForHref(String(globalConfig.header.ctaButton.href || "")) || undefined}
@@ -1662,6 +1712,8 @@ export default function SiteRenderer({
                     : "relative z-10 max-w-6xl mx-auto grid md:grid-cols-[1.05fr_0.95fr] gap-10 items-center";
                 const showHeroMedia = mediaStrategy !== "minimal-no-photo";
                 const heroGridClass = showHeroMedia ? heroGridBase : "relative z-10 max-w-4xl mx-auto";
+                const heroHasMapContent = Boolean(directionsHref || heroAddress || displayPhone);
+                const heroCapabilities = capabilities.filter((cap: any) => cap && (cap.label || cap.title)).slice(0, 4);
                 const heroPanelClass = isEmergencyHero
                   ? "rounded-xl border border-white/10 bg-white/10 p-6 shadow-xl shadow-black/20 backdrop-blur md:p-8"
                   : isAuthorityHero
@@ -1713,7 +1765,7 @@ export default function SiteRenderer({
                       {businessProfile.typeLabel && <p className="text-sm text-slate-600">{editableText(`${section.id}.brandType`, businessProfile.typeLabel, "span")}</p>}
                     </div>
                   </div>
-                ) : mediaStrategy === "map-contact" ? (
+                ) : mediaStrategy === "map-contact" && heroHasMapContent ? (
                   <div className={heroMediaClass}>
                     <div className="flex h-full flex-col justify-center gap-4 bg-white/70 p-8">
                       <p className="text-sm font-semibold uppercase tracking-wide" style={{ color: colors.accentText }}>{isIndonesian ? "Lokasi" : "Location"}</p>
@@ -1722,10 +1774,10 @@ export default function SiteRenderer({
                       {displayPhone && <a href={phoneHref(primaryPhone || displayPhone)} className="text-sm font-semibold hover:underline" style={{ color: colors.accentText }}>{displayPhone}</a>}
                     </div>
                   </div>
-                ) : mediaStrategy === "icon-card" ? (
+                ) : mediaStrategy === "icon-card" && heroCapabilities.length > 0 ? (
                   <div className={heroMediaClass}>
                     <div className="grid h-full grid-cols-2 content-center gap-3 bg-white/60 p-8">
-                      {capabilities.filter((cap: any) => cap && (cap.label || cap.title)).slice(0, 4).map((cap: any, i: number) => (
+                      {heroCapabilities.map((cap: any, i: number) => (
                         <div key={i} className="rounded-xl border border-slate-200 bg-white p-4 text-center">
                           <span className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: colors.capsuleBg, color: colors.icon }}>{editableSiteIcon(`${page.pageId}.${section.id}.cap.${i}`, "check", 18)}</span>
                           <p className="text-sm font-semibold text-slate-950">{editableText(`${section.id}.cap.${i}`, cap.label || cap.title, "span")}</p>
@@ -1761,8 +1813,8 @@ export default function SiteRenderer({
                         />
                       </>
                     )}
-                      <div className={heroGridClass}>
-                        <div className={heroPanelClass}>
+                    <div className={heroGridClass}>
+                      <div className={heroPanelClass}>
                         <p className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: isEmergencyHero ? colors.onPrimary : colors.accentText }}>
                           {editableText(`${section.id}.eyebrow`, businessProfile.typeLabel, "span")}
                         </p>
@@ -2236,10 +2288,16 @@ export default function SiteRenderer({
                       {editableText(`${section.id}.title`, section.content?.title || "Pertanyaan Umum", "h2", "text-3xl md:text-4xl font-bold text-slate-950 mb-8")}
                       <div className="space-y-3">
                         {items.map((item: any, i: number) => (
-                          <div key={i} className="rounded-xl bg-white border border-slate-200 p-5">
-                            {editableText(`${section.id}.faq.${i}.question`, item.question, "h3", "font-semibold text-slate-950")}
+                          <details key={i} className="group rounded-xl bg-white border border-slate-200 p-5" {...(i === 0 ? { open: true } : {})}>
+                            <summary
+                              className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden"
+                              onClick={editMode ? (event) => event.preventDefault() : undefined}
+                            >
+                              {editableText(`${section.id}.faq.${i}.question`, item.question, "h3", "font-semibold text-slate-950")}
+                              <span aria-hidden="true" className="shrink-0 text-lg font-bold text-slate-400 transition group-open:rotate-180">▾</span>
+                            </summary>
                             {editableText(`${section.id}.faq.${i}.answer`, item.answer, "p", "mt-2 text-slate-600", undefined, true)}
-                          </div>
+                          </details>
                         ))}
                       </div>
                     </div>
@@ -2563,6 +2621,8 @@ export default function SiteRenderer({
                             const subject = `Website inquiry for ${meta.businessName}`;
                             const mailto = mailHref(contactEmail, subject, body || `New inquiry for ${meta.businessName}`)
                               || `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body || `New inquiry for ${meta.businessName}`)}`;
+                            const sentNote = e.currentTarget.querySelector("[data-wv-sent-note]");
+                            if (sentNote) sentNote.classList.remove("hidden");
                             window.location.href = mailto;
                           }}
                         >
@@ -2583,6 +2643,7 @@ export default function SiteRenderer({
                             {editableButtonIcon(`${page.pageId}.${section.id}.contactSubmit`, formConfig.buttonText || (isIndonesian ? "Kirim Pesan" : "Send Message"), `mailto:${contactEmail}`, 16)}
                             {editableButtonText(`${page.pageId}.${section.id}.contactSubmit`, formConfig.buttonText || (isIndonesian ? "Kirim Pesan" : "Send Message"))}
                           </button>
+                          <p data-wv-sent-note="true" className="hidden text-sm font-medium" style={{ color: colors.icon }}>{isIndonesian ? "Membuka aplikasi email Anda — pesan sudah disiapkan." : "Opening your email app — your message is ready to send."}</p>
                         </form>
                       </div>
                     </div>
@@ -2700,7 +2761,8 @@ export default function SiteRenderer({
       </footer>
 
       {conversion.stickyMobileCta && (
-        <div className="md:hidden fixed bottom-0 inset-x-0 z-[110] bg-white border-t border-slate-200 p-3 flex gap-2">
+        <>
+        <div className="md:hidden fixed bottom-0 inset-x-0 z-[110] bg-white border-t border-slate-200 p-3 flex gap-2" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
           <a
             href={conversion.primaryCta?.href || globalConfig.header.ctaButton.href}
             onClick={editMode ? (event) => event.preventDefault() : undefined}
@@ -2721,6 +2783,8 @@ export default function SiteRenderer({
             </a>
           )}
         </div>
+        <div aria-hidden="true" className="md:hidden" style={{ height: "calc(76px + env(safe-area-inset-bottom))" }} />
+        </>
       )}
       </div>
 

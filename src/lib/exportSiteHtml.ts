@@ -267,7 +267,19 @@ ${heroRefitScript()}
     if (pages().some(function (page) { return page.getAttribute("data-wv-page") === pageId || page.id === pageId; }) || document.getElementById(pageId)) {
       event.preventDefault();
       activate(pageId, true);
+      var mobilePanel = document.querySelector("[data-wv-mobile-nav-panel]");
+      if (mobilePanel) mobilePanel.classList.add("hidden");
     }
+  });
+  Array.prototype.slice.call(document.querySelectorAll("[data-wv-mobile-nav-toggle]")).forEach(function (toggle) {
+    toggle.addEventListener("click", function () {
+      var panel = document.querySelector("[data-wv-mobile-nav-panel]");
+      if (!panel) return;
+      var willOpen = panel.classList.contains("hidden");
+      panel.classList.toggle("hidden");
+      toggle.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      toggle.textContent = willOpen ? "×" : "☰";
+    });
   });
   document.addEventListener("click", function (event) {
     var ratingButton = event.target && event.target.closest ? event.target.closest("[data-wv-feedback-rating]") : null;
@@ -342,6 +354,8 @@ ${heroRefitScript()}
     if (!form) return;
     event.preventDefault();
     var data = new FormData(form);
+    var sentNote = form.querySelector("[data-wv-sent-note]");
+    if (sentNote) sentNote.classList.remove("hidden");
     var business = form.getAttribute("data-wv-business") || document.title || "this business";
     var email = form.getAttribute("data-wv-mailto") || "";
     var subject = form.getAttribute("data-wv-subject") || ("Website inquiry for " + business);
