@@ -1,8 +1,90 @@
-# WebView.click Codebase Reference
+# WebView.click Codebase Inventory — CODEBASE.md
 
-Terakhir diperbarui: 31 Mei 2026.
+> Moved from `docs/CODEBASE_REFERENCE.md` to repo root on 2026-10-01 and expanded: §0 inventory tables (code, logic, reason) plus Appendix A (generation-quality audit). The detailed per-file behavior notes from the original reference are preserved below as Part 1.
+>
+> Legend: ✅ solid · ⚠️ partial / weak · ❌ missing / ignored · ★ load-bearing · → data flow
 
-Dokumen ini menjelaskan isi, fungsi, dan logic utama tiap laman/komponen agar debugging berikutnya tidak mulai dari nol.
+## 0.1 Repository map — what lives where and why
+
+| Area | Path | Why it exists |
+|---|---|---|
+| ★ Routes | `src/App.tsx` | Lazy-loaded public (`/`, `/demo`, `/audit/:businessId`, `/:businessId`) + admin (`/admin/*`) routes; route-aware Suspense skeletons |
+| ★ Site renderer | `src/components/SiteRenderer.tsx` (~2900 lines) | Single renderer for `/demo`, `/:businessId`, and owner export DOM: JSON → sections, header/footer, design-intent classes, inline owner edits |
+| ★ Download / setup / checkout | `src/components/WebsiteActionPanel.tsx` | Shared panel for `/demo` + `/:businessId`: free-download modal, domain check, add-ons, PayPal checkout |
+| ★ Prospecting CRM | `src/pages/admin/AdminLeads.tsx` + `src/pages/admin/leads/` | Google Places search → Gather data → photo/palette pick → chunked AI generate → pipeline + payment reconciliation |
+| ★ Site management | `src/pages/admin/AdminSites.tsx` | Generated-site QA: repair / resave / visual-variation / upgrade-design / premium-copy-upgrade / outreach queue |
+| ★ Job audit | `src/components/GenerationJobsTable.tsx` + `src/pages/admin/AdminJobs.tsx` | Chunked generation job trail: per-step retry, copy audit, coverage + conversion/design badges |
+| ★ Deterministic scaffold | `src/lib/generatedSiteScaffold.ts` | Fallback site JSON from Places data before AI enrichment; shared by Leads + Sites flows |
+| ★ Deterministic post-process | `src/lib/generatedSitePostProcess.ts` | Idempotent inserts/repairs: services/about/contact/feedback/gallery pages, conversion + design intent, audits |
+| ★ Admin orchestration | `src/lib/adminSiteGeneration.ts` | Shared readiness/cooldown/photo-palette/chunked-step helpers so Leads + Sites never drift |
+| ★ AI prompts | `functions/api/ai/siteGeneration.ts` | Outline + siteCopy + offeringCopy prompt builders, merge, copy-audit helpers |
+| Visual system | `src/lib/siteStylePresets.ts` | Niche presets (`wv-preset-*`), shape layer (`wv-visual-*`), procedural shaders, canvas-scoped CSS |
+| Typography | `src/lib/fontPairings.ts` | Industry font-pairing registry with stable business-seeded variants |
+| Owner export | `src/lib/exportSiteHtml.ts` | DOM-clone → static `index.html` + `img/` + `sitemap.xml` + `robots.txt` + branded PDF guide → zip |
+| ★ API (production) | `functions/api/[[path]].ts` → `functions/api/*/handler.ts` | Cloudflare Pages Functions: sites, places, generation-jobs, payments, domains, audits, outreach, settings |
+| Data contracts | `JSON/template-schema.json`, `SQL/schema.sql` | AI input baseline shape; D1 tables (`leads`, `json_sites`, `places_prospects`, `generation_jobs`, …) |
+| Proof asset | `src/pages/public/MarketingAuditViewer.tsx` + `src/lib/marketingAudit*.ts` | Deterministic GBP marketing audit (`/audit/:businessId`) used as outreach proof |
+| QA surface | `src/pages/public/DemoSite.tsx` | API-free multi-industry renderer QA with inspector, preset/shader switchers, boundary checks |
+| Tests | `tests/*.test.ts` | Fixture tests for post-process, scaffold, generation state, API handlers |
+
+## 0.2 AI generation pipeline — step by step
+
+| # | Step | Kind | Input → Output | Status |
+|---|---|---|---|---|
+| 0 | Prospect + photo/palette pick | Deterministic + admin choice | Place → `jsonContent`, 1 `imageUrl`, palette (`adminSiteGeneration.ts:141-178,294-326`) | ⚠️ single-photo bottleneck starves gallery + palette variety |
+| 1 | Scaffold build | Deterministic | Place + options → full site JSON (`generatedSiteScaffold.ts:325-631`) | ⚠️ canned service titles, only item 0 gets an image, generic capabilities |
+| 2 | `chunked-start` | Deterministic | Payload → `generation_jobs` row, `nextStep` (`generationJobs/handler.ts:340-373`) | ⚠️ no photo/palette richness validation before starting |
+| 3 | `outline` | ★ AI | Facts + offerings → 4–12 offerings (`ai/siteGeneration.ts:1075-1159`) | ⚠️ null-tolerant: advances to siteCopy on failure, generic scaffold survives |
+| 4 | `siteCopy` | ★ AI | Scaffold + brief → homepage/meta patch (`handler.ts:423-467`) | ⚠️ throws on null (whole step fails); resets offering progress |
+| 5 | `offeringCopy` loop | ★ AI, 1 item/request | Per-service patch until `nextStep: finalize` (`handler.ts:469-615`) | ⚠️ slow/fragile; coverage tracks booleans, not quality |
+| 6 | `finalize` | Deterministic | Apply patches → save via `/api/sites/generate` (`handler.ts:617-680`) | ⚠️ HTTP error after all AI spend fails the job; no partial save |
+| 7 | Post-process inserts | Deterministic, runs twice | Repair + page inserts + audits (`generatedSitePostProcess.ts:1431-1440`) | ⚠️ filler (generic FAQ/about) masks thin AI instead of flagging it |
+
+Reason for chunking (not one big AI call): Cloudflare 502/503/504/524 + provider timeouts must fail only the current chunk and stay resumable — see AGENTS.md AI Job Reliability Rule.
+
+## 0.3 Renderer — sections and design intent
+
+Supported `section.type` values (`SiteRenderer.tsx` dispatch; unknown → `[Section: type]` placeholder at `2452`):
+
+| Type | Role | Status |
+|---|---|---|
+| `hero` | First viewport: promise + CTA + proof + media | ✅ 5 layout variants |
+| `trustBar` | Compact rating/review/contact stats | ✅ variant-aware |
+| `features` / `offers` / `offeringDetail` | Differentiators, service cards, detail sales content | ✅ offers has 4 density variants |
+| `reviews` | Testimonial cards from `trust.reviews` | ⚠️ drops publish-time/attribution |
+| `hoursLocation` | Hours + address/phone/directions | ✅ grouped hours, doubles as `#contact` target |
+| `faq` | Objection handling | ⚠️ static stacked cards, no accordion |
+| `finalCta` | Bottom conversion band | ✅ 5 CTA treatments |
+| `textImageBlock` / `teamGrid` / `gridCards` / `imageGallery` | Story, team, menu, gallery | ✅ fixed-height image frames |
+| `feedback` | 1–5 star gate → Google review vs `mailto:` form | ✅ auto-added, kept out of navbar |
+| `contactForm` | Info panel + `mailto:` form | ⚠️ mailto-only, no success state |
+
+Design-intent fields (`design.*` → `data-wv-*` attrs at `1508-1515`):
+
+| Field | Effect | Status |
+|---|---|---|
+| `heroLayout`, `proofTreatment`, `cardDensity`, `ctaTreatment` | Branch hero / proof / offers / final-CTA rendering | ✅ actually rendered |
+| `stylePreset`, `visualStyle`, `shaderPreset`, `fontPairing` | Preset CSS + fonts via `siteStylePresets.ts` | ✅ rendered (`legal-authority` overrides pairing) |
+| `mediaStrategy` | Supposed to switch photo-led vs proof-led composition | ❌ one branch only (`gallery-grid`); rest is class-only |
+| `compositionPattern`, `sectionRhythm`, `detailLayout`, `motionLevel`, `antiPatterns` | Supposed to vary page rhythm and detail layout | ❌ data-only; all sections hardcode `py-20 px-6` |
+| `customCss`, `themeVariables.uiTokens`, `fontPairingConfig` | Escape hatches | ❌ no reader in renderer |
+
+## 0.4 Owner conversion and admin QA at a glance
+
+Owner path (`WebsiteActionPanel.tsx`): floating `Download / Setup` → `Claim this website package` → **FREE** download modal (`$997 → $0` value stack + page list) **or** done-for-you setup (`$180/y` hosting + `$17/y` new-domain fee, 1–10y terms, optional `$50` page add-ons) → domain check → email/payment (PayPal inline when active). Owner review links (`?owner=1`) start a 7-day countdown; only real owner sessions write CRM `checkout_pending` / download events.
+
+Admin quality signals today vs gaps:
+
+| Signal | Where | Status |
+|---|---|---|
+| Image/palette badges, `About/nav` badge, recovery markers | `AdminSites` rows/filters | ✅ present |
+| `conversionAudit` + `designAudit` flags, coverage badges | `GenerationJobsTable` badges/drawer | ✅ present, but jobs-only |
+| Composite `outreach-ready` gate (audit + conversion + design + media + contact) | — | ❌ missing; `Outreach ready` = audit snapshot + not contacted |
+| Contact-reachability, social, pricing-clarity, mobile/SEO checks | — | ❌ missing; must open JSON/drawer manually |
+
+## Part 1 — Detailed behavior reference (preserved)
+
+> Everything below is the original `docs/CODEBASE_REFERENCE.md` body, kept verbatim so existing debugging notes stay valid. New behavior must still be documented here per AGENTS.md.
 
 ## Routing
 
@@ -1355,3 +1437,51 @@ Build/Deploy Guard:
 - `docs/DOMAIN_REGISTRATION_AUTOMATION_PLAN.md` dan `docs/domain-providers/*.md`: registrar automation scope, score 7.0+ provider summaries, provider-neutral adapter plan, and checklist progress for domain quote/register/connect work.
 - `docs/SITE_BUILDER_UPGRADE_PLAN.md`: rencana upgrade JSON schema dan renderer agar demo/site output lebih modern dan personalized.
 - `docs/ADMIN_WORKFLOW_AUDIT.md`, `docs/ADMIN_JOBS_USER_GUIDE.md`, and `docs/ADMIN_UI_TOOLTIP_COLLAPSE_AUDIT.md`: admin QA/workflow notes and practical Jobs usage guide exposed through the in-app docs reader.
+
+## Appendix A — Generation-quality audit (2026-10-01)
+
+Why generated sites feel "not quite good enough", grouped by track. Severity: 🔴 blocks premium feel · 🟡 weakens it · 🔵 reliability gap.
+
+### Track 1 — Visual premiumness (renderer + design system)
+
+| # | Finding | Evidence | Severity |
+|---|---|---|---|
+| 1 | Identical section rhythm: every section is `py-20 px-6` + `max-w-6xl`; `sectionRhythm` / `compositionPattern` never branch layout, so all niches read as the same stacked blocks | `SiteRenderer.tsx:1829,1861,1950,1998,2093,2376`; intent data-only at `1508-1515` | 🔴 |
+| 2 | One recycled photo everywhere: single-photo pick at generate time is rotated across hero/cards/detail pages; empty frames render as grey boxes with filename text | `adminSiteGeneration.ts:302-325`; `generatedSitePostProcess.ts:368-376,387-415`; `SiteRenderer.tsx:690-697,1775-1777` | 🔴 |
+| 3 | Style convergence: first-match keyword preset inference + `local-clean` fallback collapses 16 presets / 5 visuals / 30 fonts to the same look | `generatedSiteScaffold.ts:364-385`; `siteStylePresets.ts:168-171,216-219,323-326` | 🔴 |
+| 4 | Oversized display type squeezed by JS: global `h1 clamp(2.65rem,7vw,5.9rem)` + hero fitter forcing ≤3 lines shrinks long headlines instead of rewriting them | `siteStylePresets.ts:635-638`; `SiteRenderer.tsx:1336-1407,2683-2692` | 🟡 |
+| 5 | Weak CTA hierarchy: transparent outline hero button; stretched-card links fight inner price/CTA links; duplicate CTAs silently hidden | `SiteRenderer.tsx:1738-1743,1876,1882-1931` | 🟡 |
+| 6 | No mobile nav (footer links only) + sticky mobile bar without safe-area offset; everything-lifts hover feels gimmicky, not premium | `SiteRenderer.tsx:712-739,757-761,1537,2561-2583` | 🟡 |
+| 7 | Export parity gaps cheapen delivered zips: mid-document font `@import` (invalid → system-font fallback), baked hero size for the wrong viewport, fragile image inlining | `exportSiteHtml.ts:107-213,1078-1097`; `SiteRenderer.tsx:1369-1407,1497-1498` | 🔴 |
+
+### Track 2 — Copy grounding (AI inputs + filler)
+
+| # | Finding | Evidence | Severity |
+|---|---|---|---|
+| 1 | AI is blinded to design/assets: prompt withholds page IDs, hrefs, image/maps URLs, palette, font, visual style — copy cannot reference what the page shows | `ai/siteGeneration.ts:1357-1364` | 🔴 |
+| 2 | Minimal facts bundle: only name/niche/address/phone/status/rating/count/hours/≤5 reviews; amenities, pricing, summaries, accessibility, secondary hours never sent | `ai/siteGeneration.ts:740-774` | 🔴 |
+| 3 | Canned scaffold survives silent outline skip: hardcoded service titles + `Practical help…` summaries persist when outline returns null and flow still advances | `generatedSiteScaffold.ts:229-323`; `generationJobs/handler.ts:403-415` | 🔴 |
+| 4 | Filler passes as depth: generic About values, `Share scope/location/timing` FAQs, `Diskusi kebutuhan…` detail copy satisfy count-based audits without saying anything real | `generatedSitePostProcess.ts:210-300,948-1036`; audits at `1086-1187` | 🟡 |
+| 5 | Forced-vague prices/CTAs: outline bans exact prices, `priceHint` pinned to `Contact for estimate`, weak `View details` labels escape the generic-CTA rewrite | `ai/siteGeneration.ts:1110,1125,1283,1323`; `generatedSitePostProcess.ts:894-896` | 🟡 |
+| 6 | Reviews flattened: 3 reviews / 4 fields, synthetic `trust.reviewSummary`, keyword-relevant fallback returns the same 3 | `generatedSiteScaffold.ts:181-188,386-408,563-565` | 🟡 |
+
+### Track 3 — Conversion + QA gates (proof, CTA, outreach control)
+
+| # | Finding | Evidence | Severity |
+|---|---|---|---|
+| 1 | No composite outreach gate: `Outreach ready` ignores conversion/design flags, images, palette — weak demos can be contacted | `AdminSites.tsx:271-273,488-620`; audits only in `GenerationJobsTable.tsx:715` | 🔴 |
+| 2 | Proof above-fold is conditional and thin: `minimal-no-photo` fallback is compliant but low-value; review cards drop time/attribution | `generatedSitePostProcess.ts:1122`; `SiteRenderer.tsx:1758-1773,1807-1821,2008-2020` | 🟡 |
+| 3 | Objection FAQ is count-only (`>=5`), no niche-relevance check; final-CTA band exists but detail sales layout is still planned-only | `generatedSitePostProcess.ts:1123-1124`; `DESIGN_GUIDE.md:122,172` | 🟡 |
+| 4 | Free contact = `mailto:` draft with no success state; visitor pricing (`priceLevel`/`paymentOptions`) rarely rendered; risk-reversal muted by no-claims policy + 7-day archive pressure | `SiteRenderer.tsx:2408-2449`; `WebsiteActionPanel.tsx:1074`; `GOOGLE_PLACES_DATA_INVENTORY.md:223-234` | 🟡 |
+| 5 | Rich Places data unused: price, payments, parking, accessibility, editorial/generative summaries, secondary hours, timezone, Maps links, address components, service-area vs storefront shaping | Zero code hits in `src/lib` for those fields; inventory `380-441` | 🔵 |
+| 6 | Finalize is all-or-nothing: HTTP error after full AI spend fails the job with no partial save; `siteCopy` success wipes offering progress on retry | `generationJobs/handler.ts:428-454,664-666` | 🔵 |
+
+### Improvement backlog (points at `PRD.md` v2 for approval)
+
+1. ★ Feed `reviewSummary`/`generativeSummary`, amenity booleans, `priceLevel`/`paymentOptions`, secondary hours + timezone, and top 3–4 photo references into `businessFactsForAiCopy`.
+2. ★ Make `sectionRhythm` / `detailLayout` / `mediaStrategy` / `compositionPattern` actually branch layout — or stop generating them.
+3. ★ Fix export font `@import` + hero-size refit so owner zips match preview.
+4. ★ Multi-photo pick at generate time (hero + gallery + card pool) instead of single-photo fallback.
+5. ★ Composite `outreach-ready` gate in `AdminSites` (audit + conversion + design + media + contact).
+6. Fail outline loudly (or block) instead of silently advancing on null; never wipe offering progress on `siteCopy` retry.
+7. Mobile nav + safe-area sticky CTA; accordion FAQ; `mailto:` success state.

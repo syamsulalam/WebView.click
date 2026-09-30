@@ -23,7 +23,7 @@
 - Domain extension and domain pre-check logic lives in `src/lib/domainExtensions.ts` and `/api/domains/check`.
 - AI pricing/model reference lives in `src/lib/aiPricing.ts` and `docs/AI_MODELS_RESEARCH.md`.
 - Google Places data reference and photo strategy live in `docs/GOOGLE_PLACES_DATA_INVENTORY.md` and `docs/GOOGLE_PLACES_PHOTO_STRATEGY.md`.
-- Codebase/page reference lives in `docs/CODEBASE_REFERENCE.md`; update it when behavior changes.
+- Codebase/page reference lives in `CODEBASE.md`; update it when behavior changes.
 
 ## Proactive Improvement Rule
 - After completing a task, include a short "Suggested next improvement" note when there is an obvious next step that helps the product goal.
@@ -72,6 +72,6 @@
 - Before adding admin UI controls, inspect the surrounding controls and preserve their density and pattern. In compact row action clusters that use square icon-only buttons, add new actions as matching icon-only buttons with tooltip/aria labels rather than wider text buttons that disrupt the layout.
 - For admin collapsible card/section headers, use the shared `src/components/AdminCollapsibleSectionHeader.tsx` pattern: left icon before the heading, concise help tooltip near the title, optional action icons hidden while collapsed, and a right-aligned chevron. Do not mix one-off header layouts in the same admin page.
 - When adding a new admin feature, control, badge, status, or workflow action whose behavior is not obvious from the label alone, add a concise tooltip using the shared `src/components/HelpTooltip.tsx` component.
-- When adding or materially changing a page, component, or Pages Function endpoint, update `docs/CODEBASE_REFERENCE.md` in the same change with its purpose, APIs, important state/logic, and debugging notes.
+- When adding or materially changing a page, component, or Pages Function endpoint, update `CODEBASE.md` in the same change with its purpose, APIs, important state/logic, and debugging notes.
 - Features added to `/demo` that affect visitor-facing website preview, download, checkout, domain selection, or setup flow must also be available on public preview routes `/:businessId`.
 - Prefer one shared component for `/demo` and `/:businessId` behavior, with an explicit mode/variant prop for demo-specific differences, instead of maintaining duplicate UI logic in both places.

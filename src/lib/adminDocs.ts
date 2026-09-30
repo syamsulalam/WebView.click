@@ -15,12 +15,12 @@ function md(loader: () => Promise<{ default: string }>) {
 export const adminDocs: AdminDoc[] = [
   {
     id: "codebase-reference",
-    title: "Codebase Reference",
-    file: "docs/CODEBASE_REFERENCE.md",
+    title: "Codebase Inventory",
+    file: "CODEBASE.md",
     category: "System",
     summary: "Main map for pages, APIs, data flow, debugging notes, and current behavior.",
     adminPages: ["/admin", "/admin/leads", "/admin/jobs", "/admin/sites", "/admin/orders", "/admin/schema", "/admin/settings"],
-    loadContent: md(() => import("../../docs/CODEBASE_REFERENCE.md?raw")),
+    loadContent: md(() => import("../../CODEBASE.md?raw")),
   },
   {
     id: "admin-workflow-audit",
