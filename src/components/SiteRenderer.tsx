@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { getShaderPreset, normalizeShaderPreset, normalizeStylePreset, normalizeVisualStyle, siteStylePresetCss } from "../lib/siteStylePresets";
-import { detailLayoutGroup, motionLevelClass, sectionRhythmPadClass } from "../lib/siteIntentMaps";
+import { componentSpacingClass, detailLayoutGroup, motionLevelClass, normalizeDensity, sectionSpacingClass } from "../lib/siteIntentMaps";
 import { fontPairingsForText, getFontPairing, googleFontImportUrl } from "../lib/fontPairings";
 import { applyGeneratedSitePageInserts } from "../lib/generatedSitePostProcess";
 import { buildPaletteRoleOptions, normalizePaletteRoles } from "../lib/colorPaletteRoles";
@@ -260,6 +260,7 @@ function normalizeSiteData(siteData: any) {
         ctaTreatment: normalizedDesign.ctaTreatment,
         motionLevel: normalizedDesign.motionLevel,
         sectionRhythm: normalizedDesign.sectionRhythm,
+        density: normalizedDesign.density,
         detailLayout: normalizedDesign.detailLayout,
         antiPatterns: normalizedDesign.antiPatterns,
       };
@@ -978,8 +979,9 @@ export default function SiteRenderer({
   const cardDensity = String(intent.cardDensity || "standard");
   const ctaTreatment = String(intent.ctaTreatment || "solid-contrast");
   const sectionRhythm = String(intent.sectionRhythm || "balanced-local");
+  const sectionDensity = normalizeDensity(String(intent.density || (siteData?.design as any)?.density || "spacious"));
   const detailLayout = String(intent.detailLayout || "scope-detail");
-  const rhythmPad = sectionRhythmPadClass(sectionRhythm);
+  const sectionPad = (sectionType: string) => sectionSpacingClass(sectionType, sectionRhythm, sectionDensity);
   const detailGroup = detailLayoutGroup(detailLayout);
   const motionClass = motionLevelClass(String(intent.motionLevel || "standard"));
   const homePageId = pages[0]?.pageId || "home";
@@ -1838,7 +1840,7 @@ export default function SiteRenderer({
                                   color: btn.style === "primary" ? colors.onAccent : isEmergencyHero ? colors.onPrimary : colors.textMain,
                                   border: `1px solid ${btn.style === "primary" ? colors.accent : isEmergencyHero ? colors.footerBorder : colors.subtleBorder}`,
                                 }}
-                                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-semibold transition hover:translate-y-[-1px]"
+                                className={`inline-flex items-center justify-center gap-2 ${componentSpacingClass("button", "lg")} rounded-lg font-semibold transition hover:translate-y-[-1px]`}
                                 onClick={(event) => {
                                   if (editMode) {
                                     event.preventDefault();
@@ -1922,7 +1924,7 @@ export default function SiteRenderer({
                 const items = section.content?.items || capabilities.filter((item: any) => item.enabled !== false).map((item: any) => ({ title: item.label, description: item.description || labels.capabilityFallback }));
                 const usedFeatureIcons = new Set<string>();
                 return (
-                  <section key={section.id} className={`${rhythmPad} bg-black/5`}>
+                  <section key={section.id} className={`${sectionPad("features")} bg-black/5`}>
                     <div className="max-w-6xl mx-auto">
                       {editableText(`${section.id}.title`, section.content?.title || labels.featuresFallback, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid md:grid-cols-3 gap-8">
@@ -1954,7 +1956,7 @@ export default function SiteRenderer({
                 const offerImageClass = cardDensity === "compact" ? "h-32" : cardDensity === "editorial" ? "h-52" : cardDensity === "image-led" ? "h-60" : "h-44";
                 const offerBodyClass = cardDensity === "compact" ? "p-4 text-center" : cardDensity === "image-led" ? "p-6 text-left" : "p-6 text-center";
                 return (
-                  <section key={section.id} className={`${rhythmPad} bg-white`}>
+                  <section key={section.id} className={`${sectionPad("offers")} bg-white`}>
                     <div className="max-w-6xl mx-auto">
                       <div className="max-w-2xl mb-10">
                         <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.eyebrow`, labels.offersEyebrow, "span")}</p>
@@ -2076,7 +2078,7 @@ export default function SiteRenderer({
                 );
                 if (detailGroup === "rail") {
                   return (
-                    <section key={section.id} className={`${rhythmPad} bg-white`}>
+                    <section key={section.id} className={`${sectionPad("offeringDetail")} bg-white`}>
                       <div className="max-w-6xl mx-auto grid gap-10 lg:grid-cols-[1fr_360px]">
                         <div>
                           <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
@@ -2100,7 +2102,7 @@ export default function SiteRenderer({
                 }
                 if (detailGroup === "editorial") {
                   return (
-                    <section key={section.id} className={`${rhythmPad} bg-white`}>
+                    <section key={section.id} className={`${sectionPad("offeringDetail")} bg-white`}>
                       <div className="max-w-4xl mx-auto">
                         <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
                         {editableText(`${section.id}.title`, detailTitle, "h2", "text-4xl md:text-5xl font-bold text-slate-950")}
@@ -2140,7 +2142,7 @@ export default function SiteRenderer({
                   );
                 }
                 return (
-                  <section key={section.id} className={`${rhythmPad} bg-white`}>
+                  <section key={section.id} className={`${sectionPad("offeringDetail")} bg-white`}>
                     <div className="max-w-6xl mx-auto grid gap-10 lg:grid-cols-[1.05fr_0.95fr]">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: colors.accentText }}>{editableText(`${section.id}.kind`, detail.kind || "Offering", "span")}</p>
@@ -2188,7 +2190,7 @@ export default function SiteRenderer({
                 const reviewsSource = section.content?.reviews || trust.reviews;
                 const reviews = Array.isArray(reviewsSource) ? reviewsSource : [];
                 return (
-                  <section key={section.id} className={`${rhythmPad} bg-slate-50`}>
+                  <section key={section.id} className={`${sectionPad("reviews")} bg-slate-50`}>
                     <div className="max-w-6xl mx-auto">
                       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
                         <div>
@@ -2225,7 +2227,7 @@ export default function SiteRenderer({
                 const todayHours = hoursGroups.find((group) => group.days.some((day) => day.toLowerCase().startsWith(todayLabel.toLowerCase().slice(0, 3)))) || hoursGroups[0];
                 const hoursTitle = section.content?.hoursTitle || section.content?.openingHoursTitle || labels.hoursTitle;
                 return (
-                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className={`${rhythmPad} bg-white`}>
+                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className={`${sectionPad("hoursLocation")} bg-white`}>
                     <div data-wv-hours-location-grid="true" className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 p-8 bg-slate-50">
                         <div data-wv-hours-location-heading="true" className="mb-5 flex items-center gap-3 text-2xl">
@@ -2283,7 +2285,7 @@ export default function SiteRenderer({
               if (section.type === "faq") {
                 const items = section.content?.items || [];
                 return (
-                  <section key={section.id} className={`${rhythmPad} bg-slate-50`}>
+                  <section key={section.id} className={`${sectionPad("faq")} bg-slate-50`}>
                     <div className="max-w-4xl mx-auto">
                       {editableText(`${section.id}.title`, section.content?.title || "Pertanyaan Umum", "h2", "text-3xl md:text-4xl font-bold text-slate-950 mb-8")}
                       <div className="space-y-3">
@@ -2360,7 +2362,7 @@ export default function SiteRenderer({
                               }
                               handleSiteHrefClick(primaryHref, event);
                             }}
-                            className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold transition hover:-translate-y-0.5"
+                            className={`inline-flex items-center justify-center gap-2 rounded-lg ${componentSpacingClass("button", "lg")} text-sm font-bold transition hover:-translate-y-0.5`}
                             style={{ backgroundColor: colors.accent, color: colors.onAccent }}
                           >
                             {editableButtonIcon(`${page.pageId}.${section.id}.primary`, primaryCta.text || globalConfig.header.ctaButton.text, primaryHref, 16)}
@@ -2403,7 +2405,7 @@ export default function SiteRenderer({
 
               if (section.type === "textImageBlock") {
                 return (
-                  <section key={section.id} className={rhythmPad}>
+                  <section key={section.id} className={sectionPad("textImageBlock")}>
                     <div className={`max-w-6xl mx-auto flex flex-col md:flex-row gap-12 items-center ${section.content.layout === "imageRight" ? "md:flex-row-reverse" : ""}`}>
                       <div className="flex-1">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold mb-6")}
@@ -2419,7 +2421,7 @@ export default function SiteRenderer({
 
               if (section.type === "teamGrid") {
                 return (
-                  <section key={section.id} className={`${rhythmPad} bg-black/5`}>
+                  <section key={section.id} className={`${sectionPad("teamGrid")} bg-black/5`}>
                     <div className="max-w-6xl mx-auto">
                       {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -2440,7 +2442,7 @@ export default function SiteRenderer({
 
               if (section.type === "gridCards") {
                 return (
-                  <section key={section.id} className={rhythmPad}>
+                  <section key={section.id} className={sectionPad("gridCards")}>
                     <div className="max-w-6xl mx-auto">
                       <div className="text-center mb-12">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold mb-4")}
@@ -2467,7 +2469,7 @@ export default function SiteRenderer({
 
               if (section.type === "imageGallery") {
                 return (
-                  <section key={section.id} className={`${rhythmPad} bg-black/5`}>
+                  <section key={section.id} className={`${sectionPad("imageGallery")} bg-black/5`}>
                     <div className="max-w-6xl mx-auto">
                       {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold text-center mb-12")}
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -2494,7 +2496,7 @@ export default function SiteRenderer({
                     data-wv-section={sectionId(section, "feedback")}
                     data-wv-feedback="true"
                     data-wv-review-url={googleReviewHref}
-                    className={`${rhythmPad} bg-slate-50`}
+                    className={`${sectionPad("feedback")} bg-slate-50`}
                   >
                     <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
                       {editableText(`${section.id}.title`, section.content?.title || labels.feedbackTitle, "h2", "text-3xl md:text-4xl font-bold text-slate-950")}
@@ -2572,7 +2574,7 @@ export default function SiteRenderer({
                   { label: isIndonesian ? "Pesan" : "Message", type: "textarea", required: true },
                 ];
                 return (
-                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className={rhythmPad}>
+                  <section key={section.id} id={sectionId(section, "contact")} data-wv-section={sectionId(section, "contact")} data-wv-contact-section="true" className={sectionPad("contactForm")}>
                     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row border border-gray-100">
                       <div style={{ backgroundColor: colors.primary, color: colors.onPrimary }} className="p-10 md:w-2/5">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-2xl font-bold mb-6")}

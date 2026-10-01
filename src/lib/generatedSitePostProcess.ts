@@ -785,6 +785,10 @@ function applyDesignIntent(finalJson: GeneratedSiteRecord, originData: Generated
   design.ctaTreatment = design.ctaTreatment || intent.ctaTreatment;
   design.motionLevel = design.motionLevel || intent.motionLevel;
   design.sectionRhythm = design.sectionRhythm || intent.sectionRhythm;
+  // P4 D2 density dial: owner demos default to spacious (premium airiness);
+  // "standard" is the explicit compact opt-in. Stored on design (not inside
+  // designIntent) so the renderer reads one field next to sectionRhythm.
+  if (design.density !== "standard" && design.density !== "spacious") design.density = "spacious";
   design.detailLayout = design.detailLayout || intent.detailLayout;
   design.antiPatterns = Array.isArray(design.antiPatterns) && design.antiPatterns.length ? design.antiPatterns : intent.antiPatterns;
   design.designIntent = {
@@ -1244,6 +1248,7 @@ function buildConversionAudit(finalJson: GeneratedSiteRecord) {
   };
   const flags = [
     !summary.primaryCtaSpecific ? "generic_primary_cta" : "",
+    asString(primaryCta.size) !== "lg" ? "undersized_cta" : "",
     !summary.proofAboveFold ? "missing_proof_above_fold" : "",
     !summary.objectionsCovered ? "missing_objection_faq" : "",
     !summary.finalCtaPresent ? "missing_final_cta" : "",
@@ -1322,8 +1327,13 @@ export function ensureConversionMetadata(finalJson: GeneratedSiteRecord, originD
   const secondaryCta = objectValue(conversion.secondaryCta);
   if (!safeCopyText(primaryCta.text, 80) || isGenericCta(primaryCta.text)) primaryCta.text = primaryText;
   primaryCta.href = asString(primaryCta.href) || (phone ? `tel:${phone}` : "#contact");
+  // P4 D4: the canonical primary CTA renders at lg (py-3 clears thumb
+  // targets); secondary stays md. Absent sizes default; anything else is
+  // preserved so the audit can flag genuinely undersized rows.
+  if (!asString(primaryCta.size)) primaryCta.size = "lg";
   if (!safeCopyText(secondaryCta.text, 80) || isGenericCta(secondaryCta.text)) secondaryCta.text = secondaryText;
   secondaryCta.href = asString(secondaryCta.href) || mapsUrl || "#contact";
+  if (!asString(secondaryCta.size)) secondaryCta.size = "md";
   conversion.pagePattern = conversion.pagePattern || pattern;
   conversion.primaryAction = conversion.primaryAction || primaryText;
   conversion.primaryActionReason = conversion.primaryActionReason || primaryActionReason(pattern, Boolean(phone), isIndonesian);

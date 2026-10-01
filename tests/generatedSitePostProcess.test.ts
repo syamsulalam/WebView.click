@@ -390,6 +390,28 @@ test("ensureConversionMetadata adds source-safe conversion strategy, proof, CTA 
   assert.deepEqual((conversion.conversionAudit as any).thinServicePages, []);
 });
 
+test("conversion metadata defaults density to spacious and sizes the canonical CTAs (P4 D2/D4)", () => {
+  const site: Record<string, unknown> = {
+    meta: { language: "en", businessName: "Atlas Concrete" },
+    businessProfile: { name: "Atlas Concrete", primaryType: "concrete contractor", contact: { phoneNational: "+1 555-0199" } },
+    conversion: { primaryCta: { text: "Request an Estimate", href: "tel:+15550199" }, secondaryCta: { text: "Open Maps", href: "https://maps.example/atlas" } },
+    global: { header: { ctaButton: { text: "Request an Estimate", href: "tel:+15550199" } } },
+    pages: [{ pageId: "home", sections: [{ type: "hero", id: "hero-1", content: { headline: "Concrete help", subheadline: "Local concrete support." } }] }],
+  };
+  const conversion = ensureConversionMetadata(site, {});
+  assert.equal((site.design as any).density, "spacious");
+  assert.equal(((conversion.primaryCta as any).size), "lg");
+  assert.equal(((conversion.secondaryCta as any).size), "md");
+  assert.ok(!((conversion.conversionAudit as any).flags as string[]).includes("undersized_cta"));
+  // An explicit standard density survives; an explicitly small primary size flags.
+  (site.design as any).density = "standard";
+  ((conversion.primaryCta as any).size) = "sm";
+  const reconversion = ensureConversionMetadata(site, {});
+  assert.equal((site.design as any).density, "standard");
+  assert.equal(((reconversion.primaryCta as any).size), "sm");
+  assert.ok(((reconversion.conversionAudit as any).flags as string[]).includes("undersized_cta"));
+});
+
 test("applyGeneratedSitePageInserts applies services, contact, feedback, and gallery in one sequence", () => {
   const site: Record<string, unknown> = {
     meta: { language: "en" },

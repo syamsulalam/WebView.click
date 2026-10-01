@@ -771,7 +771,7 @@ export const siteStylePresetCss = `
 
   [data-wv-site-canvas] img {
     transform-origin: center;
-    transition: transform 700ms ease, filter 700ms ease;
+    transition: transform 300ms ease, filter 300ms ease;
   }
 
   [data-wv-site-canvas] [data-wv-image-role]:hover {
@@ -782,6 +782,7 @@ export const siteStylePresetCss = `
   [data-wv-site-canvas] a[class*="rounded"],
   [data-wv-site-canvas] button[class*="rounded"] {
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    transition: transform 200ms ease, box-shadow 200ms ease;
   }
 
   [data-wv-site-canvas] a[class*="rounded"]:hover,
