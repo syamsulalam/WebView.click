@@ -106,6 +106,7 @@ type SiteRow = {
 type RegenerateMode = "resave" | "ai";
 
 const SERVICE_IMAGE_BATCH_REPAIR_LIMIT = 10;
+const UPGRADE_PREVIEW_BATCH_LIMIT = 10;
 const VISUAL_VARIATION_BATCH_LIMIT = 10;
 const ABOUT_NAV_AI_BATCH_LIMIT = 5;
 const AUDIT_SNAPSHOT_BATCH_LIMIT = 10;
@@ -364,6 +365,8 @@ export default function AdminSites() {
   const [autoRepairingPalettes, setAutoRepairingPalettes] = useState(false);
   const [autoPaletteRepairDoneKey, setAutoPaletteRepairDoneKey] = useState("");
   const [upgradingDesignId, setUpgradingDesignId] = useState("");
+  const [previewingUpgradeId, setPreviewingUpgradeId] = useState("");
+  const [previewingUpgradeBatch, setPreviewingUpgradeBatch] = useState(false);
   const [openingAuditId, setOpeningAuditId] = useState("");
   const [batchGeneratingAuditSnapshots, setBatchGeneratingAuditSnapshots] = useState(false);
   const [batchAiFillingAboutNav, setBatchAiFillingAboutNav] = useState(false);
@@ -1071,6 +1074,81 @@ export default function AdminSites() {
       await postChunkedGenerateSite(regeneratePayload, label, (step, progress) => updateGenerationProgress(site.businessId, step, progress));
     } else {
       await postGenerateSite(regeneratePayload, label);
+    }
+  };
+
+  type UpgradePreviewResult = {
+    businessId?: string;
+    alreadyPremiumUpgraded?: boolean;
+    changedFields?: string[];
+    needsAi?: boolean;
+    aiFlags?: string[];
+    beforeAudit?: unknown;
+    afterAudit?: unknown;
+  };
+
+  const handlePreviewUpgrade = async (site: SiteRow) => {
+    if (previewingUpgradeId || previewingUpgradeBatch) return;
+    setPreviewingUpgradeId(site.businessId);
+    try {
+      const requestPath = `/api/sites/${encodeURIComponent(site.businessId)}/upgrade-preview`;
+      const response = await fetch(requestPath, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const result = await readApiJson<UpgradePreviewResult>(response, "Preview upgrade", requestPath);
+      setActiveData({
+        title: "Upgrade dry-run",
+        subtitle: `${site.businessName} · ${site.businessId} (nothing saved)`,
+        data: {
+          alreadyPremiumUpgraded: result.alreadyPremiumUpgraded === true,
+          changedFields: result.changedFields || [],
+          needsAi: result.needsAi === true,
+          aiFlags: result.aiFlags || [],
+          beforeAudit: result.beforeAudit || null,
+          afterAudit: result.afterAudit || null,
+        },
+      });
+    } catch (err) {
+      showApiError(err, { source: "Preview upgrade" });
+    } finally {
+      setPreviewingUpgradeId("");
+    }
+  };
+
+  const handlePreviewFilteredUpgrades = async () => {
+    const targets = filteredSites.slice(0, UPGRADE_PREVIEW_BATCH_LIMIT);
+    if (!targets.length || previewingUpgradeBatch || previewingUpgradeId) return;
+    setPreviewingUpgradeBatch(true);
+    let wouldChange = 0;
+    let clean = 0;
+    let already = 0;
+    let failed = 0;
+    try {
+      for (const target of targets) {
+        try {
+          const requestPath = `/api/sites/${encodeURIComponent(target.businessId)}/upgrade-preview`;
+          const response = await fetch(requestPath, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          });
+          const result = await readApiJson<UpgradePreviewResult>(response, "Preview upgrade", requestPath);
+          if (result.alreadyPremiumUpgraded) already += 1;
+          else if ((result.changedFields || []).length > 0) wouldChange += 1;
+          else clean += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      notifyAction(
+        "info",
+        "Upgrade dry-run finished",
+        `${wouldChange} would change, ${clean} already current, ${already} premium-upgraded, ${failed} failed — of ${targets.length} previewed. Nothing was saved.`,
+      );
+    } finally {
+      setPreviewingUpgradeBatch(false);
     }
   };
 
@@ -2571,6 +2649,25 @@ export default function AdminSites() {
             </span>
           </button>
         </HoverTooltip>
+        <HoverTooltip text={`Dry-run the deterministic design upgrade for up to ${UPGRADE_PREVIEW_BATCH_LIMIT} sites in the current filtered list, one at a time. Reports how many would change without saving anything.`}>
+          <button
+            type="button"
+            onClick={handlePreviewFilteredUpgrades}
+            disabled={previewingUpgradeBatch || previewingUpgradeId !== "" || autoRepairingPalettes || batchGeneratingAuditSnapshots || batchAiFillingAboutNav || batchRepairingServiceImages || batchRefreshingVisualVariation || scanningR2Health || regeneratingId !== "" || regatheringPhotosId !== "" || filteredSites.length === 0}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            aria-label="Preview upgrades for filtered sites"
+          >
+            {previewingUpgradeBatch ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <Eye size={14} />
+            )}
+            Preview upgrades
+            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-700">
+              {Math.min(filteredSites.length, UPGRADE_PREVIEW_BATCH_LIMIT)}
+            </span>
+          </button>
+        </HoverTooltip>
       </div>
 
       <div className="mb-6 overflow-visible rounded-2xl border border-emerald-200 bg-white shadow-sm">
@@ -3052,6 +3149,17 @@ export default function AdminSites() {
                     aria-label="Copy profile audit link"
                   >
                     <Link2 size={14} />
+                  </button>
+                </HoverTooltip>
+                <HoverTooltip text="Preview the deterministic design upgrade without saving: before/after audits, changed fields, and whether AI copy work is still needed.">
+                  <button
+                    type="button"
+                    onClick={() => handlePreviewUpgrade(site)}
+                    disabled={previewingUpgradeId === site.businessId || previewingUpgradeBatch}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    aria-label="Preview upgrade dry-run"
+                  >
+                    {previewingUpgradeId === site.businessId ? <RefreshCw size={14} className="animate-spin" /> : <Eye size={14} />}
                   </button>
                 </HoverTooltip>
                 {siteHasSummaryError(site) && (

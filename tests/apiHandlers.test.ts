@@ -729,3 +729,109 @@ test("payments checkout falls back to PayPal Business link when order creation f
     globalThis.fetch = originalFetch;
   }
 });
+
+test("sites upgrade-preview dry-runs the deterministic upgrade without saving (P3)", async () => {
+  const savedSite = {
+    meta: { businessName: "Old Concrete", language: "en" },
+    businessProfile: { name: "Old Concrete", contact: {}, address: { city: "Dallas" } },
+    trust: { rating: 4.5, reviewCount: 40, reviews: [] },
+    location: {},
+    conversion: { primaryCta: { text: "Contact Us" }, secondaryCta: { text: "View Details" } },
+    global: { header: { ctaButton: { text: "Contact Us" } }, footer: {} },
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    brand: {},
+    sourceData: {},
+    services: [],
+    products: [],
+    offers: [],
+    pages: [
+      {
+        pageId: "home",
+        pageTitle: "Home",
+        sections: [
+          { type: "hero", id: "hero-1", content: { headline: "Old Concrete", subheadline: "Dallas concrete." } },
+        ],
+      },
+    ],
+  };
+  const calls = { savedSites: [] as Array<Record<string, unknown>>, activities: [] as Array<Record<string, unknown>> };
+  const deps = {
+    templateSchema: {},
+    json,
+    errorJson,
+    readJsonBody,
+    asString,
+    normalizeBusinessId,
+    placeIdFromPlace: (place: unknown) => asString((place as Record<string, unknown>).place_id),
+    parseJsonObject,
+    tableColumns: async () => new Set(["business_id", "json_content"]),
+    ensureRequiredColumns: async () => undefined,
+    generateRequiredColumns: [],
+    createGenerationJob: async () => undefined,
+    updateGenerationJob: async () => undefined,
+    incrementDailyUsage: async () => undefined,
+    updateProspectRecord: async () => undefined,
+    upsertLeadRecord: async () => undefined,
+    insertCrmActivitySafe: async (_db: unknown, values: Record<string, unknown>) => {
+      calls.activities.push(values);
+    },
+    saveJsonSiteRecord: async (_db: unknown, businessId: string, jsonContent: string, options: Record<string, unknown> = {}) => {
+      calls.savedSites.push({ businessId, jsonContent, options });
+    },
+    siteStorageDeps: { json, errorJson, readJsonBody, asString, parseJsonObject, ensureRequiredColumns, saveJsonSiteRecord: async () => undefined },
+    aiSiteGenerationDeps: {
+      getSetting: async () => undefined,
+      getAiReadiness: async () => ({ ready: true }),
+      buildAiFailureDiagnostics: (input: Record<string, unknown>) => input,
+      extractProviderErrorDetails: () => ({ message: "", rawSnippet: "", providerCode: "", providerStatus: "" }),
+      kieModelConfigs: {},
+    },
+    sha256Json,
+  };
+  const db = {
+    prepare(query: string) {
+      return {
+        bind() {
+          return this;
+        },
+        async first() {
+          if (query.includes("FROM json_sites")) {
+            return { business_id: "old-concrete", json_content: JSON.stringify(savedSite) };
+          }
+          return null;
+        },
+        async all() {
+          return { results: [] };
+        },
+        async run() {
+          return { success: true };
+        },
+      };
+    },
+  };
+
+  const response = await handleSites(
+    deps as SitesHandlerDeps,
+    new Request("https://webview.click/api/sites/old-concrete/upgrade-preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    }),
+    db as never,
+    {},
+    ["sites", "old-concrete", "upgrade-preview"],
+  );
+
+  assert.equal(response.status, 200);
+  const payload = await response.json() as Record<string, unknown>;
+  assert.equal(payload.success, true);
+  assert.equal(payload.dryRun, true);
+  assert.equal(payload.designSystemVersion, "premium-design-intent-v2");
+  assert.equal(payload.rollbackAvailable, false);
+  assert.ok(Array.isArray(payload.changedFields));
+  assert.ok(payload.beforeAudit && payload.afterAudit);
+  assert.deepEqual(calls.savedSites, [], "dry-run must not write any site record");
+  assert.deepEqual(calls.activities, [], "dry-run must not write CRM activity");
+  assert.equal((savedSite.design as Record<string, unknown>).designAudit, undefined, "dry-run must not mutate its input");
+});

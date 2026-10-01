@@ -703,6 +703,13 @@ export default function GenerationJobsTable({
                               </span>
                             </HoverTooltip>
                           )}
+                          {job.metadata?.finalizeTransient === true && job.status === "failed" && (
+                            <HoverTooltip text="Finalize hit a transient edge/storage failure after AI work completed. All outline and copy progress is preserved in this job — Resume Finalize is safe." widthClass="w-80">
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                                finalize retry-safe
+                              </span>
+                            </HoverTooltip>
+                          )}
                           {job.metadata?.conversionAudit && (
                             <HoverTooltip
                               text={`Pattern: ${job.metadata?.conversionPagePattern || job.metadata.conversionAudit.pagePattern || "-"}; primary action: ${job.metadata?.conversionPrimaryAction || job.metadata.conversionAudit.primaryAction || "-"}; flags: ${(job.metadata.conversionAudit.flags || []).join(", ") || "none"}`}

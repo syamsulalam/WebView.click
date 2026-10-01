@@ -13,11 +13,13 @@ import {
   type AiSiteGenerationDeps,
 } from "../ai/siteGeneration";
 import {
+  backupSiteJsonToHistory,
   compactSiteManifest,
   migrateOldSiteJsonRowsToR2,
   normalizeImageFilenames,
   publicR2Url,
   readSiteJsonFromStorage,
+  siteHistoryPrefix,
   siteSummaryFromJson,
   type SiteStorageDeps,
   uploadImageAssetsToR2,
@@ -48,7 +50,7 @@ type SitesEnv = Record<string, unknown> & {
   R2_PUBLIC_BASE_URL?: string;
 };
 
-const DESIGN_SYSTEM_VERSION = "premium-design-intent-v1";
+const DESIGN_SYSTEM_VERSION = "premium-design-intent-v2";
 
 export type SitesHandlerDeps = {
   templateSchema: Record<string, unknown>;
@@ -1485,110 +1487,191 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     });
   }
 
-  if (request.method === "POST" && segments.length === 3 && segments[2] === "upgrade-design") {
+async function readUpgradeableSiteRow(
+  deps: Pick<SitesHandlerDeps, "ensureRequiredColumns" | "tableColumns">,
+  db: D1DatabaseLike,
+  businessId: string,
+) {
+  await deps.ensureRequiredColumns(db, [
+    { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
+    { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
+    { table: "json_sites", column: "json_summary", definition: "TEXT" },
+    { table: "json_sites", column: "updated_at", definition: "DATETIME" },
+  ]);
+  const columns = await tableColumns(db, "json_sites");
+  const selectedColumns = [
+    "business_id",
+    "json_content",
+    columns.has("r2_json_key") ? "r2_json_key" : "",
+  ].filter(Boolean);
+  const row = await db
+    .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
+    .bind(businessId)
+    .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+  return row || null;
+}
+
+// Pure deterministic upgrade computation shared by the dry-run preview and the
+// saving upgrade (P3). Never mutates its input; never touches storage.
+function buildUpgradedSiteJson(siteJson: Record<string, unknown>, body: Record<string, unknown>, businessId: string) {
+  const beforeJson = structuredClone(siteJson) as Record<string, unknown>;
+  const beforeAudit = siteUpgradeAudit(beforeJson);
+  const originData = savedSiteOriginData(siteJson);
+  const meta = recordValue(siteJson.meta);
+  const profile = recordValue(siteJson.businessProfile);
+  const businessName = asString(meta.businessName, asString(profile.name, businessId));
+  const upgradedAt = new Date().toISOString();
+  if (meta.premiumUpgradeComplete === true && asString(meta.lastPremiumCopyUpgradeAt)) {
+    return {
+      businessName,
+      upgradedAt,
+      alreadyPremiumUpgraded: true,
+      beforeJson,
+      beforeAudit,
+      upgraded: beforeJson,
+      afterAudit: beforeAudit,
+      changedFields: [] as string[],
+      needsAi: false,
+      aiFlags: [] as string[],
+    };
+  }
+  const working = structuredClone(siteJson) as Record<string, unknown>;
+  applyGeneratedSitePageInserts(working, originData);
+  applySeededFontPairing(working, businessName, businessId, originData, body.randomizeStyle === true);
+  const designConfig = recordValue(working.design);
+  const visualDesignContext = [
+    businessName,
+    asString(originData.formatted_address, asString(originData.formattedAddress)),
+    Array.isArray(originData.types) ? originData.types.join(" ") : "",
+    asString(originData.searchQuery),
+  ].filter(Boolean).join(" ");
+  const visualSeed = [businessName, businessId, asString(originData.place_id), asString(originData.formatted_address, asString(originData.formattedAddress))].filter(Boolean).join(" ");
+  if (body.randomizeStyle === true || asString(recordValue(designConfig.visualStyleConfig).selectionMode) !== "stable_seeded_business_variant") {
+    designConfig.visualStyle = seededVisualStyleForBusiness(visualDesignContext, `${visualSeed} ${upgradedAt}`);
+    designConfig.visualStyleConfig = {
+      ...recordValue(designConfig.visualStyleConfig),
+      label: asString(designConfig.visualStyle).replace(/-/g, " "),
+      allowedValues: ["soft-rounded", "boxy-editorial", "industrial-diagonal", "clean-minimal", "bold-sport"],
+      selectionMode: "stable_seeded_business_variant",
+      seed: visualSeed,
+      selectionRule: "Existing-site upgrade chooses a business-seeded visual variant that fits the industry while preserving saved copy and URLs.",
+    };
+    working.design = designConfig;
+  }
+  normalizeSiteColorContrast(working);
+  working.meta = {
+    ...recordValue(working.meta),
+    businessId,
+    businessName,
+    designSystemVersion: DESIGN_SYSTEM_VERSION,
+    lastDesignUpgradeAt: upgradedAt,
+    lastUpgradeMode: "deterministic_design_schema",
+  };
+  const afterAudit = siteUpgradeAudit(working);
+  return {
+    businessName,
+    upgradedAt,
+    alreadyPremiumUpgraded: false,
+    beforeJson,
+    beforeAudit,
+    upgraded: working,
+    afterAudit,
+    changedFields: changedUpgradeFields(beforeJson, working),
+    needsAi: afterAudit.needsAi,
+    aiFlags: afterAudit.aiFlags,
+  };
+}
+
+async function persistUpgradedSiteJson(
+  deps: Pick<SitesHandlerDeps, "saveJsonSiteRecord" | "siteStorageDeps">,
+  db: D1DatabaseLike,
+  env: SitesEnv,
+  businessId: string,
+  siteJson: Record<string, unknown>,
+  rowR2Key: string | undefined,
+) {
+  const storage = recordValue(siteJson.storage);
+  let r2JsonKey = asString(storage.r2JsonKey, asString(rowR2Key));
+  let r2JsonUrl = asString(storage.r2JsonUrl);
+  if (r2JsonKey || env.R2) {
+    const nextKey = await uploadJsonToR2(siteJson, env, businessId);
+    if (nextKey) {
+      r2JsonKey = nextKey;
+      r2JsonUrl = publicR2Url(env, nextKey);
+      siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
+      await uploadJsonToR2(siteJson, env, businessId);
+    }
+  }
+  const jsonSummary = siteSummaryFromJson(deps.siteStorageDeps, siteJson, businessId);
+  const d1JsonContent = r2JsonKey
+    ? JSON.stringify(compactSiteManifest(deps.siteStorageDeps, siteJson, env, businessId, r2JsonKey))
+    : JSON.stringify(siteJson);
+  await deps.saveJsonSiteRecord(db, businessId, d1JsonContent, {
+    r2_json_key: r2JsonKey || null,
+    r2_json_url: r2JsonUrl || null,
+    json_summary: JSON.stringify(jsonSummary),
+  });
+  return { r2JsonKey, r2JsonUrl, jsonSummary };
+}
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "upgrade-preview") {
     const businessId = segments[1];
-    await ensureRequiredColumns(db, [
-      { table: "json_sites", column: "r2_json_key", definition: "TEXT" },
-      { table: "json_sites", column: "r2_json_url", definition: "TEXT" },
-      { table: "json_sites", column: "json_summary", definition: "TEXT" },
-      { table: "json_sites", column: "updated_at", definition: "DATETIME" },
-    ]);
-    const columns = await tableColumns(db, "json_sites");
-    const selectedColumns = [
-      "business_id",
-      "json_content",
-      columns.has("r2_json_key") ? "r2_json_key" : "",
-    ].filter(Boolean);
-    const row = await db
-      .prepare(`SELECT ${selectedColumns.join(", ")} FROM json_sites WHERE business_id = ?`)
-      .bind(businessId)
-      .first<{ business_id: string; json_content: string; r2_json_key?: string }>();
+    const row = await readUpgradeableSiteRow(deps, db, businessId);
     if (!row?.json_content) return errorJson("Site not found", 404);
 
     const body = await readJsonBody(request).catch(() => ({}));
     const siteJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
     if (!siteJson || typeof siteJson !== "object" || Array.isArray(siteJson)) {
+      return errorJson("Saved site JSON is not an object and cannot be previewed.", 422);
+    }
+
+    const computed = buildUpgradedSiteJson(siteJson as Record<string, unknown>, body, businessId);
+    return json({
+      success: true,
+      dryRun: true,
+      businessId,
+      designSystemVersion: DESIGN_SYSTEM_VERSION,
+      alreadyPremiumUpgraded: computed.alreadyPremiumUpgraded,
+      beforeAudit: computed.beforeAudit,
+      afterAudit: computed.afterAudit,
+      changedFields: computed.changedFields,
+      needsAi: computed.needsAi,
+      aiFlags: computed.aiFlags,
+      storageMode: row.r2_json_key ? "r2" : "legacy_d1",
+      rollbackAvailable: Boolean(env.R2),
+    });
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "upgrade-design") {
+    const businessId = segments[1];
+    const upgradeRow = await readUpgradeableSiteRow(deps, db, businessId);
+    if (!upgradeRow?.json_content) return errorJson("Site not found", 404);
+
+    const upgradeBody = await readJsonBody(request).catch(() => ({}));
+    const upgradeJson = await readSiteJsonFromStorage(siteStorageDeps, upgradeRow, env);
+    if (!upgradeJson || typeof upgradeJson !== "object" || Array.isArray(upgradeJson)) {
       return errorJson("Saved site JSON is not an object and cannot be upgraded.", 422);
     }
 
-    const beforeJson = structuredClone(siteJson) as Record<string, unknown>;
-    const beforeAudit = siteUpgradeAudit(beforeJson);
-    const originData = savedSiteOriginData(siteJson);
-    const meta = recordValue(siteJson.meta);
-    const profile = recordValue(siteJson.businessProfile);
-    const businessName = asString(meta.businessName, asString(profile.name, businessId));
-    const upgradedAt = new Date().toISOString();
-    if (meta.premiumUpgradeComplete === true && asString(meta.lastPremiumCopyUpgradeAt)) {
+    const computed = buildUpgradedSiteJson(upgradeJson as Record<string, unknown>, upgradeBody, businessId);
+    if (computed.alreadyPremiumUpgraded) {
       return json({
         success: true,
         businessId,
         alreadyPremiumUpgraded: true,
-        designSystemVersion: asString(meta.designSystemVersion, DESIGN_SYSTEM_VERSION),
-        lastPremiumCopyUpgradeAt: asString(meta.lastPremiumCopyUpgradeAt),
-        beforeAudit,
-        afterAudit: beforeAudit,
+        designSystemVersion: asString(recordValue(computed.beforeJson.meta).designSystemVersion, DESIGN_SYSTEM_VERSION),
+        lastPremiumCopyUpgradeAt: asString(recordValue(computed.beforeJson.meta).lastPremiumCopyUpgradeAt),
+        beforeAudit: computed.beforeAudit,
+        afterAudit: computed.afterAudit,
         changedFields: [],
         needsAi: false,
         aiFlags: [],
-        storageMode: row.r2_json_key ? "r2" : "legacy_d1",
+        storageMode: upgradeRow.r2_json_key ? "r2" : "legacy_d1",
       });
     }
 
-    applyGeneratedSitePageInserts(siteJson, originData);
-    applySeededFontPairing(siteJson, businessName, businessId, originData, body.randomizeStyle === true);
-    const designConfig = recordValue(siteJson.design);
-    const visualDesignContext = [
-      businessName,
-      asString(originData.formatted_address, asString(originData.formattedAddress)),
-      Array.isArray(originData.types) ? originData.types.join(" ") : "",
-      asString(originData.searchQuery),
-    ].filter(Boolean).join(" ");
-    const visualSeed = [businessName, businessId, asString(originData.place_id), asString(originData.formatted_address, asString(originData.formattedAddress))].filter(Boolean).join(" ");
-    if (body.randomizeStyle === true || asString(recordValue(designConfig.visualStyleConfig).selectionMode) !== "stable_seeded_business_variant") {
-      designConfig.visualStyle = seededVisualStyleForBusiness(visualDesignContext, `${visualSeed} ${upgradedAt}`);
-      designConfig.visualStyleConfig = {
-        ...recordValue(designConfig.visualStyleConfig),
-        label: asString(designConfig.visualStyle).replace(/-/g, " "),
-        allowedValues: ["soft-rounded", "boxy-editorial", "industrial-diagonal", "clean-minimal", "bold-sport"],
-        selectionMode: "stable_seeded_business_variant",
-        seed: visualSeed,
-        selectionRule: "Existing-site upgrade chooses a business-seeded visual variant that fits the industry while preserving saved copy and URLs.",
-      };
-      siteJson.design = designConfig;
-    }
-    normalizeSiteColorContrast(siteJson);
-    siteJson.meta = {
-      ...recordValue(siteJson.meta),
-      businessId,
-      businessName,
-      designSystemVersion: DESIGN_SYSTEM_VERSION,
-      lastDesignUpgradeAt: upgradedAt,
-      lastUpgradeMode: "deterministic_design_schema",
-    };
-
-    const afterAudit = siteUpgradeAudit(siteJson);
-    const changedFields = changedUpgradeFields(beforeJson, siteJson);
-    const storage = recordValue(siteJson.storage);
-    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
-    let r2JsonUrl = asString(storage.r2JsonUrl);
-    if (r2JsonKey || env.R2) {
-      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
-      if (nextKey) {
-        r2JsonKey = nextKey;
-        r2JsonUrl = publicR2Url(env, nextKey);
-        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
-        await uploadJsonToR2(siteJson, env, businessId);
-      }
-    }
-    const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
-    const d1JsonContent = r2JsonKey
-      ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
-      : JSON.stringify(siteJson);
-    await saveJsonSiteRecord(db, businessId, d1JsonContent, {
-      r2_json_key: r2JsonKey || null,
-      r2_json_url: r2JsonUrl || null,
-      json_summary: JSON.stringify(jsonSummary),
-    });
+    const rollback = await backupSiteJsonToHistory(computed.beforeJson, env, businessId);
+    const saved = await persistUpgradedSiteJson(deps, db, env, businessId, computed.upgraded, upgradeRow.r2_json_key);
 
     const leadRow = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
     if (leadRow?.id) {
@@ -1597,24 +1680,76 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
         lead_id: leadRow.id,
         staff_id: "system",
         activity_type: "note_added",
-        description: `Existing site upgraded to ${DESIGN_SYSTEM_VERSION}; changed fields: ${changedFields.join(", ") || "metadata only"}.`,
+        description: `Existing site upgraded to ${DESIGN_SYSTEM_VERSION}; changed fields: ${computed.changedFields.join(", ") || "metadata only"}.${rollback ? ` Rollback backup: ${rollback.key}.` : ""}`,
       });
     }
 
     return json({
       success: true,
       businessId,
-      upgradedAt,
+      upgradedAt: computed.upgradedAt,
       designSystemVersion: DESIGN_SYSTEM_VERSION,
-      changedFields,
-      beforeAudit,
-      afterAudit,
-      needsAi: afterAudit.needsAi,
-      aiFlags: afterAudit.aiFlags,
-      summary: jsonSummary,
-      storageMode: r2JsonKey ? "r2" : "legacy_d1",
-      r2JsonKey,
-      r2JsonUrl,
+      changedFields: computed.changedFields,
+      beforeAudit: computed.beforeAudit,
+      afterAudit: computed.afterAudit,
+      needsAi: computed.needsAi,
+      aiFlags: computed.aiFlags,
+      summary: saved.jsonSummary,
+      storageMode: saved.r2JsonKey ? "r2" : "legacy_d1",
+      r2JsonKey: saved.r2JsonKey,
+      r2JsonUrl: saved.r2JsonUrl,
+      rollbackKey: rollback ? rollback.key : "",
+      rollbackPruned: rollback ? rollback.pruned : 0,
+    });
+  }
+
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "restore-backup") {
+    const businessId = segments[1];
+    const body = await readJsonBody(request).catch(() => ({}));
+    const backupKey = asString(body.key);
+    const historyPrefix = siteHistoryPrefix(businessId);
+    if (!backupKey.startsWith(historyPrefix) || !backupKey.endsWith(".json") || backupKey.includes("..") || !env.R2) {
+      return errorJson("Invalid or unavailable backup key.", 400);
+    }
+    const backupObject = await env.R2.get(backupKey);
+    const backupText = backupObject ? await backupObject.text() : "";
+    let backupJson: unknown = null;
+    try {
+      backupJson = backupText ? JSON.parse(backupText) : null;
+    } catch {
+      backupJson = null;
+    }
+    if (!backupJson || typeof backupJson !== "object" || Array.isArray(backupJson)) {
+      return errorJson("Backup JSON is not an object and cannot be restored.", 422);
+    }
+    const row = await readUpgradeableSiteRow(deps, db, businessId);
+    if (!row?.json_content) return errorJson("Site not found", 404);
+    const restored = backupJson as Record<string, unknown>;
+    restored.meta = {
+      ...recordValue(restored.meta),
+      businessId,
+      lastRestoredFromBackupAt: new Date().toISOString(),
+      restoredFromBackupKey: backupKey,
+    };
+    const saved = await persistUpgradedSiteJson(deps, db, env, businessId, restored, row.r2_json_key);
+    const restoreLeadRow = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
+    if (restoreLeadRow?.id) {
+      await insertCrmActivitySafe(db, {
+        id: crypto.randomUUID(),
+        lead_id: restoreLeadRow.id,
+        staff_id: "system",
+        activity_type: "note_added",
+        description: `Existing site restored from upgrade backup ${backupKey}.`,
+      });
+    }
+    return json({
+      success: true,
+      businessId,
+      restoredFrom: backupKey,
+      summary: saved.jsonSummary,
+      storageMode: saved.r2JsonKey ? "r2" : "legacy_d1",
+      r2JsonKey: saved.r2JsonKey,
+      r2JsonUrl: saved.r2JsonUrl,
     });
   }
 

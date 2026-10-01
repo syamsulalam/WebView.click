@@ -239,8 +239,8 @@ Recommended upgrade modes:
 
 Admin implementation plan:
 
-1. Add `/api/sites/:businessId/upgrade-preview` dry-run endpoint.
-   It reads saved JSON, runs deterministic upgrade in memory, returns before/after audit, changed fields, and warnings. Still planned; current implementation starts with save endpoint and returns before/after audit in the response.
+1. Done (2026-10-01): Add `/api/sites/:businessId/upgrade-preview` dry-run endpoint.
+   It reads saved JSON, runs the shared deterministic upgrade computation in memory via `buildUpgradedSiteJson`, and returns before/after audit, changed fields, AI need, and rollback availability — without saving, writing CRM activity, or mutating its input (fixture: upgrade-preview dry-run in `tests/apiHandlers.test.ts`).
 
 2. Done: Add `/api/sites/:businessId/upgrade-design` save endpoint.
    It runs deterministic design/schema repair only, saves JSON, updates `json_summary`, and writes a CRM/activity note.
@@ -251,14 +251,14 @@ Admin implementation plan:
 4. Done: Add admin UI actions in `AdminSites`.
    Actions should be compact icon-only controls with tooltips: `Audit design`, `Upgrade design`, `Premium copy upgrade`, and `Full premium regenerate`.
 
-5. Add batch-safe controls.
-   Batch upgrade should start with dry-run/audit filters: only upgrade sites with `generic layout`, `missing final CTA`, `generic CTA`, `missing proof`, `thin service pages`, or `fallback preset`.
+5. Done (2026-10-01): Add batch-safe controls.
+   `AdminSites` has per-row dry-run preview (Eye icon opens before/after audits plus changed fields in the data modal) and a `Preview upgrades` batch action that dry-runs the current filter (cap 10) and reports would-change / current / premium / failed counts without saving anything.
 
 6. Add version metadata.
    Store `meta.designSystemVersion`, `meta.lastDesignUpgradeAt`, `meta.lastPremiumCopyUpgradeAt`, `meta.lastUpgradeMode`, and `metadata.upgradeFromDesignSystemVersion`.
 
-7. Preserve rollback/debug.
-   Store previous compact summary and optionally previous full JSON R2 key in job metadata before overwrite. At minimum, store `previousJsonHash`, `nextJsonHash`, before/after audits, and changed field counts.
+7. Done (2026-10-01): Preserve rollback/debug.
+   `upgrade-design` backs the pre-upgrade JSON up to `sites/{businessId}/history/{timestamp}.json` in R2 (best-effort, never blocks the upgrade; keeps the newest 5, prunes older), returns the backup key, records it in the CRM activity note, and `POST /api/sites/:businessId/restore-backup` restores a history key after strict prefix validation.
 
 8. Verify export parity.
    After upgrade, public preview and owner zip should include the same upgraded structure because both use saved JSON and renderer DOM.

@@ -596,6 +596,44 @@ test("specificity check reads markup body fields for legacy sections (B4)", () =
   assert.ok(!audit.copySpecificity.genericPaths.includes("about:about-story"), "markup body prose with anchors must pass");
 });
 
+test("zero-photo sites get proof-led fallbacks while photo-rich sites stay untouched (P3)", () => {
+  const base = {
+    meta: { businessName: "No Photo Co", language: "en" },
+    businessProfile: { name: "No Photo Co", contact: {}, address: { city: "Dallas" } },
+    trust: { rating: 4.5, reviewCount: 30, reviews: [] },
+    location: {},
+    conversion: { primaryCta: { text: "Request a Quote" }, secondaryCta: { text: "Explore Services" } },
+    global: { header: { ctaButton: { text: "Request a Quote" } }, footer: {} },
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: { proofTreatment: "gallery-proof" },
+    brand: {},
+    sourceData: {},
+    services: [],
+    products: [],
+    offers: [],
+  } as Record<string, unknown>;
+  const bareHome = {
+    pageId: "home",
+    pageTitle: "Home",
+    sections: [
+      { type: "hero", id: "hero-1", content: { headline: "No Photo Co", subheadline: "Dallas help." } },
+      { type: "offers", id: "offers-1", content: { title: "Services", items: [] } },
+      { type: "trustBar", id: "trust-1", content: { items: [] } },
+    ],
+  };
+  const bare = { ...base, design: { proofTreatment: "gallery-proof" }, pages: [structuredClone(bareHome)] } as Record<string, unknown>;
+  applyGeneratedSitePageInserts(bare, {});
+  assert.equal((bare.design as any).proofTreatment, "badge-row");
+  const bareOrder = ((bare.pages as any[])[0].sections as any[]).map((section) => section.type);
+  assert.deepEqual(bareOrder.slice(0, 2), ["hero", "trustBar"]);
+
+  const rich = { ...base, design: { proofTreatment: "gallery-proof" }, brand: { preferredHeroImage: "/hero.jpg" }, pages: [structuredClone(bareHome)] } as Record<string, unknown>;
+  applyGeneratedSitePageInserts(rich, {});
+  assert.equal((rich.design as any).proofTreatment, "gallery-proof");
+  const richOrder = ((rich.pages as any[])[0].sections as any[]).map((section) => section.type);
+  assert.deepEqual(richOrder.slice(0, 3), ["hero", "offers", "trustBar"]);
+});
+
 test("explicit admin preset survives the pattern default upgrade (A3)", () => {
   const base = {
     meta: { businessName: "Metro Concrete Repair", language: "en" },

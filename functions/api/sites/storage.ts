@@ -193,6 +193,44 @@ export async function uploadJsonToR2(finalJson: Record<string, unknown>, env: Si
   return key;
 }
 
+export function siteHistoryPrefix(businessId: string) {
+  return `sites/${businessId}/history/`;
+}
+
+// P3 rollback: stores the pre-upgrade JSON under a timestamped history key and
+// prunes older backups (best-effort, never blocks the upgrade itself).
+export async function backupSiteJsonToHistory(
+  previousJson: Record<string, unknown>,
+  env: SiteStorageEnv,
+  businessId: string,
+  keep = 5,
+): Promise<{ key: string; pruned: number } | null> {
+  if (!env.R2) return null;
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const key = `${siteHistoryPrefix(businessId)}${stamp}.json`;
+    await env.R2.put(key, JSON.stringify(previousJson, null, 2), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
+    let pruned = 0;
+    try {
+      if (env.R2.list && env.R2.delete) {
+        const listed = await env.R2.list({ prefix: siteHistoryPrefix(businessId), limit: 100 });
+        const keys = (listed.objects || []).map((object) => object.key).filter(Boolean).sort();
+        const excess = keys.filter((historyKey) => historyKey !== key).slice(0, Math.max(0, keys.length - keep));
+        if (excess.length) {
+          await env.R2.delete(excess);
+          pruned = excess.length;
+        }
+      }
+    } catch (error) {
+      console.error("Site history prune failed, continuing:", error);
+    }
+    return { key, pruned };
+  } catch (error) {
+    console.error("Site history backup failed, continuing without rollback:", error);
+    return null;
+  }
+}
+
 function isUsableImageUrl(deps: Pick<SiteStorageDeps, "asString">, value: unknown) {
   const url = deps.asString(value).trim();
   return Boolean(url && (url.startsWith("http") || url.startsWith("/") || url.startsWith("data:")));

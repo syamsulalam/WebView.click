@@ -720,6 +720,12 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
       if (requestedStep === "offeringCopy" && isTransientChunkedFailureMessage(message)) {
         forceSingleOfferingCopyBatch(metadata, "server_transient_failure");
       }
+      if (requestedStep === "finalize") {
+        // P3: all AI work for this job already sits in metadata (outline plus
+        // cumulative patches), so a transient save failure loses nothing —
+        // record that Resume Finalize is safe instead of failing silently.
+        metadata.finalizeTransient = isTransientChunkedFailureMessage(message);
+      }
       metadata.failureStage = `chunked_${requestedStep}`;
       metadata.failureMessage = message;
       metadata.nextStep = requestedStep;

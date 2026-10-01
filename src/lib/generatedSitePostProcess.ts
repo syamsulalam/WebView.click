@@ -1551,4 +1551,27 @@ export function applyGeneratedSitePageInserts(finalJson: GeneratedSiteRecord, or
   ensureConversionMetadata(finalJson, originData);
   ensureFeedbackPage(finalJson);
   ensureGalleryPage(finalJson, originData);
+  ensureProofLedFallbacks(finalJson, originData);
+}
+
+// Zero-photo proof-led composition (P3): without usable imagery the page must
+// lead with proof, not an empty media frame. A photo-referencing proof
+// treatment is swapped for badges, and the trust bar moves directly under the
+// hero. The renderer pairs this with the minimal-no-photo hero layout.
+function ensureProofLedFallbacks(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord = {}) {
+  if (availableMediaCount(finalJson, originData) > 0) return;
+  const design = objectValue(finalJson.design);
+  if (asString(design.proofTreatment) === "gallery-proof") design.proofTreatment = "badge-row";
+  finalJson.design = design;
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  const home = pages.find((page) => asString(page.pageId) === "home");
+  if (!home) return;
+  const sections = Array.isArray(home.sections) ? home.sections as Array<Record<string, unknown>> : [];
+  const heroIndex = sections.findIndex((section) => asString(section.type) === "hero");
+  const trustIndex = sections.findIndex((section) => asString(section.type) === "trustBar");
+  if (trustIndex > heroIndex + 1) {
+    const [trustBar] = sections.splice(trustIndex, 1);
+    sections.splice(heroIndex >= 0 ? heroIndex + 1 : 0, 0, trustBar);
+    home.sections = sections;
+  }
 }
