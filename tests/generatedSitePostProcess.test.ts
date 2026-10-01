@@ -655,7 +655,9 @@ test("zero-photo sites get proof-led fallbacks while photo-rich sites stay untou
   applyGeneratedSitePageInserts(rich, {});
   assert.equal((rich.design as any).proofTreatment, "gallery-proof");
   const richOrder = ((rich.pages as any[])[0].sections as any[]).map((section) => section.type);
-  assert.deepEqual(richOrder.slice(0, 3), ["hero", "offers", "trustBar"]);
+  // P4 D5: the pattern order (hero → proof → …) now applies to photo-rich
+  // sites too; "untouched" above means the proof treatment, not the order.
+  assert.deepEqual(richOrder.slice(0, 3), ["hero", "trustBar", "offers"]);
 });
 
 test("explicit admin preset survives the pattern default upgrade (A3)", () => {
@@ -678,4 +680,134 @@ test("explicit admin preset survives the pattern default upgrade (A3)", () => {
   const inferred = { ...base, design: {} } as Record<string, unknown>;
   ensureConversionMetadata(inferred, {});
   assert.ok((inferred.design as any).stylePreset && (inferred.design as any).stylePreset !== "legal-authority");
+});
+
+test("pattern order puts proof early and final CTA last, reviews-first when review-rich (P4 D5)", () => {
+  const shuffled = {
+    pageId: "home",
+    sections: [
+      { type: "faq", id: "faq-1", content: { items: [] } },
+      { type: "offers", id: "offers-1", content: { title: "Cuts", items: [] } },
+      { type: "trustBar", id: "trust-1", content: { items: [] } },
+      { type: "hero", id: "hero-1", content: { headline: "Sharp Cuts Salon", subheadline: "Dallas salon." } },
+    ],
+  };
+  const base = {
+    meta: { businessName: "Sharp Cuts Salon", language: "en" },
+    businessProfile: { name: "Sharp Cuts Salon", primaryType: "beauty salon", contact: { phoneNational: "+1 555-0100" } },
+    trust: { rating: 4.9, reviewCount: 30, reviews: [] },
+    location: {},
+    conversion: { primaryCta: { text: "Book Appointment" }, secondaryCta: { text: "Explore Services" } },
+    global: { header: { ctaButton: { text: "Book Appointment" } }, footer: {} },
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    brand: {},
+    sourceData: {},
+    services: [],
+    products: [],
+    offers: [],
+    pages: [structuredClone(shuffled)],
+  } as Record<string, unknown>;
+  const conversion = ensureConversionMetadata(base, {});
+  assert.equal(conversion.pagePattern, "booking-led-local");
+  const order = ((base.pages as any[])[0].sections as any[]).map((section) => section.type);
+  assert.equal(order[0], "hero");
+  assert.equal(order[order.length - 1], "finalCta");
+  assert.ok(order.indexOf("trustBar") < order.indexOf("offers"), "proof renders before offers");
+
+  const rich = structuredClone(base) as Record<string, unknown>;
+  ((rich.trust as any).reviewCount) = 87;
+  ensureConversionMetadata(rich, {});
+  const richOrder = ((rich.pages as any[])[0].sections as any[]).map((section) => section.type);
+  assert.deepEqual(richOrder.slice(0, 2), ["hero", "trustBar"], "no reviews section exists, proof stays second");
+});
+
+test("booking-led niches with four photos get the before-after gallery treatment (P4 D5)", () => {
+  const site = {
+    meta: { businessName: "Sharp Cuts Salon", language: "en" },
+    businessProfile: { name: "Sharp Cuts Salon", primaryType: "beauty salon", contact: { phoneNational: "+1 555-0100" } },
+    trust: { rating: 4.9, reviewCount: 30, reviews: [] },
+    location: {},
+    conversion: { primaryCta: { text: "Book Appointment" }, secondaryCta: { text: "Explore Services" } },
+    global: { header: { ctaButton: { text: "Book Appointment" } }, footer: {} },
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    brand: { preferredHeroImage: "/hero.jpg" },
+    sourceData: {},
+    services: [],
+    products: [],
+    offers: [],
+    pages: [{ pageId: "home", sections: [{ type: "hero", id: "hero-1", content: { headline: "Sharp Cuts", subheadline: "Dallas salon." } }] }],
+  } as Record<string, unknown>;
+  const photos = [{ photo_reference: "a" }, { photo_reference: "b" }, { photo_reference: "c" }, { photo_reference: "d" }];
+  ensureConversionMetadata(site, { photos });
+  assert.equal((site.design as any).mediaStrategy, "gallery-grid");
+  assert.equal((site.design as any).proofTreatment, "gallery-proof");
+});
+
+test("excess primary CTAs on one page flag, two stay clean (P4 D6)", () => {
+  const buttons = (labels: string[]) => labels.map((text) => ({ text, href: "#contact", style: "primary" }));
+  const site = {
+    meta: { businessName: "Atlas Concrete", language: "en" },
+    businessProfile: { name: "Atlas Concrete", primaryType: "concrete contractor", contact: { phoneNational: "+1 555-0199" } },
+    trust: { rating: 4.7, reviewCount: 23, reviews: [] },
+    location: {},
+    conversion: { primaryCta: { text: "Request an Estimate", size: "lg" }, secondaryCta: { text: "Open Maps" } },
+    global: { header: { ctaButton: { text: "Request an Estimate" } }, footer: {} },
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    brand: {},
+    sourceData: {},
+    services: [],
+    products: [],
+    offers: [],
+    pages: [{
+      pageId: "home",
+      sections: [
+        { type: "hero", id: "hero-1", content: { headline: "Concrete help", subheadline: "Local support.", buttons: buttons(["Request an Estimate"]) } },
+        { type: "offers", id: "offers-1", content: { title: "Work", buttons: buttons(["Request an Estimate", "Call Now", "Get Directions"]) } },
+      ],
+    }],
+  } as Record<string, unknown>;
+  const conversion = ensureConversionMetadata(site, {});
+  const audit = conversion.conversionAudit as any;
+  assert.ok(audit.excessCtaRepeats.includes("home"));
+  assert.ok(audit.flags.includes("excess_cta_repeats"));
+});
+
+test("industry must-haves flag only when data satisfies the precondition (P4 D7)", () => {
+  const base = {
+    meta: { businessName: "Sharp Cuts Salon", language: "en" },
+    businessProfile: { name: "Sharp Cuts Salon", primaryType: "beauty salon", contact: { phoneNational: "+1 555-0100" } },
+    trust: { rating: 4.9, reviewCount: 30, reviews: [] },
+    location: {},
+    conversion: { primaryCta: { text: "Contact Us", size: "lg" }, primaryAction: "Contact Us", secondaryCta: { text: "Explore Services" } },
+    global: { header: { ctaButton: { text: "Contact Us" } }, footer: {} },
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    brand: {},
+    sourceData: {},
+    services: [],
+    products: [],
+    offers: [],
+    pages: [{ pageId: "home", sections: [{ type: "hero", id: "hero-1", content: { headline: "Sharp Cuts", subheadline: "Dallas salon." } }] }],
+  } as Record<string, unknown>;
+  // "Contact Us" is preserved as the primary action (not generic-rewritten
+  // because the audit, not the rewrite, owns this path) and misses booking.
+  const booking = ensureConversionMetadata(structuredClone(base), {});
+  assert.ok((booking.conversionAudit as any).flags.includes("missing_booking_path"));
+
+  // A dropped price signal flags; a carried one stays clean.
+  const priced = structuredClone(base) as Record<string, unknown>;
+  const pricedAudit = ensureConversionMetadata(priced, { priceLevel: "MODERATE" }).conversionAudit as any;
+  assert.ok(pricedAudit.flags.includes("missing_price_cue"), "dropped price_level must flag");
+  ((priced.businessProfile as any).pricePositioning) = "Mid-range for Dallas";
+  const carriedAudit = ensureConversionMetadata(priced, { priceLevel: "MODERATE" }).conversionAudit as any;
+  assert.ok(!carriedAudit.flags.includes("missing_price_cue"), "carried price positioning must pass");
+
+  // Review-rich without a reviews section flags.
+  const loved = structuredClone(base) as Record<string, unknown>;
+  ((loved.trust as any).reviewCount) = 120;
+  const lovedAudit = ensureConversionMetadata(loved, {}).conversionAudit as any;
+  assert.ok(lovedAudit.flags.includes("missing_review_leverage"));
 });

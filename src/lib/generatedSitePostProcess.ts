@@ -657,6 +657,9 @@ function mediaStrategyFor(finalJson: GeneratedSiteRecord, originData: GeneratedS
   const mediaCount = availableMediaCount(finalJson, originData);
   const mapsUrl = mapsUrlFromSite(finalJson, originData);
   if (heroImage && mediaCount >= 3 && (pattern === "gallery-led-craft" || pattern === "menu-led-restaurant")) return "gallery-grid";
+  // P4 D5 before-after: booking-led niches (salon, dental, fitness) with a
+  // rich photo pool lead with the gallery instead of a single hero image.
+  if (heroImage && mediaCount >= 4 && pattern === "booking-led-local") return "gallery-grid";
   if (heroImage) return "real-photo-hero";
   if (mapsUrl && (pattern === "menu-led-restaurant" || pattern === "emergency-service")) return "map-contact";
   if (asString(brand.logoSvg) || asString(brand.logoImageUrl)) return "logo-proof";
@@ -764,6 +767,11 @@ function buildDesignIntent(finalJson: GeneratedSiteRecord, originData: Generated
       proofTreatment: "badge-row",
       antiPatterns: [...defaults.antiPatterns, "forcing gallery layout without usable media"],
     };
+  }
+  // P4 D5: a gallery-grid strategy on a booking-led niche renders the
+  // before-after proof treatment instead of the plain rating strip.
+  if (mediaStrategy === "gallery-grid" && pattern === "booking-led-local") {
+    return { ...defaults, mediaStrategy, proofTreatment: "gallery-proof" };
   }
   return { ...defaults, mediaStrategy };
 }
@@ -1182,7 +1190,127 @@ function genericCopyPaths(finalJson: GeneratedSiteRecord, anchors: Set<string>) 
   return paths.slice(0, 8);
 }
 
-function buildConversionAudit(finalJson: GeneratedSiteRecord) {
+// P4 D5: per-pattern home section order (UUPM landing patterns). Hero first,
+// final CTA last, proof early; review-rich businesses lead with reviews.
+function patternSectionOrder(pattern: string, reviewsFirst: boolean): string[] {
+  const tail = ["faq", "contactForm", "feedback", "finalCta"];
+  const heads: Record<string, string[]> = {
+    "emergency-service": ["hero", "trustBar", "contactForm", "hoursLocation", "offers", "features", "reviews"],
+    "menu-led-restaurant": ["hero", "trustBar", "offers", "hoursLocation", "imageGallery", "reviews"],
+    "trust-led-professional": ["hero", "trustBar", "textImageBlock", "offers", "teamGrid", "reviews"],
+    "booking-led-local": ["hero", "trustBar", "offers", "imageGallery", "reviews"],
+    "gallery-led-craft": ["hero", "trustBar", "imageGallery", "offers", "reviews"],
+    "premium-consultation": ["hero", "trustBar", "offers", "textImageBlock", "reviews", "teamGrid"],
+    "quote-led-service": ["hero", "trustBar", "offers", "features", "reviews"],
+  };
+  const head = heads[pattern] || heads["quote-led-service"];
+  if (reviewsFirst) {
+    return ["hero", "reviews", ...head.filter((type) => type !== "hero" && type !== "reviews"), ...tail];
+  }
+  return [...head, ...tail];
+}
+
+function ensurePatternSectionOrder(finalJson: GeneratedSiteRecord, pattern: string, reviewCount: number) {
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  const home = pages.find((page) => asString(page.pageId) === "home") || pages[0];
+  const sections = home && Array.isArray(home.sections) ? home.sections as Array<Record<string, unknown>> : [];
+  if (sections.length < 2) return;
+  const reviewsFirst = reviewCount >= 50
+    && ["booking-led-local", "menu-led-restaurant", "gallery-led-craft", "quote-led-service"].includes(pattern);
+  const order = patternSectionOrder(pattern, reviewsFirst);
+  const rank = (type: string) => {
+    const index = order.indexOf(type);
+    return index >= 0 ? index : order.length;
+  };
+  home.sections = sections
+    .map((section, index) => ({ section, index }))
+    .sort((a, b) => {
+      const aType = asString(a.section.type);
+      const bType = asString(b.section.type);
+      if (aType === "hero" || bType === "finalCta") return -1;
+      if (bType === "hero" || aType === "finalCta") return 1;
+      return rank(aType) - rank(bType) || a.index - b.index;
+    })
+    .map((entry) => entry.section);
+}
+
+// P4 D7: per-industry must-have blocks (UUPM decision rules), enforced only
+// when the Places data satisfies the precondition — never invented (N1).
+function industryMustHaveFlags(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord, pattern: string): string[] {
+  const flags: string[] = [];
+  const profile = objectValue(finalJson.businessProfile);
+  const trust = objectValue(finalJson.trust);
+  const hours = objectValue(finalJson.hours);
+  const conversion = objectValue(finalJson.conversion);
+  const design = objectValue(finalJson.design);
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  const home = pages.find((page) => asString(page.pageId) === "home") || pages[0] || {};
+  const homeSections = Array.isArray(home.sections) ? home.sections as Array<Record<string, unknown>> : [];
+  const homeTypes = new Set(homeSections.map((section) => asString(section.type)));
+  const allTypes = new Set(pages.flatMap((page) => {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    return sections.map((section) => asString(section.type));
+  }));
+  const phone = phoneFromSite(finalJson, originData);
+  const reviewCount = Number(trust.reviewCount || originData.user_ratings_total || originData.userRatingCount || 0);
+  const primaryAction = safeCopyText(conversion.primaryAction, 120);
+
+  if (pattern === "booking-led-local" && (phone || homeTypes.has("contactForm") || homeTypes.has("hoursLocation"))) {
+    if (!/(book|schedule|appointment|reserve|visit|call now)/i.test(primaryAction)) flags.push("missing_booking_path");
+  }
+  const hoursRegular = Array.isArray(hours.regular) ? hours.regular : [];
+  if (pattern === "menu-led-restaurant" && hoursRegular.length > 0 && !homeTypes.has("hoursLocation") && !homeTypes.has("contactForm")) {
+    flags.push("missing_hours_context");
+  }
+  if (availableMediaCount(finalJson, originData) >= 3
+    && ["gallery-led-craft", "booking-led-local", "menu-led-restaurant"].includes(pattern)
+    && !allTypes.has("imageGallery") && !allTypes.has("gallery")
+    && asString(design.mediaStrategy) !== "gallery-grid") {
+    flags.push("missing_proof_gallery");
+  }
+  const originPrice = asString(originData.priceLevel ?? originData.price_level);
+  if (originPrice) {
+    const topArrays = [finalJson.services, finalJson.offers, finalJson.products].filter(Array.isArray).flat() as Array<unknown>;
+    const pageItems = pages.flatMap((page) => {
+      const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+      return sections.flatMap((section) => {
+        const content = objectValue(section.content);
+        return (["items", "cards", "highlights"] as const).flatMap((key) => Array.isArray(content[key]) ? content[key] as Array<unknown> : []);
+      });
+    });
+    const hasPriceCue = Boolean(safeCopyText(profile.pricePositioning, 80))
+      || [...topArrays, ...pageItems].some((entry) => Boolean(safeCopyText(objectValue(entry).priceHint, 40)));
+    if (!hasPriceCue) flags.push("missing_price_cue");
+  }
+  if (reviewCount >= 50 && !allTypes.has("reviews") && !allTypes.has("testimonials")) {
+    flags.push("missing_review_leverage");
+  }
+  return flags;
+}
+
+// P4 D6: at most two distinct primary CTAs per page — hero, post-proof
+// repeat, final band — with proof between them (audited separately).
+function excessCtaRepeatPaths(finalJson: GeneratedSiteRecord): string[] {
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  const paths: string[] = [];
+  pages.forEach((page) => {
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    const primaryLabels = new Set<string>();
+    sections.forEach((section) => {
+      const buttons = objectValue(section.content).buttons;
+      if (!Array.isArray(buttons)) return;
+      (buttons as Array<Record<string, unknown>>).forEach((button) => {
+        const text = safeCopyText(button.text, 80);
+        if (!text) return;
+        if (asString(button.style) === "primary" || isPrimaryActionLike(text)) primaryLabels.add(text.toLowerCase());
+      });
+    });
+    if (primaryLabels.size > 2) paths.push(asString(page.pageId) || "page");
+  });
+  return paths.slice(0, 8);
+}
+
+function buildConversionAudit(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord = {}) {
   const conversion = objectValue(finalJson.conversion);
   const primaryCta = objectValue(conversion.primaryCta);
   const proofBadges = Array.isArray(conversion.proofBadges) ? conversion.proofBadges : [];
@@ -1244,6 +1372,8 @@ function buildConversionAudit(finalJson: GeneratedSiteRecord) {
     vagueNavigationalCtas,
     proofBadgeCount: proofBadges.length,
     faqItemCount,
+    excessCtaRepeats: excessCtaRepeatPaths(finalJson),
+    industryMustHaves: industryMustHaveFlags(finalJson, originData, asString(conversion.pagePattern)),
     checkedAt: new Date().toISOString(),
   };
   const flags = [
@@ -1254,8 +1384,10 @@ function buildConversionAudit(finalJson: GeneratedSiteRecord) {
     !summary.finalCtaPresent ? "missing_final_cta" : "",
     !summary.heroSpecific ? "non_specific_hero" : "",
     summary.competingPrimaryCtas ? "competing_primary_ctas" : "",
+    summary.excessCtaRepeats.length ? "excess_cta_repeats" : "",
     summary.thinServicePages.length ? "thin_service_pages" : "",
     summary.copySpecificity.genericPaths.length ? "generic_detail_copy" : "",
+    ...summary.industryMustHaves,
   ].filter(Boolean);
   return { ...summary, flags };
 }
@@ -1349,8 +1481,13 @@ export function ensureConversionMetadata(finalJson: GeneratedSiteRecord, originD
   ensureOfferingDetailDepth(finalJson);
   ensureFaqDepth(finalJson, originData);
   ensureFinalCtaSections(finalJson, originData);
+  // P4 D5: order home sections per the pattern template before the audit, so
+  // proofAboveFold reflects the shipped order (hero → proof → … → final CTA).
+  const patternTrust = objectValue(finalJson.trust);
+  const patternReviewCount = Number(patternTrust.reviewCount || originData.user_ratings_total || originData.userRatingCount || 0);
+  ensurePatternSectionOrder(finalJson, pattern, patternReviewCount);
   const updatedConversion = objectValue(finalJson.conversion);
-  updatedConversion.conversionAudit = buildConversionAudit(finalJson);
+  updatedConversion.conversionAudit = buildConversionAudit(finalJson, originData);
   finalJson.conversion = updatedConversion;
   const updatedDesign = objectValue(finalJson.design);
   updatedDesign.designAudit = buildDesignAudit(finalJson, originData);
