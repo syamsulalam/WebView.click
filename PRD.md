@@ -121,9 +121,72 @@ Free: `$0` website package (static zip + PDF guide). Done-for-you: **$180/year h
 | P1 · Grounding (prompt + brief) | B1 rich brief, B2 render context, B3 loud outline failure, B5 CTA/price specificity | `generatedWithAi` sites beat scaffold on blind review |
 | P2 · Composition (renderer) | A1 intent-actually-renders, A3 preset inference, A5 mobile finish, C2/C3/C4 conversion depth | 3 same-niche demos distinguishable + gate fully green |
 | P3 · Scale | Batch upgrade with dry-run filters, version metadata, rollback notes (per `DESIGN_GUIDE.md` upgrade plan) | Bulk migration without breaking URLs, payments, or owner edits |
+| P4 · Design-intelligence (§13, research backlog — not approved for implementation) | D1–D12 derived from ui-ux-pro-max: spacing token system, landing-pattern alignment, industry must-have blocks, style/type/motion enrichment, checklist audit flags | 3 same-niche demos beat current-gen on blind premium review with the §8 gate staying green |
 
 ## 12 · Open decisions (need your call before P0)
 
 1. **Photo sourcing depth:** stay with Places-proxy + owner uploads, or budget generated/stock imagery for zero-photo prospects?
 2. **Outreach hard-block vs warn:** should C1 *disable* outreach actions, or show red badges but allow override with a reason?
 3. **Pricing page:** does the owner preview need visitor-facing price ranges where Places data supports them, or keep pricing strictly in checkout/FAQ?
+4. **P4 density default:** should owner demos default to the UUPM "spacious" tier (D2) for premium feel, or "standard" to keep more content above the fold?
+
+## 13 · Design-intelligence upgrade (ui-ux-pro-max research backlog — NOT approved for implementation)
+
+**Source:** `https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/` (MIT), reviewed 2026-10-01 at upstream HEAD `09170ee` via a disposable shallow clone (no code vendored; nothing copied into this repo). It is an AI design-intelligence skill: a BM25-searchable database of **192 industry reasoning rules** (`products.csv` + `ui-reasoning.csv`), **79 searchable UI styles (50 active, 29 supplemental, 9 deprecated)**, **192 industry color palettes**, **74 font pairings**, **34 landing-page patterns**, **119 UX guidelines** (44 High, 4 Critical), **17 motion tiers**, 22 stack guides (incl. `html-tailwind`, `react`), and a three-layer token architecture (primitive → semantic → component) with an optional 1–10 variance/motion/density dial system (`design_system.py` `DIAL_TIERS`). The consumable insight for us is not the search CLI but the *curated values*: spacing scales, section orders, industry must-haves, style checklists, type/motion numbers. Everything below is mapped against our current truth (16 style presets, 5 visual styles, 7 `sectionRhythm` names collapsing to 3 paddings, `conversionPagePattern`, `conversionAudit`/`designAudit`, export parity) so each item is implementable later without re-research.
+
+### 13.1 Spacing system (priority — fixes the "same stacked blocks" feel)
+
+Today `sectionRhythmPadClass` maps 7 rhythm names to 3 paddings (`py-10` / `py-16` / `py-20` default / `py-24·md:py-32`), responsive steps exist only on premium rhythms, horizontal padding is fixed (`px-4`/`px-6`), and there is no shared scale between renderer and export. UUPM gives us exact numbers to replace this with a token system:
+
+| ID | Requirement (derived) | Acceptance (when implemented) |
+|---|---|---|
+| D1 | Adopt the 4px-base primitive scale (`--space-0-5` 2px … `--space-24` 96px, `primitive-tokens.md` §Spacing Scale) plus semantic section tokens `--spacing-section-sm/md/lg` = 32/48/64px, shared by `SiteRenderer` and `exportSiteHtml` so export parity holds by construction | ✅ fixture asserts every section type resolves to a token (no raw `py-20` fallback) and renderer/export emit the same padding for the same intent |
+| D2 | Add a `density` intent dial with the two marketing tiers from `DIAL_TIERS` (spacious: md 24 / lg 32 / xl 48 / 2xl 64 / 3xl 96; standard: md 16 / lg 24 / xl 32 / 2xl 48 / 3xl 64); owner demos default spacious (see open decision §12.4), admin keeps its dense UI | ✅ one intent field flips the token set; snapshot test shows both tiers |
+| D3 | Responsive padding steps per `html-tailwind` rows 9–10: `px-4 → md:px-6 → lg:px-8` on sections, `max-w-7xl` content container, narrow `max-width: 600px` for forms (matches deprecated Conversion-Optimized checklist), grid gaps `gap-4/6/8` instead of per-item margins, `space-y-*` for vertical lists | ✅ 360px and 1440px renders share the same tokens with stepped values; no full-width body copy on desktop |
+| D4 | Component spacing tokens from `component-tokens.md`: buttons `px-4·py-2` / `px-6·py-3`, cards `p-6` + `space-y-4`, badges, inputs, table cells; touch gaps ≥8px between adjacent targets and ≥24px web pointer targets (`ux-guidelines` rows 23/104) | ✅ CTA/button audit flag for undersized or tightly-packed targets |
+
+### 13.2 Landing-pattern alignment (extends `conversionPagePattern`, not a replacement)
+
+UUPM's 34 `landing.csv` patterns supersede its own deprecated style rows 20/21/24/26 (Hero-Centric, Conversion-Optimized, Social-Proof, Trust&Authority) — we adopt the *patterns*, never the deprecated rows. Direct mappings for our demos:
+
+| ID | Requirement (derived) | Acceptance (when implemented) |
+|---|---|---|
+| D5 | Extend `conversionPagePattern` with pattern IDs + section-order templates: `hero-testimonials-cta` (#2: hero → problem → solution → testimonials → CTA, hero-sticky + post-testimonial CTA repeat), `hero-centric` (#32: full-bleed hero → value strip → proof → CTA), `trust-authority` (#33: credibility hero → proof → solution → clear CTA path for legal/medical), `feature-showcase` (#31) for trades/real-estate, `pricing-focused` (#8/#14: cards + sticky nav CTA + FAQ + final CTA) where price data exists, `before-after` (#21) for beauty/dental/gallery-rich niches, `reviews-first` (#19) for 100+ review businesses | ✅ pattern selection is deterministic from (niche, photo count, review count, price presence); each pattern renders a distinct section order, not just re-skinned blocks |
+| D6 | Adopt pattern CTA-placement rules: sticky hero CTA + exactly one repeat after proof/testimonials (never competing CTAs — already a `conversionAudit` flag, keep it), one CTA per banner min-44px (banner rules), final CTA band present on every pattern | ✅ audit asserts ≤2 CTA repeats per page with proof between them |
+
+### 13.3 Industry must-have blocks (extends B1 grounding + C2/C3 depth, always source-safe)
+
+`ui-reasoning.csv` rows for our exact niches carry `Decision_Rules` must-haves. Each becomes a conditional site block that renders **only when Places data supports it** (N1 still forbids invention):
+
+| Google niche | UUPM row | Must-have → site block |
+|---|---|---|
+| Beauty/spa/salon | #32 Soft UI Evolution + Neumorphism, gold accents if luxury | booking block + before/after gallery (photos only) |
+| Restaurant/cafe/bakery | #34/#63 warm palette, menu hover | menu-display + hours-prominent + online-ordering link (data-only) |
+| Home services (plumber/electrician/HVAC) | #55 Flat + Accessible, trust blue + safety orange | sticky emergency-contact bar + certifications display (never invented) |
+| Medical/dental/vet | #58/#60/#61 medical blue, social-proof-first | appointment/booking info + insurance info + testimonial carousel + before/after (photos only) |
+| Legal | #40 navy + gold, Trust&Authority+Minimal | credential/case-result display (data-only) + guarantee statement slot |
+| Real estate/hotel | #36/#38 glass/minimal + gold | map integration + amenity/room reveals + booking info |
+| Auto/photo/coworking/florist | #52/#53/#54/#62 | comparison/financing slots (auto, data-only), portfolio showcase (photo studio), tour + booking (coworking), delivery/care info (florist) |
+
+| ID | Requirement (derived) | Acceptance (when implemented) |
+|---|---|---|
+| D7 | Add per-industry must-have evaluation to generation/post-process: each block has a data precondition (e.g. booking block needs a real phone/URL), a rendered treatment, and an audit flag when the precondition holds but the block is missing | ✅ gate fails demos whose niche must-haves are satisfiable-but-absent; zero invented credentials |
+
+### 13.4 Style, type, motion, color enrichment
+
+| ID | Requirement (derived) | Acceptance (when implemented) |
+|---|---|---|
+| D8 | Enrich our 16 preset AI descriptors + CSS checklists from the *active* style rows: #19 Soft UI Evolution (8–12px radius, multi-layer soft shadows, 200–300ms, visible focus), #1 Minimalism & Swiss (12–16-col grid, no decoration, `gap: 2rem`, `max-width: 1200px`), #39 Bento Box Grid (4→2→1 cols, 16–24px radius, `gap: 16px`, hover 1.02), #66 Editorial Grid (asymmetric, pull quotes, drop caps, serif body) for story-rich niches, #12 Flat (≤6 solids, no shadows) for trades, #8 Accessible & Ethical as the floor for medical/legal | ✅ each preset carries keywords + effects + checklist; deprecated rows (20/21/24/26) are never referenced |
+| D9 | Adopt the modular type scale (`ux-guidelines` row 74: 12·14·16·18·24·32) with body `1.5–1.75`, tight/snug headings, fluid `clamp()` hero sizes; cross-check our 30 font pairings against UUPM's 74 and fill niche gaps (wellness serif, legal traditional, trades bold-sans) | ✅ no arbitrary font sizes in generated CSS; hero scales without breakpoints |
+| D10 | Adopt motion timing values (CSS-only, no GSAP runtime): hover 150–200ms `power1.out` feel, cards 200–300ms, scroll reveal 300–400ms, stagger 250–350ms, page fade 200–300ms; map onto our `motionLevel` subtle/standard/complex (scrub/parallax/elastic tiers stay opt-in, never default); `prefers-reduced-motion` already respected — keep it binding | ✅ timing audit: no animation outside the approved durations per level |
+| D11 | Extend photo-derived palettes toward the UUPM color-row shape (primary/on-primary, secondary, accent, background/foreground, card, muted, border, ring) and bias per-industry palette focus (medical blue `#0077B6`, legal navy `#1E3A5F` + gold, restaurant warm, spa pastels + cream + gold) while keeping our contrast-token enforcement | ✅ every palette row ships on-× foregrounds with measured contrast |
+| D12 | Extend the design/convert audits with the pre-delivery checklist subset that applies to web: text/chip/badge reflow without clipping (`+n` disclosure for chip overflow), badge meaning never color-alone, visible focus states, no emoji-as-icon (audit-then-standardize on one icon family — Phosphor/Heroicons/Lucide), 375/768/1024/1440 verification, light-mode contrast measured (we are light-first; verify, never assume) | ✅ checklist items are audit flags, not manual QA |
+
+### 13.5 Deliberately NOT adopted (recorded so nobody re-proposes them)
+
+- **Dark-mode-first / OLED / neon / AI-purple-gradients** for local SMB demos: explicit anti-patterns for beauty, legal, medical rows; our demos stay light-first.
+- **GSAP runtime**: adopt timing/easing *values* only; generated static zips must not gain a JS animation dependency (export-parity + offline-open constraint).
+- **Dashboard-density tier** (`DIAL_TIERS` dense: 3xl 32px): for admin/data UI only, never owner demos.
+- **Logo / CIP / slides / banner-generator / social-photo subsystems**: brand-asset generation is outside the demo-site product (N-scope; revisit only if owner upsell needs it).
+- **Blanket React memoization** (`react.csv` warns against it): renderer output is largely static per render; memoize only measured hotspots.
+- **Deprecated style rows** 20/21/24/26 and supplemental/mobile-only styles: excluded from recommendations by the source itself; use §13.2 patterns instead.
