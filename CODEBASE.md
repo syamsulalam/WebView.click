@@ -53,11 +53,11 @@ Supported `section.type` values (`SiteRenderer.tsx` dispatch; unknown → `[Sect
 | `features` / `offers` / `offeringDetail` | Differentiators, service cards, detail sales content | ✅ offers has 4 density variants |
 | `reviews` | Testimonial cards from `trust.reviews` | ⚠️ drops publish-time/attribution |
 | `hoursLocation` | Hours + address/phone/directions | ✅ grouped hours, doubles as `#contact` target |
-| `faq` | Objection handling | ⚠️ static stacked cards, no accordion |
+| `faq` | Objection handling | ✅ native `<details>` accordion, first item open |
 | `finalCta` | Bottom conversion band | ✅ 5 CTA treatments |
 | `textImageBlock` / `teamGrid` / `gridCards` / `imageGallery` | Story, team, menu, gallery | ✅ fixed-height image frames |
 | `feedback` | 1–5 star gate → Google review vs `mailto:` form | ✅ auto-added, kept out of navbar |
-| `contactForm` | Info panel + `mailto:` form | ⚠️ mailto-only, no success state |
+| `contactForm` | Info panel + `mailto:` form | ✅ mailto-only with `data-wv-sent-note` success state |
 
 Design-intent fields (`design.*` → `data-wv-*` attrs at `1508-1515`):
 
