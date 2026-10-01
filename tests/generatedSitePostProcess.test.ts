@@ -626,6 +626,8 @@ test("zero-photo sites get proof-led fallbacks while photo-rich sites stay untou
   assert.equal((bare.design as any).proofTreatment, "badge-row");
   const bareOrder = ((bare.pages as any[])[0].sections as any[]).map((section) => section.type);
   assert.deepEqual(bareOrder.slice(0, 2), ["hero", "trustBar"]);
+  const bareAudit = ((bare.conversion as any).conversionAudit as any);
+  assert.ok(!bareAudit.flags.includes("missing_proof_above_fold"), "moved trust bar must refresh the audit");
 
   const rich = { ...base, design: { proofTreatment: "gallery-proof" }, brand: { preferredHeroImage: "/hero.jpg" }, pages: [structuredClone(bareHome)] } as Record<string, unknown>;
   applyGeneratedSitePageInserts(rich, {});
