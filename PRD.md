@@ -121,16 +121,16 @@ Free: `$0` website package (static zip + PDF guide). Done-for-you: **$180/year h
 | P1 · Grounding (prompt + brief) | B1 rich brief, B2 render context, B3 loud outline failure, B5 CTA/price specificity | `generatedWithAi` sites beat scaffold on blind review |
 | P2 · Composition (renderer) | A1 intent-actually-renders, A3 preset inference, A5 mobile finish, C2/C3/C4 conversion depth | 3 same-niche demos distinguishable + gate fully green |
 | P3 · Scale | Batch upgrade with dry-run filters, version metadata, rollback notes (per `DESIGN_GUIDE.md` upgrade plan) | Bulk migration without breaking URLs, payments, or owner edits |
-| P4 · Design-intelligence (§13, research backlog — not approved for implementation) | D1–D12 derived from ui-ux-pro-max: spacing token system, landing-pattern alignment, industry must-have blocks, style/type/motion enrichment, checklist audit flags | 3 same-niche demos beat current-gen on blind premium review with the §8 gate staying green |
+| P4 · Design-intelligence (§13, implemented 2026-10-01) | D1–D12 derived from ui-ux-pro-max: spacing token system, landing-pattern alignment, industry must-have blocks, style/type/motion enrichment, checklist audit flags | 3 same-niche demos beat current-gen on blind premium review with the §8 gate staying green |
 
 ## 12 · Open decisions (need your call before P0)
 
 1. **Photo sourcing depth:** stay with Places-proxy + owner uploads, or budget generated/stock imagery for zero-photo prospects?
 2. **Outreach hard-block vs warn:** should C1 *disable* outreach actions, or show red badges but allow override with a reason?
 3. **Pricing page:** does the owner preview need visitor-facing price ranges where Places data supports them, or keep pricing strictly in checkout/FAQ?
-4. **P4 density default:** should owner demos default to the UUPM "spacious" tier (D2) for premium feel, or "standard" to keep more content above the fold?
+4. **P4 density default:** should owner demos default to the UUPM "spacious" tier (D2) for premium feel, or "standard" to keep more content above the fold? → **Decided P4 (2026-10-01): spacious default** (`design.density`, premium airiness is the product goal); `standard` stays an explicit opt-in.
 
-## 13 · Design-intelligence upgrade (ui-ux-pro-max research backlog — NOT approved for implementation)
+## 13 · Design-intelligence upgrade (ui-ux-pro-max derived — P4 approved and implemented 2026-10-01)
 
 **Source:** `https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/` (MIT), reviewed 2026-10-01 at upstream HEAD `09170ee` via a disposable shallow clone (no code vendored; nothing copied into this repo). It is an AI design-intelligence skill: a BM25-searchable database of **192 industry reasoning rules** (`products.csv` + `ui-reasoning.csv`), **79 searchable UI styles (50 active, 29 supplemental, 9 deprecated)**, **192 industry color palettes**, **74 font pairings**, **34 landing-page patterns**, **119 UX guidelines** (44 High, 4 Critical), **17 motion tiers**, 22 stack guides (incl. `html-tailwind`, `react`), and a three-layer token architecture (primitive → semantic → component) with an optional 1–10 variance/motion/density dial system (`design_system.py` `DIAL_TIERS`). The consumable insight for us is not the search CLI but the *curated values*: spacing scales, section orders, industry must-haves, style checklists, type/motion numbers. Everything below is mapped against our current truth (16 style presets, 5 visual styles, 7 `sectionRhythm` names collapsing to 3 paddings, `conversionPagePattern`, `conversionAudit`/`designAudit`, export parity) so each item is implementable later without re-research.
 

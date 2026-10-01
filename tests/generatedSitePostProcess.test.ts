@@ -811,3 +811,38 @@ test("industry must-haves flag only when data satisfies the precondition (P4 D7)
   const lovedAudit = ensureConversionMetadata(loved, {}).conversionAudit as any;
   assert.ok(lovedAudit.flags.includes("missing_review_leverage"));
 });
+
+test("emoji in hero or scoped copy flags while clean copy passes (P4 D12)", () => {
+  const home = {
+    pageId: "home",
+    sections: [{ type: "hero", id: "hero-1", content: { headline: "Sharp Cuts Salon 🎉", subheadline: "Dallas salon." } }],
+  };
+  const base = {
+    meta: { businessName: "Sharp Cuts Salon", language: "en" },
+    businessProfile: { name: "Sharp Cuts Salon", primaryType: "beauty salon", contact: { phoneNational: "+1 555-0100" } },
+    trust: { rating: 4.9, reviewCount: 30, reviews: [] },
+    location: {},
+    conversion: { primaryCta: { text: "Book Appointment", size: "lg" }, secondaryCta: { text: "Explore Services" } },
+    global: { header: { ctaButton: { text: "Book Appointment" } }, footer: {} },
+    navigation: { headerMenu: [{ label: "Home", href: "#home" }] },
+    design: {},
+    brand: {},
+    sourceData: {},
+    services: [],
+    products: [],
+    offers: [],
+    pages: [structuredClone(home)],
+  } as Record<string, unknown>;
+  const flagged = ensureConversionMetadata(structuredClone(base), {}).conversionAudit as any;
+  assert.ok(flagged.emojiPaths.includes("home:hero-1"));
+  assert.ok(flagged.flags.includes("emoji_in_copy"));
+  // Nested FAQ answers are collected too, not just top-level copy fields.
+  const nested = structuredClone(base) as Record<string, unknown>;
+  (nested.pages as any[])[0].sections.push({ type: "faq", id: "faq-1", content: { items: [{ question: "Hours?", answer: "Open daily 🎉" }] } });
+  const nestedAudit = ensureConversionMetadata(nested, {}).conversionAudit as any;
+  assert.ok(nestedAudit.emojiPaths.includes("home:faq-1"));
+  const clean = structuredClone(base) as Record<string, unknown>;
+  ((((clean.pages as any[])[0].sections as any[])[0].content as any).headline) = "Sharp Cuts Salon";
+  const cleanAudit = ensureConversionMetadata(clean, {}).conversionAudit as any;
+  assert.ok(!cleanAudit.flags.includes("emoji_in_copy"));
+});

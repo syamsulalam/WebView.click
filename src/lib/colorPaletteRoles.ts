@@ -164,6 +164,17 @@ function paletteSignature(colors: string[]) {
   return colors.map((color) => normalizeHex(color)).filter(Boolean).join("|").toLowerCase();
 }
 
+// P4 D11: WCAG contrast ratio between two hex colors, exported so fixtures
+// can prove every preset triple ships a text-safe dark/light pair.
+export function contrastRatioHex(a: string, b: string) {
+  const statsA = statsFor(a);
+  const statsB = statsFor(b);
+  if (!statsA || !statsB) return 0;
+  const lighter = statsA.luminance >= statsB.luminance ? statsA : statsB;
+  const darker = lighter === statsA ? statsB : statsA;
+  return (lighter.luminance + 0.05) / (darker.luminance + 0.05);
+}
+
 export function normalizePaletteRoles(input: PaletteRoleInput): PaletteRoleResult {
   const palette = Array.isArray(input.palette) ? input.palette : [];
   const colors = uniqueColors([input.primary, input.accent, input.secondary, ...palette]);

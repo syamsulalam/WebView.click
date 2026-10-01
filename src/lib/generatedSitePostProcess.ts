@@ -1310,6 +1310,43 @@ function excessCtaRepeatPaths(finalJson: GeneratedSiteRecord): string[] {
   return paths.slice(0, 8);
 }
 
+// P4 D12 pre-delivery checklist: generated copy must never use emoji as
+// content or structural icons (icons render from the single lucide-react
+// family in SiteRenderer). Same section scope as the filler ban, plus the
+// hero headline/subheadline which render largest.
+const EMOJI_PATTERN = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/u;
+
+function emojiCopyPaths(finalJson: GeneratedSiteRecord) {
+  const pages = Array.isArray(finalJson.pages) ? finalJson.pages as Array<Record<string, unknown>> : [];
+  const paths: string[] = [];
+  const collectText = (value: unknown): string => {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return value.map(collectText).join("\n");
+    const record = objectValue(value);
+    const fields = ["title", "headline", "subheadline", "description", "summary", "body", "bodyHtml", "text", "question", "answer", "label", "value"]
+      .map((key) => (typeof record[key] === "string" ? record[key] as string : ""));
+    for (const key of ["items", "cards", "highlights", "buttons"]) {
+      if (Array.isArray(record[key])) fields.push(collectText(record[key]));
+    }
+    return fields.join("\n");
+  };
+  pages.forEach((page) => {
+    const pageId = asString(page.pageId);
+    const sections = Array.isArray(page.sections) ? page.sections as Array<Record<string, unknown>> : [];
+    const isAbout = pageId.toLowerCase() === "about";
+    const isDetail = sections.some((section) => asString(section.type) === "offeringDetail");
+    sections.forEach((section) => {
+      const type = asString(section.type);
+      const inScope = type === "hero" || isAbout || (pageId.toLowerCase() === "home" && type === "faq") || (isDetail && (type === "offeringDetail" || type === "faq"));
+      if (!inScope) return;
+      // No length gate here (unlike the specificity check): a short
+      // emoji-bearing headline must still flag.
+      if (EMOJI_PATTERN.test(collectText(section.content))) paths.push(`${pageId}:${asString(section.id) || type}`);
+    });
+  });
+  return paths.slice(0, 8);
+}
+
 function buildConversionAudit(finalJson: GeneratedSiteRecord, originData: GeneratedSiteRecord = {}) {
   const conversion = objectValue(finalJson.conversion);
   const primaryCta = objectValue(conversion.primaryCta);
@@ -1374,6 +1411,7 @@ function buildConversionAudit(finalJson: GeneratedSiteRecord, originData: Genera
     faqItemCount,
     excessCtaRepeats: excessCtaRepeatPaths(finalJson),
     industryMustHaves: industryMustHaveFlags(finalJson, originData, asString(conversion.pagePattern)),
+    emojiPaths: emojiCopyPaths(finalJson),
     checkedAt: new Date().toISOString(),
   };
   const flags = [
@@ -1387,6 +1425,7 @@ function buildConversionAudit(finalJson: GeneratedSiteRecord, originData: Genera
     summary.excessCtaRepeats.length ? "excess_cta_repeats" : "",
     summary.thinServicePages.length ? "thin_service_pages" : "",
     summary.copySpecificity.genericPaths.length ? "generic_detail_copy" : "",
+    summary.emojiPaths.length ? "emoji_in_copy" : "",
     ...summary.industryMustHaves,
   ].filter(Boolean);
   return { ...summary, flags };

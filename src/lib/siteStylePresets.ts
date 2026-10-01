@@ -5,6 +5,12 @@ export type SiteStylePreset = {
   mood: string;
   recommendedColors: string[];
   keywords: RegExp;
+  // P4 D8: ui-ux-pro-max reference (active style rows only — never the
+  // deprecated Hero-Centric/Conversion-Optimized/Social-Proof/Trust rows),
+  // expected motion treatment, and CSS checklist keys for QA review.
+  uupmStyle?: string;
+  effects?: string;
+  cssKeys?: string;
 };
 
 export type SiteVisualStyle = {
@@ -28,6 +34,9 @@ export type SiteShaderPreset = {
 export const siteStylePresets: SiteStylePreset[] = [
   {
     id: "local-clean",
+    uupmStyle: "Minimalism and Swiss Style #1 + Minimal and Direct #23",
+    effects: "subtle hover 200-250ms, smooth transitions, sharp shadows only if any",
+    cssKeys: "grid 12-16 cols, clear type hierarchy, no decoration, max-width 1200px",
     label: "Local Clean",
     industries: ["general local business"],
     mood: "clean, neutral, broadly applicable",
@@ -36,6 +45,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "contractor-rugged",
+    uupmStyle: "Flat Design #12 + Trust and Authority pattern #33",
+    effects: "flat color/opacity hover 150-200ms, no gradients",
+    cssKeys: "4-6 solids max, clean lines, icon-heavy, high saturation accent",
     label: "Contractor Rugged",
     industries: ["concrete", "roofing", "construction", "HVAC", "plumbing", "electrical"],
     mood: "industrial, sturdy, high-trust",
@@ -44,6 +56,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "legal-authority",
+    uupmStyle: "Minimalism and Swiss Style #1 + Trust and Authority pattern #33",
+    effects: "restrained reveals 300-400ms, badge hover only",
+    cssKeys: "navy plus gold, badge grid, professional imagery, guarantee stated",
     label: "Legal Authority",
     industries: ["law firm", "attorney", "notary", "tax", "accounting"],
     mood: "formal, authoritative, conservative",
@@ -52,6 +67,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "garden-organic",
+    uupmStyle: "Organic Biophilic #42",
+    effects: "gentle reveals 300-400ms, organic shapes",
+    cssKeys: "natural green plus earth tones, generous whitespace",
     label: "Garden Organic",
     industries: ["landscaping", "lawn care", "tree service", "nursery", "florist"],
     mood: "organic, calm, outdoorsy",
@@ -60,6 +78,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "pool-aqua",
+    uupmStyle: "Soft UI Evolution #19",
+    effects: "soft multi-layer shadows, motion 200-300ms, visible focus",
+    cssKeys: "border-radius 8-12px, improved contrast pastels, clear hierarchy",
     label: "Pool Aqua",
     industries: ["pool cleaning", "pool builder", "spa", "aquatic service"],
     mood: "bright, clean, water-forward",
@@ -68,6 +89,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "dental-clean",
+    uupmStyle: "Soft UI Evolution #19 + Minimalism and Swiss Style #1",
+    effects: "soft shadows, motion 200-300ms, visible focus",
+    cssKeys: "fresh blue plus white, contrast 4.5+, clean grid",
     label: "Dental Clean",
     industries: ["dentist", "orthodontist", "clinic", "medical office"],
     mood: "clinical, calm, precise",
@@ -76,6 +100,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "cafe-warm",
+    uupmStyle: "Vibrant and Block-based #6 + Hero-Centric pattern #32",
+    effects: "menu hover 200-300ms, food image reveal",
+    cssKeys: "warm solids, appetizing imagery, hours near CTA",
     label: "Cafe Warm",
     industries: ["cafe", "coffee shop", "bakery", "restaurant"],
     mood: "warm, editorial, inviting",
@@ -84,6 +111,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "auto-shop-steel",
+    uupmStyle: "Motion-Driven #15 + Flat Design #12",
+    effects: "mechanical hover 150-200ms, high contrast",
+    cssKeys: "metallic neutrals plus signal accent, bold sans, no gradients",
     label: "Auto Shop Steel",
     industries: ["auto repair", "tire shop", "body shop", "detailing"],
     mood: "mechanical, direct, high-contrast",
@@ -92,6 +122,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "salon-soft-luxe",
+    uupmStyle: "Soft UI Evolution #19",
+    effects: "soft shadows, smooth 200-300ms transitions, gentle hover",
+    cssKeys: "pastels plus cream plus gold accents, radius 8-12px, calm premium",
     label: "Salon Soft Luxe",
     industries: ["salon", "spa", "massage", "beauty", "nail studio"],
     mood: "soft, polished, premium",
@@ -100,6 +133,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "fitness-energy",
+    uupmStyle: "Vibrant and Block-based #6",
+    effects: "bold hover 200-300ms, action stagger",
+    cssKeys: "energetic orange plus dark surfaces, big condensed headlines",
     label: "Fitness Energy",
     industries: ["gym", "personal trainer", "martial arts", "yoga"],
     mood: "energetic, bold, movement-driven",
@@ -108,6 +144,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "real-estate-premium",
+    uupmStyle: "Glassmorphism #3 + Minimalism and Swiss Style #1",
+    effects: "subtle glass reveals 300-400ms, map hover",
+    cssKeys: "trust blue plus gold plus white, spacious grid, map integration",
     label: "Real Estate Premium",
     industries: ["realtor", "property manager", "home staging"],
     mood: "spacious, premium, measured",
@@ -116,6 +155,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "cleaning-fresh",
+    uupmStyle: "Flat Design #12 + Soft UI Evolution #19",
+    effects: "flat hover 150-200ms, checklist clarity",
+    cssKeys: "bright solids, checklist-friendly cards, fast loading",
     label: "Cleaning Fresh",
     industries: ["cleaning", "janitorial", "maid service", "pressure washing"],
     mood: "fresh, bright, checklist-friendly",
@@ -124,6 +166,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "security-trust",
+    uupmStyle: "Trust and Authority pattern #33 + Flat Design #12",
+    effects: "phone-first, badge hover only",
+    cssKeys: "security badges visible, contact accessible, high contrast CTA",
     label: "Security Trust",
     industries: ["locksmith", "security systems", "fire safety"],
     mood: "urgent, trustworthy, protective",
@@ -132,6 +177,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "education-friendly",
+    uupmStyle: "Flat Design #12",
+    effects: "flat hover 150-200ms, friendly stagger",
+    cssKeys: "bold solids, icon-heavy, simple shapes, clear hierarchy",
     label: "Education Friendly",
     industries: ["tutoring", "preschool", "music school", "training center"],
     mood: "friendly, structured, approachable",
@@ -140,6 +188,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "pet-care-friendly",
+    uupmStyle: "Claymorphism #9",
+    effects: "soft chunky hover 200-300ms",
+    cssKeys: "caring blue plus warm accents, rounded cards, friendly imagery",
     label: "Pet Care Friendly",
     industries: ["veterinary", "grooming", "boarding", "pet training"],
     mood: "warm, friendly, service-oriented",
@@ -148,6 +199,9 @@ export const siteStylePresets: SiteStylePreset[] = [
   },
   {
     id: "financial-trust",
+    uupmStyle: "Minimalism and Swiss Style #1 + Trust and Authority pattern #33",
+    effects: "restrained reveals, no playful motion",
+    cssKeys: "stable navy plus professional accent, no gradients, credentials clear",
     label: "Financial Trust",
     industries: ["insurance", "bookkeeping", "financial advisor", "mortgage broker"],
     mood: "stable, professional, confidence-building",
