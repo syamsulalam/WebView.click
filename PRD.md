@@ -8,7 +8,11 @@ Legend: ✅ required · ⚠️ conditional · ❌ out of scope · 🔴 blocks pr
 
 ## 1 · Executive summary
 
-WebView.click finds US local businesses without websites (Google Places prospecting), auto-generates a personalized demo website from real business data, and converts the owner through a free `$0` website package into a done-for-you setup customer: **$180/year managed hosting + $17/year domain fee only when WebView.click registers a new domain**. The product has two faces: an admin CRM + AI site builder, and an owner-facing preview that must feel like a `$997`-value custom site, not a template. The v1 product works end-to-end, but generated sites still feel generic — this PRD defines what "good enough" means across three balanced tracks (visual premiumness, copy grounding, conversion + QA gates) and the roadmap to get there.
+WebView.click is an automated client-acquisition and website delivery engine. It automatically finds local businesses without websites in high-purchasing-power international markets (UK, Singapore, UAE, DACH, Netherlands, Australia) using Google Places Scraping, auto-generates a personalized high-converting demo website from real business data/photos/reviews, renders high-fidelity visual mockups, and initiates automated outreach via WhatsApp Business. When a business owner accepts and pays through the frictionless checkout ($0 free static export vs. $180/year managed hosting + $17/year custom domain setup + optional $49/month SEO/maintenance retainer), the system automatically provisions the domain via Registrar API, deploys the site to Cloudflare Pages via GitHub/Cloudflare API, provisions SSL, and delivers the live production website with zero manual human touch.
+
+The product operates on two intertwined architectures:
+1. **Core AI Site Builder & Grounding Engine**: Ensures every generated demo looks like a $997 custom-coded site (P0–P4 design-intelligence tokens, grounded copy, zero hallucinations, multi-photo layouts).
+2. **End-to-End Automated Agency Pipeline**: Scraper → AI Generator → Screenshot Renderer → WhatsApp Outreach Engine → Global Payment Processor / MoR → Registrar/DNS API → Cloudflare Pages API → Instant Delivery.
 
 ## 2 · What changed since v1.0 (truth table)
 
@@ -190,3 +194,34 @@ UUPM's 34 `landing.csv` patterns supersede its own deprecated style rows 20/21/2
 - **Logo / CIP / slides / banner-generator / social-photo subsystems**: brand-asset generation is outside the demo-site product (N-scope; revisit only if owner upsell needs it).
 - **Blanket React memoization** (`react.csv` warns against it): renderer output is largely static per render; memoize only measured hotspots.
 - **Deprecated style rows** 20/21/24/26 and supplemental/mobile-only styles: excluded from recommendations by the source itself; use §13.2 patterns instead.
+
+
+## 14 · Fully Automated Zero-Touch Autonomous Agency Engine
+
+### 14.1 The 6-Stage Autonomous Pipeline
+1. **Automated Discovery (Lead Scraper)**:
+   - Targets Tier-1 international markets with high purchasing power and dominant WhatsApp usage: United Kingdom (GBP), Singapore (SGD), UAE (AED), Germany/Austria/Switzerland (EUR/CHF), Netherlands (EUR), Australia (AUD).
+   - Queries Google Places API (New) / Google Maps Places Scraper for high-ticket local niches (plumbers, roofers, dentists, clinics, luxury detailing, bespoke builders, salons, high-end dining).
+   - Filter criteria: website == null || website == "" + valid international E.164 phone number.
+2. **Autonomous AI Site Generation & Grounding**:
+   - Fetches Google Place photos, business attributes, hours, reviews, and address.
+   - Executes P0–P4 chunked generation pipeline (grounded copy, factual review synthesis, niche layout presets).
+   - Generates responsive single/multi-page static site structure, stores JSON in Cloudflare D1/R2.
+3. **Automated Visual Mockup & Capture**:
+   - Headless browser worker (Puppeteer/Playwright) renders the live preview in mobile and desktop frames.
+   - Generates high-impact WebP visual mockup assets: hero screenshot + trust-badge strip.
+4. **Automated WhatsApp Outreach Engine**:
+   - Dispatches personalized, conversational outreach via WhatsApp Business Cloud API / Gateway.
+   - Dynamic copy: *'Hi [Business Name], we noticed you don\'t have an official website on Google Maps. We designed a clean, mobile-ready site for [Business Name] using your 5-star Google reviews and photos: [Demo Link]. Here is how it looks: [Image]. If you\'d like us to set this up on your custom domain with fast hosting, let us know!'*
+   - Achieves 80–90% open rates and immediate engagement without US A2P 10DLC carrier blocks or cold email spam traps.
+5. **Frictionless Payment & Checkout**:
+   - Owner preview provides two friction-free conversion paths:
+     - **Path 1**: Free $0 static website ZIP download.
+     - **Path 2**: $180/year Managed Hosting + $17/year Domain Setup (or $49/month ongoing maintenance retainer).
+   - Payments processed via Merchant of Record (Paddle / Lemon Squeezy) to handle global VAT/tax compliance, Stripe Checkout, PayPal, or Crypto rails (USDT/USDC).
+6. **Zero-Touch Provisioning & Instant Delivery**:
+   - Payment webhook triggers automated deployment engine:
+     - **Registrar API (Porkbun / Cloudflare Registrar)**: Checks availability and auto-registers [businessname].co.uk, [businessname].sg, or [businessname].com.
+     - **Cloudflare Pages API / GitHub API**: Creates project, pushes static site assets, provisions automated SSL/TLS certificates.
+     - **DNS API**: Binds apex & www records automatically within ~60 seconds.
+   - Delivery worker dispatches automated WhatsApp confirmation + email receipt with live URL and client dashboard credentials.
