@@ -24,7 +24,8 @@
   - [x] 2.4 Validate E.164 phone numbers & review ratings (≥ 4.0)
   - [x] 2.5 Install `gog.exe` (v0.48.1) in `C:\Users\THINKPAD\scripts\gog.exe`
   - [x] 2.6 Synchronize prospects to Google Contacts (`[SMB] <Name>`)
-  - [ ] 2.7 One-time OAuth consent for `admin@alampintar.org` (Requires Syamsul browser click)
+  - [x] 2.7 One-time OAuth consent for `admin@alampintar.org` (Authenticated in Windows DPAPI Keyring)
+  - [ ] 2.8 Enable People API in Google Cloud Console (1-click: `https://console.cloud.google.com/apis/library/people.googleapis.com?project=150697655157`)
 - [x] **Phase 3: Dedicated Headless WordPress Staging (`wpwv.codev.id`)**
   - [x] 3.1 Provision DNS record: `wpwv.codev.id` -> `150.136.178.5` (Cloudflare Zone `codev.id`)
   - [x] 3.2 Provision dedicated WordPress site & database `codev-wpwv` on OracleServer
