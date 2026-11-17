@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Normalized Prospect Contract (SMB-GROUND-1)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "name",
+    "phone",
+    "website_state"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "enum": [1]
+    },
+    "place_id": {
+      "type": ["string", "null"]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "business_name": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "locale": {
+      "type": "string",
+      "default": "id_ID"
+    },
+    "category": {
+      "type": "object",
+      "properties": {
+        "raw": { "type": "string" },
+        "vertical": {
+          "type": "string",
+          "enum": ["automotive", "healthcare", "beauty", "hospitality", "construction", "toilet-cubicle", "retail", "services", "general"]
+        },
+        "source_id": { "type": ["string", "null"] }
+      }
+    },
+    "phone": {
+      "type": "string",
+      "pattern": "^\\+[1-9][0-9]{7,14}$"
+    },
+    "address": {
+      "type": "string"
+    },
+    "website_state": {
+      "type": "string",
+      "enum": ["absent", "present", "unknown"]
+    },
+    "website": {
+      "type": ["string", "null"]
+    },
+    "rating": {
+      "type": ["number", "null"],
+      "minimum": 0.0,
+      "maximum": 5.0
+    },
+    "review_count": {
+      "type": ["integer", "null"]
+    },
+    "offerings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "source_id": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "photos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string" },
+          "local_path": { "type": ["string", "null"] },
+          "sha256": { "type": ["string", "null"] },
+          "kind": { "type": "string", "enum": ["logo", "storefront", "interior", "product", "general"] }
+        }
+      }
+    },
+    "brand": {
+      "type": "object",
+      "properties": {
+        "palette": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+          "minItems": 9,
+          "maxItems": 9
+        },
+        "palette_source": {
+          "type": "string",
+          "enum": ["photo-kmeans", "curated-preset", "neutral-fallback"]
+        },
+        "logo": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string", "enum": ["found_transparent", "processed_transparent", "synthetic", "not_found"] },
+            "path": { "type": ["string", "null"] },
+            "sha256": { "type": ["string", "null"] },
+            "source_id": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "retrieved_at"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "retrieved_at": { "type": "string" }
+        }
+      }
+    }
+  }
+}

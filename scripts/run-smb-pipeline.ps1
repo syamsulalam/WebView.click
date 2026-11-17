@@ -114,7 +114,25 @@ foreach ($Biz in $Batch) {
     # -------------------------------------------------------------
     Write-Host "⚙️ [Stage 2/5] Scaffolding WordPress site on wpwv.codev.id..." -ForegroundColor Magenta
     $RemoteStagingDir = "/home/codev-wpwv/htdocs/wpwv.codev.id"
-    $RemoteCommand = "sudo -u codev-wpwv wp --path=$RemoteStagingDir st-companion create --title='$Name' --business-name='$Name' --domain='$Slug.webview.click' --theme=random --palette=random-light --clean --yes"
+    
+    # 1. Custom 9-slot palette parameter
+    $PaletteArg = "--palette=navy"
+    if ($Biz.brand -and $Biz.brand.palette) {
+        $PaletteJson = ($Biz.brand.palette | ConvertTo-Json -Compress)
+        $PaletteArg = "--palette='$PaletteJson'"
+    }
+
+    # 2. Transparent logo parameter
+    $LogoArg = ""
+    if ($Biz.brand -and $Biz.brand.logo -and $Biz.brand.logo.path -and (Test-Path $Biz.brand.logo.path)) {
+        $LocalLogo = $Biz.brand.logo.path
+        $RemoteLogo = "/tmp/$Slug-logo.png"
+        scp.exe -i $SshKey $LocalLogo "$OracleHost`:$RemoteLogo"
+        $LogoArg = "--logo-file='$RemoteLogo'"
+    }
+
+    $Industry = if ($Biz.category -and $Biz.category.vertical) { $Biz.category.vertical } else { "general" }
+    $RemoteCommand = "sudo -u codev-wpwv wp --path=$RemoteStagingDir st-companion create --title='$Name' --business-name='$Name' --industry='$Industry' --phone='$Phone' --domain='$Slug.webview.click' $PaletteArg $LogoArg --clean --yes"
     
     powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1" -Command $RemoteCommand -TimeoutSeconds 180
 
@@ -122,7 +140,7 @@ foreach ($Biz in $Batch) {
     # STAGE 3: Export Flat Static HTML/CSS/JS via Simply Static
     # -------------------------------------------------------------
     Write-Host "📦 [Stage 3/5] Running Simply Static export on wpwv.codev.id..." -ForegroundColor Magenta
-    $ExportCommand = "sudo -u codev-wpwv wp --path=$RemoteStagingDir eval '`$options = \Simply_Static\Options::instance(); `$options->set(\""delivery_method\"", \""local\"")->set(\""destination_url_type\"", \""relative\"")->save(); `$job = \Simply_Static\Plugin::instance()->get_archive_creation_job(); `$job->start(); while (!`$job->is_job_done()) { if (method_exists(`$job, \""perform_task\"")) { `$job->perform_task(); } sleep(1); }' && sudo -u codev-wpwv bash -c 'cd /home/codev-wpwv/htdocs/wpwv.codev.id/wp-content/uploads/simply-static/temp-files/simply-static-0-* && zip -rq /tmp/$Slug.zip .'"
+    $ExportCommand = "sudo -u codev-wpwv wp --path=$RemoteStagingDir simply-static run && sudo -u codev-wpwv bash -c 'if [ -d /home/codev-wpwv/static-export/ ]; then cd /home/codev-wpwv/static-export/ && zip -rq /tmp/$Slug.zip .; else cd /home/codev-wpwv/htdocs/wpwv.codev.id/wp-content/uploads/simply-static/temp-files/simply-static-0-* && zip -rq /tmp/$Slug.zip .; fi'"
     powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1" -Command $ExportCommand -TimeoutSeconds 180
 
     # -------------------------------------------------------------

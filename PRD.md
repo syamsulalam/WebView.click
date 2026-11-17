@@ -294,3 +294,42 @@ UUPM's 34 `landing.csv` patterns supersede its own deprecated style rows 20/21/2
   >
   > *Kalau sekiranya kalian repot atau butuh bantuan pasangkan domain dan hostingnya, kabari saja ya."*
 
+---
+
+## 16 · Hardened CLI Outreach Engine, Dedicated Staging & Content Invariants (SMB-GROUND-1, SMB-PALETTE-1, SMB-LOGO-1)
+
+### 16.1 Dedicated Staging Host (`wpwv.codev.id`)
+To prevent interference with staging sites `wp1.codev.id` through `wp9.codev.id`, all WebView.click site provisioning is permanently anchored to dedicated tenant **`wpwv.codev.id`** (`codev-wpwv@150.136.178.5`):
+* Dedicated MySQL database `codev-wpwv` with clean isolation.
+* Spectra / Gutenberg exclusive mode (Elementor hooks deactivated to eliminate Kit synchronization exceptions).
+* Direct flat HTML compilation destination: `/home/codev-wpwv/static-export/`.
+
+### 16.2 Single-Upload Edge Architecture (Dynamic ZIP Streaming via `client-zip`)
+* **Zero Duplicate Storage**: The Cloudflare Worker at `sites.webview.click` dynamically streams ZIP downloads on the fly (`GET /<slug>/download`) using `client-zip` directly from R2 asset keys `sites/<slug>/*`.
+* Uploading an explicit separate `.zip` archive to R2 is obsolete; the Worker synthesizes the ZIP archive dynamically, halving storage consumption and upload bandwidth.
+
+### 16.3 Semantic Purity & Content Grounding (Contract SMB-GROUND-1)
+* **Elimination of Fallback Cubicle Catalogs**: The 1,800-line hardcoded cubicle taxonomy in `Site_Planner_Service::resolve_page_hierarchical_taxonomy()` is permanently replaced with document-derived sections.
+* **Zero Contact Leakage**: `resolve_contact_defaults()` strictly returns empty string `''` when contact fields are not provided by the prospect; operator numbers (`0812 3383 8173`) and test emails (`email@codev.id`) are never injected into prospect sites.
+* **Database Purity Scanner**: `Site_Planner_Service::assert_business_purity()` performs post-generation regex verification (`kubik[ea]l|phenolic|partisi toilet`) across all generated pages, posts, menus, and options before finalization.
+
+### 16.4 Strict 9-Slot White-Background Astra Palette Contract (Contract SMB-PALETTE-1)
+* **9-Slot Architecture**:
+  * Slot 0: Primary brand accent (chromatic, saturation > 0.20, luminance 0.10–0.85).
+  * Slot 1: Hover brand accent (dynamically derived 15% darker).
+  * Slot 2: Heading text (`#1e293b`, contrast >= 7:1 against slots 4 and 5).
+  * Slot 3: Body text (`#334155`, contrast >= 7:1 against slots 4 and 5).
+  * Slot 4: Light section surface (`#f8fafc`, luminance >= 0.90).
+  * Slot 5: Strictly `#ffffff` (Astra page canvas contract; dark canvas strictly prohibited).
+  * Slot 6: Border / separator (`#e2e8f0`).
+  * Slot 7: Light alternate surface (`#f1f5f9`, luminance >= 0.80).
+  * Slot 8: Dark neutral (`#0f172a`).
+* **Dynamic Button Contrast**: `Palette_Adapter::merge()` computes WCAG contrast between button background and black vs white, guaranteeing accessible button text.
+* **CLI Options**: Added `--palette='["#...", ...]'` and `--palette-file=<path>` to `wp st-companion create`.
+
+### 16.5 Authentic External Logo Ingestion & Background Removal (Contract SMB-LOGO-1)
+* **External Logo Admission**: `Logo_Synthesizer_Service::import_external_logo()` admits authentic local PNGs into the WordPress Media Library without recoloring or palette mismatch invalidation.
+* **CLI Option**: Added `--logo-file=<path>` to `wp st-companion create`.
+* **Local Background Removal**: Python engine `scripts/enrich-business-brand.py` extracts brand colors and executes border-connected flood fill or local `rembg` (Python ONNX Runtime) to deliver transparent PNG logos preserving internal letter counters.
+
+

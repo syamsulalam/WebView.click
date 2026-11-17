@@ -9,5 +9,8 @@ coverage/
 test-*
 contacts-*.vcf
 mockups/
+scratch/
+__pycache__/
+*.pyc
 .env*
 !.env.example

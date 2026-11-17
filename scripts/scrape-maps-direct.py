@@ -15,12 +15,22 @@ Direct Headless Google Maps Scraper (Playwright with Chrome):
 
 import sys
 import os
+import io
 import json
 import re
 import time
 import urllib.parse
+import urllib.request
 import argparse
+import importlib
 from playwright.sync_api import sync_playwright
+
+# Import enrich-business-brand module
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    enrich = importlib.import_module("enrich-business-brand")
+except Exception as e:
+    enrich = None
 
 def clean_text(text: str) -> str:
     if not text:
@@ -166,9 +176,68 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5):
                     if rating > 0 and rating < 4.0:
                         continue
 
-                    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+                    # Extract Category & Vertical
+                    category_raw = ""
+                    for line in lines:
+                        if any(w in line.lower() for w in ["bengkel", "salon", "klinik", "toko", "restoran", "kafe", "cafe", "kontraktor", "servis"]):
+                            category_raw = line
+                            break
+
+                    def map_category_to_vertical(cat: str) -> str:
+                        cat_lower = (cat or "").lower()
+                        if any(w in cat_lower for w in ["bengkel", "mobil", "motor", "otomotif", "auto"]):
+                            return "automotive"
+                        if any(w in cat_lower for w in ["klinik", "dokter", "gigi", "medis", "apotek"]):
+                            return "healthcare"
+                        if any(w in cat_lower for w in ["salon", "barbershop", "spa", "rambut"]):
+                            return "beauty"
+                        if any(w in cat_lower for w in ["kafe", "cafe", "resto", "restoran", "kopi"]):
+                            return "hospitality"
+                        if any(w in cat_lower for w in ["kontraktor", "bangunan", "renovasi"]):
+                            return "construction"
+                        if any(w in cat_lower for w in ["toko", "retail", "shop"]):
+                            return "retail"
+                        return "general"
+
+                    vertical = map_category_to_vertical(category_raw or query)
+
+                    # Extract card photos
+                    photo_urls = []
+                    img_nodes = card.query_selector_all('img[src*="googleusercontent.com"], img[src*="ggpht.com"]')
+                    for img_node in img_nodes:
+                        src = img_node.get_attribute("src")
+                        if src and "http" in src:
+                            high_res = re.sub(r"=w\d+-h\d+.*", "=s800", src)
+                            if high_res not in photo_urls:
+                                photo_urls.append(high_res)
+
+                    # Download photos and enrich brand if enrich module loaded
+                    photos_dir = os.path.join("assets", "prospects", slug, "photos")
+                    os.makedirs(photos_dir, exist_ok=True)
+                    local_photos = []
+                    for p_idx, p_url in enumerate(photo_urls[:6]):
+                        try:
+                            local_p_path = os.path.join(photos_dir, f"photo_{p_idx}.jpg")
+                            req = urllib.request.Request(p_url, headers={"User-Agent": "Mozilla/5.0"})
+                            with urllib.request.urlopen(req, timeout=10) as resp, open(local_p_path, "wb") as out_f:
+                                out_f.write(resp.read())
+                            local_photos.append(local_p_path)
+                        except Exception:
+                            continue
+
+                    brand_meta = {
+                        "palette": enrich.NEUTRAL_FALLBACK_PALETTE if enrich else ["#046bd2", "#045cb4", "#1e293b", "#334155", "#f8fafc", "#ffffff", "#e2e8f0", "#f1f5f9", "#0f172a"],
+                        "palette_source": "neutral-fallback",
+                        "logo": {"status": "not_found", "path": None, "sha256": None, "source_id": None}
+                    }
+
+                    if enrich and local_photos:
+                        enriched_dummy = enrich.process_prospect_brand({"photos": local_photos}, photos_dir=photos_dir)
+                        if "brand" in enriched_dummy:
+                            brand_meta = enriched_dummy["brand"]
 
                     prospect = {
+                        "schema_version": 1,
                         "name": title,
                         "business_name": title,
                         "slug": slug,
@@ -176,7 +245,14 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5):
                         "rating": rating,
                         "reviews": reviews,
                         "address": address,
+                        "website_state": "absent",
                         "website": None,
+                        "category": {
+                            "raw": category_raw or query,
+                            "vertical": vertical,
+                            "source_id": "google_maps_card"
+                        },
+                        "brand": brand_meta,
                         "maps_url": maps_url or url,
                         "source": "google_maps_playwright_direct"
                     }

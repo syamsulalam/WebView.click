@@ -59,9 +59,19 @@ To solve the stacked-blocks, fragile responsive grids, and generic AI filler of 
    - Zero third-party API keys or paid credits required (bypasses Serper/SerpApi restrictions).
 
 5. **Headless Simply Static Compilation & Mobile Mockup**:
-   - Compiles full WordPress site into flat HTML/CSS/JS (`wp-content/uploads/simply-static/temp-files/simply-static-0-*`).
+   - Compiles full WordPress site into flat HTML/CSS/JS (`/home/codev-wpwv/static-export/`).
    - `capture-screenshot.py` launches Playwright iPhone 14 viewport (`390x844`), rendering clean mobile mockups (`mockups/<slug>-mobile.jpg`) for WhatsApp Step 2 delivery.
    - End-to-end verified on real prospect: "Wijaya Motor Kampung Malang" (`mockups/wijaya-motor-kampung-malang-mobile.jpg`).
+
+6. **Hardening Contracts & Semantic Purity (Sol Review STC-ARCH-1 / Oracles O1–O5)**:
+   - **Contract SMB-GROUND-1**: Abolished 1,800-line hardcoded cubicle taxonomy in `Site_Planner_Service::resolve_page_hierarchical_taxonomy()`; strictly document-derived sections; zero contact leakage (`resolve_contact_defaults()` returns `''`); `assert_business_purity()` database scanner certified zero cubicle leaks across all 6 pages of Wijaya Motor.
+   - **Contract SMB-PALETTE-1**: Enforces strict 9-slot Astra palette. Slot 5 is strictly `#ffffff` (white canvas invariant); Slots 4 and 7 are light surfaces (relative luminance >= 0.90 and >= 0.80); Slots 2 and 3 are dark heading/body text with WCAG contrast >= 7:1 against 4 and 5; dynamic button foreground contrast.
+   - **Contract SMB-LOGO-1**: Authentic external logo admission in `Logo_Synthesizer_Service::import_external_logo()` without palette-mismatch invalidation. WP-CLI commands support `--brief-file`, `--palette-file`, `--logo-file`, and `--palette='["#...", ...]'`.
+
+7. **Brand & Media Enrichment Engine (`scripts/enrich-business-brand.py`)**:
+   - Dominant color extraction from listing gallery photos using Pillow / NumPy color quantization.
+   - Multi-tier background removal: Pillow border-connected flood-fill preserving internal letter counters (e.g. inside letters 'O', 'A', 'B') plus local `rembg` (Python ONNX Runtime) fallback for complex backgrounds.
+   - Verified by unit regression suite `tests/test_enrich_brand.py`.
 
 ## 0.3 AI generation pipeline — step by step
 

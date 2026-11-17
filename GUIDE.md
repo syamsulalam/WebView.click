@@ -18,17 +18,20 @@
   - [x] 1.3 Deploy Cloudflare Worker Router `sites-webview-click` (with dynamic streaming ZIP)
   - [x] 1.4 Verify edge routing & test 404 response
 - [x] **Phase 2: Prospect Data Ingestion & Google Contacts Trust Pre-Save**
-  - [x] 2.1 Harvest no-website prospects via `scripts/harvest-prospects.mjs`
-  - [x] 2.2 Validate E.164 phone numbers & review ratings (≥ 4.0)
-  - [x] 2.3 Install `gog.exe` (v0.48.1) in `C:\Users\THINKPAD\scripts\gog.exe`
-  - [x] 2.4 Synchronize prospects to Google Contacts (`[SMB] <Name>`)
-  - [ ] 2.5 Run one-time `gog auth add` for your Google account (Requires Syamsul)
+  - [x] 2.1 Harvest no-website prospects via `scripts/scrape-maps-direct.py` (Zero API keys)
+  - [x] 2.2 Brand enrichment & palette synthesis via `scripts/enrich-business-brand.py` (SMB-PALETTE-1)
+  - [x] 2.3 Logo discovery & automatic background removal (SMB-LOGO-1 via Pillow & local rembg)
+  - [x] 2.4 Validate E.164 phone numbers & review ratings (≥ 4.0)
+  - [x] 2.5 Install `gog.exe` (v0.48.1) in `C:\Users\THINKPAD\scripts\gog.exe`
+  - [x] 2.6 Synchronize prospects to Google Contacts (`[SMB] <Name>`)
+  - [ ] 2.7 One-time OAuth consent for `admin@alampintar.org` (Requires Syamsul browser click)
 - [x] **Phase 3: Dedicated Headless WordPress Staging (`wpwv.codev.id`)**
   - [x] 3.1 Provision DNS record: `wpwv.codev.id` -> `150.136.178.5` (Cloudflare Zone `codev.id`)
   - [x] 3.2 Provision dedicated WordPress site & database `codev-wpwv` on OracleServer
   - [x] 3.3 Install trusted Let's Encrypt SSL certificate
   - [x] 3.4 Symlink Golden Master core, Astra theme, Spectra, Starter Templates, and Simply Static
-  - [x] 3.5 Smoke test verified: `https://wpwv.codev.id/` returning HTTP 200 OK
+  - [x] 3.5 Companion plugin hardened: Zero cubicle leaks certified by Oracles O1–O4
+  - [x] 3.6 Smoke test verified: `https://wpwv.codev.id/` returning HTTP 200 OK
 - [x] **Phase 4: Cloudflare R2 Edge Deployment & Screenshot Mockup**
   - [x] 4.1 Sync flat static asset folder once to `r2://webview-sites/sites/<slug>/`
   - [x] 4.2 Dynamic streaming ZIP verified via edge Worker (`sites.webview.click/<slug>/download`)
@@ -86,15 +89,31 @@ cd C:\Users\THINKPAD\WebView.click
 node scripts\harvest-prospects.mjs --query "bengkel mobil malang" --out prospects-today.json --limit 15
 ```
 
-#### 2.2 Authenticate `gog.exe` (One-Time Setup)
+#### 2.2 Authenticate `gog.exe` for `admin@alampintar.org` (One-Time Setup)
 ```powershell
-gog auth add --account "your-email@gmail.com"
+# Set credentials from Google Cloud Desktop App JSON
+gog auth credentials set C:\Users\THINKPAD\.config\gdocs\client_secret.json
+
+# Step 1: Generate OAuth URL
+gog auth add admin@alampintar.org --remote --step=1 --services=contacts,people
+
+# Step 2: After approving in browser, exchange redirect code
+gog auth add admin@alampintar.org --remote --step=2 --auth-url="<redirect_url_from_browser>" --services=contacts,people
 ```
 
-#### 2.3 Sync Prospects to Google Contacts
+#### 2.3 Brand & Media Enrichment (Palette + Transparent Logo)
+```powershell
+python scripts\enrich-business-brand.py `
+  --prospect prospects-today.json `
+  --photos-dir "assets\prospects\bengkel-jaya-motor\photos" `
+  --out-palette "palette.json" `
+  --out-prospect "prospects-enriched.json"
+```
+
+#### 2.4 Sync Prospects to Google Contacts
 ```powershell
 # Option A: Direct gog.exe command
-gog contacts create --given-name "Bengkel Jaya Motor" --family-name "[SMB]" --phone "+6281234567890" --org "Bengkel Jaya Motor"
+gog contacts create --account admin@alampintar.org --given-name "Bengkel Jaya Motor" --family-name "[SMB]" --phone "+6281234567890" --org "Bengkel Jaya Motor"
 
 # Option B: Batch script
 node scripts\sync-google-contacts.mjs --input prospects-today.json --vcf contacts-today.vcf
@@ -104,22 +123,22 @@ node scripts\sync-google-contacts.mjs --input prospects-today.json --vcf contact
 
 ### 3️⃣ Phase 3: Dedicated Headless WordPress Staging (`wpwv.codev.id`)
 
-Generate a designer-grade multi-page site on `wpwv.codev.id` using Astra + Spectra Starter Templates, injecting frozen Google Business facts.
+Generate a designer-grade multi-page site on `wpwv.codev.id` using Astra + Spectra Starter Templates, injecting frozen Google Business facts with strict 9-slot palette and transparent logo.
 
 ```powershell
-$Name = "Bengkel Jaya Motor"
-$Slug = "bengkel-jaya-motor-malang"
+$Name = "Wijaya Motor Kampung Malang"
+$Slug = "wijaya-motor-kampung-malang"
 $Path = "/home/codev-wpwv/htdocs/wpwv.codev.id"
 
-# 1. Scaffolding via Starter Templates Companion
+# 1. Scaffolding via Starter Templates Companion with custom palette & zero cubicle leaks
 powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass `
   -File "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1" `
-  -Command "sudo -u codev-wpwv wp --path=$Path st-companion create --title='$Name' --business-name='$Name' --domain='$Slug.webview.click' --builder=gutenberg --theme=random --palette=random-light --clean --yes"
+  -Command "sudo -u codev-wpwv wp --path=$Path st-companion create --title='$Name' --business-name='$Name' --industry='automotive' --phone='+6281331029864' --domain='$Slug.webview.click' --palette=navy --clean --yes --format=json"
 
 # 2. Export flat static HTML/CSS/JS via Simply Static
 powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass `
   -File "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1" `
-  -Command "sudo -u codev-wpwv wp --path=$Path simply-static run && sudo -u codev-wpwv zip -rq /tmp/$Slug.zip /home/codev-wpwv/htdocs/wpwv.codev.id/wp-content/uploads/simply-static/temp-files/simply-static-*"
+  -Command "sudo -u codev-wpwv wp --path=$Path simply-static run && sudo -u codev-wpwv bash -c 'cd /home/codev-wpwv/static-export/ && zip -rq /tmp/$Slug.zip .'"
 ```
 
 ---

@@ -14,16 +14,71 @@
 
 import fs from "fs";
 import path from "path";
+import { pathToFileURL } from "url";
 
 const PEOPLE_API_CREATE_URL = "https://people.googleapis.com/v1/people:createContact";
 
-export async function createGoogleContact(contact, accessToken) {
+/**
+ * Refreshes Google OAuth access token in RAM without writing secrets to disk.
+ */
+export async function refreshAccessToken(credentials, fetchImpl = fetch) {
+  if (!credentials.client_id || !credentials.refresh_token) {
+    throw new Error("oauth_client_and_refresh_token_required");
+  }
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: credentials.client_id,
+    refresh_token: credentials.refresh_token
+  });
+  if (credentials.client_secret) {
+    body.set("client_secret", credentials.client_secret);
+  }
+
+  const response = await fetchImpl("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+    signal: AbortSignal.timeout(15000)
+  });
+
+  const result = await response.json();
+  if (!response.ok || typeof result.access_token !== "string") {
+    throw new Error(`oauth_refresh_failed_${response.status}`);
+  }
+  return {
+    accessToken: result.access_token,
+    scope: result.scope || "",
+    expiresIn: result.expires_in
+  };
+}
+
+/**
+ * Preflights Google Account identity and Contacts scope.
+ */
+export async function preflightGoogleAccount(accessToken, expectedEmail = null, fetchImpl = fetch) {
+  const response = await fetchImpl("https://www.googleapis.com/oauth2/v2/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) {
+    throw new Error(`google_account_preflight_failed_${response.status}`);
+  }
+  const info = await response.json();
+  if (expectedEmail && info.email && info.email.toLowerCase() !== expectedEmail.toLowerCase()) {
+    throw new Error(`account_mismatch_expected_${expectedEmail}_got_${info.email}`);
+  }
+  return info;
+}
+
+/**
+ * Creates a single Google Contact via Google People API v1.
+ */
+export async function createGoogleContact(contact, accessToken, fetchImpl = fetch) {
+  const businessName = contact.business_name || contact.name || "SMB Prospect";
   const payload = {
     names: [
       {
-        givenName: contact.name,
-        familyName: "[SMB]",
-        displayName: `[SMB] ${contact.name}`
+        givenName: `[SMB] ${businessName}`
       }
     ],
     phoneNumbers: [
@@ -34,8 +89,7 @@ export async function createGoogleContact(contact, accessToken) {
     ],
     organizations: [
       {
-        name: contact.name,
-        title: "Owner / Manager"
+        name: businessName
       }
     ],
     biographies: [
@@ -49,13 +103,14 @@ export async function createGoogleContact(contact, accessToken) {
     ]
   };
 
-  const response = await fetch(PEOPLE_API_CREATE_URL, {
+  const response = await fetchImpl(PEOPLE_API_CREATE_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000)
   });
 
   if (!response.ok) {
@@ -66,14 +121,18 @@ export async function createGoogleContact(contact, accessToken) {
   return await response.json();
 }
 
+/**
+ * Generates standards-compliant vCard v3.0 batch format.
+ */
 export function generateVCard(contacts) {
   let vcf = "";
   for (const c of contacts) {
+    const name = c.business_name || c.name || "SMB Prospect";
     vcf += "BEGIN:VCARD\r\n";
     vcf += "VERSION:3.0\r\n";
-    vcf += `FN:[SMB] ${c.name}\r\n`;
-    vcf += `N:[SMB];${c.name};;;\r\n`;
-    vcf += `ORG:${c.name};\r\n`;
+    vcf += `FN:[SMB] ${name}\r\n`;
+    vcf += `N:[SMB];${name};;;\r\n`;
+    vcf += `ORG:${name};\r\n`;
     vcf += `TEL;TYPE=WORK,VOICE,PREF:${c.phone}\r\n`;
     if (c.address) vcf += `ADR;TYPE=WORK:;;${c.address};;;;\r\n`;
     vcf += `NOTE:WebView.click SMB Outreach | Niche: ${c.niche || ""}\r\n`;
@@ -82,7 +141,7 @@ export function generateVCard(contacts) {
   return vcf;
 }
 
-// CLI Execution
+// Standalone CLI Execution Guard (Runs only when executed directly)
 async function main() {
   const args = process.argv.slice(2);
   const inputIndex = args.indexOf("--input");
@@ -130,10 +189,10 @@ Arguments:
     for (const contact of contacts) {
       try {
         await createGoogleContact(contact, token);
-        console.log(`  ✓ Synced: [SMB] ${contact.name} (${contact.phone})`);
+        console.log(`  ✓ Synced: [SMB] ${contact.name || contact.business_name} (${contact.phone})`);
         success++;
       } catch (err) {
-        console.error(`  ✗ Failed to sync [SMB] ${contact.name}: ${err.message}`);
+        console.error(`  ✗ Failed to sync [SMB] ${contact.name || contact.business_name}: ${err.message}`);
       }
     }
     console.log(`🏁 API Sync Complete: ${success}/${contacts.length} saved to Google Contacts.`);
@@ -145,4 +204,6 @@ Arguments:
   }
 }
 
-main().catch(console.error);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(console.error);
+}
