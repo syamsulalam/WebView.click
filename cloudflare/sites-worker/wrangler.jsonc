@@ -1,0 +1,19 @@
+{
+  "name": "sites-webview-click",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "r2_buckets": [
+    {
+      "binding": "SITES_BUCKET",
+      "bucket_name": "webview-sites"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "sites.webview.click/*",
+      "zone_name": "webview.click",
+      "custom_domain": true
+    }
+  ]
+}

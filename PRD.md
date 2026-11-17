@@ -225,3 +225,72 @@ UUPM's 34 `landing.csv` patterns supersede its own deprecated style rows 20/21/2
      - **Cloudflare Pages API / GitHub API**: Creates project, pushes static site assets, provisions automated SSL/TLS certificates.
      - **DNS API**: Binds apex & www records automatically within ~60 seconds.
    - Delivery worker dispatches automated WhatsApp confirmation + email receipt with live URL and client dashboard credentials.
+
+---
+
+## 15 · Headless WordPress + R2 Edge Router Architecture & CLI Outreach Engine (v2.1 Architecture Pivot)
+
+### 15.1 The Pivot Rationale: Why Headless WordPress + Simply Static Outperforms Generic AI HTML
+1. **Design Excellence**: Generic LLM-generated HTML templates often suffer from repetitive stacked blocks, fragile responsive grids, and generic filler styling. Headless WordPress leveraging upstream Astra/Spectra Starter Templates (`wp st-companion create`) provides access to 580+ designer-crafted, battle-tested layouts from `storage.codev.id` (APAC R2).
+2. **Grounded Fact Preservation**: Real Google Business Profile / Google Maps data (Business Name, Address, Phone, Rating, Review Count, Google Photos, Hours) are frozen into the AST rewriter, eliminating AI hallucinations.
+3. **Massive Cost & Server Efficiency**: Instead of running dynamic PHP/MySQL instances, Simply Static compiles each site into pure static HTML/CSS/JS. Uploaded to Cloudflare R2 bucket `webview-sites` and routed via `sites.webview.click`, hosting 1,000+ SMB sites incurs practically $0 in compute or server maintenance costs.
+4. **Direct WhatsApp CTA Routing**: On a flat static site, PHP contact forms do not run. All action buttons are statically auto-linked to direct WhatsApp click-to-chat links (`https://wa.me/...`), converting 10x higher than traditional email forms.
+
+### 15.2 The 5-Layer CLI Infrastructure Topology
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ 1. INGESTION & LEAD HARVESTER (CLI / Places API)                       │
+│    Filter: No website, rating >= 4.0, verified WhatsApp phone number   │
+│    Output: Normalized frozen payload JSON (name, phone, address, etc.) │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 2. MUTUAL TRUST SHIELD: GOOGLE CONTACTS PRE-SAVE                       │
+│    Script: sync-google-contacts.mjs                                    │
+│    Action: Pre-saves contact into Google Contacts as "[SMB] <Name>"    │
+│    Benefit: WhatsApp recognizes known contact; lowers spam score       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 3. HEADLESS WORDPRESS STAGING (OracleServer: wp-oracle)                │
+│    CLI: wp st-companion create --title=... --theme=random --clean      │
+│    Compiler: wp simply-static run                                      │
+│    Archive: Compiles flat directory + generates <slug>.zip             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 4. CLOUDFLARE R2 EDGE ROUTER (sites.webview.click)                     │
+│    Bucket: webview-sites                                               │
+│    Objects: sites/<slug>/* (flat assets) & zips/<slug>.zip             │
+│    Worker Router: Automatic index.html, clean URLs, Edge Caching       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 5. VISUAL PROOF & 2-STEP VALUE-FIRST OUTREACH (LusmoBot)               │
+│    Mockup: capture-screenshot.py renders mobile viewport JPEG          │
+│    Pacing: Strictly 15 contacts/day (3–8 min jittered delay)           │
+│    Tone: Confident, helpful value-giver (never apologetic)             │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 15.3 Value-First WhatsApp Outreach Protocol
+* **Volume Target**: 1,000 SMBs at a controlled rate of **15 contacts/day**.
+* **Icebreaker (Verification Step)**:
+  > *"Halo, apakah ini dengan [Nama Bisnis]?"*  
+  *(Wait for human reply)*
+* **Value Drop (Post-Confirmation Step with Mobile Screenshot)**:
+  > *"Saya Syamsul Alam. Mungkin kedengaran aneh karena kita belum kenal, tapi kemarin saya cek Google Business nya saya lihat belum punya website resmi, jadi saya buatkan website untuk bisnisnya.*
+  >
+  > *Tampilannya seperti di foto ini, bisa dicek langsung di sini:*  
+  > 🔗 `https://sites.webview.click/[slug]/`
+  >
+  > *Ini 100% gratis buat kalian, silakan dipakai atau di-download file aslinya kalau mau di-hosting sendiri:*  
+  > 📦 `https://sites.webview.click/[slug]/download`
+  >
+  > *Kalau sekiranya kalian repot atau butuh bantuan pasangkan domain dan hostingnya, kabari saja ya."*
+

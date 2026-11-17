@@ -26,8 +26,44 @@
 | Proof asset | `src/pages/public/MarketingAuditViewer.tsx` + `src/lib/marketingAudit*.ts` | Deterministic GBP marketing audit (`/audit/:businessId`) used as outreach proof |
 | QA surface | `src/pages/public/DemoSite.tsx` | API-free multi-industry renderer QA with inspector, preset/shader switchers, boundary checks |
 | Tests | `tests/*.test.ts` | Fixture tests for post-process, scaffold, generation state, API handlers |
+| ★ Edge Sites Worker | `cloudflare/sites-worker/` | Cloudflare Worker router for `sites.webview.click` with dynamic `client-zip` streaming & edge cache |
+| ★ CLI Suite | `scripts/` (`run-smb-pipeline.ps1`, `scrape-maps-direct.py`, `harvest-prospects.mjs`, `sync-google-contacts.mjs`, `deploy-site-to-r2.mjs`, `capture-screenshot.py`) | 5-stage automated terminal pipeline from Google Maps scraping to LusmoBot outreach |
+| ★ Dedicated WP Staging | `https://wpwv.codev.id` | Dedicated headless WordPress staging workbench on OracleServer (`codev-wpwv`) |
+| ★ Contacts CLI | `C:\Users\THINKPAD\scripts\gog.exe` | Single static Go binary (v0.48.1) for Google Contacts API batch creation & deduplication |
 
-## 0.2 AI generation pipeline — step by step
+## 0.2 Headless WordPress + R2 Edge Router + CLI Architecture (Updated 2026-11-17)
+
+To solve the stacked-blocks, fragile responsive grids, and generic AI filler of raw HTML generators, WebView.click v2.1 introduced a headless WordPress + Simply Static + R2 edge hosting pipeline:
+
+1. **Dedicated Staging Workbench (`wpwv.codev.id`)**:
+   - Hosted on Ubuntu OracleServer (`150.136.178.5`), user `codev-wpwv`.
+   - Symlinked Golden Master core (`/opt/codev/wp-core/current`), Astra theme, Spectra container blocks, Starter Templates Companion (`codev-starter-templates-companion`), and Simply Static Free.
+   - Enrolled in fleet security guards (`codev-blocked-plugins.php`, `00-codev-plugin-allowlist.php`, `05-codev-persistent-admins.php`).
+   - Generates multi-page designer-grade sites using frozen Google Business data via `wp st-companion create`.
+   - Verified live at `https://wpwv.codev.id/` returning HTTP 200 OK.
+
+2. **Single-Upload Edge Router (`sites.webview.click`)**:
+   - Built with Cloudflare Worker (`cloudflare/sites-worker/`) binding R2 bucket `webview-sites`.
+   - Static files uploaded to `sites/<slug>/*`.
+   - Dynamic ZIP streaming: Requesting `https://sites.webview.click/<slug>/download` dynamically bundles `sites/<slug>/*` into a compressed ZIP on the fly via `client-zip` and caches the archive at the Cloudflare Edge for 7 days. **Eliminates the need to upload a separate .zip file.**
+
+3. **Google Contacts Mutual Trust Shield (`gog.exe` & `.vcf`)**:
+   - `C:\Users\THINKPAD\scripts\gog.exe contacts create --given-name "[Name]" --family-name "[SMB]"` saves the prospect to the admin's Google Account before any outreach.
+   - Fallback `.vcf` vCard generator (`scripts/sync-google-contacts.mjs --input <prospects.json> --vcf contacts.vcf`) creates 1-click importable address book cards.
+   - Android/WhatsApp synchronizes the contact into the phone's address book, preventing Meta cold-outbound spam flags.
+
+4. **Zero-API-Key Direct Maps Harvester (`scripts/scrape-maps-direct.py`)**:
+   - Playwright headless automation driven by local system Google Chrome (`channel="chrome"`).
+   - Directly queries Google Maps (`https://www.google.com/maps/search/<query>?hl=id`), scrolls the results feed, and extracts business listings.
+   - Strictly filters for SMB Outreach targets: `website == null`, rating >= 4.0, and valid WhatsApp phone numbers (`+62...`).
+   - Zero third-party API keys or paid credits required (bypasses Serper/SerpApi restrictions).
+
+5. **Headless Simply Static Compilation & Mobile Mockup**:
+   - Compiles full WordPress site into flat HTML/CSS/JS (`wp-content/uploads/simply-static/temp-files/simply-static-0-*`).
+   - `capture-screenshot.py` launches Playwright iPhone 14 viewport (`390x844`), rendering clean mobile mockups (`mockups/<slug>-mobile.jpg`) for WhatsApp Step 2 delivery.
+   - End-to-end verified on real prospect: "Wijaya Motor Kampung Malang" (`mockups/wijaya-motor-kampung-malang-mobile.jpg`).
+
+## 0.3 AI generation pipeline — step by step
 
 | # | Step | Kind | Input → Output | Status |
 |---|---|---|---|---|
