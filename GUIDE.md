@@ -18,14 +18,14 @@
   - [x] 1.3 Deploy Cloudflare Worker Router `sites-webview-click` (with dynamic streaming ZIP)
   - [x] 1.4 Verify edge routing & test 404 response
 - [x] **Phase 2: Prospect Data Ingestion & Google Contacts Trust Pre-Save**
-  - [x] 2.1 Harvest no-website prospects via `scripts/scrape-maps-direct.py` (Zero API keys)
+  - [x] 2.1 Harvest no-website prospects via `scripts/scrape-maps-direct.py` (High-Income Focus: SG, UAE, UK, IE)
   - [x] 2.2 Brand enrichment & palette synthesis via `scripts/enrich-business-brand.py` (SMB-PALETTE-1)
   - [x] 2.3 Logo discovery & automatic background removal (SMB-LOGO-1 via Pillow & local rembg)
   - [x] 2.4 Validate E.164 phone numbers & review ratings (≥ 4.0)
   - [x] 2.5 Install `gog.exe` (v0.48.1) in `C:\Users\THINKPAD\scripts\gog.exe`
   - [x] 2.6 Synchronize prospects to Google Contacts (`[SMB] <Name>`)
   - [x] 2.7 One-time OAuth consent for `admin@alampintar.org` (Authenticated in Windows DPAPI Keyring)
-  - [ ] 2.8 Enable People API in Google Cloud Console (1-click: `https://console.cloud.google.com/apis/library/people.googleapis.com?project=150697655157`)
+  - [x] 2.8 Enable People API in Google Cloud Console (Verified active on project `150697655157`)
 - [x] **Phase 3: Dedicated Headless WordPress Staging (`wpwv.codev.id`)**
   - [x] 3.1 Provision DNS record: `wpwv.codev.id` -> `150.136.178.5` (Cloudflare Zone `codev.id`)
   - [x] 3.2 Provision dedicated WordPress site & database `codev-wpwv` on OracleServer
@@ -76,30 +76,31 @@ pnpm exec wrangler deploy
 
 Saving the contact to your Google Account as `[SMB] <Business Name>` causes your phone's address book to sync. When WhatsApp initiates the chat, Meta treats it as a message to an existing address-book contact rather than cold outbound spam.
 
+> **Strategic Directive:** Target **Tier 1 High-Income Economies** with >75%–95% WhatsApp adoption (Singapore, UAE, UK, Ireland, Netherlands). Full market comparison & rationale: [`KNOWLEDGE-HIGH-INCOME-WHATSAPP-SMB-TARGETING.md`](file:///C:/Users/THINKPAD/OneDrive/MD/KNOWLEDGE/KNOWLEDGE-HIGH-INCOME-WHATSAPP-SMB-TARGETING.md).
+
 #### 2.1 Harvest High-Potential Leads via CLI
 
 **Option A (Direct Headless Google Maps Scraper — Zero API Keys Required):**
 ```powershell
 cd C:\Users\THINKPAD\WebView.click
-python scripts\scrape-maps-direct.py --query "bengkel mobil malang" --out prospects-today.json --limit 15
+# High-Income Targets: Singapore, Dubai/UAE, UK, Ireland
+python scripts\scrape-maps-direct.py --query "aircon servicing singapore" --out prospects-today.json --limit 15
+# Or: "car detailing dubai", "plumber manchester", "emergency electrician birmingham"
 ```
 
 **Option B (Serper / Google Places API):**
 ```powershell
 cd C:\Users\THINKPAD\WebView.click
-node scripts\harvest-prospects.mjs --query "bengkel mobil malang" --out prospects-today.json --limit 15
+node scripts\harvest-prospects.mjs --query "aircon servicing singapore" --out prospects-today.json --limit 15
 ```
 
-#### 2.2 Authenticate `gog.exe` for `admin@alampintar.org` (One-Time Setup)
+#### 2.2 Authenticate `gog.exe` for `admin@alampintar.org` (One-Time Setup — Completed)
 ```powershell
 # Set credentials from Google Cloud Desktop App JSON
 gog auth credentials set C:\Users\THINKPAD\.config\gdocs\client_secret.json
 
-# Step 1: Generate OAuth URL
-gog auth add admin@alampintar.org --remote --step=1 --services=contacts,people
-
-# Step 2: After approving in browser, exchange redirect code
-gog auth add admin@alampintar.org --remote --step=2 --auth-url="<redirect_url_from_browser>" --services=contacts,people
+# Authenticate contacts & people scopes directly
+gog auth add admin@alampintar.org --services=contacts,people
 ```
 
 #### 2.3 Brand & Media Enrichment (Palette + Transparent Logo)
@@ -181,6 +182,10 @@ python scripts\capture-screenshot.py `
 #### 💬 Script Step 1: Casual Confirmation Icebreaker
 Sent by LusmoBot:
 
+**English (Tier 1 High-Income: Singapore, UAE, UK, Ireland):**
+> *"Hi, is this [Business Name]?"*
+
+**Indonesian (Domestic Legacy):**
 > *"Halo, apakah ini dengan [Nama Bisnis]?"*
 
 *(LusmoBot pauses and awaits human reply).*
@@ -188,10 +193,28 @@ Sent by LusmoBot:
 ---
 
 #### 💬 Script Step 2: Value Drop & Demo Link (Post-Confirmation)
-Triggered immediately after they reply (e.g., *"Iya betul, ada apa ya?"*):
+Triggered immediately after they reply (e.g., *"Yes it is, how can I help?"*):
 
 *(Attach: `mockups/[slug]-mobile.jpg`)*
 
+**English (Tier 1 High-Income Standard):**
+> *"Hey [Business Name/Owner], I'm Syamsul Alam.*
+>
+> *This might sound unconventional, but I was looking up your Google listing yesterday and noticed you don't have a website set up.*
+>
+> *I went ahead and designed a clean, mobile-responsive website for your business today:*  
+> 🔗 `https://sites.webview.click/[slug]/`
+>
+> *I've also attached a full-page mobile preview above so you can see how it looks.*
+>
+> *It's 100% yours for free — no strings attached. You can download the complete static site files right here to host wherever you like:*  
+> 📦 `https://sites.webview.click/[slug]/download`
+>
+> *If you're not technical and would like me to connect a custom domain or host it for you, just let me know. Either way, hope it helps your business!*
+>
+> *(If you prefer not to hear from me again, simply reply 'STOP' and I will not contact you again.)"*
+
+**Indonesian (Domestic Legacy):**
 > *"Saya Syamsul Alam. Mungkin kedengaran aneh karena kita belum kenal, tapi kemarin saya cek Google Business nya saya lihat belum punya website resmi, jadi saya buatkan website untuk bisnisnya.*
 >
 > *Tampilannya seperti di foto ini, bisa dicek langsung di sini:*  
