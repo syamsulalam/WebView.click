@@ -57,9 +57,9 @@ def parse_reviews(text: str):
             return 0
     return 0
 
-def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5):
+def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: str = "en"):
     encoded_query = urllib.parse.quote(query)
-    url = f"https://www.google.com/maps/search/{encoded_query}?hl=id"
+    url = f"https://www.google.com/maps/search/{encoded_query}?hl={hl}"
     print(f"🌐 Navigating to Google Maps: {url}")
     
     prospects = []
@@ -74,7 +74,7 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5):
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 900},
-            locale="id-ID"
+            locale="en-US" if hl == "en" else "id-ID"
         )
         page = context.new_page()
 
@@ -128,6 +128,11 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5):
                     if not title or title in seen_names:
                         continue
 
+                    # Generate stable URL-safe slug from title (Sol P1-05 fix)
+                    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+                    if not slug:
+                        slug = f"smb-{int(time.time())}"
+
                     # 2. Rating & Reviews
                     rating_elem = card.query_selector('span[role="img"][aria-label*="bintang"], span[role="img"][aria-label*="star"], .MW4etd')
                     rating_text = rating_elem.get_attribute("aria-label") or rating_elem.inner_text() if rating_elem else ""
@@ -148,20 +153,42 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5):
                     lines = [clean_text(line) for line in card_text.split("\n") if clean_text(line)]
 
                     phone = ""
-                    # Look for Indonesian phone pattern
-                    phone_match = re.search(r"(?:(?:\+62|62|08|031|0341)[\s-]?\d{2,4}[\s-]?\d{3,5}[\s-]?\d{0,4})", card_text)
-                    if phone_match:
-                        raw_phone = re.sub(r"[^\d+]", "", phone_match.group(0))
-                        if raw_phone.startswith("0"):
-                            phone = "+62" + raw_phone[1:]
-                        elif raw_phone.startswith("62"):
-                            phone = "+" + raw_phone
+                    # 1. Check for UAE phone pattern (+971, 00971, 971, 05x, 04, 02)
+                    uae_match = re.search(r"(?:(?:\+971|00971|971|0)[\s-]?(?:5[024568]|4|2|6|7|9)[\s-]?\d{3}[\s-]?\d{4})", card_text)
+                    if uae_match:
+                        raw_p = re.sub(r"[^\d+]", "", uae_match.group(0))
+                        if raw_p.startswith("00971"):
+                            phone = "+" + raw_p[2:]
+                        elif raw_p.startswith("971"):
+                            phone = "+" + raw_p
+                        elif raw_p.startswith("0"):
+                            phone = "+971" + raw_p[1:]
+                        elif not raw_p.startswith("+"):
+                            phone = "+971" + raw_p
                         else:
-                            phone = raw_phone
+                            phone = raw_p
+
+                    # 2. Check for Indonesian phone pattern
+                    if not phone:
+                        id_match = re.search(r"(?:(?:\+62|62|08|031|0341)[\s-]?\d{2,4}[\s-]?\d{3,5}[\s-]?\d{0,4})", card_text)
+                        if id_match:
+                            raw_p = re.sub(r"[^\d+]", "", id_match.group(0))
+                            if raw_p.startswith("0"):
+                                phone = "+62" + raw_p[1:]
+                            elif raw_p.startswith("62"):
+                                phone = "+" + raw_p
+                            else:
+                                phone = raw_p
+
+                    # 3. Check for general E.164 phone pattern
+                    if not phone:
+                        gen_match = re.search(r"\+(?:[1-9]\d{6,14})", card_text)
+                        if gen_match:
+                            phone = gen_match.group(0)
 
                     address = ""
                     for line in lines:
-                        if re.search(r"\b(Jl\.|Jalan|Kec\.|Kota|Kab\.|No\.|Malang|Surabaya|Jakarta)\b", line, re.I):
+                        if re.search(r"\b(Jl\.|Jalan|Kec\.|Kota|Kab\.|No\.|Malang|Surabaya|Jakarta|Dubai|Abu Dhabi|Sharjah|Al Quoz|Business Bay|Marina|Deira)\b", line, re.I):
                             address = line
                             break
 
@@ -179,22 +206,28 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5):
                     # Extract Category & Vertical
                     category_raw = ""
                     for line in lines:
-                        if any(w in line.lower() for w in ["bengkel", "salon", "klinik", "toko", "restoran", "kafe", "cafe", "kontraktor", "servis"]):
+                        if any(w in line.lower() for w in ["bengkel", "salon", "klinik", "toko", "restoran", "kafe", "cafe", "kontraktor", "servis", "detailing", "repair", "dentist", "dental", "cleaning", "hvac", "ac"]):
                             category_raw = line
                             break
 
                     def map_category_to_vertical(cat: str) -> str:
                         cat_lower = (cat or "").lower()
-                        if any(w in cat_lower for w in ["bengkel", "mobil", "motor", "otomotif", "auto"]):
+                        if any(w in cat_lower for w in ["detailing", "bengkel", "mobil", "motor", "otomotif", "auto", "car repair", "car wash", "tinting", "ppf", "ceramic coating"]):
                             return "automotive"
-                        if any(w in cat_lower for w in ["klinik", "dokter", "gigi", "medis", "apotek"]):
+                        if any(w in cat_lower for w in ["ac repair", "ac maintenance", "air conditioning", "hvac", "cooling", "chiller"]):
+                            return "hvac"
+                        if any(w in cat_lower for w in ["klinik", "dokter", "gigi", "medis", "apotek", "dental", "dentist", "aesthetic", "clinic"]):
                             return "healthcare"
-                        if any(w in cat_lower for w in ["salon", "barbershop", "spa", "rambut"]):
+                        if any(w in cat_lower for w in ["salon", "barbershop", "spa", "rambut", "beauty"]):
                             return "beauty"
-                        if any(w in cat_lower for w in ["kafe", "cafe", "resto", "restoran", "kopi"]):
+                        if any(w in cat_lower for w in ["kafe", "cafe", "resto", "restoran", "kopi", "dining", "restaurant"]):
                             return "hospitality"
-                        if any(w in cat_lower for w in ["kontraktor", "bangunan", "renovasi"]):
+                        if any(w in cat_lower for w in ["kontraktor", "bangunan", "renovasi", "fit out", "fitout", "interior", "joinery", "landscaping", "construction", "roofing"]):
                             return "construction"
+                        if any(w in cat_lower for w in ["plumbing", "plumber", "drainage"]):
+                            return "plumbing"
+                        if any(w in cat_lower for w in ["cleaning", "deep cleaning", "sofa cleaning", "pest control"]):
+                            return "cleaning"
                         if any(w in cat_lower for w in ["toko", "retail", "shop"]):
                             return "retail"
                         return "general"
@@ -265,6 +298,8 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5):
                         break
 
                 except Exception as card_err:
+                    card_title = title if "title" in locals() else "unknown"
+                    print(f"  ⚠️ Warning processing card '{card_title}': {card_err}")
                     continue
 
         finally:
@@ -274,13 +309,14 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5):
 
 def main():
     parser = argparse.ArgumentParser(description="Direct Headless Google Maps Scraper")
-    parser.add_argument("--query", required=True, help="Search query (e.g. 'bengkel mobil malang')")
+    parser.add_argument("--query", required=True, help="Search query (e.g. 'car detailing business bay dubai')")
     parser.add_argument("--out", default="prospects.json", help="Output JSON path")
     parser.add_argument("--limit", type=int, default=15, help="Max leads to collect")
     parser.add_argument("--scrolls", type=int, default=6, help="Scroll depth")
+    parser.add_argument("--hl", default="en", help="Google Maps interface language (en or id)")
     args = parser.parse_args()
 
-    results = scrape_google_maps(args.query, limit=args.limit, max_scrolls=args.scrolls)
+    results = scrape_google_maps(args.query, limit=args.limit, max_scrolls=args.scrolls, hl=args.hl)
     print(f"\n✅ Total qualified no-website leads collected: {len(results)}")
     
     with open(args.out, "w", encoding="utf-8") as f:
