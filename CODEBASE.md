@@ -1553,3 +1553,22 @@ Why generated sites feel "not quite good enough", grouped by track. Severity: �
 5. ★ Composite `outreach-ready` gate in `AdminSites` (audit + conversion + design + media + contact). (done 2026-10-01, C1 `b302ec9`)
 6. Fail outline loudly (or block) instead of silently advancing on null; never wipe offering progress on `siteCopy` retry. (done 2026-10-01, B3: `outlineFailed` flag + Jobs badge, `applySiteCopyOfferingPreserve`)
 7. Mobile nav + safe-area sticky CTA; accordion FAQ; `mailto:` success state.
+
+---
+
+## 33. Hardening & Edge-Case Audit Ledger (Sol Review Contract TSI-30-SMB-REVIEW-1 — 2026-11-18)
+
+Following senior architectural critique by Boss GPT-6.1 Sol (`REPORT-SOL-STARTER-TEMPLATES-SEMANTIC-PURITY-AND-SMB-OUTREACH-REVIEW.md`), the following critical defects and resolutions were audited:
+
+### 1. Scraper Card Exception Silent Discard (Defect P1-05)
+- **Problem**: In `scripts/scrape-maps-direct.py`, `slug` was accessed at line 215 to construct `photos_dir` without prior assignment. This raised a `NameError` caught by `except Exception as card_err: continue`, silently swallowing every eligible listing card and returning zero prospects.
+- **Resolution**: Assigned `slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")` with timestamp fallback immediately upon extracting `title`. AST test verified `stores=2, loads=3`.
+- **UAE & E.164 Extraction**: Replaced Indonesian-only phone regex with multi-pattern matching supporting UAE mobile/landlines (`+971 50/52/54/55/56/58`, `+971 4/2/6`), Indonesian (`+62`), and general E.164. Added `--hl` parameter defaulting to English for international markets.
+
+### 2. JIT Site Generation Invariant (Defect P1-06)
+- **Problem**: Legacy pipeline scripts eagerly executed full headless provisioning, static export, and R2 upload for every harvested lead prior to contact response.
+- **Resolution**: Codified the **Just-In-Time (JIT) Generation Rule** into `SOP.md` and `smb-site-outreach` skill:
+  - Phase 1: Harvest lead & pre-save to Google Contacts (`admin@alampintar.org`).
+  - Phase 2: Dispatch Message 1 identity check (`"Hi, is this [Business Name]?"`).
+  - Phase 3: Wait for affirmative human reply. ONLY THEN generate site on `wpwv.codev.id` and deploy to Cloudflare R2, saving 100% of compute/storage on unresponsive leads.
+
