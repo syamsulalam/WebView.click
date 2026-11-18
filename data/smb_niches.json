@@ -1,0 +1,223 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-11-18",
+  "description": "Ranked database of SMB niches categorized by transaction ticket size, customer LTV, search intent urgency, and website ROI multiplier.",
+  "tiers": [
+    {
+      "tier": "Tier S: Whale Niches ($2,000 – $25,000+ per transaction)",
+      "roi_profile": "A single customer acquired pays for 2 to 10+ YEARS of website retainers. Extreme willingness to spend $150-$300/mo on web presence.",
+      "niches": [
+        {
+          "name": "Kitchen & Bathroom Renovation",
+          "category": "Home Improvement & Construction",
+          "avg_ticket_size_usd": 12000,
+          "ticket_range_usd": "$5,000 - $35,000",
+          "gross_margin_percent": "35% - 50%",
+          "customer_ltv_usd": 18000,
+          "deals_to_pay_yearly_retainer": "0.15 deals (1 deal pays for 6.6 years)",
+          "website_importance": "Critical (Homeowners require visual proof, portfolios, and reviews before committing)",
+          "sample_keywords": {
+            "en": "kitchen renovation contractor",
+            "sg": "renovation contractor bukit timah",
+            "ae": "villa interior fit out dubai",
+            "gb": "kitchen fitters manchester",
+            "de": "kuechenrenovierung muenchen"
+          }
+        },
+        {
+          "name": "Roofing & Waterproofing Specialists",
+          "category": "Home Trades & Construction",
+          "avg_ticket_size_usd": 6500,
+          "ticket_range_usd": "$2,500 - $18,000",
+          "gross_margin_percent": "40% - 60%",
+          "customer_ltv_usd": 9000,
+          "deals_to_pay_yearly_retainer": "0.27 deals (1 deal pays for 3.6 years)",
+          "website_importance": "Critical (Emergency roof repairs, storm damage, trust-intensive)",
+          "sample_keywords": {
+            "en": "roofing contractor",
+            "gb": "roof repair leeds",
+            "ie": "roofing contractor dublin",
+            "de": "dachdecker meisterbetrieb"
+          }
+        },
+        {
+          "name": "Cosmetic Dentistry & Orthodontics (Implants, Veneers, Invisalign)",
+          "category": "Healthcare & Aesthetics",
+          "avg_ticket_size_usd": 4500,
+          "ticket_range_usd": "$2,000 - $15,000",
+          "gross_margin_percent": "60% - 75%",
+          "customer_ltv_usd": 8500,
+          "deals_to_pay_yearly_retainer": "0.4 deals (1 deal pays for 2.5 years)",
+          "website_importance": "Extreme (High-income patients demand spotless clinic aesthetic, doctor credentials, before/afters)",
+          "sample_keywords": {
+            "en": "dental implants clinic",
+            "sg": "dental clinic orchard road",
+            "ae": "cosmetic dentist jumeirah",
+            "gb": "invisalign dentist bristol",
+            "de": "zahnimplantate zahnarzt"
+          }
+        },
+        {
+          "name": "Luxury Auto Detailing, Ceramic Coating & PPF (Paint Protection Film)",
+          "category": "Automotive Specialty",
+          "avg_ticket_size_usd": 2200,
+          "ticket_range_usd": "$1,200 - $5,500",
+          "gross_margin_percent": "55% - 70%",
+          "customer_ltv_usd": 5000,
+          "deals_to_pay_yearly_retainer": "0.8 deals (1 deal pays for 1.2 years)",
+          "website_importance": "Extreme (Supercar/luxury car owners require premium dark-mode aesthetic and studio gallery)",
+          "sample_keywords": {
+            "en": "ceramic coating ppf",
+            "sg": "car grooming katong",
+            "ae": "car detailing business bay dubai",
+            "gb": "ceramic coating birmingham",
+            "de": "keramikversiegelung auto"
+          }
+        },
+        {
+          "name": "Solar Panel & Heat Pump Installation",
+          "category": "Clean Energy & MEP Trades",
+          "avg_ticket_size_usd": 9500,
+          "ticket_range_usd": "$4,000 - $22,000",
+          "gross_margin_percent": "30% - 45%",
+          "customer_ltv_usd": 12000,
+          "deals_to_pay_yearly_retainer": "0.19 deals (1 deal pays for 5.2 years)",
+          "website_importance": "High (Subsidies, ROI calculators, quote requests)",
+          "sample_keywords": {
+            "en": "solar panel installer",
+            "gb": "heat pump installation reading",
+            "nl": "zonnepanelen utrecht",
+            "de": "solaranlagen installation"
+          }
+        }
+      ]
+    },
+    {
+      "tier": "Tier A: High-Ticket Service Trades ($400 – $2,000 per transaction)",
+      "roi_profile": "1 to 3 customer conversions per year easily pay for the entire annual retainer ($1,800/yr). High search urgency.",
+      "niches": [
+        {
+          "name": "Emergency Plumbing & Boiler Replacement",
+          "category": "Emergency Home Services",
+          "avg_ticket_size_usd": 1400,
+          "ticket_range_usd": "$300 - $4,500",
+          "gross_margin_percent": "50% - 65%",
+          "customer_ltv_usd": 3200,
+          "deals_to_pay_yearly_retainer": "1.3 deals",
+          "website_importance": "Critical (Burst pipes, cold winter boiler breakdowns require instant tap-to-call mobile site)",
+          "sample_keywords": {
+            "en": "emergency plumber",
+            "gb": "boiler replacement london",
+            "ie": "emergency plumber dublin",
+            "nl": "loodgieter spoed amsterdam",
+            "de": "sanitaer heizung notdienst"
+          }
+        },
+        {
+          "name": "Commercial & Residential Air Conditioning (HVAC) Overhaul",
+          "category": "Climate Trades",
+          "avg_ticket_size_usd": 1100,
+          "ticket_range_usd": "$250 - $4,000",
+          "gross_margin_percent": "45% - 60%",
+          "customer_ltv_usd": 4000,
+          "deals_to_pay_yearly_retainer": "1.6 deals",
+          "website_importance": "Extreme in SG & UAE (Year-round heat makes working AC mandatory)",
+          "sample_keywords": {
+            "en": "aircon servicing overhaul",
+            "sg": "aircon chemical overhaul singapore",
+            "ae": "ac maintenance repair dubai"
+          }
+        },
+        {
+          "name": "Physiotherapy, Chiropractic & Sports Injury Clinics",
+          "category": "Specialist Healthcare",
+          "avg_ticket_size_usd": 650,
+          "ticket_range_usd": "$120 - $2,500 (multi-session packages)",
+          "gross_margin_percent": "70% - 85%",
+          "customer_ltv_usd": 2400,
+          "deals_to_pay_yearly_retainer": "2.7 deals",
+          "website_importance": "High (Pain relief search, doctor bio, location convenience)",
+          "sample_keywords": {
+            "en": "physiotherapy clinic",
+            "sg": "physiotherapist bukit timah",
+            "gb": "sports physiotherapy edinburgh",
+            "ie": "chiropractor dublin",
+            "de": "physiotherapie praxis"
+          }
+        },
+        {
+          "name": "Tree Surgery, Arboriculture & Heavy Landscaping",
+          "category": "Outdoor Services",
+          "avg_ticket_size_usd": 950,
+          "ticket_range_usd": "$350 - $3,500",
+          "gross_margin_percent": "55% - 70%",
+          "customer_ltv_usd": 2100,
+          "deals_to_pay_yearly_retainer": "1.9 deals",
+          "website_importance": "High (Insurance proof, hazardous tree removal, equipment photos)",
+          "sample_keywords": {
+            "en": "tree surgeon arborist",
+            "gb": "tree surgeon reading",
+            "ie": "tree surgeon cork"
+          }
+        },
+        {
+          "name": "Bespoke Joinery & Custom Cabinetry",
+          "category": "Craftsmanship Trades",
+          "avg_ticket_size_usd": 1800,
+          "ticket_range_usd": "$800 - $6,000",
+          "gross_margin_percent": "40% - 55%",
+          "customer_ltv_usd": 3500,
+          "deals_to_pay_yearly_retainer": "1.0 deals",
+          "website_importance": "Extreme (Craft portfolio, materials, custom dimensions)",
+          "sample_keywords": {
+            "en": "bespoke joinery",
+            "gb": "custom cabinetry bristol",
+            "de": "schreinerei moebelbau"
+          }
+        }
+      ]
+    },
+    {
+      "tier": "Tier B: Mid-Ticket Daily Services ($100 – $400 per transaction)",
+      "roi_profile": "Requires 5 to 12 conversions a year to break even. Viable if they have steady repeat clientele.",
+      "niches": [
+        {
+          "name": "Auto Repair Garages & Brake/Transmission Servicing",
+          "avg_ticket_size_usd": 320,
+          "website_importance": "Moderate to High",
+          "deals_to_pay_yearly_retainer": "5.6 deals"
+        },
+        {
+          "name": "Independent Veterinary Clinics",
+          "avg_ticket_size_usd": 240,
+          "website_importance": "High",
+          "deals_to_pay_yearly_retainer": "7.5 deals"
+        },
+        {
+          "name": "High-End Hair Salons & Aesthetic Studios",
+          "avg_ticket_size_usd": 160,
+          "website_importance": "Moderate (Instagram heavy)",
+          "deals_to_pay_yearly_retainer": "11.2 deals"
+        },
+        {
+          "name": "Residential & Commercial Pest Extermination",
+          "avg_ticket_size_usd": 280,
+          "website_importance": "High (Emergency extermination search)",
+          "deals_to_pay_yearly_retainer": "6.4 deals"
+        }
+      ]
+    },
+    {
+      "tier": "Tier C: Micro-Retail & Food (DO NOT TARGET)",
+      "roi_profile": "REJECTED. Ticket size <$30. Margins too thin, high support friction, website provides negligible transactional ROI.",
+      "niches": [
+        "Coffee Shops & Cafes",
+        "Bakeries & Pastry Shops",
+        "Fast Food & Diners",
+        "Florists",
+        "Bodegas & Convenience Stores",
+        "Laundromats"
+      ]
+    }
+  ]
+}

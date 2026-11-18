@@ -1,0 +1,357 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-11-18",
+  "description": "Ranked database of high-income cities and economic clusters for global SMB outreach, sorted by economic output, purchasing power, and local SMB trade density.",
+  "countries": [
+    {
+      "code": "SG",
+      "name": "Singapore",
+      "currency": "SGD",
+      "tier": "Tier 1A",
+      "default_language": "en",
+      "phone_prefix": "+65",
+      "whatsapp_adoption": "90%",
+      "average_gdp_per_capita_usd": 85000,
+      "cities_and_clusters": [
+        {
+          "name": "Central Business District & Marina Bay",
+          "income_rank": 1,
+          "gdp_per_capita_usd": 110000,
+          "key_districts": ["Tanjong Pagar", "Raffles Place", "Downtown Core", "Marina Bay"],
+          "recommended_niches": ["Aesthetic Clinics", "Corporate Services", "Boutique Legal/Accounting", "Fine Dining Catering"],
+          "sample_query": "aesthetic clinic tanjong pagar singapore"
+        },
+        {
+          "name": "Orchard & River Valley",
+          "income_rank": 2,
+          "gdp_per_capita_usd": 98000,
+          "key_districts": ["Orchard Road", "Tanglin", "River Valley", "Robertson Quay"],
+          "recommended_niches": ["Dental Specialist", "Cosmetic Dermatology", "High-End Hair Salons", "Luxury Pet Grooming"],
+          "sample_query": "dental clinic orchard road singapore"
+        },
+        {
+          "name": "Bukit Timah & Holland Village",
+          "income_rank": 3,
+          "gdp_per_capita_usd": 95000,
+          "key_districts": ["Bukit Timah", "Holland Village", "Sixth Avenue", "Coronation"],
+          "recommended_niches": ["Interior Renovation Contractors", "Premium Tuition Agencies", "Physiotherapy Centers", "Architectural Joinery"],
+          "sample_query": "renovation contractor bukit timah singapore"
+        },
+        {
+          "name": "East Coast & Katong",
+          "income_rank": 4,
+          "gdp_per_capita_usd": 82000,
+          "key_districts": ["Katong", "Joo Chiat", "Marine Parade", "Siglap"],
+          "recommended_niches": ["Aircon Servicing & Overhaul", "Auto Grooming & Detailing", "Veterinary Clinics", "Plumbing Specialists"],
+          "sample_query": "aircon servicing joo chiat singapore"
+        },
+        {
+          "name": "Jurong & West Industrial Zone",
+          "income_rank": 5,
+          "gdp_per_capita_usd": 75000,
+          "key_districts": ["Jurong East", "Tuas", "Pioneer", "Clementi"],
+          "recommended_niches": ["Commercial HVAC", "Auto Body Repair & Spray Painting", "Industrial Pest Control", "Machinery Maintenance"],
+          "sample_query": "commercial air conditioning jurong singapore"
+        }
+      ]
+    },
+    {
+      "code": "AE",
+      "name": "United Arab Emirates",
+      "currency": "AED",
+      "tier": "Tier 1A",
+      "default_language": "en",
+      "phone_prefix": "+971",
+      "whatsapp_adoption": "90%",
+      "average_gdp_per_capita_usd": 52000,
+      "cities_and_clusters": [
+        {
+          "name": "Dubai - Central & Coastal",
+          "income_rank": 1,
+          "gdp_per_capita_usd": 68000,
+          "key_districts": ["Downtown Dubai", "Business Bay", "Dubai Marina", "Jumeirah", "DIFC", "Palm Jumeirah"],
+          "recommended_niches": ["Exotic Car Detailing & PPF", "Aesthetic Clinics", "Luxury Yacht Charter", "Villa Interior Fit-Out"],
+          "sample_query": "car detailing business bay dubai"
+        },
+        {
+          "name": "Dubai - Al Quoz & Industrial Trades",
+          "income_rank": 2,
+          "gdp_per_capita_usd": 58000,
+          "key_districts": ["Al Quoz Industrial Area", "Ras Al Khor", "Al Barsha"],
+          "recommended_niches": ["Auto Repair & Transmission Overhaul", "AC Maintenance & Duct Cleaning", "Joinery & Custom Furniture", "Commercial Cleaning"],
+          "sample_query": "auto repair al quoz dubai"
+        },
+        {
+          "name": "Abu Dhabi Capital",
+          "income_rank": 3,
+          "gdp_per_capita_usd": 65000,
+          "key_districts": ["Al Reem Island", "Corniche", "Al Maryah Island", "Khalifa City"],
+          "recommended_niches": ["Dental Clinics", "Home Maintenance Contractors", "Physiotherapy & Rehab", "Landscaping Contractors"],
+          "sample_query": "home maintenance khalifa city abu dhabi"
+        },
+        {
+          "name": "Abu Dhabi - Mussafah Trade Zone",
+          "income_rank": 4,
+          "gdp_per_capita_usd": 48000,
+          "key_districts": ["Mussafah Industrial Area", "ICAD"],
+          "recommended_niches": ["Heavy Machinery Servicing", "Metal Fabrication", "Commercial Plumbing", "Fleet Maintenance"],
+          "sample_query": "plumbing contractor mussafah abu dhabi"
+        },
+        {
+          "name": "Sharjah Commercial Hub",
+          "income_rank": 5,
+          "gdp_per_capita_usd": 38000,
+          "key_districts": ["Industrial Areas 1-18", "Al Majaz", "Al Khan"],
+          "recommended_niches": ["Auto Body Repair", "Printing & Signage", "HVAC Contracting", "Wholesale Equipment"],
+          "sample_query": "ac maintenance al majaz sharjah"
+        }
+      ]
+    },
+    {
+      "code": "GB",
+      "name": "United Kingdom",
+      "currency": "GBP",
+      "tier": "Tier 1A",
+      "default_language": "en",
+      "phone_prefix": "+44",
+      "whatsapp_adoption": "80%",
+      "average_gdp_per_capita_usd": 48000,
+      "cities_and_clusters": [
+        {
+          "name": "London Greater & Inner Boroughs",
+          "income_rank": 1,
+          "gdp_per_capita_usd": 76000,
+          "key_districts": ["Kensington & Chelsea", "Westminster", "Richmond", "Fulham", "Camden", "Wandsworth", "Islington"],
+          "recommended_niches": ["Emergency Plumbers", "Bespoke Kitchen Renovation", "Luxury Auto Detailing", "Private Dental Practices", "Roofing Specialists"],
+          "sample_query": "emergency plumber fulham london"
+        },
+        {
+          "name": "Reading & Thames Valley",
+          "income_rank": 2,
+          "gdp_per_capita_usd": 64000,
+          "key_districts": ["Reading", "Wokingham", "Bracknell", "Slough"],
+          "recommended_niches": ["Boiler Repair & Heating Engineers", "Electricians", "Tree Surgeons", "Driveway & Patio Contractors"],
+          "sample_query": "boiler repair reading"
+        },
+        {
+          "name": "Cambridge & Oxford Innovation Hubs",
+          "income_rank": 3,
+          "gdp_per_capita_usd": 62000,
+          "key_districts": ["Cambridge", "Oxford", "Milton Keynes"],
+          "recommended_niches": ["Architectural Designers", "Physiotherapy Clinics", "Specialist Joinery", "High-End Mechanics"],
+          "sample_query": "physiotherapist cambridge"
+        },
+        {
+          "name": "Edinburgh",
+          "income_rank": 4,
+          "gdp_per_capita_usd": 55000,
+          "key_districts": ["New Town", "Morningside", "Stockbridge", "Leith"],
+          "recommended_niches": ["Roofing & Stonemasonry", "Central Heating Engineers", "Independent Veterinary", "Dental Aesthetics"],
+          "sample_query": "roofing contractor edinburgh"
+        },
+        {
+          "name": "Bristol & Bath",
+          "income_rank": 5,
+          "gdp_per_capita_usd": 51000,
+          "key_districts": ["Clifton", "Redland", "Bath Centre", "Harbourside"],
+          "recommended_niches": ["Solar Panel Installation", "Loft Conversion Contractors", "Mobile Auto Electricians", "Landscaping"],
+          "sample_query": "solar panel installer bristol"
+        },
+        {
+          "name": "Manchester & Salford",
+          "income_rank": 6,
+          "gdp_per_capita_usd": 49000,
+          "key_districts": ["Manchester City Centre", "Didsbury", "Altrincham", "Salford Quays"],
+          "recommended_niches": ["Emergency Locksmiths", "Car Body Shops", "Plumbers", "Commercial Glaziers"],
+          "sample_query": "plumber manchester"
+        },
+        {
+          "name": "Birmingham & Solihull",
+          "income_rank": 7,
+          "gdp_per_capita_usd": 46000,
+          "key_districts": ["Solihull", "Jewellery Quarter", "Edgbaston", "Sutton Coldfield"],
+          "recommended_niches": ["Heating Engineers", "Kitchen Fitters", "Auto Repair Garages", "Pest Control"],
+          "sample_query": "emergency electrician birmingham"
+        }
+      ]
+    },
+    {
+      "code": "IE",
+      "name": "Ireland",
+      "currency": "EUR",
+      "tier": "Tier 1A",
+      "default_language": "en",
+      "phone_prefix": "+353",
+      "whatsapp_adoption": "85%",
+      "average_gdp_per_capita_usd": 103000,
+      "cities_and_clusters": [
+        {
+          "name": "Dublin Metropolitan Area",
+          "income_rank": 1,
+          "gdp_per_capita_usd": 115000,
+          "key_districts": ["Dublin 2 & 4", "Dalkey", "Blackrock", "Sandyford", "Malahide", "Dundrum"],
+          "recommended_niches": ["Emergency Plumber", "Roofing Contractors", "Dental Practice", "Physiotherapy Clinics", "Heat Pump Installers"],
+          "sample_query": "plumber dublin 4"
+        },
+        {
+          "name": "Cork & South Region",
+          "income_rank": 2,
+          "gdp_per_capita_usd": 85000,
+          "key_districts": ["Cork City", "Kinsale", "Cobh", "Douglas"],
+          "recommended_niches": ["Electricians", "Building Contractors", "Car Mechanics", "Tree Surgeons"],
+          "sample_query": "electrician cork"
+        },
+        {
+          "name": "Galway & West Coast",
+          "income_rank": 3,
+          "gdp_per_capita_usd": 72000,
+          "key_districts": ["Galway City", "Salthill", "Oranmore"],
+          "recommended_niches": ["Roof Repair", "Dental Aesthetics", "Joinery & Carpentry", "Veterinary Services"],
+          "sample_query": "car mechanic galway"
+        }
+      ]
+    },
+    {
+      "code": "NL",
+      "name": "Netherlands",
+      "currency": "EUR",
+      "tier": "Tier 1B",
+      "default_language": "nl",
+      "english_fluency": "92%",
+      "phone_prefix": "+31",
+      "whatsapp_adoption": "93%",
+      "average_gdp_per_capita_usd": 63000,
+      "cities_and_clusters": [
+        {
+          "name": "Amsterdam Metropolitan (Randstad)",
+          "income_rank": 1,
+          "gdp_per_capita_usd": 74000,
+          "key_districts": ["Amsterdam-Zuid", "Centrum", "Amstelveen", "De Pijp"],
+          "recommended_niches": ["Loodgieter (Plumber)", "Aannemer (General Contractor)", "Tandartspraktijk (Dental)", "Fysiotherapie"],
+          "sample_query": "loodgieter amsterdam zuid"
+        },
+        {
+          "name": "Utrecht Central Hub",
+          "income_rank": 2,
+          "gdp_per_capita_usd": 67000,
+          "key_districts": ["Utrecht-Oost", "Binnenstad", "Leidsche Rijn", "Zeist"],
+          "recommended_niches": ["Dakdekker (Roofing)", "Elektricien", "Schilder (Painters)", "Zonnepanelen (Solar)"],
+          "sample_query": "dakdekker utrecht"
+        },
+        {
+          "name": "The Hague (Den Haag)",
+          "income_rank": 3,
+          "gdp_per_capita_usd": 64000,
+          "key_districts": ["Wassenaar", "Scheveningen", "Statenkwartier", "Benoordenhout"],
+          "recommended_niches": ["Boutique Lawyers/Consultants", "Medical Specialists", "Luxury Car Detailing", "Home Renovation"],
+          "sample_query": "aannemer den haag"
+        },
+        {
+          "name": "Rotterdam Maritime & Trade",
+          "income_rank": 4,
+          "gdp_per_capita_usd": 59000,
+          "key_districts": ["Kralingen", "Kop van Zuid", "Botlek Trade Zone"],
+          "recommended_niches": ["Commercial HVAC", "Industrial Metal Works", "Car Mechanics", "Plumbing"],
+          "sample_query": "loodgieter rotterdam"
+        },
+        {
+          "name": "Eindhoven Brainport Tech Region",
+          "income_rank": 5,
+          "gdp_per_capita_usd": 61000,
+          "key_districts": ["Strijp-S", "Centrum", "Veldhoven"],
+          "recommended_niches": ["Solar Installation", "HVAC Contractors", "Dental Aesthetic", "Specialist Auto Repair"],
+          "sample_query": "zonnepanelen installateur eindhoven"
+        }
+      ]
+    },
+    {
+      "code": "DE",
+      "name": "Germany",
+      "currency": "EUR",
+      "tier": "Tier 2",
+      "default_language": "de",
+      "english_fluency": "60%",
+      "phone_prefix": "+49",
+      "whatsapp_adoption": "89%",
+      "average_gdp_per_capita_usd": 54000,
+      "cities_and_clusters": [
+        {
+          "name": "Munich (München)",
+          "income_rank": 1,
+          "gdp_per_capita_usd": 86500,
+          "key_districts": ["Schwabing", "Bogenhausen", "Altstadt", "Grünwald"],
+          "recommended_niches": ["Zahnarztpraxis (Dental)", "Kfz-Werkstatt (Auto Mechanics)", "Dachdecker (Roofers)", "Sanitär & Heizung (Plumbing/Heating)"],
+          "sample_query": "dachdecker muenchen"
+        },
+        {
+          "name": "Frankfurt am Main",
+          "income_rank": 2,
+          "gdp_per_capita_usd": 97000,
+          "key_districts": ["Westend", "Sachsenhausen", "Nordend", "Innenstadt"],
+          "recommended_niches": ["Rechtsanwalt (Boutique Legal)", "Privatklinik (Clinics)", "Elektrotechnik (Electricians)", "Malerbetrieb (Painters)"],
+          "sample_query": "elektriker frankfurt am main"
+        },
+        {
+          "name": "Stuttgart",
+          "income_rank": 3,
+          "gdp_per_capita_usd": 87500,
+          "key_districts": ["Stuttgart-Nord", "Degerloch", "Bad Cannstatt"],
+          "recommended_niches": ["Kfz-Aufbereitung (Auto Detailing)", "Klimatechnik (HVAC)", "Zimmerei (Carpentry)", "Schlüsseldienst (Locksmith)"],
+          "sample_query": "kfz werkstatt stuttgart"
+        },
+        {
+          "name": "Düsseldorf",
+          "income_rank": 4,
+          "gdp_per_capita_usd": 87300,
+          "key_districts": ["Oberkassel", "Altstadt", "Pempelfort"],
+          "recommended_niches": ["Schönheitsklinik (Aesthetic)", "Innenausbau (Interior)", "Zahnarzt (Dentist)", "Sanitär Notdienst"],
+          "sample_query": "zahnarzt duesseldorf"
+        },
+        {
+          "name": "Hamburg",
+          "income_rank": 5,
+          "gdp_per_capita_usd": 70600,
+          "key_districts": ["HafenCity", "Blankenese", "Eppendorf", "Winterhude"],
+          "recommended_niches": ["Dachdecker", "Klempner (Plumber)", "Gartenbau (Landscaping)", "Bootsreparatur (Boat Repair)"],
+          "sample_query": "klempner hamburg"
+        }
+      ]
+    },
+    {
+      "code": "CH",
+      "name": "Switzerland",
+      "currency": "CHF",
+      "tier": "Tier 2",
+      "default_language": "de",
+      "phone_prefix": "+41",
+      "whatsapp_adoption": "85%",
+      "average_gdp_per_capita_usd": 93000,
+      "cities_and_clusters": [
+        {
+          "name": "Zurich (Zürich)",
+          "income_rank": 1,
+          "gdp_per_capita_usd": 110000,
+          "key_districts": ["Zürichberg", "Enge", "Seefeld", "Altstadt"],
+          "recommended_niches": ["Zahnarzt (Dental)", "Sanitär Notfall (Plumbing)", "Schreiner (Joinery)", "Auto Detailing"],
+          "sample_query": "sanitaer installation zuerich"
+        },
+        {
+          "name": "Geneva (Genève)",
+          "income_rank": 2,
+          "gdp_per_capita_usd": 105000,
+          "key_districts": ["Champel", "Cologny", "Eaux-Vives"],
+          "recommended_niches": ["Clinique Dentaire", "Plomberie Chauffage", "Rénovation Maison"],
+          "sample_query": "plombier geneve"
+        },
+        {
+          "name": "Basel",
+          "income_rank": 3,
+          "gdp_per_capita_usd": 98000,
+          "key_districts": ["St. Alban", "Gundeldingen", "Riehen"],
+          "recommended_niches": ["Elektriker", "Dachdecker", "Physiotherapie"],
+          "sample_query": "elektriker basel"
+        }
+      ]
+    }
+  ]
+}

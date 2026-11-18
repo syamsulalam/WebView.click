@@ -5,8 +5,8 @@
 **Live Edge House:** `https://sites.webview.click` (Cloudflare Worker + R2)  
 **Edge ZIP Magic:** Zero duplicate ZIP uploads — `sites.webview.click/<slug>/download` generates streaming ZIPs on the fly via `client-zip`!  
 **Contact Tooling:** `gog.exe` (Go static binary at `C:\Users\THINKPAD\scripts\gog.exe`).  
-**Tone Protocol:** 100% Value-First / Confident Helper (Zero apologetic language).  
-**Address Book Protocol:** Pre-save contacts to Google Account (`[SMB] <Name>`) prior to WhatsApp outreach to establish mutual contact trust.
+**Core Invariant (JIT Generation):** Sites are generated **ONLY upon human reply to the initial identity check** — zero compute/storage wasted on unresponsive numbers!  
+**SOP & Policy Authority:** [`SOP.md`](file:///C:/Users/THINKPAD/WebView.click/SOP.md) | City DB: [`data/cities.json`](file:///C:/Users/THINKPAD/WebView.click/data/cities.json) | Niche DB: [`data/smb_niches.json`](file:///C:/Users/THINKPAD/WebView.click/data/smb_niches.json)
 
 ---
 
@@ -18,32 +18,25 @@
   - [x] 1.3 Deploy Cloudflare Worker Router `sites-webview-click` (with dynamic streaming ZIP)
   - [x] 1.4 Verify edge routing & test 404 response
 - [x] **Phase 2: Prospect Data Ingestion & Google Contacts Trust Pre-Save**
-  - [x] 2.1 Harvest no-website prospects via `scripts/scrape-maps-direct.py` (High-Income Focus: SG, UAE, UK, IE)
-  - [x] 2.2 Brand enrichment & palette synthesis via `scripts/enrich-business-brand.py` (SMB-PALETTE-1)
-  - [x] 2.3 Logo discovery & automatic background removal (SMB-LOGO-1 via Pillow & local rembg)
-  - [x] 2.4 Validate E.164 phone numbers & review ratings (≥ 4.0)
-  - [x] 2.5 Install `gog.exe` (v0.48.1) in `C:\Users\THINKPAD\scripts\gog.exe`
-  - [x] 2.6 Synchronize prospects to Google Contacts (`[SMB] <Name>`)
-  - [x] 2.7 One-time OAuth consent for `admin@alampintar.org` (Authenticated in Windows DPAPI Keyring)
-  - [x] 2.8 Enable People API in Google Cloud Console (Verified active on project `150697655157`)
-- [x] **Phase 3: Dedicated Headless WordPress Staging (`wpwv.codev.id`)**
-  - [x] 3.1 Provision DNS record: `wpwv.codev.id` -> `150.136.178.5` (Cloudflare Zone `codev.id`)
-  - [x] 3.2 Provision dedicated WordPress site & database `codev-wpwv` on OracleServer
-  - [x] 3.3 Install trusted Let's Encrypt SSL certificate
-  - [x] 3.4 Symlink Golden Master core, Astra theme, Spectra, Starter Templates, and Simply Static
-  - [x] 3.5 Companion plugin hardened: Zero cubicle leaks certified by Oracles O1–O4
-  - [x] 3.6 Smoke test verified: `https://wpwv.codev.id/` returning HTTP 200 OK
-- [x] **Phase 4: Cloudflare R2 Edge Deployment & Screenshot Mockup**
-  - [x] 4.1 Sync flat static asset folder once to `r2://webview-sites/sites/<slug>/`
-  - [x] 4.2 Dynamic streaming ZIP verified via edge Worker (`sites.webview.click/<slug>/download`)
-  - [x] 4.3 Verify live preview: `https://sites.webview.click/<slug>/`
-  - [x] 4.4 Capture mobile viewport mockup via Playwright (`mockups/<slug>-mobile.jpg`)
-- [ ] **Phase 5: LusmoBot 2-Step WhatsApp Campaign (15 Contacts / Day)**
-  - [ ] 5.1 Stage daily queue (15 contacts with 3–8 min jitter)
-  - [ ] 5.2 Dispatch Step 1 (Casual Confirmation Icebreaker)
-  - [ ] 5.3 Await human confirmation reply
-  - [ ] 5.4 Dispatch Step 2 (Value Drop + Mobile Screenshot + Preview + ZIP Link)
-  - [ ] 5.5 Handle inbound inquiries & done-for-you upsells
+  - [x] 2.1 Filter high-income cities (`data/cities.json`) and high-ticket niches (`data/smb_niches.json`)
+  - [x] 2.2 Harvest no-website prospects via `scripts/scrape-maps-direct.py` (SG, UAE, UK, IE)
+  - [x] 2.3 Validate E.164 phone numbers & review ratings (≥ 4.0)
+  - [x] 2.4 Pre-save prospects to Google Contacts via `gog contacts create` (`[SMB] <Name>`)
+  - [x] 2.5 Authenticate `gog.exe` with `admin@alampintar.org` & activate People API (Project `150697655157`)
+- [ ] **Phase 3: Stage 1 Outreach — Casual Identity Confirmation (15 Contacts / Day)**
+  - [ ] 3.1 Stage daily queue (15 contacts with 300–480s jitter)
+  - [ ] 3.2 Dispatch Step 1 strictly asking business identity: *"Hi, is this [Business Name]?"*
+  - [ ] 3.3 Await human confirmation (unresponsive contacts expire with 0 wasted generation)
+- [ ] **Phase 4: Just-In-Time (JIT) Site Generation (Triggered On Human Reply)**
+  - [ ] 4.1 On human confirmation, execute brand enrichment & palette synthesis (`scripts/enrich-business-brand.py`)
+  - [ ] 4.2 Auto-provision headless staging on `wpwv.codev.id` (`wp st-companion create`)
+  - [ ] 4.3 Export flat static site via Simply Static (`wp simply-static run`)
+  - [ ] 4.4 Push static assets once to `r2://webview-sites/sites/<slug>/`
+  - [ ] 4.5 Capture full-page mobile mockup (`mockups/<slug>-mobile.jpg`)
+- [ ] **Phase 5: Stage 2 Value Gift Drop & Conversion**
+  - [ ] 5.1 Dispatch Step 2: Value gift drop with photo attachment, preview link, and direct ZIP link
+  - [ ] 5.2 Respect instant opt-out (`STOP`) to maintain 100% compliance
+  - [ ] 5.3 Handle inbound inquiries & done-for-you custom hosting upsells
 
 ---
 
