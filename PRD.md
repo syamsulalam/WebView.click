@@ -307,6 +307,12 @@ To prevent interference with staging sites `wp1.codev.id` through `wp9.codev.id`
 * The normal build must bound the tenant CLI and the static export queue as one job. A deadline must stop descendants as well as the launcher. An interrupted export must fail the build and must not schedule a PHP-FPM retry.
 * The WordPress plan uses the prospect’s name, description, address, phone, and supplied offerings. The project packages those pages and their referenced static assets. Public HTTPS fills gaps for assets under the fleet’s symlinked WordPress core, themes, and plugins.
 
+### 16.1.1 Template selection and prospect delivery
+
+* Every marketed niche and its listed search terms must resolve to a named Gutenberg template candidate or an explicit review result. Keep the outreach niche list authoritative for market eligibility and the Companion manifest authoritative for template identity and bundle metadata. Preserve Tier C's exclusion from automatic outreach.
+* A catalog candidate is eligible for a staging test when its exact entry is qualified for Gutenberg static export and has an identified WXR. It becomes eligible for client delivery after a real render verifies template fidelity, grounded business content, responsive layout, and a working contact action.
+* An unavailable exact ID, incompatible builder, or unmatched niche must be visible to the operator. A generic scaffold is suitable for testing the export path only.
+
 ### 16.2 Single-Upload Edge Architecture (Dynamic ZIP Streaming via `client-zip`)
 * `sites.webview.click` attaches to the `sites-webview-click` Worker as an exact Custom Domain. That hostname must resolve to the Worker before R2 preview or download links are sent.
 * The uploader uses the named `webview` Cloudflare profile for the project bucket. The Worker serves valid prospect slugs and assembles the ZIP from R2 objects one at a time to keep active object streams bounded.

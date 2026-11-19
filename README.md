@@ -14,4 +14,10 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 
 The command uses the configured Oracle SSH runner and prints the local artifact directory. See the [pipeline guide](GUIDE.md) for input and publishing steps, the [outreach SOP](SOP.md) for when to generate sites, and the [codebase reference](CODEBASE.md) for the architecture.
 
+Check a niche against a current Starter Templates Companion manifest before planning a client preview. A `candidate` is a layout to test. The existing staging scaffold is an export smoke test.
+
+```powershell
+python scripts/resolve-smb-template.py --manifest C:/path/to/companion/assets/templates/manifest.json --query 'car detailing business bay dubai'
+```
+
 Run `python scripts/check-sites-edge.py` to check the [live publishing fixture](https://sites.webview.click/webview-publishing-check-20261119/) and its ZIP.

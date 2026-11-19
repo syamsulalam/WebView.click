@@ -1,0 +1,35 @@
+{
+  "niches": {
+    "Kitchen & Bathroom Renovation": {"candidates": ["construction-09"], "aliases": ["renovation", "kitchen renovation", "villa interior fit out"]},
+    "Roofing & Waterproofing Specialists": {"candidates": ["roofing-services-08"], "aliases": ["roofing", "waterproofing", "roof repair"]},
+    "Cosmetic Dentistry & Orthodontics (Implants, Veneers, Invisalign)": {"candidates": ["dentist-09"], "aliases": ["dentistry", "dental", "dental clinic", "orthodontics"]},
+    "Luxury Auto Detailing, Ceramic Coating & PPF (Paint Protection Film)": {"candidates": ["car-wash-08", "car-repair-08"], "aliases": ["detailing", "car detailing", "auto detailing", "car wash", "ceramic coating", "ppf"]},
+    "Solar Panel & Heat Pump Installation": {"reason": "Qualify separate solar installation and heat-pump layouts before scheduling a test.", "aliases": ["solar", "solar installer", "heat pump"]},
+    "Emergency Plumbing & Boiler Replacement": {"candidates": ["plumber-08"], "aliases": ["plumbing", "plumber", "boiler replacement"]},
+    "Commercial & Residential Air Conditioning (HVAC) Overhaul": {"reason": "An electrician layout alone does not cover HVAC servicing. Qualify a dedicated heating and cooling layout.", "aliases": ["hvac", "aircon", "air conditioning", "ac repair"]},
+    "Physiotherapy, Chiropractic & Sports Injury Clinics": {"reason": "Qualify a specialist clinic layout with treatment, practitioner and appointment sections.", "aliases": ["physiotherapy", "chiropractic", "sports injury clinic", "healthcare"]},
+    "Tree Surgery, Arboriculture & Heavy Landscaping": {"candidates": ["garden-maintenance-09"], "aliases": ["landscaping", "tree surgeon", "arborist"], "note": "Check fit for tree surgery before selecting this garden-maintenance layout."},
+    "Bespoke Joinery & Custom Cabinetry": {"reason": "Qualify a portfolio-first joinery layout with projects, materials and quote sections.", "aliases": ["joinery", "cabinetry", "cabinet maker"]},
+    "Auto Repair Garages & Brake/Transmission Servicing": {"candidates": ["car-repair-08", "car-repair-09"], "aliases": ["automotive", "auto repair", "car repair", "car mechanic", "bengkel mobil"]},
+    "Independent Veterinary Clinics": {"reason": "Qualify a veterinary practice layout. Pet sitting is a separate business.", "aliases": ["veterinary", "veterinary clinic", "vet clinic"]},
+    "High-End Hair Salons & Aesthetic Studios": {"reason": "Split hair and aesthetic services before selecting a layout. Use the more specific hair salon or beauty spa lookup.", "aliases": ["aesthetic studio"]},
+    "Residential & Commercial Pest Extermination": {"reason": "Qualify a pest-control layout with pest types, service area and urgent contact.", "aliases": ["pest control", "exterminator"]},
+    "Coffee Shops & Cafes": {"candidates": ["coffee-shop-09"], "aliases": ["coffee shop", "cafe"]},
+    "Bakeries & Pastry Shops": {"reason": "Qualify a bakery layout with a product menu and ordering details.", "aliases": ["bakery", "pastry shop"]},
+    "Fast Food & Diners": {"candidates": ["deli-restaurant-09"], "aliases": ["diner", "fast food"]},
+    "Florists": {"reason": "Qualify a florist layout for inquiry and pickup before considering it for a static site.", "aliases": ["florist", "flower shop"]},
+    "Bodegas & Convenience Stores": {"reason": "Confirm whether an informational site or a shop is needed before selecting a layout.", "aliases": ["bodega", "convenience store"]},
+    "Laundromats": {"reason": "Qualify a layout with hours, machine options, pricing and directions.", "aliases": ["laundromat", "laundry service"]}
+  },
+  "other_requests": {
+    "Business coaching and consulting": {"candidates": ["business-consulting-09"], "aliases": ["consulting", "business consulting", "business coach"]},
+    "General building contractor": {"candidates": ["construction-09"], "aliases": ["construction", "contractor"]},
+    "General cleaning": {"candidates": ["cleaning-agency-10"], "aliases": ["cleaning", "cleaning service"]},
+    "Hair and barbershop": {"candidates": ["barber-shop-08"], "aliases": ["hair salon", "barber", "barbershop"], "note": "Review the visual fit before testing a salon on the barbershop layout."},
+    "Beauty spa": {"candidates": ["lotus-spa-09"], "aliases": ["spa", "beauty spa"]},
+    "General hospitality": {"reason": "Specify the business type, such as cafe, restaurant or hotel.", "aliases": ["hospitality"]},
+    "General retail": {"reason": "Specify the goods and whether checkout is required.", "aliases": ["retail"]},
+    "General beauty": {"reason": "Specify hair, spa, or a specialist aesthetic practice.", "aliases": ["beauty"]},
+    "General business": {"reason": "Specify the prospect's primary service before selecting a layout.", "aliases": ["general"]}
+  }
+}
