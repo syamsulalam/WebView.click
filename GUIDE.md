@@ -118,36 +118,26 @@ node scripts\sync-google-contacts.mjs --input prospects-today.json --vcf contact
 
 ### 3️⃣ Phase 3: Dedicated Headless WordPress Staging (`wpwv.codev.id`)
 
-Generate a designer-grade multi-page site on `wpwv.codev.id` using Astra + Spectra Starter Templates, injecting frozen Google Business facts with strict 9-slot palette and transparent logo.
+Generate a prospect site on the dedicated Astra/Spectra tenant. The command replaces the current staging pages after the new plan compiles, then downloads a fresh static export.
 
 ```powershell
-$Name = "Wijaya Motor Kampung Malang"
-$Slug = "wijaya-motor-kampung-malang"
-$Path = "/home/codev-wpwv/htdocs/wpwv.codev.id"
-
-# 1. Scaffolding via Starter Templates Companion with custom palette & zero cubicle leaks
-powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass `
-  -File "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1" `
-  -Command "sudo -u codev-wpwv wp --path=$Path st-companion create --title='$Name' --business-name='$Name' --industry='automotive' --phone='+6281331029864' --domain='$Slug.webview.click' --palette=navy --clean --yes --format=json"
-
-# 2. Export flat static HTML/CSS/JS via Simply Static
-powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass `
-  -File "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1" `
-  -Command "sudo -u codev-wpwv wp --path=$Path simply-static run && sudo -u codev-wpwv bash -c 'cd /home/codev-wpwv/static-export/ && zip -rq /tmp/$Slug.zip .'"
+powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-smb-pipeline.ps1 -ProspectFile .\prospects-today.json -Limit 1 -StageOnly
 ```
+
+Use a prospect with a business name and an E.164 phone number. Supply the address, description, verified offerings, and locale when available. `en_US` selects English navigation and `id_ID` selects Indonesian. The printed `Static artifact` directory is unique to the run. It contains `index.html` plus the generated pages and assets. `-StageOnly` stops before Google Contacts, R2 and screenshot capture.
+
+The project invokes the installed Companion planner and the Simply Static Free PHP API. The manual `simply-static run` command requires Pro.
 
 ---
 
 ### 4️⃣ Phase 4: Single R2 Upload & Mobile Mockup
 
+Verify that `https://sites.webview.click/` returns a redirect to `https://webview.click/` before using the public preview workflow. An HTTP 522 was reproduced on 2026-11-19. The exact Worker Custom Domain is configured in `cloudflare/sites-worker/wrangler.jsonc` and needs deployment from the Cloudflare account that owns the zone.
+
 #### 4.1 Sync Static Assets to Cloudflare R2
 ```powershell
-# Download export from OracleServer
-scp -i "C:\Users\THINKPAD\.ssh\ssh-key-2025-10-13.key" "ubuntu@150.136.178.5:/tmp/$Slug.zip" "dist-staging\"
-Expand-Archive -Path "dist-staging\$Slug.zip" -DestinationPath "dist-staging\$Slug" -Force
-
-# Upload ONLY the static folder (Zero separate ZIP upload needed!)
-node scripts\deploy-site-to-r2.mjs --dir "dist-staging\$Slug" --slug "$Slug" --bucket "webview-sites"
+# Use the Static artifact directory printed by StageOnly and its original prospect slug.
+node scripts\deploy-site-to-r2.mjs --dir $ArtifactPath --slug $Slug --bucket "webview-sites"
 ```
 *Live Links:*
 - Preview: `https://sites.webview.click/bengkel-jaya-motor-malang/`

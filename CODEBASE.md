@@ -39,13 +39,15 @@ To solve the stacked-blocks, fragile responsive grids, and generic AI filler of 
    - Hosted on Ubuntu OracleServer (`150.136.178.5`), user `codev-wpwv`.
    - Symlinked Golden Master core (`/opt/codev/wp-core/current`), Astra theme, Spectra container blocks, Starter Templates Companion (`codev-starter-templates-companion`), and Simply Static Free.
    - Enrolled in fleet security guards (`codev-blocked-plugins.php`, `00-codev-plugin-allowlist.php`, `05-codev-persistent-admins.php`).
-   - Generates multi-page designer-grade sites using frozen Google Business data via `wp st-companion create`.
+   - `scripts/run-smb-pipeline.ps1` sends the normalized prospect as UTF-8 JSON to `scripts/wpwv-build.sh`. Under the tenant’s staging lock, `scripts/wpwv-generate.php` compiles a Gutenberg plan with the installed Companion planner, clears the previous staging pages only after compilation, and materializes the new build. It builds service pages only when the prospect has supplied offerings.
+   - The installed Companion 2.34.3 legacy `st-companion create` path seeds toilet-partition copy into unrelated businesses and accepts only named palette presets. The WebView adapter supplies its own section copy and passes validated nine-slot palettes to the planner.
    - Verified live at `https://wpwv.codev.id/` returning HTTP 200 OK.
 
 2. **Single-Upload Edge Router (`sites.webview.click`)**:
    - Built with Cloudflare Worker (`cloudflare/sites-worker/`) binding R2 bucket `webview-sites`.
+   - Wrangler must attach the exact hostname `sites.webview.click` as a Custom Domain. The `/*` suffix is for Worker Routes.
    - Static files uploaded to `sites/<slug>/*`.
-   - Dynamic ZIP streaming: Requesting `https://sites.webview.click/<slug>/download` dynamically bundles `sites/<slug>/*` into a compressed ZIP on the fly via `client-zip` and caches the archive at the Cloudflare Edge for 7 days. **Eliminates the need to upload a separate .zip file.**
+   - Dynamic ZIP streaming: Requesting `https://sites.webview.click/<slug>/download` dynamically bundles `sites/<slug>/*` into a ZIP via `client-zip` and caches the archive at the Cloudflare Edge for 7 days.
 
 3. **Google Contacts Mutual Trust Shield (`gog.exe` & `.vcf`)**:
    - `C:\Users\THINKPAD\scripts\gog.exe contacts create --given-name "[Name]" --family-name "[SMB]"` saves the prospect to the admin's Google Account before any outreach.
@@ -59,14 +61,18 @@ To solve the stacked-blocks, fragile responsive grids, and generic AI filler of 
    - Zero third-party API keys or paid credits required (bypasses Serper/SerpApi restrictions).
 
 5. **Headless Simply Static Compilation & Mobile Mockup**:
-   - Compiles full WordPress site into flat HTML/CSS/JS (`/home/codev-wpwv/static-export/`).
+   - `wpwv-build.sh` starts Simply Static Free through its PHP API. It seeds the crawler with the generated page URLs and prepares an empty `/home/codev-wpwv/static-export/`. It requires the same export ID, successful completion, and an HTML file for each published page before packaging. The tenant lock covers generation through packaging.
+   - Simply Static’s local path guard rejects assets that resolve outside the tenant’s WordPress roots through shared symlinks. The packager adds missing referenced styles, scripts, images and fonts through the tenant’s public HTTPS routes. The archive contains the published pages and their referenced assets. Its internal URLs assume the `/<slug>/` deployment prefix.
+   - The adapter uses a solid hero background when staging has no verified photography. It sets CTA and footer contrast on the dedicated tenant and avoids reusing the previous prospect’s logo.
+   - `-StageOnly` downloads and extracts the verified export to `dist-staging/<slug>-<run-id>/`. The full pipeline uses those same bytes for R2 and renders the mockup from the published edge URL after a successful upload.
    - `capture-screenshot.py` launches Playwright iPhone 14 viewport (`390x844`), rendering clean mobile mockups (`mockups/<slug>-mobile.jpg`) for WhatsApp Step 2 delivery.
-   - End-to-end verified on real prospect: "Wijaya Motor Kampung Malang" (`mockups/wijaya-motor-kampung-malang-mobile.jpg`).
+   - The static archive transfer uses a private run-specific directory under `/tmp`. The pipeline removes the transfer ZIP after downloading and aborts on generation, export, transfer, or upload failure.
+   - Verified on 2026-11-19 with Wijaya Motor Kampung Malang. The live tenant generated three pages, packaged 13 referenced assets, and downloaded them through `-StageOnly`. Chromium loaded all three from the downloaded package with the expected URL prefix.
 
 6. **Hardening Contracts & Semantic Purity (Sol Review STC-ARCH-1 / Oracles O1–O5)**:
    - **Contract SMB-GROUND-1**: Abolished 1,800-line hardcoded cubicle taxonomy in `Site_Planner_Service::resolve_page_hierarchical_taxonomy()`; strictly document-derived sections; zero contact leakage (`resolve_contact_defaults()` returns `''`); `assert_business_purity()` database scanner certified zero cubicle leaks across all 6 pages of Wijaya Motor.
    - **Contract SMB-PALETTE-1**: Enforces strict 9-slot Astra palette. Slot 5 is strictly `#ffffff` (white canvas invariant); Slots 4 and 7 are light surfaces (relative luminance >= 0.90 and >= 0.80); Slots 2 and 3 are dark heading/body text with WCAG contrast >= 7:1 against 4 and 5; dynamic button foreground contrast.
-   - **Contract SMB-LOGO-1**: Authentic external logo admission in `Logo_Synthesizer_Service::import_external_logo()` without palette-mismatch invalidation. WP-CLI commands support `--brief-file`, `--palette-file`, `--logo-file`, and `--palette='["#...", ...]'`.
+   - **Contract SMB-LOGO-1**: External logo admission remains a product requirement. The current WebView staging adapter uses the installed logo synthesizer. The installed legacy CLI does not expose `--logo-file`, `--brief-file`, or `--palette-file`.
 
 7. **Brand & Media Enrichment Engine (`scripts/enrich-business-brand.py`)**:
    - Dominant color extraction from listing gallery photos using Pillow / NumPy color quantization.

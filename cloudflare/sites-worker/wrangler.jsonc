@@ -11,7 +11,7 @@
   ],
   "routes": [
     {
-      "pattern": "sites.webview.click/*",
+      "pattern": "sites.webview.click",
       "zone_name": "webview.click",
       "custom_domain": true
     }

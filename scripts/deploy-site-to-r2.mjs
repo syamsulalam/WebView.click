@@ -10,7 +10,7 @@
 
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
+import { execFileSync } from "node:child_process";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -31,15 +31,16 @@ const MIME_TYPES = {
 
 function getFilesRecursively(dir, baseDir = dir) {
   let results = [];
-  const list = fs.readdirSync(dir);
+  const list = fs.readdirSync(dir, { withFileTypes: true });
   for (const file of list) {
-    const fullPath = path.join(dir, file);
-    const stat = fs.statSync(fullPath);
-    if (stat && stat.isDirectory()) {
+    const fullPath = path.join(dir, file.name);
+    if (file.isDirectory()) {
       results = results.concat(getFilesRecursively(fullPath, baseDir));
-    } else {
+    } else if (file.isFile()) {
       const relPath = path.relative(baseDir, fullPath).replace(/\\/g, "/");
       results.push({ fullPath, relPath });
+    } else {
+      throw new Error("The static artifact contains an unsupported file type.");
     }
   }
   return results;
@@ -76,17 +77,27 @@ Arguments:
     process.exit(1);
   }
 
-  if (!slug) {
-    console.error("❌ Error: --slug is required.");
+  if (!slug || slug.length > 63 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+    console.error("❌ Error: --slug must contain up to 63 lowercase letters, digits and single hyphens.");
     process.exit(1);
   }
 
   console.log(`🚀 Syncing static site "${slug}" to R2 bucket "${bucket}"...`);
 
   const files = getFilesRecursively(siteDir);
+  if (!files.some(({ relPath }) => relPath === "index.html")) {
+    throw new Error("The export is missing index.html.");
+  }
   console.log(`📁 Found ${files.length} static assets to sync.`);
 
-  const profileFlag = profile ? `--profile ${profile}` : "";
+  const profileArgs = profile ? ["--profile", profile] : [];
+  let command = "cf";
+  let commandArgs = [];
+  if (process.platform === "win32") {
+    const shim = execFileSync("where.exe", ["cf.cmd"], { encoding: "utf8" }).split(/\r?\n/)[0];
+    command = process.execPath;
+    commandArgs = [path.join(path.dirname(shim), "node_modules", "cf", "bin", "cf")];
+  }
   let uploaded = 0;
 
   for (const f of files) {
@@ -94,9 +105,10 @@ Arguments:
     const mime = MIME_TYPES[ext] || "application/octet-stream";
     const r2Key = `sites/${slug}/${f.relPath}`;
 
-    const cmd = `cf.cmd ${profileFlag} r2 buckets objects upload "${r2Key}" --bucket-name "${bucket}" --file "${f.fullPath}"`;
     try {
-      execSync(cmd, { stdio: "pipe", env: { ...process.env, CF_TIMEOUT: "300000" } });
+      execFileSync(command, [...commandArgs, ...profileArgs, "r2", "buckets", "objects", "upload",
+        r2Key, "--bucket-name", bucket, "--file", f.fullPath, "--content-type", mime],
+      { stdio: "pipe", env: { ...process.env, CF_TIMEOUT: "300000" }, timeout: 305000 });
       uploaded++;
       if (uploaded % 20 === 0 || uploaded === files.length) {
         console.log(`  ✓ Synced ${uploaded}/${files.length} assets...`);
@@ -106,6 +118,10 @@ Arguments:
     }
   }
 
+  if (uploaded !== files.length) {
+    throw new Error("The R2 site upload is incomplete.");
+  }
+
   console.log(`
 🎉 Single-Upload Sync Complete!
 🌐 Live Preview URL: https://sites.webview.click/${slug}/
@@ -113,4 +129,7 @@ Arguments:
   `);
 }
 
-main().catch(console.error);
+main().catch(error => {
+  console.error(error.message);
+  process.exitCode = 1;
+});

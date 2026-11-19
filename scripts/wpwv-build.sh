@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# Sent through Invoke-OracleSsh.ps1 with the run ID, slug and two base64 inputs.
+set -euo pipefail
+umask 077
+cd /tmp
+run_id=$1
+slug=$2
+[[ "$run_id" =~ ^[0-9a-f]{32}$ && "$slug" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ && ${#slug} -le 63 ]]
+transfer=/tmp/webview-$run_id
+mkdir -- "$transfer"
+trap 'rm -f -- "$transfer/site.zip"; rmdir -- "$transfer"' EXIT
+
+sudo -n -u codev-wpwv -- flock -n /home/codev-wpwv/tmp/webview-static-export.lock \
+    timeout --kill-after=5s 285s bash -s "$slug" "$3" "$4" >"$transfer/site.zip" <<'BASH'
+set -euo pipefail
+umask 077
+exec 3>&1 1>&2
+site=/home/codev-wpwv/htdocs/wpwv.codev.id
+output=/home/codev-wpwv/static-export
+slug=$1
+cd "$site"
+
+wpv() { timeout --kill-after=3s 20s wp --path="$site" --url=https://wpwv.codev.id --quiet "$@"; }
+wpv eval '
+$p = \Simply_Static\Plugin::instance();
+$o = \Simply_Static\Options::instance();
+if (home_url("/") !== "https://wpwv.codev.id/" ||
+    !$p->get_archive_creation_job()->is_job_done() ||
+    $o->get("delivery_method") !== "local" ||
+    rtrim($o->get("local_dir"), "/") !== "/home/codev-wpwv/static-export") {
+    WP_CLI::error("Unexpected staging target, export configuration, or active export.");
+}'
+
+work=$(mktemp -d /home/codev-wpwv/tmp/webview-build.XXXXXXXX)
+trap 'rm -rf -- "$work"' EXIT
+printf '%s' "$2" | base64 -d >"$work/generate.php"
+printf '%s' "$3" | base64 -d >"$work/prospect.json"
+timeout --kill-after=5s 115s wp --path="$site" --url=https://wpwv.codev.id eval-file "$work/generate.php" "$work/prospect.json"
+wpv eval '
+foreach (get_posts(["post_type"=>"page","post_status"=>"publish","numberposts"=>-1]) as $p) {
+    echo wp_parse_url(get_permalink($p), PHP_URL_PATH), PHP_EOL;
+}' >"$work/routes"
+
+# Use an empty destination so deleted pages and assets cannot carry into this ZIP.
+if [[ -e "$output" ]]; then
+    [[ -d "$output" && ! -L "$output" ]]
+    mv -- "$output" "$work/previous-export"
+fi
+mkdir -- "$output"
+export WEBVIEW_PREFIX="/$slug" WEBVIEW_ROUTES="$work/routes"
+export_id=$(wpv eval '
+$p = \Simply_Static\Plugin::instance();
+$o = \Simply_Static\Options::instance();
+if (!$p->get_archive_creation_job()->is_job_done()) {
+    WP_CLI::error("Another Simply Static export is active.");
+}
+$routes = file(getenv("WEBVIEW_ROUTES"), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+$urls = array_map(static fn($path) => home_url($path), $routes);
+$o->set("destination_url_type", "relative")
+  ->set("relative_path", getenv("WEBVIEW_PREFIX"))
+  ->set("crawlers", [])
+  ->set("additional_urls", implode("\n", $urls))
+  ->save();
+if (!$p->run_static_export()) {
+    WP_CLI::error("Simply Static Free could not start the export.");
+}
+echo $o->get("archive_deploy_id");')
+[[ "$export_id" =~ ^[a-f0-9-]{36}$ ]] || { echo 'Missing Simply Static export ID'; exit 1; }
+echo "Started Simply Static export $export_id"
+deadline=$((SECONDS + 140))
+while :; do
+    state=$(wpv eval '
+    $o = \Simply_Static\Options::instance();
+    $messages = (array) $o->get("archive_status_messages");
+    echo $o->get("archive_deploy_id"), "|",
+         !$o->get("archive_end_time") ? "pending" : (isset($messages["done"]) ? "done" : "failed");')
+    case "$state" in
+        "$export_id|done") break ;;
+        "$export_id|pending") ;;
+        *) echo "Simply Static export $export_id failed or was replaced."; exit 1 ;;
+    esac
+    (( SECONDS < deadline )) || { echo "Simply Static export $export_id timed out."; exit 1; }
+    sleep 4
+done
+
+python3 - "$output" "$work/routes" "$work/package" <<'PY'
+from html.parser import HTMLParser
+import json
+import os
+from pathlib import Path
+import re
+import sys
+from urllib.error import HTTPError
+from urllib.parse import quote, unquote, urljoin, urlsplit
+from urllib.request import HTTPRedirectHandler, build_opener
+
+root, routes, package = map(Path, sys.argv[1:])
+prefix = os.environ["WEBVIEW_PREFIX"] + "/"
+origin = "https://wpwv.codev.id"
+extensions = set("css js png jpg jpeg webp avif gif svg ico woff woff2 ttf otf eot mp4 webm".split())
+css_urls = re.compile(r"""url\(\s*(['"]?)([^'")]+)\1\s*\)""", re.I)
+assets = set()
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+http = build_opener(NoRedirect())
+
+def fetch_asset(reference, base):
+    if reference.startswith("#"):
+        return reference
+    url = urlsplit(urljoin(base, reference))
+    if url.scheme != "https" or url.netloc != "wpwv.codev.id":
+        return reference
+    raw = url.path.removeprefix(prefix) if url.path.startswith(prefix) else url.path.lstrip("/")
+    path = Path(unquote(raw))
+    extension = path.suffix[1:].lower()
+    if not raw or not path.parts or path.parts[0] not in ("wp-content", "wp-includes"):
+        raise SystemExit(f"Unexpected local asset route: {url.path}")
+    if (extension not in extensions or any(part.startswith(".") for part in path.parts)
+            or not re.fullmatch(r"[a-zA-Z0-9_./%-]+", str(path)) or "%" in str(path)):
+        raise SystemExit(f"Unexpected local asset name: {url.path}")
+    static_url = prefix + raw
+    if url.query:
+        static_url += "?" + url.query
+    if url.fragment:
+        static_url += "#" + url.fragment
+    if path in assets:
+        return static_url
+    if len(assets) >= 300:
+        raise SystemExit("The export exceeds the static asset limit.")
+    assets.add(path)
+    source = root / path
+    if source.is_file() and source.resolve().is_relative_to(root):
+        data = source.read_bytes()
+    else:
+        # Shared core/themes/plugins are symlinked. Use the public HTTP route
+        # for missed static assets without changing Simply Static's path guard.
+        try:
+            with http.open(origin + "/" + quote(str(path), safe="/"), timeout=6) as response:
+                if response.headers.get_content_type() in ("text/html", "application/json"):
+                    raise SystemExit(f"Wrong content type for {path}")
+                data = response.read(12 * 1024 * 1024 + 1)
+        except HTTPError as exc:
+            raise SystemExit(f"Cannot fetch required asset {path}: HTTP {exc.code}")
+    if not data or len(data) > 12 * 1024 * 1024:
+        raise SystemExit(f"Invalid static asset size: {path}")
+    destination = package / path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if extension == "css":
+        css_base = origin + "/" + str(path)
+        css = css_urls.sub(lambda m: "url(" + m[1] + fetch_asset(m[2].strip(), css_base) + m[1] + ")",
+                           data.decode("utf-8-sig"))
+        data = css.encode("utf-8")
+    destination.write_bytes(data)
+    return static_url
+
+class Page(HTMLParser):
+    def __init__(self, path):
+        super().__init__()
+        self.base = origin + path
+        self.emoji = False
+
+    def handle_starttag(self, tag, attrs):
+        fields = dict(attrs)
+        if tag == "script":
+            self.emoji = fields.get("id") == "wp-emoji-settings"
+        asset = fields.get("src") if tag in ("script", "img", "source", "video") else None
+        if tag == "link" and fields.get("rel") in ("stylesheet", "icon", "apple-touch-icon"):
+            asset = fields.get("href")
+        if asset:
+            self.asset(asset)
+        if tag in ("img", "source") and fields.get("srcset") and not fields["srcset"].startswith("data:"):
+            for variant in fields["srcset"].split(","):
+                if variant.strip():
+                    self.asset(variant.split()[0])
+
+    def handle_data(self, data):
+        if self.emoji and data.strip():
+            for reference in json.loads(data).get("source", {}).values():
+                self.asset(reference)
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self.emoji = False
+
+    def asset(self, reference):
+        url = urlsplit(reference)
+        if url.netloc == "wpwv.codev.id" or (not url.netloc and url.path.startswith("/") and not url.path.startswith(prefix)):
+            raise SystemExit(f"Asset missing WebView prefix: {url.path}")
+        fetch_asset(reference, self.base)
+
+paths = routes.read_text().splitlines()
+if "/" not in paths or len(paths) < 3:
+    raise SystemExit("No complete WebView page set found in WordPress.")
+for path in paths:
+    if not path.startswith("/") or ".." in Path(path).parts:
+        raise SystemExit("Invalid WordPress page route.")
+    route = Path(unquote(path.strip("/")))
+    if route.is_absolute() or ".." in route.parts:
+        raise SystemExit("Invalid decoded WordPress page route.")
+    page = root / route / "index.html"
+    if not page.is_file() or not page.stat().st_size:
+        raise SystemExit(f"Missing static page: {path}")
+    html = page.read_text(encoding="utf-8")
+    Page(path).feed(html)
+    if prefix not in html:
+        raise SystemExit(f"Missing WebView URL prefix in {path}")
+    destination = package / route / "index.html"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(page.read_bytes())
+print(f"Verified {len(paths)} exported pages and {len(assets)} referenced local assets.")
+PY
+cd "$work/package"
+zip -q -r - . >&3
+echo "Packaged Simply Static export $export_id"
+BASH
+
+unzip -tq "$transfer/site.zip" >/dev/null
+trap - EXIT

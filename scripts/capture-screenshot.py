@@ -27,7 +27,10 @@ def capture_mobile_mockup(url: str, output_path: str, width: int = 390, height: 
         page = context.new_page()
         
         # Navigate and wait for network to settle
-        page.goto(url, wait_until="networkidle", timeout=30000)
+        response = page.goto(url, wait_until="networkidle", timeout=30000)
+        if response is None or not response.ok:
+            status = response.status if response else "no response"
+            raise RuntimeError(f"Preview returned {status}: {url}")
         
         # Wait a moment for web fonts and animations to finalize
         page.wait_for_timeout(1500)

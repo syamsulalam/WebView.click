@@ -4,15 +4,15 @@
     Autonomous CLI Pipeline for SMB Site Generation, R2 Deployment, and WhatsApp Outreach.
 
 .DESCRIPTION
-    Executes the 6-stage pipeline:
+    Executes the pipeline:
     1. Ingestion: Direct Google Maps Scraper (Playwright) or reads prospect JSON.
     2. Contact Sync: Saves prospect to Google Contacts as "[SMB] <Business Name>" via gog.exe or .vcf.
-    3. Headless WP Staging: Triggers 'wp st-companion create' on dedicated staging site wpwv.codev.id.
+    3. Headless WP Staging: Builds a prospect-grounded site on wpwv.codev.id.
     4. Static Export: Runs Simply Static to compile flat HTML/CSS/JS.
     5. Single Edge R2 Sync: Pushes flat assets to R2 bucket 'webview-sites' under 'sites/<slug>/'.
        (Dynamic ZIP downloads are streamed on the fly via Cloudflare Worker at https://sites.webview.click/<slug>/download).
     6. Mockup Capture: Takes a high-resolution mobile screenshot (390x844).
-    7. LusmoBot Queue: Schedules the 2-step value-first WhatsApp outreach (paced at 15 contacts/day).
+    The resulting artifacts can be used by the separate LusmoBot outreach workflow.
 
 .PARAMETER ProspectFile
     Path to prospect JSON file containing business details.
@@ -22,6 +22,8 @@
     Remote OracleServer SSH host alias or IP (default: 'ubuntu@150.136.178.5').
 .PARAMETER Limit
     Maximum prospects to process in this run (default: 15).
+.PARAMETER StageOnly
+    Generate and download the static artifact. Skip contacts, R2 and mockups.
 #>
 
 [CmdletBinding()]
@@ -36,7 +38,9 @@ param(
     [string]$OracleHost = "ubuntu@150.136.178.5",
 
     [Parameter(Mandatory = $false)]
-    [int]$Limit = 15
+    [int]$Limit = 15,
+
+    [switch]$StageOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,24 +55,33 @@ Write-Host "══════════════════════�
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $SshKey = "C:\Users\THINKPAD\.ssh\ssh-key-2025-10-13.key"
+$SshRunner = "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1"
+$SshOptions = @("-i", $SshKey, "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3")
+$Generator = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $ScriptDir "wpwv-generate.php")))
+$BuildScript = Get-Content -LiteralPath (Join-Path $ScriptDir "wpwv-build.sh") -Raw -Encoding UTF8
+if ($OracleHost -cne "ubuntu@150.136.178.5") {
+    throw "WebView staging must use the OracleServer host configured in Invoke-OracleSsh.ps1."
+}
 
 # Auto-harvest if query provided
-if ($HarvestQuery -ne "" -and ($ProspectFile -eq "" -or -not (Test-Path $ProspectFile))) {
+if ($HarvestQuery -ne "" -and ($ProspectFile -eq "" -or -not (Test-Path -LiteralPath $ProspectFile))) {
     Write-Host "`n🔍 [Harvest] Scraping Google Maps for: '$HarvestQuery' (Limit: $Limit)..." -ForegroundColor Yellow
     $ProspectFile = Join-Path $ProjectRoot "prospects-harvested.json"
     python "$ScriptDir\scrape-maps-direct.py" --query "$HarvestQuery" --limit $Limit --out $ProspectFile
+    if ($LASTEXITCODE -ne 0) { throw "Prospect harvest failed." }
 }
 
-if ($ProspectFile -eq "" -or -not (Test-Path $ProspectFile)) {
+if ($ProspectFile -eq "" -or -not (Test-Path -LiteralPath $ProspectFile -PathType Leaf)) {
     Write-Error "Prospect file not found or not specified. Pass -ProspectFile or -HarvestQuery."
 }
 
-$Prospects = Get-Content $ProspectFile -Raw | ConvertFrom-Json
+$Prospects = Get-Content -LiteralPath $ProspectFile -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($Prospects -isnot [array]) {
     $Prospects = @($Prospects)
 }
 
-$Batch = $Prospects | Select-Object -First $Limit
+$Batch = @($Prospects | Where-Object { $null -ne $_ } | Select-Object -First $Limit)
+if ($Batch.Count -eq 0) { throw "No prospects selected." }
 Write-Host "📋 Loaded $($Batch.Count) prospect(s) for processing (Target pace: 15/day)." -ForegroundColor Green
 
 foreach ($Biz in $Batch) {
@@ -76,27 +89,74 @@ foreach ($Biz in $Batch) {
     $Phone = $Biz.phone -replace '[^0-9+]', ''
     $Name = $Biz.name
     $Niche = if ($Biz.niche) { $Biz.niche } else { "general" }
+    if ($Slug -isnot [string] -or $Slug -cnotmatch '\A[a-z0-9]+(?:-[a-z0-9]+)*\z' -or $Slug.Length -gt 63) {
+        throw "Invalid prospect slug. Use up to 63 lowercase letters, digits and single hyphens."
+    }
+    if ([string]::IsNullOrWhiteSpace($Name) -or $Name.Length -gt 160 -or $Phone -notmatch '\A\+[1-9][0-9]{7,14}\z') {
+        throw "A prospect must have a business name and an E.164 phone number."
+    }
     
     Write-Host "`n───────────────────────────────────────────────────────────" -ForegroundColor Gray
     Write-Host "🏢 Processing: $Name ($Slug) | 📱 $Phone" -ForegroundColor Yellow
     Write-Host "───────────────────────────────────────────────────────────" -ForegroundColor Gray
 
-    # -------------------------------------------------------------
-    # STAGE 1: Google Contacts Sync (Address Book Trust Pre-Save)
-    # -------------------------------------------------------------
-    Write-Host "👤 [Stage 1/5] Syncing to Google Contacts as '[SMB] $Name'..." -ForegroundColor Magenta
+    $Industry = if ($Biz.category.vertical) { $Biz.category.vertical } else { $Niche }
+    $Payload = @{
+        name = [string]$Name
+        phone = [string]$Phone
+        address = [string]$Biz.address
+        industry = [string]$Industry
+        locale = [string]$Biz.locale
+        description = [string]$Biz.description
+        offerings = @($Biz.offerings | Where-Object { $_.title } | ForEach-Object {
+            @{ title = [string]$_.title; description = [string]$_.description }
+        })
+        palette = @($Biz.brand.palette | Where-Object { $_ })
+    } | ConvertTo-Json -Compress -Depth 5
+    $PayloadBytes = [Text.Encoding]::UTF8.GetBytes($Payload)
+    if ($PayloadBytes.Length -gt 6500) { throw "Prospect staging input exceeds 6500 UTF-8 bytes." }
+    $Payload64 = [Convert]::ToBase64String($PayloadBytes)
+    $RunId = [guid]::NewGuid().ToString('N')
+    $RemoteDir = "/tmp/webview-$RunId"
+    $LocalExportDir = Join-Path $ProjectRoot "dist-staging\$Slug-$RunId"
+    $LocalZip = "$LocalExportDir.zip"
+    $RemoteCommand = "set -- '$RunId' '$Slug' '$Generator' '$Payload64'" + [Environment]::NewLine + $BuildScript
+
+    Write-Host "⚙️ Generating and exporting $Slug on wpwv.codev.id..." -ForegroundColor Magenta
+    try {
+        $RemoteCommand | & powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File $SshRunner -TimeoutSeconds 305
+        if ($LASTEXITCODE -ne 0) { throw "WordPress generation or export failed for $Slug." }
+        New-Item -ItemType Directory -Path $LocalExportDir | Out-Null
+        $RemoteZip = '{0}:{1}/site.zip' -f $OracleHost, $RemoteDir
+        & scp.exe @SshOptions $RemoteZip $LocalZip
+        if ($LASTEXITCODE -ne 0) { throw "Static export download failed for $Slug." }
+        Expand-Archive -LiteralPath $LocalZip -DestinationPath $LocalExportDir
+        if (-not (Test-Path -LiteralPath (Join-Path $LocalExportDir "index.html") -PathType Leaf)) {
+            throw "Missing exported homepage for $Slug."
+        }
+    } finally {
+        if (Test-Path -LiteralPath $LocalZip) { Remove-Item -LiteralPath $LocalZip }
+        "if [ -d '$RemoteDir' ]; then rm -f -- '$RemoteDir/site.zip' && rmdir -- '$RemoteDir'; fi" |
+            & powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File $SshRunner -TimeoutSeconds 25
+        if ($LASTEXITCODE -ne 0) { Write-Warning "Could not clean remote export $RunId." }
+    }
+    Write-Host "Static artifact: $LocalExportDir" -ForegroundColor Green
+    if ($StageOnly) { continue }
+
+    Write-Host "👤 Syncing to Google Contacts as '[SMB] $Name'..." -ForegroundColor Magenta
     
     $GogCli = "C:\Users\THINKPAD\scripts\gog.exe"
     if (Test-Path $GogCli) {
         try {
             & $GogCli contacts create --given-name "$Name" --family-name "[SMB]" --phone "$Phone" --org "$Name" --no-input 2>$null
+            if ($LASTEXITCODE -ne 0) { throw "Google Contacts sync failed." }
             Write-Host "  ✓ Saved via gog.exe to Google Contacts" -ForegroundColor Green
         } catch {
             Write-Host "  ℹ️ gog.exe auth needed, generating local VCF export..." -ForegroundColor Yellow
         }
     }
 
-    $TempContactJson = Join-Path $env:TEMP "$Slug-contact.json"
+    $TempContactJson = Join-Path $env:TEMP "$RunId-contact.json"
     $ContactPayload = @(@{
         name = $Name
         phone = $Phone
@@ -106,76 +166,33 @@ foreach ($Biz in $Batch) {
     Set-Content -Path $TempContactJson -Value $ContactPayload -Encoding UTF8
 
     $VcfOut = Join-Path $ProjectRoot "contacts-$Slug.vcf"
-    node "$ScriptDir\sync-google-contacts.mjs" --input $TempContactJson --vcf $VcfOut
-    Remove-Item $TempContactJson -ErrorAction SilentlyContinue
-
-    # -------------------------------------------------------------
-    # STAGE 2: Headless WordPress Site Creation on wpwv.codev.id
-    # -------------------------------------------------------------
-    Write-Host "⚙️ [Stage 2/5] Scaffolding WordPress site on wpwv.codev.id..." -ForegroundColor Magenta
-    $RemoteStagingDir = "/home/codev-wpwv/htdocs/wpwv.codev.id"
-    
-    # 1. Custom 9-slot palette parameter
-    $PaletteArg = "--palette=navy"
-    if ($Biz.brand -and $Biz.brand.palette) {
-        $PaletteJson = ($Biz.brand.palette | ConvertTo-Json -Compress)
-        $PaletteArg = "--palette='$PaletteJson'"
-    }
-
-    # 2. Transparent logo parameter
-    $LogoArg = ""
-    if ($Biz.brand -and $Biz.brand.logo -and $Biz.brand.logo.path -and (Test-Path $Biz.brand.logo.path)) {
-        $LocalLogo = $Biz.brand.logo.path
-        $RemoteLogo = "/tmp/$Slug-logo.png"
-        scp.exe -i $SshKey $LocalLogo "$OracleHost`:$RemoteLogo"
-        $LogoArg = "--logo-file='$RemoteLogo'"
-    }
-
-    $Industry = if ($Biz.category -and $Biz.category.vertical) { $Biz.category.vertical } else { "general" }
-    $RemoteCommand = "sudo -u codev-wpwv wp --path=$RemoteStagingDir st-companion create --title='$Name' --business-name='$Name' --industry='$Industry' --phone='$Phone' --domain='$Slug.webview.click' $PaletteArg $LogoArg --clean --yes"
-    
-    powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1" -Command $RemoteCommand -TimeoutSeconds 180
-
-    # -------------------------------------------------------------
-    # STAGE 3: Export Flat Static HTML/CSS/JS via Simply Static
-    # -------------------------------------------------------------
-    Write-Host "📦 [Stage 3/5] Running Simply Static export on wpwv.codev.id..." -ForegroundColor Magenta
-    $ExportCommand = "sudo -u codev-wpwv wp --path=$RemoteStagingDir simply-static run && sudo -u codev-wpwv bash -c 'if [ -d /home/codev-wpwv/static-export/ ]; then cd /home/codev-wpwv/static-export/ && zip -rq /tmp/$Slug.zip .; else cd /home/codev-wpwv/htdocs/wpwv.codev.id/wp-content/uploads/simply-static/temp-files/simply-static-0-* && zip -rq /tmp/$Slug.zip .; fi'"
-    powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1" -Command $ExportCommand -TimeoutSeconds 180
-
-    # -------------------------------------------------------------
-    # STAGE 4: Single Cloudflare R2 Upload (Dynamic ZIP Streaming)
-    # -------------------------------------------------------------
-    Write-Host "☁️ [Stage 4/5] Syncing flat assets to Cloudflare R2 (sites.webview.click)..." -ForegroundColor Magenta
-    $LocalExportDir = Join-Path $ProjectRoot "dist-staging\$Slug"
-    New-Item -ItemType Directory -Path $LocalExportDir -Force | Out-Null
-    
-    scp.exe -i $SshKey "$OracleHost`:/tmp/$Slug.zip" "$ProjectRoot\dist-staging\"
-    Expand-Archive -Path "$ProjectRoot\dist-staging\$Slug.zip" -DestinationPath $LocalExportDir -Force
-
-    # Upload static files only; ZIP is generated on the fly by Cloudflare Worker
     try {
-        node "$ScriptDir\deploy-site-to-r2.mjs" --dir $LocalExportDir --slug $Slug --bucket "webview-sites"
-    } catch {
-        Write-Host "  ⚠️ Note: R2 upload pending Cloudflare bucket configuration." -ForegroundColor Yellow
+        node "$ScriptDir\sync-google-contacts.mjs" --input $TempContactJson --vcf $VcfOut
+        if ($LASTEXITCODE -ne 0) { throw "Local vCard generation failed for $Slug." }
+    } finally {
+        Remove-Item -LiteralPath $TempContactJson -ErrorAction SilentlyContinue
     }
 
-    # -------------------------------------------------------------
-    # STAGE 5: Mobile Viewport Screenshot Capture
-    # -------------------------------------------------------------
-    Write-Host "📸 [Stage 5/5] Capturing mobile mockup for WhatsApp delivery..." -ForegroundColor Magenta
-    $PreviewUrl = "https://wpwv.codev.id/"
+    Write-Host "☁️ Syncing flat assets to Cloudflare R2..." -ForegroundColor Magenta
+    node "$ScriptDir\deploy-site-to-r2.mjs" --dir $LocalExportDir --slug $Slug --bucket "webview-sites"
+    if ($LASTEXITCODE -ne 0) { throw "R2 upload failed for $Slug." }
+
+    Write-Host "📸 Capturing mobile mockup for WhatsApp delivery..." -ForegroundColor Magenta
+    $PreviewUrl = "https://sites.webview.click/$Slug/"
     $MockupPath = Join-Path $ProjectRoot "mockups\$Slug-mobile.jpg"
     New-Item -ItemType Directory -Path (Split-Path -Parent $MockupPath) -Force | Out-Null
 
     python "$ScriptDir\capture-screenshot.py" --url $PreviewUrl --output $MockupPath
+    if ($LASTEXITCODE -ne 0) { throw "Mobile mockup failed for $Slug." }
 
     Write-Host "`n✅ Successfully Provisioned: $Name" -ForegroundColor Green
-    Write-Host "   🌐 Live Site: https://sites.webview.click/$Slug/ (Staging: $PreviewUrl)" -ForegroundColor Cyan
+    Write-Host "   🌐 Live Site: $PreviewUrl" -ForegroundColor Cyan
     Write-Host "   📦 Dynamic ZIP: https://sites.webview.click/$Slug/download" -ForegroundColor Cyan
     Write-Host "   🖼️ Mockup:    $MockupPath" -ForegroundColor Cyan
     Write-Host "   👤 Contact:   [SMB] $Name ($Phone)" -ForegroundColor Cyan
 }
+
+if ($StageOnly) { return }
 
 Write-Host "`n═══════════════════════════════════════════════════════════" -ForegroundColor Green
 Write-Host " 🏁 Batch complete! Ready for LusmoBot 15/day dispatch.    " -ForegroundColor Green

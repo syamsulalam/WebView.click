@@ -27,12 +27,12 @@ The **very first message** sent to any prospect MUST strictly be a 6-word busine
 - 🛑 **Do NOT** generate a WordPress site, run Simply Static, or upload to R2 for an uncontacted or unresponsive number.
 - 🕒 If a prospect does not reply within 48 hours, they simply expire from the queue. **Zero compute, disk, or bandwidth is wasted.**
 - 🚀 **ONLY upon receiving an affirmative human reply** (e.g., *"Yes it is, how can I help?"* or *"Yes, who's this?"*) does the system trigger the automated generation pipeline:
-  1. `enrich-business-brand.py`: Extract palette & transparent logo.
-  2. `wp st-companion create`: Provision clean Astra/Spectra staging on `wpwv.codev.id`.
-  3. `wp simply-static run`: Export flat static HTML/CSS/JS.
+  1. `enrich-business-brand.py` prepares prospect branding. The staging adapter currently consumes the palette.
+  2. `run-smb-pipeline.ps1` provisions the prospect on `wpwv.codev.id` using the installed Starter Templates Companion planner.
+  3. The pipeline runs Simply Static Free, verifies published pages and referenced local assets, and downloads an isolated artifact for this run.
   4. `deploy-site-to-r2.mjs`: Sync static assets once to `r2://webview-sites/sites/<slug>/`.
   5. `capture-screenshot.py`: Capture high-resolution mobile mockup.
-  6. Dispatch Step 2 value gift message within 60–120 seconds of confirmation!
+  6. Dispatch Step 2 after the live preview and mobile mockup are ready. A failed build or upload stops delivery.
 
 ---
 
