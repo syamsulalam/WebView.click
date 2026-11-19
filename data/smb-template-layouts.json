@@ -1,0 +1,12 @@
+{
+  "car-repair-08": {
+    "revision": "1.0.0",
+    "wxr_sha256": "869e387af13e224527aa8ff7574f272a7b9c4d1cb3989114e01494334e79b1c7",
+    "pages": {
+      "home": {"source": "Home", "sections": ["hero", "details", "services", "guide", "questions", "callout"]},
+      "services": {"source": "Services", "sections": ["hero", "services", "guide", "questions", "callout"]},
+      "about": {"source": "About", "sections": ["hero", "details", "guide", "callout"]},
+      "contact": {"source": "Contact", "sections": ["hero", "details", "directions"]}
+    }
+  }
+}

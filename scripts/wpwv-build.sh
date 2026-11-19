@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sent through Invoke-OracleSsh.ps1 with the run ID, slug and two base64 inputs.
+# Sent through Invoke-OracleSsh.ps1 after the compiled site and writer are uploaded.
 set -euo pipefail
 umask 077
 cd /tmp
@@ -7,8 +7,13 @@ run_id=$1
 slug=$2
 [[ "$run_id" =~ ^[0-9a-f]{32}$ && "$slug" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ && ${#slug} -le 63 ]]
 transfer=/tmp/webview-$run_id
-mkdir -- "$transfer"
-trap 'rm -f -- "$transfer/site.zip"; rmdir -- "$transfer"' EXIT
+[[ -d "$transfer" && ! -L "$transfer" ]]
+for input in "$transfer/input.json" "$transfer/wpwv-generate.php"; do
+    [[ -f "$input" && ! -L "$input" ]]
+done
+sudo -n chgrp -- codev-wpwv "$transfer" "$transfer/input.json" "$transfer/wpwv-generate.php"
+chmod 0710 "$transfer"
+chmod 0640 "$transfer/input.json" "$transfer/wpwv-generate.php"
 
 sudo -n systemd-run --quiet --pipe --wait --collect --unit="webview-build-$run_id" \
     --description="WebView static build $run_id" \
@@ -17,13 +22,14 @@ sudo -n systemd-run --quiet --pipe --wait --collect --unit="webview-build-$run_i
     --property=TasksMax=32 --property=RuntimeMaxSec=285s --property=TimeoutStopSec=5s \
     --property=KillMode=control-group --property=OOMPolicy=kill --property=NoNewPrivileges=yes \
     /usr/bin/flock -n /home/codev-wpwv/tmp/webview-static-export.lock \
-    /usr/bin/bash -s "$slug" "$3" "$4" >"$transfer/site.zip" <<'BASH'
+    /usr/bin/bash -s "$slug" "$transfer" >"$transfer/site.zip" <<'BASH'
 set -euo pipefail
 umask 077
 exec 3>&1 1>&2
 site=/home/codev-wpwv/htdocs/wpwv.codev.id
 output=/home/codev-wpwv/static-export
 slug=$1
+transfer=$2
 cd "$site"
 
 wpv() { timeout --kill-after=3s 20s wp --path="$site" --url=https://wpwv.codev.id --quiet "$@"; }
@@ -40,9 +46,7 @@ if (home_url("/") !== "https://wpwv.codev.id/" ||
 
 work=$(mktemp -d /home/codev-wpwv/tmp/webview-build.XXXXXXXX)
 trap 'rm -rf -- "$work"' EXIT
-printf '%s' "$2" | base64 -d >"$work/generate.php"
-printf '%s' "$3" | base64 -d >"$work/prospect.json"
-timeout --kill-after=5s 115s wp --path="$site" --url=https://wpwv.codev.id eval-file "$work/generate.php" "$work/prospect.json"
+timeout --kill-after=5s 115s wp --path="$site" --url=https://wpwv.codev.id eval-file "$transfer/wpwv-generate.php" "$transfer/input.json"
 wpv eval '
 foreach (get_posts(["post_type"=>"page","post_status"=>"publish","numberposts"=>-1]) as $p) {
     echo wp_parse_url(get_permalink($p), PHP_URL_PATH), PHP_EOL;
@@ -93,7 +97,7 @@ echo $o->get("archive_deploy_id"), "|",
       !wp_next_scheduled("wp_archive_creation_job_cron")) ? "done" : "failed";')
 [[ "$state" == "$export_id|done" ]] || { echo "Simply Static export $export_id failed or was replaced."; exit 1; }
 
-python3 - "$output" "$work/routes" "$work/package" <<'PY'
+python3 - "$output" "$work/routes" "$work/package" "$transfer/input.json" <<'PY'
 from html.parser import HTMLParser
 import json
 import os
@@ -104,7 +108,9 @@ from urllib.error import HTTPError
 from urllib.parse import quote, unquote, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, build_opener
 
-root, routes, package = map(Path, sys.argv[1:])
+root, routes, package, receipt = map(Path, sys.argv[1:])
+contract = json.loads(receipt.read_text(encoding="utf-8"))
+expected = {"/" if p["role"] == "home" else f'/{p["slug"]}/': p for p in contract["pages"]}
 prefix = os.environ["WEBVIEW_PREFIX"] + "/"
 origin = "https://wpwv.codev.id"
 extensions = set("css js png jpg jpeg webp avif gif svg ico woff woff2 ttf otf eot mp4 webm".split())
@@ -171,9 +177,18 @@ class Page(HTMLParser):
         super().__init__()
         self.base = origin + path
         self.emoji = False
+        self.sections = []
+        self.links = set()
+        self.images = set()
 
     def handle_starttag(self, tag, attrs):
         fields = dict(attrs)
+        if tag == "section" and fields.get("data-wv-source-section"):
+            self.sections.append((fields["data-wv-source-section"], fields.get("class", "").split()))
+        if tag == "a" and fields.get("href"):
+            self.links.add(fields["href"])
+        if tag == "img" and fields.get("src"):
+            self.images.add(urlsplit(fields["src"]).path)
         if tag == "script":
             self.emoji = fields.get("id") == "wp-emoji-settings"
         asset = fields.get("src") if tag in ("script", "img", "source", "video") else None
@@ -202,8 +217,8 @@ class Page(HTMLParser):
         fetch_asset(reference, self.base)
 
 paths = routes.read_text().splitlines()
-if "/" not in paths or len(paths) < 3:
-    raise SystemExit("No complete WebView page set found in WordPress.")
+if len(paths) != len(expected) or set(paths) != set(expected):
+    raise SystemExit("Export routes differ from the reviewed build contract.")
 for path in paths:
     if not path.startswith("/") or ".." in Path(path).parts:
         raise SystemExit("Invalid WordPress page route.")
@@ -214,7 +229,17 @@ for path in paths:
     if not page.is_file() or not page.stat().st_size:
         raise SystemExit(f"Missing static page: {path}")
     html = page.read_text(encoding="utf-8")
-    Page(path).feed(html)
+    parsed = Page(path)
+    parsed.feed(html)
+    roles = expected[path]["sections"]
+    if len(parsed.sections) != len(roles) or any(
+            number != str(index) or "wv-" + role not in classes
+            for index, ((number, classes), role) in enumerate(zip(parsed.sections, roles), 1)):
+        raise SystemExit(f"Export sections differ from the reviewed template on {path}")
+    if "tel:" + contract["phone"] not in parsed.links:
+        raise SystemExit(f"Missing verified contact action on {path}")
+    if path == "/" and not any(image.endswith("/" + contract["image_sha256"] + ".jpg") for image in parsed.images):
+        raise SystemExit("The exported homepage is missing the reviewed image.")
     if prefix not in html:
         raise SystemExit(f"Missing WebView URL prefix in {path}")
     destination = package / route / "index.html"
@@ -228,4 +253,3 @@ echo "Packaged Simply Static export $export_id"
 BASH
 
 unzip -tq "$transfer/site.zip" >/dev/null
-trap - EXIT

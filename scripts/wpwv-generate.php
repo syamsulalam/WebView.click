@@ -1,143 +1,146 @@
 <?php
-// Run with wp eval-file under the dedicated WebView staging tenant.
-use Codev\StarterTemplatesCompanion\Companion_Core;
-use Codev\StarterTemplatesCompanion\Logo_Synthesizer_Service;
-use Codev\StarterTemplatesCompanion\Palette_Adapter;
-use Codev\StarterTemplatesCompanion\Site_Planner_Service;
-
-[$prospectFile] = $args;
-$prospect = json_decode(file_get_contents($prospectFile), true, 32, JSON_THROW_ON_ERROR);
-$name = sanitize_text_field($prospect['name']);
-$address = sanitize_text_field($prospect['address']);
-$phone = $prospect['phone'];
-$vertical = sanitize_key($prospect['industry']);
-$description = sanitize_textarea_field($prospect['description']);
-$locale = str_starts_with($prospect['locale'], 'en') ? 'en_US' : 'id_ID';
-$english = $locale === 'en_US';
-
-if (!$name || !preg_match('/^\+[1-9][0-9]{7,14}$/D', $phone)) {
-    WP_CLI::error('A business name and a verified-format phone number are required.');
+// Materialize the compiled WebView prospect on the dedicated, locked staging tenant.
+[$input] = $args;
+$site = json_decode(file_get_contents($input), true, 32, JSON_THROW_ON_ERROR);
+if (home_url('/') !== 'https://wpwv.codev.id/' || get_stylesheet() !== 'astra' || count($site['pages']) < 3) {
+    WP_CLI::error('Unexpected WebView staging target or incomplete compiled site.');
 }
 
-$offerings = [];
-foreach ($prospect['offerings'] as $entry) {
-    $title = sanitize_text_field($entry['title'] ?? '');
-    if ($title !== '') {
-        $offerings[] = ['title' => $title, 'body' => sanitize_textarea_field($entry['description'] ?? '')];
+$old = [];
+foreach (get_posts(['post_type' => 'page', 'post_status' => 'publish', 'numberposts' => -1]) as $post) {
+    if (!get_post_meta($post->ID, '_webview_template', true) &&
+        !get_post_meta($post->ID, '_codev_planner_build_uuid', true)) {
+        WP_CLI::error('The staging site contains a page outside WebView ownership.');
+    }
+    $old[$post->post_name] = $post->ID;
+}
+
+$image = base64_decode($site['image'], true);
+$dimensions = $image ? getimagesizefromstring($image) : false;
+if (!$dimensions || $dimensions[2] !== IMAGETYPE_JPEG || $dimensions[0] !== $site['image_width'] ||
+    $dimensions[1] !== $site['image_height'] || strlen($image) > 1000000 ||
+    hash('sha256', $image) !== $site['image_sha256']) {
+    WP_CLI::error('The compiled preview image failed verification.');
+}
+
+$uploads = wp_get_upload_dir();
+$directory = $uploads['basedir'] . '/webview-preview';
+$filename = $site['image_sha256'] . '.jpg';
+$destination = $directory . '/' . $filename;
+if ($uploads['error'] || !wp_mkdir_p($directory) || is_link($directory) || is_link($destination)) {
+    WP_CLI::error('The staging image directory is unavailable.');
+}
+if (!is_file($destination)) {
+    $temp = tempnam($directory, 'wv-');
+    if (!$temp) {
+        WP_CLI::error('Could not allocate the staging image.');
+    }
+    $written = file_put_contents($temp, $image) === strlen($image) && chmod($temp, 0644)
+        && rename($temp, $destination);
+    if (!$written) {
+        if (is_file($temp)) {
+            unlink($temp);
+        }
+        WP_CLI::error('Could not install the staging image.');
+    }
+}
+if (hash_file('sha256', $destination) !== $site['image_sha256']) {
+    WP_CLI::error('The existing staging image differs from the compiled image.');
+}
+$imageUrl = $uploads['baseurl'] . '/webview-preview/' . $filename;
+
+$ids = [];
+global $wpdb;
+$tables = [$wpdb->posts, $wpdb->postmeta, $wpdb->options, $wpdb->terms, $wpdb->term_taxonomy, $wpdb->term_relationships];
+foreach ($tables as $table) {
+    if ($wpdb->get_var($wpdb->prepare(
+        'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s', $table
+    )) !== 'InnoDB') {
+        WP_CLI::error('The staging tables must support transactional replacement.');
     }
 }
 
-$about = $english ? 'About' : 'Tentang Kami';
-$contact = $english ? 'Contact' : 'Kontak';
-$services = $english ? 'Services' : 'Layanan';
-$description = $description ?: ($address ? "$name · $address" : $name);
-$contactText = $address ? "$address · $phone" : $phone;
-$brief = [
-    'business_name' => $name,
-    'business_desc' => $description,
-    'business_phone' => $phone,
-    'business_address' => $address,
-    'domain' => 'example.invalid',
-    'vertical' => $vertical,
-    'locale' => $locale,
-    'services' => array_column($offerings, 'title'),
-];
-
-$pages = [];
-$content = [];
-$addPage = static function ($slug, $title, $type, $sections) use (&$pages, &$content) {
-    $components = [];
-    foreach ($sections as [$component, $variant, $heading, $copy]) {
-        $id = 'sec_' . str_replace('-', '_', $slug) . '_' . count($components);
-        $components[] = [
-            'section_id' => $id, 'component_type' => $component, 'variant' => $variant,
-            'title' => $heading, 'enabled' => true, 'order' => count($components),
-        ];
-        $content[$id] = $copy;
+$check = static function ($result) {
+    if (is_wp_error($result) || !$result) {
+        throw new RuntimeException(is_wp_error($result) ? $result->get_error_message() : 'WordPress rejected the update.');
     }
-    $pages[] = [
-        'id' => 'page_' . str_replace('-', '_', $slug), 'title' => $title, 'slug' => $slug,
-        'parent_id' => null, 'order' => count($pages), 'enabled' => true,
-        'is_front_page' => $type === 'home', 'template_type' => $type, 'components' => $components,
-    ];
+    return $result;
 };
-$contactSlug = $english ? 'contact' : 'kontak';
-$cta = ['cta', 'banner', $contact, [
-    'body' => $contactText, 'label' => $contact, 'url' => home_url("/$contactSlug/"),
-]];
-$addPage('home', $english ? 'Home' : 'Beranda', 'home', [
-    ['hero', 'split', $name, ['body' => $description]], $cta,
-]);
-if ($offerings) {
-    $addPage($english ? 'services' : 'layanan', $services, 'services', [
-        ['hero', 'centered', $services, ['body' => $name]],
-        ['services_detailed', 'alternating', $services, ['items' => $offerings]], $cta,
-    ]);
-}
-$addPage($english ? 'about' : 'tentang-kami', $about, 'about', [
-    ['hero', 'centered', $about, ['body' => $description]], $cta,
-]);
-$addPage($contactSlug, $contact, 'contact', [
-    ['hero', 'centered', $contact, ['body' => $contactText]],
-    ['cta', 'banner', $english ? 'Call us' : 'Telepon', [
-        'body' => $phone, 'label' => $phone, 'url' => "tel:$phone",
-    ]],
-]);
-
-$palette = $prospect['palette'] ?: Site_Planner_Service::get_curated_light_palettes()['navy'];
-$palette = Palette_Adapter::validate_and_normalize_palette($palette);
-$document = [
-    'schema_version' => 1, 'title' => $name, 'locale' => $locale, 'brief' => $brief,
-    'design' => [
-        'template_id' => 'business-consulting-02', 'typography_id' => 'inter',
-        'builder' => 'gutenberg', 'palette' => $palette,
-    ],
-    'pages' => $pages, 'content' => $content,
-];
-
-$admin = get_users(['role' => 'administrator', 'number' => 1, 'fields' => 'ID'])[0] ?? 0;
-if (!$admin) {
-    WP_CLI::error('No staging administrator found.');
-}
-wp_set_current_user($admin);
-$planner = new Site_Planner_Service();
-$plan = $planner->create($document);
-$approved = $planner->approve($plan['plan_id'], $plan['revision']);
-$build = $planner->start_build($plan['plan_id'], $approved['revision'], $approved['approved_hash'], wp_generate_uuid4());
-$uuid = $build['build_uuid'];
-$compiled = $planner->compile($uuid);
-if (empty($compiled['wxr']) || empty($compiled['manifest'])) {
-    WP_CLI::error('The WebView planner did not compile a complete site.');
-}
-
-$planner->clean_existing_content();
-delete_option('codev_st_active_build');
-$result = $planner->run($uuid);
-if ($result['state'] !== 'succeeded' || count($result['result']['page_ids']) !== count($pages)) {
-    WP_CLI::error('The WebView planner did not generate all pages.');
-}
-
-update_option('blogname', $name);
-update_option('blogdescription', wp_trim_words($description, 14));
-update_option('WPLANG', $locale);
-$settings = Palette_Adapter::merge(['astra-settings' => (array) get_option('astra-settings', [])], $palette);
-update_option('astra-settings', $settings['astra-settings']);
-$css = <<<'CSS'
-.codev-hero-section { background: #15263d !important; }
-.codev-cta-section { background: #e8f0f8 !important; }
-.codev-cta-section h2, .codev-cta-section p, #colophon .ast-footer-copyright p { color: #14243a !important; }
-.site-branding .custom-logo-link .custom-logo { width: min(235px, 64vw); max-width: none; height: auto; }
-CSS;
-$customCss = wp_update_custom_css_post($css);
-if (is_wp_error($customCss)) {
-    WP_CLI::error('Could not set the WebView staging styles.');
-}
-remove_theme_mod('custom_logo');
-delete_option('site_icon');
-Logo_Synthesizer_Service::ensure_site_logo($brief + ['palette' => $palette, 'title' => $name], $document);
-foreach ($result['result']['page_ids'] as $id) {
-    Companion_Core::get_instance()->ensure_spectra_assets($id);
+try {
+    if ($wpdb->query('START TRANSACTION') === false) {
+        throw new RuntimeException('Could not start a staging transaction.');
+    }
+    $menu = (int) get_option('webview_preview_menu_id');
+    if (!$menu) {
+        $menu = $check(wp_create_nav_menu('WebView preview'));
+        update_option('webview_preview_menu_id', $menu);
+    }
+    $menuRecord = wp_get_nav_menu_object($menu);
+    if (!$menuRecord || $menuRecord->name !== 'WebView preview') {
+        throw new RuntimeException('The saved navigation menu does not belong to WebView.');
+    }
+    foreach (wp_get_nav_menu_items($menu) ?: [] as $item) {
+        $check(wp_delete_post($item->ID, true));
+    }
+    foreach ($site['pages'] as $page) {
+        $body = str_replace(
+            ['@@WV_HOME@@', '@@WV_IMAGE@@'], [esc_url(home_url('/')), esc_url($imageUrl)], $page['html']
+        );
+        $id = $check(wp_insert_post(wp_slash([
+            'ID' => $old[$page['slug']] ?? 0,
+            'post_type' => 'page',
+            'post_status' => 'publish',
+            'post_title' => $page['title'],
+            'post_name' => $page['slug'],
+            'post_content' => '<!-- wp:html -->' . $body . '<!-- /wp:html -->',
+            'meta_input' => [
+                '_webview_template' => $site['template']['slug'],
+                '_webview_source_page' => $page['source'],
+                'ast-site-content-layout' => 'page-builder',
+                'site-post-title' => 'disabled',
+                'ast-featured-img' => 'disabled',
+                'theme-transparent-header-meta' => 'disabled',
+            ],
+        ]), true));
+        if (get_post_field('post_name', $id) !== $page['slug']) {
+            throw new RuntimeException('A staging route conflicts with an existing page.');
+        }
+        unset($old[$page['slug']]);
+        $ids[$page['role']] = $id;
+        $check(wp_update_nav_menu_item($menu, 0, [
+            'menu-item-title' => $page['title'],
+            'menu-item-type' => 'post_type',
+            'menu-item-object' => 'page',
+            'menu-item-object-id' => $id,
+            'menu-item-status' => 'publish',
+        ]));
+    }
+    foreach ($old as $id) {
+        $check(wp_trash_post($id));
+    }
+    update_option('blogname', $site['name']);
+    update_option('blogdescription', $site['tagline']);
+    update_option('WPLANG', $site['locale']);
+    update_option('show_on_front', 'page');
+    update_option('page_on_front', $ids['home']);
+    update_option('blog_public', 0);
+    $astra = (array) get_option('astra-settings', []);
+    $astra['display-site-title'] = true;
+    $astra['display-site-title-responsive'] = ['desktop' => 1, 'tablet' => 1, 'mobile' => 1];
+    $astra['footer-copyright-editor'] = esc_html($site['footer']);
+    update_option('astra-settings', $astra);
+    set_theme_mod('nav_menu_locations', ['primary' => $menu, 'mobile_menu' => $menu]);
+    remove_theme_mod('custom_logo');
+    delete_option('site_icon');
+    $check(wp_update_custom_css_post($site['css']));
+    if ($wpdb->query('COMMIT') === false) {
+        throw new RuntimeException('Could not commit the staging transaction.');
+    }
+} catch (Throwable $error) {
+    $wpdb->query('ROLLBACK');
+    wp_cache_flush();
+    WP_CLI::error($error->getMessage());
 }
 wp_cache_flush();
 flush_rewrite_rules(false);
-WP_CLI::success("WebView planner built $uuid with " . count($pages) . ' pages.');
+WP_CLI::success("WebView built {$site['template']['slug']} from " . count($ids) . ' verified source pages.');

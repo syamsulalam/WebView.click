@@ -9,12 +9,12 @@
 From the repository root, generate and download a staging artifact for one prospect:
 
 ```powershell
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\run-smb-pipeline.ps1 -ProspectFile .\prospects-today.json -Limit 1 -StageOnly
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\run-smb-pipeline.ps1 -ProspectFile .\prospect-brief.json -Limit 1 -StageOnly
 ```
 
 The command uses the configured Oracle SSH runner and prints the local artifact directory. See the [pipeline guide](GUIDE.md) for input and publishing steps, the [outreach SOP](SOP.md) for when to generate sites, and the [codebase reference](CODEBASE.md) for the architecture.
 
-Check a niche against a current Starter Templates Companion manifest before planning a client preview. A `candidate` is a layout to test. The existing staging scaffold is an export smoke test.
+Check a niche against a current Starter Templates Companion manifest before planning a client preview. The build requires a reviewed mapping in `data/smb-template-layouts.json`. The first mapped template is Car Repair.
 
 ```powershell
 python scripts/resolve-smb-template.py --manifest C:/path/to/companion/assets/templates/manifest.json --query 'car detailing business bay dubai'

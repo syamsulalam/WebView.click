@@ -40,7 +40,11 @@ param(
     [Parameter(Mandatory = $false)]
     [int]$Limit = 15,
 
-    [switch]$StageOnly
+    [switch]$StageOnly,
+
+    [string]$TemplateManifest = "",
+
+    [string]$TemplateCache = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -57,7 +61,7 @@ $ProjectRoot = Split-Path -Parent $ScriptDir
 $SshKey = "C:\Users\THINKPAD\.ssh\ssh-key-2025-10-13.key"
 $SshRunner = "C:\Users\THINKPAD\OneDrive\MD\SCRIPTS\Invoke-OracleSsh.ps1"
 $SshOptions = @("-i", $SshKey, "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3")
-$Generator = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $ScriptDir "wpwv-generate.php")))
+$Generator = Join-Path $ScriptDir "wpwv-generate.php"
 $BuildScript = Get-Content -LiteralPath (Join-Path $ScriptDir "wpwv-build.sh") -Raw -Encoding UTF8
 if ($OracleHost -cne "ubuntu@150.136.178.5") {
     throw "WebView staging must use the OracleServer host configured in Invoke-OracleSsh.ps1."
@@ -75,6 +79,8 @@ if ($ProspectFile -eq "" -or -not (Test-Path -LiteralPath $ProspectFile -PathTyp
     Write-Error "Prospect file not found or not specified. Pass -ProspectFile or -HarvestQuery."
 }
 
+$ProspectFile = (Resolve-Path -LiteralPath $ProspectFile).Path
+$ProspectDir = Split-Path -Parent $ProspectFile
 $Prospects = Get-Content -LiteralPath $ProspectFile -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($Prospects -isnot [array]) {
     $Prospects = @($Prospects)
@@ -100,30 +106,37 @@ foreach ($Biz in $Batch) {
     Write-Host "🏢 Processing: $Name ($Slug) | 📱 $Phone" -ForegroundColor Yellow
     Write-Host "───────────────────────────────────────────────────────────" -ForegroundColor Gray
 
-    $Industry = if ($Biz.category.vertical) { $Biz.category.vertical } else { $Niche }
-    $Payload = @{
-        name = [string]$Name
-        phone = [string]$Phone
-        address = [string]$Biz.address
-        industry = [string]$Industry
-        locale = [string]$Biz.locale
-        description = [string]$Biz.description
-        offerings = @($Biz.offerings | Where-Object { $_.title } | ForEach-Object {
-            @{ title = [string]$_.title; description = [string]$_.description }
-        })
-        palette = @($Biz.brand.palette | Where-Object { $_ })
-    } | ConvertTo-Json -Compress -Depth 5
-    $PayloadBytes = [Text.Encoding]::UTF8.GetBytes($Payload)
-    if ($PayloadBytes.Length -gt 6500) { throw "Prospect staging input exceeds 6500 UTF-8 bytes." }
-    $Payload64 = [Convert]::ToBase64String($PayloadBytes)
     $RunId = [guid]::NewGuid().ToString('N')
     $RemoteDir = "/tmp/webview-$RunId"
     $LocalExportDir = Join-Path $ProjectRoot "dist-staging\$Slug-$RunId"
     $LocalZip = "$LocalExportDir.zip"
-    $RemoteCommand = "set -- '$RunId' '$Slug' '$Generator' '$Payload64'" + [Environment]::NewLine + $BuildScript
+    $LocalBrief = Join-Path $env:TEMP "webview-$RunId-brief.json"
+    $LocalCompiled = Join-Path $env:TEMP "webview-$RunId-input.json"
+    $RemoteCommand = "set -- '$RunId' '$Slug'" + [Environment]::NewLine + $BuildScript
 
     Write-Host "⚙️ Generating and exporting $Slug on wpwv.codev.id..." -ForegroundColor Magenta
+    $TransferStarted = $false
     try {
+        if ($Biz.photo.file -and -not [IO.Path]::IsPathRooted($Biz.photo.file)) {
+            $Biz.photo.file = Join-Path $ProspectDir $Biz.photo.file
+        }
+        $Biz.phone = $Phone
+        $Biz | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $LocalBrief -Encoding UTF8
+        $CompileArgs = @("$ScriptDir\compile-smb-site.py", $LocalBrief, $LocalCompiled)
+        if ($TemplateManifest) { $CompileArgs += @("--manifest", $TemplateManifest) }
+        if ($TemplateCache) { $CompileArgs += @("--template-cache", $TemplateCache) }
+        & python @CompileArgs
+        if ($LASTEXITCODE -ne 0) { throw "Template or prospect brief needs review for $Slug." }
+        $TransferStarted = $true
+        "umask 077; mkdir -- '$RemoteDir'" |
+            & powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File $SshRunner -TimeoutSeconds 20
+        if ($LASTEXITCODE -ne 0) { throw "Could not create the remote transfer directory." }
+        $RemoteInput = '{0}:{1}/input.json' -f $OracleHost, $RemoteDir
+        $RemoteWriter = '{0}:{1}/wpwv-generate.php' -f $OracleHost, $RemoteDir
+        & scp.exe @SshOptions $LocalCompiled $RemoteInput
+        if ($LASTEXITCODE -ne 0) { throw "Compiled input upload failed for $Slug." }
+        & scp.exe @SshOptions $Generator $RemoteWriter
+        if ($LASTEXITCODE -ne 0) { throw "Staging writer upload failed for $Slug." }
         $RemoteCommand | & powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File $SshRunner -TimeoutSeconds 305
         if ($LASTEXITCODE -ne 0) { throw "WordPress generation or export failed for $Slug." }
         New-Item -ItemType Directory -Path $LocalExportDir | Out-Null
@@ -135,10 +148,14 @@ foreach ($Biz in $Batch) {
             throw "Missing exported homepage for $Slug."
         }
     } finally {
-        if (Test-Path -LiteralPath $LocalZip) { Remove-Item -LiteralPath $LocalZip }
-        "if [ -d '$RemoteDir' ]; then rm -f -- '$RemoteDir/site.zip' && rmdir -- '$RemoteDir'; fi" |
-            & powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File $SshRunner -TimeoutSeconds 25
-        if ($LASTEXITCODE -ne 0) { Write-Warning "Could not clean remote export $RunId." }
+        foreach ($LocalTemp in @($LocalBrief, $LocalCompiled, $LocalZip)) {
+            if (Test-Path -LiteralPath $LocalTemp) { Remove-Item -LiteralPath $LocalTemp }
+        }
+        if ($TransferStarted) {
+            "if [ -d '$RemoteDir' ] && [ ! -L '$RemoteDir' ]; then rm -f -- '$RemoteDir/site.zip' '$RemoteDir/input.json' '$RemoteDir/wpwv-generate.php' && rmdir -- '$RemoteDir'; fi" |
+                & powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File $SshRunner -TimeoutSeconds 25
+            if ($LASTEXITCODE -ne 0) { Write-Warning "Could not clean remote export $RunId." }
+        }
     }
     Write-Host "Static artifact: $LocalExportDir" -ForegroundColor Green
     if ($StageOnly) { continue }

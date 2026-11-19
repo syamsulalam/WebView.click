@@ -256,8 +256,8 @@ UUPM's 34 `landing.csv` patterns supersede its own deprecated style rows 20/21/2
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 3. HEADLESS WORDPRESS STAGING (OracleServer: wp-oracle)                │
-│    CLI: run-smb-pipeline.ps1 → WebView planner → Simply Static Free  │
-│    Compiler: wp simply-static run                                      │
+│    CLI: run-smb-pipeline.ps1 → reviewed WXR → Simply Static Free      │
+│    Compiler: compile-smb-site.py and tenant-scoped WordPress writer   │
 │    Archive: Compiles flat directory + generates <slug>.zip             │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
@@ -305,13 +305,14 @@ To prevent interference with staging sites `wp1.codev.id` through `wp9.codev.id`
 * Direct flat HTML compilation destination: `/home/codev-wpwv/static-export/`.
 * `run-smb-pipeline.ps1 -StageOnly` generates and downloads a prospect artifact from this tenant. The generation and Simply Static Free export share one staging lock. Packaging requires a successful fresh export and HTML for each published page. Export URLs use the `sites.webview.click/<slug>/` prefix. Stage-only runs stop after the local artifact is extracted.
 * The normal build must bound the tenant CLI and the static export queue as one job. A deadline must stop descendants as well as the launcher. An interrupted export must fail the build and must not schedule a PHP-FPM retry.
-* The WordPress plan uses the prospect’s name, description, address, phone, and supplied offerings. The project packages those pages and their referenced static assets. Public HTTPS fills gaps for assets under the fleet’s symlinked WordPress core, themes, and plugins.
+* The WordPress plan uses a reviewed brief with the prospect’s identity, contact data, evidenced offerings, page copy and approved media. The project packages those pages and their referenced static assets. Public HTTPS fills gaps for assets under the fleet’s symlinked WordPress core, themes, and plugins.
 
 ### 16.1.1 Template selection and prospect delivery
 
 * Every marketed niche and its listed search terms must resolve to a named Gutenberg template candidate or an explicit review result. Keep the outreach niche list authoritative for market eligibility and the Companion manifest authoritative for template identity and bundle metadata. Preserve Tier C's exclusion from automatic outreach.
 * A catalog candidate is eligible for a staging test when its exact entry is qualified for Gutenberg static export and has an identified WXR. It becomes eligible for client delivery after a real render verifies template fidelity, grounded business content, responsive layout, and a working contact action.
 * An unavailable exact ID, incompatible builder, or unmatched niche must be visible to the operator. A generic scaffold is suitable for testing the export path only.
+* The build path must resolve the niche before touching WordPress, verify the selected WXR size and digest, and require a reviewed mapping from source sections to prospect content. An unsupported layout or incomplete brief must fail before the existing staging site is replaced. The automotive pilot covers the Car Repair home, services, about and contact layouts with real services, a static contact action, and clearly labeled approved illustrative media.
 
 ### 16.2 Single-Upload Edge Architecture (Dynamic ZIP Streaming via `client-zip`)
 * `sites.webview.click` attaches to the `sites-webview-click` Worker as an exact Custom Domain. That hostname must resolve to the Worker before R2 preview or download links are sent.

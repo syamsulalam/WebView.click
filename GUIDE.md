@@ -123,15 +123,15 @@ node scripts\sync-google-contacts.mjs --input prospects-today.json --vcf contact
 
 ### 3️⃣ Phase 3: Dedicated Headless WordPress Staging (`wpwv.codev.id`)
 
-Generate a prospect site on the dedicated Astra/Spectra tenant. The command replaces the current staging pages after the new plan compiles, then downloads a fresh static export.
+Generate a prospect site on the dedicated Astra staging tenant from a reviewed brief. The compiler selects an eligible layout for the business category and verifies the original WXR before the command replaces staging pages.
 
 ```powershell
-powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-smb-pipeline.ps1 -ProspectFile .\prospects-today.json -Limit 1 -StageOnly
+powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-smb-pipeline.ps1 -ProspectFile .\prospect-brief.json -Limit 1 -StageOnly
 ```
 
-Use a prospect with a business name and an E.164 phone number. Supply the address, description, verified offerings, and locale when available. `en_US` selects English navigation and `id_ID` selects Indonesian. The printed `Static artifact` directory is unique to the run. It contains `index.html` plus the generated pages and assets. `-StageOnly` stops before Google Contacts, R2 and screenshot capture.
+Supply a name, address, E.164 phone, locale, tagline, footer, niche or category, sourced offerings, page copy, and a JPEG with caption, alt text, dimensions and attribution. `data/smb-template-layouts.json` lists the page roles and sections the brief needs. Use the brief's language for all page titles and action labels. A listing-only capture needs research before it can build. Optional `-TemplateManifest` and `-TemplateCache` inputs support exact reproduction. All selected WXR bytes are verified.
 
-The project invokes the installed Companion planner and the Simply Static Free PHP API. The manual `simply-static run` command requires Pro.
+The writer uses the compiled plan and exports it through Simply Static Free. In `-StageOnly`, review the unique printed `Static artifact` directory before calling the uploader. Test all pages, images, navigation, and call or directions links on mobile. The static bundle expects the original `/<slug>/` hosting prefix.
 
 ---
 
