@@ -116,6 +116,8 @@ Hi, is this [Business Name]?
 ### Message 2: The Value Gift Drop (Sent ONLY Post-Confirmation)
 Triggered immediately after human response (e.g., *"Yes, it is, how can I help?"*):
 
+Before first contact, qualify the listing and the official website with `python scripts/compile-smb-site.py <reviewed-brief.json> --verify-website`. The sample below applies to an absent website. For an unavailable site, say “I tried the website linked from your Google listing, and it was unavailable when I checked.”
+
 *(Attach: `mockups/[slug]-mobile.jpg`)*
 
 ```text

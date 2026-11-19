@@ -187,6 +187,8 @@ Sent by LusmoBot:
 #### 💬 Script Step 2: Value Drop & Demo Link (Post-Confirmation)
 Triggered immediately after they reply (e.g., *"Yes it is, how can I help?"*):
 
+Use the sample wording when the business has no official site. For an unavailable site, say “I tried the website linked from your Google listing, and it was unavailable when I checked.” In Indonesian, say “Saya sempat mencoba membuka situs dari profil Google bisnis Anda, tetapi saat saya cek situsnya tidak bisa dibuka.”
+
 *(Attach: `mockups/[slug]-mobile.jpg`)*
 
 **English (Tier 1 High-Income Standard):**
