@@ -304,6 +304,7 @@ To prevent interference with staging sites `wp1.codev.id` through `wp9.codev.id`
 * Spectra / Gutenberg exclusive mode (Elementor hooks deactivated to eliminate Kit synchronization exceptions).
 * Direct flat HTML compilation destination: `/home/codev-wpwv/static-export/`.
 * `run-smb-pipeline.ps1 -StageOnly` generates and downloads a prospect artifact from this tenant. The generation and Simply Static Free export share one staging lock. Packaging requires a successful fresh export and HTML for each published page. Export URLs use the `sites.webview.click/<slug>/` prefix. Stage-only runs stop after the local artifact is extracted.
+* The normal build must bound the tenant CLI and the static export queue as one job. A deadline must stop descendants as well as the launcher. An interrupted export must fail the build and must not schedule a PHP-FPM retry.
 * The WordPress plan uses the prospect’s name, description, address, phone, and supplied offerings. The project packages those pages and their referenced static assets. Public HTTPS fills gaps for assets under the fleet’s symlinked WordPress core, themes, and plugins.
 
 ### 16.2 Single-Upload Edge Architecture (Dynamic ZIP Streaming via `client-zip`)

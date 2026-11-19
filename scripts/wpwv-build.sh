@@ -10,8 +10,14 @@ transfer=/tmp/webview-$run_id
 mkdir -- "$transfer"
 trap 'rm -f -- "$transfer/site.zip"; rmdir -- "$transfer"' EXIT
 
-sudo -n -u codev-wpwv -- flock -n /home/codev-wpwv/tmp/webview-static-export.lock \
-    timeout --kill-after=5s 285s bash -s "$slug" "$3" "$4" >"$transfer/site.zip" <<'BASH'
+sudo -n systemd-run --quiet --pipe --wait --collect --unit="webview-build-$run_id" \
+    --description="WebView static build $run_id" \
+    --uid=codev-wpwv --slice=codev-workers.slice --working-directory=/tmp \
+    --property=Type=exec --property=CPUQuota=100% --property=MemoryMax=512M \
+    --property=TasksMax=32 --property=RuntimeMaxSec=285s --property=TimeoutStopSec=5s \
+    --property=KillMode=control-group --property=OOMPolicy=kill --property=NoNewPrivileges=yes \
+    /usr/bin/flock -n /home/codev-wpwv/tmp/webview-static-export.lock \
+    /usr/bin/bash -s "$slug" "$3" "$4" >"$transfer/site.zip" <<'BASH'
 set -euo pipefail
 umask 077
 exec 3>&1 1>&2
@@ -26,6 +32,7 @@ $p = \Simply_Static\Plugin::instance();
 $o = \Simply_Static\Options::instance();
 if (home_url("/") !== "https://wpwv.codev.id/" ||
     !$p->get_archive_creation_job()->is_job_done() ||
+    wp_next_scheduled("wp_archive_creation_job_cron") ||
     $o->get("delivery_method") !== "local" ||
     rtrim($o->get("local_dir"), "/") !== "/home/codev-wpwv/static-export") {
     WP_CLI::error("Unexpected staging target, export configuration, or active export.");
@@ -47,12 +54,12 @@ if [[ -e "$output" ]]; then
     mv -- "$output" "$work/previous-export"
 fi
 mkdir -- "$output"
-export WEBVIEW_PREFIX="/$slug" WEBVIEW_ROUTES="$work/routes"
-export_id=$(wpv eval '
+export WEBVIEW_PREFIX="/$slug" WEBVIEW_ROUTES="$work/routes" WEBVIEW_EXPORT_ID="$work/export-id"
+timeout --kill-after=5s 150s wp --path="$site" --url=https://wpwv.codev.id --quiet eval '
 $p = \Simply_Static\Plugin::instance();
 $o = \Simply_Static\Options::instance();
-if (!$p->get_archive_creation_job()->is_job_done()) {
-    WP_CLI::error("Another Simply Static export is active.");
+if (!$p->get_archive_creation_job()->is_job_done() || wp_next_scheduled("wp_archive_creation_job_cron")) {
+    WP_CLI::error("Another Simply Static export or recovery event is active.");
 }
 $routes = file(getenv("WEBVIEW_ROUTES"), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 $urls = array_map(static fn($path) => home_url($path), $routes);
@@ -61,27 +68,30 @@ $o->set("destination_url_type", "relative")
   ->set("crawlers", [])
   ->set("additional_urls", implode("\n", $urls))
   ->save();
+// Smart Crawl can enable a full wp-includes scan even with an empty crawlers option.
+// Seeded pages and the asset packager already cover the required files.
+add_filter("simply_static_crawlers", "__return_empty_array", PHP_INT_MAX);
+// Keep all export batches in this PHP process, including shutdown continuations.
+add_filter("wp_archive_creation_job_loopback_available", "__return_false", PHP_INT_MAX);
+add_filter("pre_schedule_event", static fn($value, $event) =>
+    $event->hook === "wp_archive_creation_job_cron" ? false : $value, PHP_INT_MAX, 2);
 if (!$p->run_static_export()) {
     WP_CLI::error("Simply Static Free could not start the export.");
 }
-echo $o->get("archive_deploy_id");')
-[[ "$export_id" =~ ^[a-f0-9-]{36}$ ]] || { echo 'Missing Simply Static export ID'; exit 1; }
-echo "Started Simply Static export $export_id"
-deadline=$((SECONDS + 140))
-while :; do
-    state=$(wpv eval '
-    $o = \Simply_Static\Options::instance();
-    $messages = (array) $o->get("archive_status_messages");
-    echo $o->get("archive_deploy_id"), "|",
-         !$o->get("archive_end_time") ? "pending" : (isset($messages["done"]) ? "done" : "failed");')
-    case "$state" in
-        "$export_id|done") break ;;
-        "$export_id|pending") ;;
-        *) echo "Simply Static export $export_id failed or was replaced."; exit 1 ;;
-    esac
-    (( SECONDS < deadline )) || { echo "Simply Static export $export_id timed out."; exit 1; }
-    sleep 4
-done
+// Inline shutdown can discard PHP output buffers. Persist the ID before shutdown.
+$id = $o->get("archive_deploy_id");
+if (!is_string($id) || file_put_contents(getenv("WEBVIEW_EXPORT_ID"), $id) !== strlen($id)) {
+    WP_CLI::error("Could not record the Simply Static export ID.");
+}'
+export_id=$(<"$WEBVIEW_EXPORT_ID")
+[[ "$export_id" =~ ^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$ ]] || { echo 'Missing Simply Static export ID'; exit 1; }
+state=$(wpv eval '
+$o = \Simply_Static\Options::instance();
+$messages = (array) $o->get("archive_status_messages");
+echo $o->get("archive_deploy_id"), "|",
+     ($o->get("archive_end_time") && isset($messages["done"]) &&
+      !wp_next_scheduled("wp_archive_creation_job_cron")) ? "done" : "failed";')
+[[ "$state" == "$export_id|done" ]] || { echo "Simply Static export $export_id failed or was replaced."; exit 1; }
 
 python3 - "$output" "$work/routes" "$work/package" <<'PY'
 from html.parser import HTMLParser
