@@ -33,15 +33,17 @@ def read_listing(page, maps_url, expected_name):
         address.wait_for(timeout=3000)
     except PlaywrightTimeoutError:
         return None
-    website = page.locator('a[data-item-id="authority"], a[data-tooltip*="Website" i], '
+    website = page.locator('a[data-item-id="authority"], a[data-item-id="services"], a[data-tooltip*="Website" i], '
                            'a[data-tooltip*="Situs web" i], a[aria-label^="Website" i], '
-                           'a[aria-label^="Situs web" i]')
-    if website.count():
+                           'a[aria-label^="Situs web" i], a[aria-label="Open services link" i]')
+    links = [anchor.get_attribute("href") for anchor in website.all()]
+    urls = list(dict.fromkeys(link for link in links if link and urllib.parse.urlsplit(link).scheme in ("https", "http")))
+    if links and not urls:
         return None
     phone_button = page.locator('button[data-item-id^="phone:tel:"]').first
     phone_id = (phone_button.get_attribute("data-item-id", timeout=1000) or "") if phone_button.count() else ""
     address_text = address.get_attribute("aria-label", timeout=1000) or ""
-    return phone_id.removeprefix("phone:tel:"), address_text.partition(": ")[2]
+    return phone_id.removeprefix("phone:tel:"), address_text.partition(": ")[2], urls
 
 def clean_text(text: str) -> str:
     if not text:
@@ -68,7 +70,7 @@ def parse_reviews(text: str):
             return 0
     return 0
 
-def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: str = "en"):
+def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: str = "en", include_listed=False):
     encoded_query = urllib.parse.quote(query)
     url = f"https://www.google.com/maps/search/{encoded_query}?hl={hl}"
     print(f"🌐 Navigating to Google Maps: {url}")
@@ -157,12 +159,16 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: st
                     # 3. Check for Website button
                     website_elem = card.query_selector('a[data-tooltip*="Situs web" i], a[data-tooltip*="Website" i], a[aria-label*="website" i]')
                     website_url = website_elem.get_attribute("href") if website_elem else None
-                    if website_url or (rating > 0 and rating < 4.0):
+                    if (website_url and not include_listed) or (rating > 0 and rating < 4.0):
                         continue
                     listing = read_listing(details_page, maps_url, title)
                     if listing is None:
                         continue
-                    listing_phone, address = listing
+                    listing_phone, address, website_links = listing
+                    if website_url and website_url not in website_links:
+                        website_links.append(website_url)
+                    if website_links and not include_listed:
+                        continue
 
                     # 4. Extract Text & Phone
                     card_text = card.inner_text()
@@ -247,9 +253,10 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: st
                         "rating": rating,
                         "reviews": reviews,
                         "address": address,
-                        "website_state": "unknown",
-                        "website": None,
-                        "listing_website_absent": True,
+                        "website_state": "unknown" if not website_links else "present",
+                        "website": website_links[0] if website_links else None,
+                        "website_links": website_links,
+                        "listing_website_absent": not website_links,
                         "category": {
                             "raw": category_raw or query,
                             "vertical": vertical,
@@ -283,9 +290,12 @@ def main():
     parser.add_argument("--limit", type=int, default=15, help="Max leads to collect")
     parser.add_argument("--scrolls", type=int, default=6, help="Scroll depth")
     parser.add_argument("--hl", default="en", help="Google Maps interface language (en or id)")
+    parser.add_argument("--include-listed-websites", action="store_true",
+                        help="Also return listing websites for independent availability review")
     args = parser.parse_args()
 
-    results = scrape_google_maps(args.query, limit=args.limit, max_scrolls=args.scrolls, hl=args.hl)
+    results = scrape_google_maps(args.query, limit=args.limit, max_scrolls=args.scrolls, hl=args.hl,
+                                include_listed=args.include_listed_websites)
     print(f"\nCollected {len(results)} individual listing candidates for independent website review.")
     
     with open(args.out, "w", encoding="utf-8") as f:

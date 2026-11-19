@@ -5,6 +5,11 @@ $site = json_decode(file_get_contents($input), true, 32, JSON_THROW_ON_ERROR);
 if (home_url('/') !== 'https://wpwv.codev.id/' || get_stylesheet() !== 'astra' || count($site['pages']) < 3) {
     WP_CLI::error('Unexpected WebView staging target or incomplete compiled site.');
 }
+$builder = $site['template']['builder'];
+if (!in_array($builder, ['elementor', 'gutenberg'], true) ||
+    ($builder === 'elementor' && !did_action('elementor/loaded'))) {
+    WP_CLI::error('Enable the selected builder on WebView staging before generation.');
+}
 
 $old = [];
 foreach (get_posts(['post_type' => 'page', 'post_status' => 'publish', 'numberposts' => -1]) as $post) {
@@ -55,6 +60,7 @@ foreach ($site['images'] as $asset) {
 }
 
 $ids = [];
+$pageIds = [];
 $menuItems = [];
 global $wpdb;
 $tables = [$wpdb->posts, $wpdb->postmeta, $wpdb->options, $wpdb->terms, $wpdb->term_taxonomy, $wpdb->term_relationships];
@@ -89,7 +95,7 @@ try {
         $check(wp_delete_post($item->ID, true));
     }
     foreach ($site['pages'] as $page) {
-        $body = strtr($page['html'], $tokens);
+        $body = $builder === 'gutenberg' ? '<!-- wp:html -->' . strtr($page['html'], $tokens) . '<!-- /wp:html -->' : '';
         $path = $page['role'] === 'home' ? $page['slug'] : trim($page['route'], '/');
         $parent = $page['parent'] ?? null;
         $id = $check(wp_insert_post(wp_slash([
@@ -99,7 +105,7 @@ try {
             'post_title' => $page['title'],
             'post_name' => $page['slug'],
             'post_parent' => $parent ? $check($ids[$parent] ?? 0) : 0,
-            'post_content' => '<!-- wp:html -->' . $body . '<!-- /wp:html -->',
+            'post_content' => $body,
             'meta_input' => [
                 '_webview_template' => $site['template']['slug'],
                 '_webview_source_page' => $page['source'],
@@ -109,6 +115,27 @@ try {
                 'theme-transparent-header-meta' => 'disabled',
             ],
         ]), true));
+        $pageIds[] = $id;
+        if ($builder === 'elementor') {
+            $elements = $page['elementor'];
+            foreach ($elements as &$container) {
+                $container['elements'][0]['settings']['html'] = strtr($container['elements'][0]['settings']['html'], $tokens);
+            }
+            unset($container);
+            $elementorData = wp_json_encode($elements, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            $check($elementorData);
+            update_post_meta($id, '_elementor_edit_mode', 'builder');
+            update_post_meta($id, '_elementor_template_type', 'wp-page');
+            update_post_meta($id, '_elementor_version', ELEMENTOR_VERSION);
+            update_post_meta($id, '_elementor_data', wp_slash($elementorData));
+            if (get_post_meta($id, '_elementor_data', true) !== $elementorData) {
+                throw new RuntimeException('Elementor data was not persisted.');
+            }
+        } else {
+            foreach (['_elementor_data', '_elementor_edit_mode', '_elementor_template_type', '_elementor_version'] as $key) {
+                delete_post_meta($id, $key);
+            }
+        }
         if (get_page_uri($id) !== $path) {
             throw new RuntimeException('A staging route conflicts with an existing page.');
         }
@@ -150,5 +177,10 @@ try {
     WP_CLI::error($error->getMessage());
 }
 wp_cache_flush();
+if ($builder === 'elementor') {
+    foreach ($pageIds as $id) {
+        (new \Elementor\Core\Files\CSS\Post($id))->delete();
+    }
+}
 flush_rewrite_rules(false);
 WP_CLI::success("WebView built " . count($site['pages']) . " pages from {$site['template']['slug']}.");

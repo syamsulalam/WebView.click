@@ -117,6 +117,10 @@ origin = "https://wpwv.codev.id"
 extensions = set("css js png jpg jpeg webp avif gif svg ico woff woff2 ttf otf eot mp4 webm".split())
 css_urls = re.compile(r"""url\(\s*(['"]?)([^'")]+)\1\s*\)""", re.I)
 assets = set()
+elementor_unneeded_runtime = re.compile(
+    r'<script\b(?=[^>]*\sid=["\']elementor-(?:webpack-runtime|frontend-modules|frontend)-js(?:-before)?["\'])[^>]*>.*?</script>',
+    re.I | re.S,
+)
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -181,9 +185,18 @@ class Page(HTMLParser):
         self.sections = []
         self.links = set()
         self.images = set()
+        self.frames = set()
+        self.is_elementor = False
+        self.visit_footer = False
 
     def handle_starttag(self, tag, attrs):
         fields = dict(attrs)
+        if "elementor" in fields.get("class", "").split() and fields.get("data-elementor-type") == "wp-page":
+            self.is_elementor = True
+        if tag == "footer" and "data-wv-visit" in fields:
+            self.visit_footer = True
+        if tag == "iframe" and fields.get("src"):
+            self.frames.add(fields["src"])
         if tag == "section" and fields.get("data-wv-source-section"):
             self.sections.append((fields["data-wv-source-section"], fields.get("class", "").split()))
         if tag == "a" and fields.get("href"):
@@ -230,8 +243,21 @@ for path in paths:
     if not page.is_file() or not page.stat().st_size:
         raise SystemExit(f"Missing static page: {path}")
     html = page.read_text(encoding="utf-8")
+    if contract["template"]["builder"] == "elementor":
+        # WebView emits HTML widgets only. They use Elementor CSS and native controls,
+        # so the unused frontend runtime would download unrelated lazy widget chunks.
+        if any(widget.get("widgetType") != "html" for container in expected[path]["elementor"]
+               for widget in container["elements"]):
+            raise SystemExit(f"Review frontend dependencies for additional Elementor widgets on {path}")
+        html = elementor_unneeded_runtime.sub("", html)
     parsed = Page(path)
     parsed.feed(html)
+    if contract["template"]["builder"] == "elementor" and not parsed.is_elementor:
+        raise SystemExit(f"Missing Elementor frontend on {path}")
+    if contract.get("profile_listing") and (not parsed.visit_footer or contract["profile_listing"] not in parsed.links):
+        raise SystemExit(f"Missing exact business listing and visit footer on {path}")
+    if contract.get("map_embed_url") and contract["map_embed_url"] not in parsed.frames:
+        raise SystemExit(f"Missing Google Maps embed on {path}")
     roles = expected[path]["sections"]
     if len(parsed.sections) != len(roles) or any(
             number != str(index) or "wv-" + role not in classes
@@ -239,8 +265,8 @@ for path in paths:
         raise SystemExit(f"Export sections differ from the reviewed template on {path}")
     if "tel:" + contract["phone"] not in parsed.links:
         raise SystemExit(f"Missing verified contact action on {path}")
-    digest = expected[path]["image_sha256"]
-    if digest and not any(image.endswith("/" + digest + ".jpg") for image in parsed.images):
+    digests = [expected[path]["image_sha256"]] + expected[path].get("gallery_sha256", [])
+    if any(digest and not any(image.endswith("/" + digest + ".jpg") for image in parsed.images) for digest in digests):
         raise SystemExit(f"The exported page is missing its reviewed image: {path}")
     if expected[path]["role"] in ("home", "services"):
         for service, data in expected.items():
@@ -250,7 +276,7 @@ for path in paths:
         raise SystemExit(f"Missing WebView URL prefix in {path}")
     destination = package / route / "index.html"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(page.read_bytes())
+    destination.write_text(html, encoding="utf-8")
 sitemap = ET.Element("urlset", xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
 for path in expected:
     ET.SubElement(ET.SubElement(sitemap, "url"), "loc").text = "https://sites.webview.click" + prefix.rstrip("/") + path

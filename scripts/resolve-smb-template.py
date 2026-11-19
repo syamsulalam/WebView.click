@@ -47,7 +47,7 @@ def load_requests():
     return known, requests
 
 
-def resolve_entry(slug, templates):
+def resolve_entry(slug, templates, builder="elementor"):
     entry = templates.get(slug)
     if not entry:
         return {"slug": slug, "reason": "Exact template ID is absent from the Companion manifest."}
@@ -55,7 +55,7 @@ def resolve_entry(slug, templates):
     digest = wxr.get("sha256") or ""
     if not (
         entry.get("slug") == slug
-        and entry.get("builder") == "gutenberg"
+        and entry.get("builder") == builder
         and entry.get("readiness") == "qualified"
         and entry.get("static_export_supported") is True
         and entry.get("revision")
@@ -63,9 +63,10 @@ def resolve_entry(slug, templates):
         and wxr["size"] > 0
         and SHA256.fullmatch(digest)
     ):
-        return {"slug": slug, "reason": "A qualified Gutenberg static export and pinned WXR are required."}
+        return {"slug": slug, "reason": f"A qualified {builder} static export and pinned WXR are required."}
     return {
         "slug": slug,
+        "builder": builder,
         "revision": entry["revision"],
         "demo_url": entry.get("domain"),
         "wxr_bytes": wxr["size"],
@@ -73,8 +74,9 @@ def resolve_entry(slug, templates):
     }
 
 
-def resolve_request(row, templates):
-    entries = [resolve_entry(slug, templates) for slug in row.get("candidates", [])]
+def resolve_request(row, templates, builder="elementor"):
+    key = "elementor_candidates" if builder == "elementor" else "candidates"
+    entries = [resolve_entry(slug, templates, builder) for slug in row.get(key, [])]
     candidates = [entry for entry in entries if "reason" not in entry]
     rejected = [entry for entry in entries if "reason" in entry]
     decision = {
@@ -95,6 +97,7 @@ def resolve_request(row, templates):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument("--builder", choices=("elementor", "gutenberg"), default="elementor")
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--query", help="A niche, listed market search term, or category alias")
     action.add_argument("--template-id", help="Look up an exact ID without substitution")
@@ -105,18 +108,18 @@ def main():
         templates = read_json(args.manifest)["templates"]
         known, requests = load_requests()
         if args.audit:
-            result = [resolve_request(row, templates) for row in requests.values()]
+            result = [resolve_request(row, templates, args.builder) for row in requests.values()]
         elif args.template_id is not None:
             if not SLUG.fullmatch(args.template_id):
                 parser.error("Template IDs use lowercase letters, digits and single hyphens.")
-            entry = resolve_entry(args.template_id, templates)
+            entry = resolve_entry(args.template_id, templates, args.builder)
             result = {"status": "needs_review" if "reason" in entry else "candidate", **entry}
         else:
             result = resolve_request(known.get(normalized(args.query)) or {
                 "request": args.query,
                 "outreach_tier": None,
                 "reason": "Unknown request. Select a known niche or add a reviewed catalog route.",
-            }, templates)
+            }, templates, args.builder)
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         parser.exit(1, f"Catalog lookup failed: {exc}\n")
 

@@ -19,7 +19,7 @@
   - [x] 1.4 Verify edge routing & test 404 response
 - [x] **Phase 2: Prospect Data Ingestion & Google Contacts Trust Pre-Save**
   - [x] 2.1 Filter high-income cities (`data/cities.json`) and high-ticket niches (`data/smb_niches.json`)
-  - [x] 2.2 Harvest no-website prospects via `scripts/scrape-maps-direct.py` (SG, UAE, UK, IE)
+  - [x] 2.2 Harvest candidates and review no-site or unavailable-site eligibility
   - [x] 2.3 Validate E.164 phone numbers & review ratings (≥ 4.0)
   - [x] 2.4 Pre-save prospects to Google Contacts via `gog contacts create` (`[SMB] <Name>`)
   - [x] 2.5 Authenticate `gog.exe` with `admin@alampintar.org` & activate People API (Project `150697655157`)
@@ -72,7 +72,7 @@ python scripts\check-sites-edge.py
 
 ### 2️⃣ Phase 2: Prospect Ingestion & Google Contacts Pre-Save
 
-Saving the contact to your Google Account as `[SMB] <Business Name>` causes your phone's address book to sync. When WhatsApp initiates the chat, Meta treats it as a message to an existing address-book contact rather than cold outbound spam.
+Check the individual Google Maps profile, including its Services link, and search independently for a working official website. Use `--include-listed-websites` to collect candidates for separate availability review. Run `python scripts/compile-smb-site.py <reviewed-brief.json> --verify-website` before queueing a qualified lead. For an unavailable site, use the actual URL, recent listing evidence and an independent replacement search. Describe it as unavailable when checked.
 
 > **Strategic Directive:** Target **Tier 1 High-Income Economies** with >75%–95% WhatsApp adoption (Singapore, UAE, UK, Ireland, Netherlands). Full market comparison & rationale: [`KNOWLEDGE-HIGH-INCOME-WHATSAPP-SMB-TARGETING.md`](file:///C:/Users/THINKPAD/OneDrive/MD/KNOWLEDGE/KNOWLEDGE-HIGH-INCOME-WHATSAPP-SMB-TARGETING.md).
 
@@ -123,15 +123,19 @@ node scripts\sync-google-contacts.mjs --input prospects-today.json --vcf contact
 
 ### 3️⃣ Phase 3: Dedicated Headless WordPress Staging (`wpwv.codev.id`)
 
-Generate a prospect site on the dedicated Astra staging tenant from a reviewed brief. The compiler selects an eligible layout for the business category and verifies the original WXR before the command replaces staging pages.
+Generate on the dedicated Astra staging tenant from a reviewed brief. The compiler defaults to the niche-matched Elementor route and validates the original WXR. Set `"builder": "gutenberg"` to use a qualified Gutenberg layout. The Elementor path requires its plugin active on this tenant.
 
 ```powershell
 powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-smb-pipeline.ps1 -ProspectFile .\prospect-brief.json -Limit 1 -StageOnly
 ```
 
-Supply a name, address, E.164 phone, locale, tagline, footer, niche or category, sourced offerings, page copy, and a JPEG with caption, alt text, dimensions and attribution. `data/smb-template-layouts.json` lists the page roles and sections the brief needs. Use the brief's language for all page titles and action labels. A listing-only capture needs research before it can build. Optional `-TemplateManifest` and `-TemplateCache` inputs support exact reproduction. All selected WXR bytes are verified.
+Supply a name, address, E.164 phone, locale, tagline, footer, niche or category, sourced offerings, page copy, and a cleared JPEG with caption, alt text, dimensions and attribution. `data/smb-template-layouts.json` lists the page roles and sections. Supply reviewed `offerings[].detail` with `scope`, `when`, `process`, and two to four `faq` items. `scripts/draft-smb-service.py <brief> <service-slug> <new-draft.json> --oracle-runner <Invoke-OracleSsh.ps1>` drafts one item for review. Optional `-TemplateManifest` and `-TemplateCache` inputs support exact reproduction.
 
-The writer uses the compiled plan and exports it through Simply Static Free. In `-StageOnly`, review the unique printed `Static artifact` directory before calling the uploader. Test all pages, images, navigation, and call or directions links on mobile. The static bundle expects the original `/<slug>/` hosting prefix.
+In `business_profile`, use `listing_url` for the individually confirmed Maps profile and `map_embed_url` from Google Maps Share → Embed a map. With `details`, group reviewed facts under `hours`, `special_hours`, `accessibility`, `offerings`, `amenities`, `planning`, `payments` or `parking`. Each row has `text`, `source` from the brief's source list, and `confirmed_for_export: true`. An optional `gallery` contains cleared originals. An optional `video` contains `youtube_id`, `title` and `publisher_confirmed: true` for an embeddable business-published video. Google listing photos, videos and reviews open at the listing rather than being copied into the static files.
+
+The optional Places UI Kit panel loads photos, reviews, hours and business features from Google only after visitor interaction. Enable it with `business_profile.show_live_maps: true`, the verified `business_profile.place_id`, and `WEBVIEW_MAPS_UI_KIT_BROWSER_KEY` set to a dedicated public browser key restricted to the correct preview origins and enabled APIs. This key appears in the page by design. Keep server credentials out of this setting. A ZIP hosted elsewhere retains its regular listing link.
+
+The writer uses the compiled plan and exports it through Simply Static Free. In `-StageOnly`, review the unique printed `Static artifact` directory. Test all pages, images, navigation, and call or directions links on mobile. The static bundle expects the original `/<slug>/` hosting prefix.
 
 ---
 
@@ -141,8 +145,8 @@ The production recovery on 2026-11-19 replaced HTTP 522 with a redirect from `ht
 
 #### 4.1 Sync Static Assets to Cloudflare R2
 ```powershell
-# Use the Static artifact directory printed by StageOnly and its original prospect slug.
-node scripts\deploy-site-to-r2.mjs --dir $ArtifactPath --slug $Slug
+# Use a reviewed brief and an affirmative reply before publishing.
+.\scripts\run-smb-pipeline.ps1 -ProspectFile .\reviewed-prospect.json -Limit 1
 ```
 *Live Links:*
 - Preview: `https://sites.webview.click/bengkel-jaya-motor-malang/`

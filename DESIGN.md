@@ -234,7 +234,7 @@ Check /contact/ at desktop and mobile widths, including the primary action and c
 Help a customer evaluate one confirmed offering and decide what to ask when calling.
 
 #### Layout and Hierarchy
-Use the selected service title, distinct intro, optional approved hero photo, clear service scope, and a closing call action.
+Lead with the service and optional approved hero photo. Follow with scope, when to book, what to expect, service-specific questions, related service links, and a closing call action. Record the demo page and component positions in the reviewed layout.
 
 #### Components and States
 Render one page per confirmed service. Use the same detail shape for copy-only and approved-photo pages.
@@ -274,8 +274,8 @@ Open each service from the index and navigation. Check the specific text, photo 
 
 ## 6. Cross-Page Consistency
 
-Use the same header, menu, footer identity and contact methods on every page. Preserve normal navigation in both WordPress staging and the static ZIP.
+Use the same header, menu, footer identity and contact methods on every page. The visit area at the foot of each page keeps the physical address, directions and approved map together. A labeled, lazy-loaded map leaves the directions link usable when the embed is unavailable. On About or Contact, group confirmed hours and access, facilities, booking and payment details for scanning. Keep source links to listing photos, videos and reviews together and label approved media. Preserve normal navigation in both WordPress staging and the static ZIP.
 
 ## 7. Verification, Evidence, and Open Questions
 
-The 2026-11-19 automotive pilot used the verified Car Repair WXR. Chromium rendered all eight pages at 1440px and 390px, followed service cards and both navigation menus, and checked image credits, phone and directions links, ZIP files and the sitemap. Four shared pages have side-by-side screenshots against the Astra demo. Evidence is in the OneDrive Companion catalog runbook and `Downloads/WebView-TheCarMan-Comparison`. Additional layout maps need their own verification.
+The Elementor automotive pilot used the verified Car Repair 02 WXR. Chromium rendered all eight exported pages at 1440px and 390px with no missing local assets. It followed the service menus, operated the questions by keyboard, checked the visiting information, footer map, contact links, and ZIP sitemap. The business’s YouTube player loaded on staging. Evidence is in `Downloads/WebView-TheCarMan-Elementor`. The live Places UI Kit panel still needs configured-provider verification. Additional layout maps need their own verification.

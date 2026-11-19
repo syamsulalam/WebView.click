@@ -10,7 +10,7 @@
     "Physiotherapy, Chiropractic & Sports Injury Clinics": {"reason": "Qualify a specialist clinic layout with treatment, practitioner and appointment sections.", "aliases": ["physiotherapy", "chiropractic", "sports injury clinic", "healthcare"]},
     "Tree Surgery, Arboriculture & Heavy Landscaping": {"candidates": ["garden-maintenance-09"], "aliases": ["landscaping", "tree surgeon", "arborist"], "note": "Check fit for tree surgery before selecting this garden-maintenance layout."},
     "Bespoke Joinery & Custom Cabinetry": {"reason": "Qualify a portfolio-first joinery layout with projects, materials and quote sections.", "aliases": ["joinery", "cabinetry", "cabinet maker"]},
-    "Auto Repair Garages & Brake/Transmission Servicing": {"candidates": ["car-repair-08", "car-repair-09"], "aliases": ["automotive", "auto repair", "car repair", "car mechanic", "bengkel mobil"]},
+    "Auto Repair Garages & Brake/Transmission Servicing": {"candidates": ["car-repair-08", "car-repair-09"], "elementor_candidates": ["car-repair", "mechanic"], "aliases": ["automotive", "auto repair", "car repair", "car mechanic", "bengkel mobil"]},
     "Independent Veterinary Clinics": {"reason": "Qualify a veterinary practice layout. Pet sitting is a separate business.", "aliases": ["veterinary", "veterinary clinic", "vet clinic"]},
     "High-End Hair Salons & Aesthetic Studios": {"reason": "Split hair and aesthetic services before selecting a layout. Use the more specific hair salon or beauty spa lookup.", "aliases": ["aesthetic studio"]},
     "Residential & Commercial Pest Extermination": {"reason": "Qualify a pest-control layout with pest types, service area and urgent contact.", "aliases": ["pest control", "exterminator"]},

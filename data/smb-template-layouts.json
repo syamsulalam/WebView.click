@@ -1,8 +1,19 @@
 {
+  "car-repair": {
+    "revision": "1.0.0",
+    "wxr_sha256": "0342aa83ce8b0c234c3886b7c5fef5e53a9e60f50b7d0c4253ffa451e4497a9c",
+    "service_detail": {"source_role": "services", "source_sections": [1, 2, 3, 4, 2, 5]},
+    "pages": {
+      "home": {"source": "Home", "sections": ["hero", "details", "services", "guide", "questions", "callout"]},
+      "services": {"source": "Services", "sections": ["hero", "services", "guide", "questions", "callout"]},
+      "about": {"source": "About", "sections": ["hero", "details", "guide", "callout"]},
+      "contact": {"source": "Contact", "sections": ["hero", "details", "directions"]}
+    }
+  },
   "car-repair-08": {
     "revision": "1.0.0",
     "wxr_sha256": "869e387af13e224527aa8ff7574f272a7b9c4d1cb3989114e01494334e79b1c7",
-    "service_detail": {"source_role": "services", "source_sections": [1, 2, 5]},
+    "service_detail": {"source_role": "services", "source_sections": [1, 2, 3, 4, 2, 5]},
     "pages": {
       "home": {"source": "Home", "sections": ["hero", "details", "services", "guide", "questions", "callout"]},
       "services": {"source": "Services", "sections": ["hero", "services", "guide", "questions", "callout"]},

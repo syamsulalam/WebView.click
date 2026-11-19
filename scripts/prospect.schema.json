@@ -52,10 +52,26 @@
     },
     "website_state": {
       "type": "string",
-      "enum": ["absent", "present", "unknown"]
+      "enum": ["absent", "unavailable", "present", "unknown"]
     },
     "website": {
       "type": ["string", "null"]
+    },
+    "website_links": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "website_check": {
+      "type": "object",
+      "required": ["listing_url", "official_site_found", "checked_at", "search_query"],
+      "properties": {
+        "listing_url": { "type": "string", "format": "uri" },
+        "official_site_found": { "type": "boolean" },
+        "listing_website_absent": { "type": "boolean" },
+        "working_replacement_found": { "type": "boolean" },
+        "checked_at": { "type": "string", "format": "date-time" },
+        "search_query": { "type": "string" }
+      }
     },
     "rating": {
       "type": ["number", "null"],

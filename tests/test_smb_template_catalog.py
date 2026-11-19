@@ -33,26 +33,28 @@ class TemplateCatalogTest(unittest.TestCase):
                 "file_hashes": {"wxr.xml": {"size": 123, "sha256": "a" * 64}},
             },
         }
-        self.assertEqual(catalog.resolve_entry(slug, manifest)["wxr_bytes"], 123)
+        self.assertEqual(catalog.resolve_entry(slug, manifest, "gutenberg")["wxr_bytes"], 123)
         self.assertIn("reason", catalog.resolve_entry("business-consulting-02", manifest))
         manifest[slug]["builder"] = "elementor"
         known, _ = catalog.load_requests()
-        result = catalog.resolve_request(known["automotive"], manifest)
+        result = catalog.resolve_request(known["automotive"], manifest, "gutenberg")
         self.assertEqual(result["status"], "needs_review")
         self.assertEqual(result["candidates"], [])
         self.assertEqual(len(result["rejected"]), 2)
 
     def test_build_resolves_niche_and_rejects_unrelated_or_unreviewed_input(self):
         layouts = catalog.read_json(catalog.DATA / "smb-template-layouts.json")
-        slug, layout = next(iter(layouts.items()))
         manifest = {slug: {
-            "slug": slug, "builder": "gutenberg", "readiness": "qualified",
+            "slug": slug, "builder": builder, "readiness": "qualified",
             "static_export_supported": True, "revision": layout["revision"],
             "file_hashes": {"wxr.xml": {"size": 123, "sha256": layout["wxr_sha256"]}},
-        }}
+        } for slug, builder in (("car-repair", "elementor"), ("car-repair-08", "gutenberg"))
+          for layout in (layouts[slug],)}
         select = compiler["select_template"]
         candidate, _ = select({"category": {"raw": "auto repair"}}, manifest, layouts)
-        self.assertEqual(candidate["slug"], slug)
+        self.assertEqual(candidate["slug"], "car-repair")
+        candidate, _ = select({"niche": "automotive", "builder": "gutenberg"}, manifest, layouts)
+        self.assertEqual(candidate["slug"], "car-repair-08")
         with self.assertRaisesRegex(ValueError, "No catalog route"):
             select({"template_query": "unmapped niche", "niche": "automotive"}, manifest, layouts)
         with self.assertRaisesRegex(ValueError, "No reviewed WebView layout"):
@@ -111,6 +113,53 @@ class TemplateCatalogTest(unittest.TestCase):
             compiler["verify_website_absence"](brief, datetime(2026, 11, 27, tzinfo=timezone.utc))
         with self.assertRaisesRegex(ValueError, "affirmative reply"):
             compiler["verify_outreach"]({**brief, "outreach": {}}, now)
+
+    def test_unavailable_site_rechecks_domain_and_blocks_replacement(self):
+        now = datetime(2026, 11, 19, 12, tzinfo=timezone.utc)
+        check = {"listing_url": "https://www.google.com/maps/place/Example", "search_query": "Example business Dubai",
+                 "checked_at": "2026-11-19T10:00:00Z", "official_site_found": True, "working_replacement_found": False}
+        brief = {"website_state": "unavailable", "website": "https://example.test/services", "website_check": check}
+        calls = []
+        verify = compiler["verify_website_eligibility"]
+        verify(brief, now, calls.append)
+        self.assertEqual(calls, ["example.test"])
+        with self.assertRaisesRegex(ValueError, "replacement search"):
+            verify({**brief, "website_check": {**check, "working_replacement_found": True}}, now, calls.append)
+        with self.assertRaisesRegex(ValueError, "conflicting"):
+            verify({**brief, "website_links": ["https://other.test/"]}, now, calls.append)
+        with self.assertRaisesRegex(ValueError, "public website"):
+            verify({**brief, "website": "http://127.0.0.1/"}, now, calls.append)
+        def restored(host):
+            raise ValueError("domain now resolves")
+        with self.assertRaisesRegex(ValueError, "domain now resolves"):
+            verify(brief, now, restored)
+
+    def test_profile_accepts_google_embed_and_requires_approved_facts(self):
+        url = "https://www.google.com/maps/place/Example"
+        source = "https://example.test/info"
+        facet = {"text": "No wheelchair-accessible entrance", "source": source, "confirmed_for_export": True}
+        profile = {"listing_url": url, "map_embed_url": "https://www.google.com/maps/embed?pb=!1m1",
+                   "details": {"accessibility": [facet]}}
+        brief = {"locale": "en_US", "address": "Example location", "labels": {"directions": "Get directions"},
+                 "sources": [source], "business_profile": profile}
+        content, footer, digests = compiler["profile_markup"](brief, lambda photo: None)
+        self.assertIn(facet["text"], content)
+        self.assertIn('loading="lazy"', footer)
+        self.assertIn(url, footer)
+        self.assertEqual(digests, [])
+        facet["confirmed_for_export"] = False
+        with self.assertRaisesRegex(ValueError, "export approval"):
+            compiler["profile_markup"](brief, lambda photo: None)
+        facet["confirmed_for_export"] = True
+        profile["map_embed_url"] = "https://example.test/maps/embed?pb=!1m1"
+        with self.assertRaisesRegex(ValueError, "Share"):
+            compiler["profile_markup"](brief, lambda photo: None)
+
+    def test_service_requires_substantive_reviewed_sections(self):
+        with self.assertRaisesRegex(ValueError, "expanded service"):
+            compiler["service_detail_copy"](None, "Car Maintenance")
+        with self.assertRaisesRegex(ValueError, "distinct"):
+            compiler["service_detail_copy"](dict.fromkeys(("scope", "when", "process"), "sample copy " * 20), "Car Maintenance")
 
     def test_flare_request_binds_reference_and_exact_model(self):
         request = media["make_request"](b"sample", "auto repair", "muted tones and tight framing")
