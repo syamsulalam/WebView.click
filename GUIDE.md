@@ -29,8 +29,8 @@
   - [ ] 3.3 Await human confirmation (unresponsive contacts expire with 0 wasted generation)
 - [ ] **Phase 4: Just-In-Time (JIT) Site Generation (Triggered On Human Reply)**
   - [ ] 4.1 On human confirmation, execute brand enrichment & palette synthesis (`scripts/enrich-business-brand.py`)
-  - [ ] 4.2 Auto-provision headless staging on `wpwv.codev.id` (`wp st-companion create`)
-  - [ ] 4.3 Export flat static site via Simply Static (`wp simply-static run`)
+  - [ ] 4.2 Provision headless staging on `wpwv.codev.id` through the WebView planner
+  - [ ] 4.3 Export flat static files through the Simply Static Free API
   - [ ] 4.4 Push static assets once to `r2://webview-sites/sites/<slug>/`
   - [ ] 4.5 Capture full-page mobile mockup (`mockups/<slug>-mobile.jpg`)
 - [ ] **Phase 5: Stage 2 Value Gift Drop & Conversion**
@@ -44,23 +44,28 @@
 
 ### 1️⃣ Phase 1: Setup Cloudflare Edge Infrastructure (`sites.webview.click`)
 
-The Cloudflare Worker router serves static sites directly from R2, handles directory indexes (`index.html`), cleans URLs, sets edge caching, and **streams ZIP downloads dynamically on the fly**.
+The production Worker `sites-webview-click` serves `sites.webview.click` from the private `webview-sites` R2 bucket. Use the Cloudflare account that owns the apex Pages project (account ID `5076c806dec2b4df072e537f1a09500c`). The workstation’s named `cf` profile is `webview`.
 
-#### 1.1 Create R2 Bucket
+#### 1.1 Inspect the account and bucket
 ```powershell
-cf.cmd r2 buckets create webview-sites --location-hint apac
+Remove-Item Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
+$env:CLOUDFLARE_ACCOUNT_ID = '5076c806dec2b4df072e537f1a09500c'
+cf.cmd --profile webview zones list --name webview.click
+cf.cmd --profile webview r2 buckets get webview-sites
 ```
 
-#### 1.2 Apply CORS Configuration
-```powershell
-cd C:\Users\THINKPAD\WebView.click
-cf.cmd r2 buckets cors set webview-sites --file cloudflare/r2-cors-webview.json
-```
+The bucket uses Standard storage in APAC. The active CORS policy matches `cloudflare/r2-cors-webview.json`. Use `cf r2 buckets cors update` if that policy changes.
 
-#### 1.3 Deploy the Worker Router
+#### 1.2 Deploy and verify the Worker
+
+Use Wrangler from `cloudflare/sites-worker` with an authenticated session for the account above. The named `cf` profile and Wrangler have separate credential stores. The OneDrive WebView runbook documents how to pass the profile’s current credential directly to the Wrangler child process.
+
 ```powershell
-cd C:\Users\THINKPAD\WebView.click\cloudflare\sites-worker
+Set-Location cloudflare\sites-worker
+pnpm exec tsc --noEmit
 pnpm exec wrangler deploy
+Set-Location ..\..
+python scripts\check-sites-edge.py
 ```
 
 ---
@@ -132,12 +137,12 @@ The project invokes the installed Companion planner and the Simply Static Free P
 
 ### 4️⃣ Phase 4: Single R2 Upload & Mobile Mockup
 
-Verify that `https://sites.webview.click/` returns a redirect to `https://webview.click/` before using the public preview workflow. An HTTP 522 was reproduced on 2026-11-19. The exact Worker Custom Domain is configured in `cloudflare/sites-worker/wrangler.jsonc` and needs deployment from the Cloudflare account that owns the zone.
+The production recovery on 2026-11-19 replaced HTTP 522 with a redirect from `https://sites.webview.click/` to `https://webview.click/`. Run `python scripts\check-sites-edge.py` to reverify the hosted fixture and its ZIP. Generated WordPress exports use `/<slug>/` as their hosting prefix.
 
 #### 4.1 Sync Static Assets to Cloudflare R2
 ```powershell
 # Use the Static artifact directory printed by StageOnly and its original prospect slug.
-node scripts\deploy-site-to-r2.mjs --dir $ArtifactPath --slug $Slug --bucket "webview-sites"
+node scripts\deploy-site-to-r2.mjs --dir $ArtifactPath --slug $Slug
 ```
 *Live Links:*
 - Preview: `https://sites.webview.click/bengkel-jaya-motor-malang/`

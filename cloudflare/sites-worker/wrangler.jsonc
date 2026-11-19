@@ -1,5 +1,7 @@
 {
   "name": "sites-webview-click",
+  "account_id": "5076c806dec2b4df072e537f1a09500c",
+  "workers_dev": false,
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],

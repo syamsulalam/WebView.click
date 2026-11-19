@@ -13,7 +13,7 @@
  * - Security headers & custom 404 fallback
  */
 
-import { downloadZip, InputWithSizeMeta } from "client-zip";
+import { downloadZip } from "client-zip";
 
 export interface Env {
   SITES_BUCKET: R2Bucket;
@@ -48,6 +48,23 @@ function getMimeType(filePath: string): string {
   return MIME_TYPES[ext] || "application/octet-stream";
 }
 
+function objectBody(object: R2Object | R2ObjectBody) {
+  return "body" in object && object.body instanceof ReadableStream ? object.body : null;
+}
+
+async function* zipEntries(bucket: R2Bucket, objects: R2Object[], prefix: string) {
+  for (const { key, etag } of objects) {
+    const name = key.slice(prefix.length);
+    if (!name) continue;
+
+    const object = await bucket.get(key, { onlyIf: { etagMatches: etag } });
+    if (!object || !("body" in object)) {
+      throw new Error("The site changed while its archive was being built.");
+    }
+    yield { name, input: object.body, lastModified: object.uploaded, size: object.size };
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -55,71 +72,56 @@ export default {
     }
 
     const url = new URL(request.url);
-    const pathname = decodeURIComponent(url.pathname);
+    const pathname = url.pathname;
 
     // Root route: redirect to main platform
     if (pathname === "/" || pathname === "") {
       return Response.redirect("https://webview.click", 302);
     }
 
-    // Check Cloudflare Edge Cache first
+    let pathSegments: string[];
+    try {
+      pathSegments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    } catch {
+      return new Response("Bad request", { status: 400 });
+    }
+    const [slug = "", ...segments] = pathSegments;
+    if (slug.length > 63 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ||
+        segments.some(part => part === "." || part === ".." || /[/\\\p{Cc}]/u.test(part))) {
+      return new Response("Not found", { status: 404 });
+    }
+    const subPath = segments.join("/");
+    const head = request.method === "HEAD";
     const cache = caches.default;
-    const cacheKey = new Request(url.toString(), request);
+    const cacheKey = new Request(url.toString());
     const cachedResponse = await cache.match(cacheKey);
     if (cachedResponse) {
-      return cachedResponse;
+      return head ? new Response(null, cachedResponse) : cachedResponse;
     }
-
-    const pathSegments = pathname.split("/").filter(Boolean);
-    const slug = pathSegments[0]; // e.g. 'bengkel-jaya-motor'
-    const subPath = pathSegments.slice(1).join("/"); // e.g. 'about' or 'download'
 
     // =========================================================================
     // Dynamic On-The-Fly ZIP Streaming: /<slug>/download or /<slug>/download.zip
     // =========================================================================
     if (subPath === "download" || subPath === "download.zip") {
       const sitePrefix = `sites/${slug}/`;
-      const listed = await env.SITES_BUCKET.list({ prefix: sitePrefix, limit: 1000 });
+      // Reserve one of the Workers Free internal subrequests for listing.
+      const listed = await env.SITES_BUCKET.list({ prefix: sitePrefix, limit: 999 });
 
       if (!listed.objects || listed.objects.length === 0) {
         return new Response(`Site files for "${slug}" not found in storage.`, { status: 404 });
       }
 
-      // Fetch file objects and map to streaming zip inputs
-      const zipInputs: InputWithSizeMeta[] = [];
-      for (const obj of listed.objects) {
-        // Strip the "sites/<slug>/" prefix so the downloaded zip extracts cleanly into root
-        const relativeName = obj.key.replace(sitePrefix, "");
-        if (!relativeName) continue;
-
-        const fileObj = await env.SITES_BUCKET.get(obj.key);
-        if (fileObj && fileObj.body) {
-          zipInputs.push({
-            name: relativeName,
-            input: fileObj.body,
-            size: obj.size,
-            lastModified: obj.uploaded
-          });
-        }
+      if (listed.truncated) {
+        return new Response("Too many files to package", { status: 413 });
       }
-
-      if (zipInputs.length === 0) {
-        return new Response(`No files available to package for "${slug}".`, { status: 404 });
-      }
-
-      // Generate streaming ZIP response via client-zip
-      const zipResponse = downloadZip(zipInputs);
-      const headers = new Headers(zipResponse.headers);
-      headers.set("Content-Type", "application/zip");
-      headers.set("Content-Disposition", `attachment; filename="${slug}.zip"`);
-      // Cache the generated zip at edge for 7 days
-      headers.set("Cache-Control", "public, max-age=86400, s-maxage=604800");
-
-      const response = new Response(zipResponse.body, {
-        status: 200,
-        headers
+      const headers = new Headers({
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${slug}.zip"`,
+        "Cache-Control": "public, max-age=300, s-maxage=3600",
       });
+      if (head) return new Response(null, { headers });
 
+      const response = new Response(downloadZip(zipEntries(env.SITES_BUCKET, listed.objects, sitePrefix)).body, { headers });
       ctx.waitUntil(cache.put(cacheKey, response.clone()));
       return response;
     }
@@ -147,11 +149,11 @@ export default {
       }
     }
 
-    let object: R2ObjectBody | null = null;
+    let object: R2Object | R2ObjectBody | null = null;
     let resolvedKey = "";
 
     for (const key of candidateKeys) {
-      const candidate = await env.SITES_BUCKET.get(key);
+      const candidate = await (head ? env.SITES_BUCKET.head(key) : env.SITES_BUCKET.get(key));
       if (candidate) {
         object = candidate;
         resolvedKey = key;
@@ -161,16 +163,17 @@ export default {
 
     // Custom 404 handling
     if (!object) {
-      const custom404 = await env.SITES_BUCKET.get(`sites/${slug}/404.html`);
+      const notFoundKey = `sites/${slug}/404.html`;
+      const custom404 = await (head ? env.SITES_BUCKET.head(notFoundKey) : env.SITES_BUCKET.get(notFoundKey));
       if (custom404) {
         const headers = new Headers();
         headers.set("Content-Type", "text/html; charset=utf-8");
-        headers.set("Cache-Control", "public, max-age=300");
-        return new Response(custom404.body, { status: 404, headers });
+        headers.set("Cache-Control", "public, max-age=300, no-transform");
+        return new Response(objectBody(custom404), { status: 404, headers });
       }
 
       return new Response(
-        `<!DOCTYPE html>
+        head ? null : `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="utf-8">
@@ -205,7 +208,7 @@ export default {
 
     const isHtml = mime.includes("text/html");
     const cacheControl = isHtml
-      ? "public, max-age=300, s-maxage=3600, must-revalidate"
+      ? "public, max-age=300, s-maxage=3600, must-revalidate, no-transform"
       : "public, max-age=604800, s-maxage=2592000, immutable";
     headers.set("Cache-Control", cacheControl);
 
@@ -214,8 +217,8 @@ export default {
     headers.set("Access-Control-Allow-Origin", "*");
     if (object.httpEtag) headers.set("ETag", object.httpEtag);
 
-    const response = new Response(object.body, { headers });
-    ctx.waitUntil(cache.put(cacheKey, response.clone()));
+    const response = new Response(objectBody(object), { headers });
+    if (!head) ctx.waitUntil(cache.put(cacheKey, response.clone()));
     return response;
   }
 };

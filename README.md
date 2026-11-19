@@ -13,3 +13,5 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 ```
 
 The command uses the configured Oracle SSH runner and prints the local artifact directory. See the [pipeline guide](GUIDE.md) for input and publishing steps, the [outreach SOP](SOP.md) for when to generate sites, and the [codebase reference](CODEBASE.md) for the architecture.
+
+Run `python scripts/check-sites-edge.py` to check the [live publishing fixture](https://sites.webview.click/webview-publishing-check-20261119/) and its ZIP.

@@ -34,6 +34,8 @@ The **very first message** sent to any prospect MUST strictly be a 6-word busine
   5. `capture-screenshot.py`: Capture high-resolution mobile mockup.
   6. Dispatch Step 2 after the live preview and mobile mockup are ready. A failed build or upload stops delivery.
 
+For infrastructure verification, run `python scripts/check-sites-edge.py` against the synthetic fixture. It exercises the public preview and ZIP without submitting a prospect or sending outreach.
+
 ---
 
 ### 🥉 Invariant 3: Confident Value-First Gift Framing + Clean Opt-Out

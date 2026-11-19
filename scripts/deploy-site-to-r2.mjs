@@ -62,7 +62,7 @@ Arguments:
   --dir       Directory holding exported flat HTML/CSS/JS (from Simply Static)
   --slug      Clean URL slug (e.g. 'bengkel-jaya-motor')
   --bucket    Cloudflare R2 bucket name (default: 'webview-sites')
-  --profile   Cloudflare CLI profile (optional, e.g. 'sandbox-elin')
+  --profile   Cloudflare CLI profile (default: 'webview' for 'webview-sites')
     `);
     process.exit(0);
   }
@@ -70,7 +70,11 @@ Arguments:
   const siteDir = dirIndex !== -1 ? args[dirIndex + 1] : null;
   const slug = slugIndex !== -1 ? args[slugIndex + 1] : null;
   const bucket = bucketIndex !== -1 ? args[bucketIndex + 1] : "webview-sites";
-  const profile = profileIndex !== -1 ? args[profileIndex + 1] : null;
+  const profile = profileIndex !== -1 ? args[profileIndex + 1] : (bucket === "webview-sites" ? "webview" : null);
+
+  if ((profileIndex !== -1 && !profile) || (profile && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(profile))) {
+    throw new Error("Invalid Cloudflare CLI profile.");
+  }
 
   if (!siteDir || !fs.existsSync(siteDir)) {
     console.error("❌ Error: Valid --dir is required.");
@@ -91,6 +95,15 @@ Arguments:
   console.log(`📁 Found ${files.length} static assets to sync.`);
 
   const profileArgs = profile ? ["--profile", profile] : [];
+  const cliEnv = { ...process.env, CF_TIMEOUT: "300000" };
+  if (profile) {
+    for (const key of Object.keys(cliEnv)) {
+      if (key.toUpperCase() === "CLOUDFLARE_API_TOKEN") delete cliEnv[key];
+    }
+  }
+  if (bucket === "webview-sites" && profile === "webview") {
+    cliEnv.CLOUDFLARE_ACCOUNT_ID = "5076c806dec2b4df072e537f1a09500c";
+  }
   let command = "cf";
   let commandArgs = [];
   if (process.platform === "win32") {
@@ -108,7 +121,7 @@ Arguments:
     try {
       execFileSync(command, [...commandArgs, ...profileArgs, "r2", "buckets", "objects", "upload",
         r2Key, "--bucket-name", bucket, "--file", f.fullPath, "--content-type", mime],
-      { stdio: "pipe", env: { ...process.env, CF_TIMEOUT: "300000" }, timeout: 305000 });
+      { stdio: "pipe", env: cliEnv, timeout: 305000 });
       uploaded++;
       if (uploaded % 20 === 0 || uploaded === files.length) {
         console.log(`  ✓ Synced ${uploaded}/${files.length} assets...`);
