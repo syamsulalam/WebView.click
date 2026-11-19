@@ -107,10 +107,11 @@ import sys
 from urllib.error import HTTPError
 from urllib.parse import quote, unquote, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, build_opener
+import xml.etree.ElementTree as ET
 
 root, routes, package, receipt = map(Path, sys.argv[1:])
 contract = json.loads(receipt.read_text(encoding="utf-8"))
-expected = {"/" if p["role"] == "home" else f'/{p["slug"]}/': p for p in contract["pages"]}
+expected = {p["route"]: p for p in contract["pages"]}
 prefix = os.environ["WEBVIEW_PREFIX"] + "/"
 origin = "https://wpwv.codev.id"
 extensions = set("css js png jpg jpeg webp avif gif svg ico woff woff2 ttf otf eot mp4 webm".split())
@@ -234,17 +235,26 @@ for path in paths:
     roles = expected[path]["sections"]
     if len(parsed.sections) != len(roles) or any(
             number != str(index) or "wv-" + role not in classes
-            for index, ((number, classes), role) in enumerate(zip(parsed.sections, roles), 1)):
+            for (number, classes), role, index in zip(parsed.sections, roles, expected[path]["indices"])):
         raise SystemExit(f"Export sections differ from the reviewed template on {path}")
     if "tel:" + contract["phone"] not in parsed.links:
         raise SystemExit(f"Missing verified contact action on {path}")
-    if path == "/" and not any(image.endswith("/" + contract["image_sha256"] + ".jpg") for image in parsed.images):
-        raise SystemExit("The exported homepage is missing the reviewed image.")
+    digest = expected[path]["image_sha256"]
+    if digest and not any(image.endswith("/" + digest + ".jpg") for image in parsed.images):
+        raise SystemExit(f"The exported page is missing its reviewed image: {path}")
+    if expected[path]["role"] in ("home", "services"):
+        for service, data in expected.items():
+            if data["role"] == "service" and prefix.rstrip("/") + service not in parsed.links:
+                raise SystemExit(f"Missing service link on {path}: {service}")
     if prefix not in html:
         raise SystemExit(f"Missing WebView URL prefix in {path}")
     destination = package / route / "index.html"
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(page.read_bytes())
+sitemap = ET.Element("urlset", xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
+for path in expected:
+    ET.SubElement(ET.SubElement(sitemap, "url"), "loc").text = "https://sites.webview.click" + prefix.rstrip("/") + path
+ET.ElementTree(sitemap).write(package / "sitemap.xml", encoding="utf-8", xml_declaration=True)
 print(f"Verified {len(paths)} exported pages and {len(assets)} referenced local assets.")
 PY
 cd "$work/package"

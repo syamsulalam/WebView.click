@@ -2,13 +2,15 @@
 
 import argparse
 import base64
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from html import escape
 import json
 from pathlib import Path
 import re
 from runpy import run_path
-from urllib.parse import urlencode, urlsplit
+import unicodedata
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import build_opener, HTTPRedirectHandler, Request
 
 
@@ -41,9 +43,10 @@ def fetch(name, limit):
 def select_template(prospect, templates, layouts):
     known, _ = CATALOG["load_requests"]()
     category = prospect.get("category") or {}
+    place = prospect.get("place") or {}
     explicit = prospect.get("template_query")
     queries = (explicit,) if explicit is not None else (
-        category.get("raw"), category.get("vertical"), prospect.get("niche"))
+        category.get("raw"), place.get("primaryType"), category.get("vertical"), prospect.get("niche"))
     route = next((known[key] for q in queries if isinstance(q, str) and
                   (key := CATALOG["normalized"](q)) in known), None)
     require(route is not None, "No catalog route for this prospect's niche.")
@@ -128,7 +131,129 @@ def button_text(accent):
     return "#000" if (luminance + 0.05) / 0.05 >= 4.5 else "#fff"
 
 
-def render_page(role, page, roles, source, prospect, photo):
+def plan_services(prospect):
+    offerings = prospect.get("offerings")
+    if offerings is None:
+        offerings = (prospect.get("place") or {}).get("services")
+    require(isinstance(offerings, list) and 1 <= len(offerings) <= 12,
+            "Supply one to twelve confirmed offerings from the business or its listing.")
+    result = []
+    slugs = set()
+    for item in offerings:
+        title = copy(item, "title", 3, 58)
+        slug = item.get("slug")
+        if slug is None:
+            ascii_title = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+            slug = re.sub(r"[^a-z0-9]+", "-", ascii_title.lower()).strip("-")[:54].rstrip("-")
+        require(isinstance(slug, str) and CATALOG["SLUG"].fullmatch(slug) and len(slug) <= 55 and slug not in slugs,
+                "Service slugs must be unique and valid. Supply a slug when the title cannot be transliterated.")
+        slugs.add(slug)
+        evidence = source_url(copy(item, "source", 10, 800))
+        require(evidence in prospect["sources"], "Each service source must be listed in the brief.")
+        summary = copy(item, "summary", 42, 320)
+        description = copy(item, "description", 100, 560)
+        require(summary.casefold() != description.casefold(), "A service detail needs its own copy.")
+        result.append({"title": title, "slug": slug, "summary": summary, "description": description,
+                       "source": evidence, "photo": item.get("photo")})
+    return result
+
+
+def verify_website_absence(prospect, now=None):
+    check = prospect.get("website_check") or {}
+    place = prospect.get("place") or {}
+    website_fields = ("website", "websiteUrl", "websiteUri", "website_url")
+    listed_site = any(record.get(field) for record in (prospect, place) for field in website_fields)
+    require(prospect.get("website_state") == "absent" and "website" in prospect and prospect["website"] is None
+            and not listed_site
+            and check.get("listing_website_absent") is True and check.get("official_site_found") is False,
+            "Outreach requires a confirmed listing without a website and an independent official-site search.")
+    listing = source_url(copy(check, "listing_url", 12, 900))
+    parts = urlsplit(listing)
+    require((parts.hostname == "maps.app.goo.gl" and len(parts.path.strip("/")) >= 6)
+            or (parts.hostname in {"www.google.com", "maps.google.com"}
+                and (parts.path.startswith("/maps/place/") or parse_qs(parts.query).get("cid"))),
+            "Use the individual Google Maps listing URL.")
+    copy(check, "search_query", 8, 250)
+    checked = datetime.fromisoformat(copy(check, "checked_at", 16, 40).replace("Z", "+00:00"))
+    require(checked.tzinfo is not None, "Website check time must include a time zone.")
+    age = (now or datetime.now(timezone.utc)) - checked
+    require(timedelta(0) <= age <= timedelta(days=7), "Refresh the listing and official-site checks.")
+
+
+def verify_outreach(prospect, now=None):
+    verify_website_absence(prospect, now)
+    require((prospect.get("outreach") or {}).get("affirmative_reply") is True,
+            "Publishing a prospect preview requires an affirmative reply.")
+
+
+def prepare_photo(photo, asset_dir):
+    require(photo.get("origin") in {"owner", "owner_listing", "licensed_illustration", "gpt_image_26_flare"}
+            and photo.get("redistribution_allowed") is True,
+            "Use an owner original, a licensed illustration, or a reviewed Flare image cleared for redistribution.")
+    for key in ("alt", "caption", "credit"):
+        copy(photo, key, 8, 180)
+    source_url(photo["source"])
+    if photo["origin"] == "owner_listing":
+        copy(photo, "permission_record", 8, 250)
+    if photo.get("license"):
+        source_url(photo["license"])
+    path = asset_dir / photo["file"]
+    require(path.is_file() and 0 < path.stat().st_size <= 1_000_000, "Supply a reviewed JPEG under 1 MB.")
+    image = path.read_bytes()
+    require(image.startswith(b"\xff\xd8\xff") and all(type(photo[k]) is int and 0 < photo[k] <= 4096
+            for k in ("width", "height")), "Invalid JPEG or image dimensions.")
+    digest = sha256(image).hexdigest()
+    if photo["origin"] == "gpt_image_26_flare":
+        provenance = CATALOG["read_json"](asset_dir / photo["provenance"])
+        require(provenance.get("model") == "gpt-image-2.6-flare" and provenance.get("status") == "success"
+                and provenance.get("jpeg_sha256") == digest and
+                re.fullmatch(r"[0-9a-f]{64}", provenance.get("reference_sha256", "")) and
+                photo.get("visual_reviewed") is True and
+                "illustration" in photo["caption"].casefold(),
+                "Flare assets need a verified model/reference receipt and an illustration caption.")
+    return {"sha256": digest, "image": base64.b64encode(image).decode(), "width": photo["width"], "height": photo["height"]}
+
+
+def photo_markup(photo, asset):
+    license_link = ' · ' + action(photo["license"], photo["license_label"], "credit") if photo.get("license") else ""
+    return (
+        f'<figure class="wv-photo"><img src="@@WV_IMAGE_{asset["sha256"]}@@" '
+        f'alt="{escape(photo["alt"], quote=True)}" width="{asset["width"]}" '
+        f'height="{asset["height"]}">'
+        f'<figcaption>{escape(photo["caption"])} '
+        f'{action(photo["source"], photo["credit"], "credit")}{license_link}</figcaption></figure>'
+    )
+
+
+def service_page(offering, prospect, source, indices, photo_html):
+    title = escape(offering["title"])
+    parent = MARK + prospect["pages"]["services"]["slug"] + "/"
+    call = action("tel:" + prospect["phone"], prospect["labels"]["call"])
+    index = action(parent, prospect["labels"]["services"], "secondary")
+    byline = escape(prospect["name"]) + " · " + escape(prospect["address"])
+    parts = [
+        f'<div><h1>{title}</h1><p>{escape(offering["summary"])}</p><div class="wv-actions">{call}{index}</div></div>' + photo_html,
+        f'<h2>{escape(prospect["labels"]["service_details"])}</h2><p>{escape(offering["description"])}</p>',
+        f'<h2>{title}</h2><p>{byline}</p>{call}',
+    ]
+    roles = ["hero", "guide", "callout"]
+    sections = "".join(section_html(kind, i, source[i - 1][1], body)
+                       for kind, i, body in zip(roles, indices, parts, strict=True))
+    return roles, wrap_sections(sections)
+
+
+def section_html(kind, index, attrs, html):
+    spacing = attrs.get("topPaddingDesktop", 72)
+    spacing = min(112, max(32, spacing)) if type(spacing) is int else 72
+    return (f'<section class="wv-section wv-{kind}" data-wv-source-section="{index}" '
+            f'style="--wv-space:{spacing}px"><div class="wv-inner">{html}</div></section>')
+
+
+def wrap_sections(sections):
+    return ('<div class="wv-preview">' + sections + "</div>").replace("[", "&#91;").replace("]", "&#93;")
+
+
+def render_page(role, page, roles, source, prospect, photo_html):
     phone = prospect["phone"]
     home = MARK
     services = home + prospect["pages"]["services"]["slug"] + "/"
@@ -136,12 +261,6 @@ def render_page(role, page, roles, source, prospect, photo):
         "api": 1, "query": f"{prospect['name']}, {prospect['address']}"})
     labels = prospect["labels"]
     rendered = []
-    photo_html = (
-        f'<figure class="wv-photo"><img src="@@WV_IMAGE@@" alt="{escape(photo["alt"], quote=True)}" '
-        f'width="{photo["width"]}" height="{photo["height"]}" fetchpriority="high">'
-        f'<figcaption>{escape(photo["caption"])} '
-        f'{action(photo["source"], photo["credit"], "credit")}</figcaption></figure>'
-    )
     slots = page["sections"]
     require(set(slots) == set(roles), f"{role} needs the reviewed source sections: {', '.join(roles)}.")
     for index, (kind, (_, attrs)) in enumerate(zip(roles, source, strict=True), 1):
@@ -155,14 +274,13 @@ def render_page(role, page, roles, source, prospect, photo):
             if role == "home":
                 controls += action(services, labels["services"], "secondary")
             text = f'<div>{text}<div class="wv-actions">{controls}</div></div>'
-            if role == "home":
-                text += photo_html
+            text += photo_html
         elif kind == "services":
             cards = []
             for offering in prospect["offerings"]:
-                heading = escape(copy(offering, "title", 3, 90))
                 detail = escape(copy(offering, "summary" if role == "home" else "description", 42, 560))
-                cards.append(f'<article class="wv-card"><h3>{heading}</h3><p>{detail}</p></article>')
+                link = action(services + offering["slug"] + "/", offering["title"], "service-link")
+                cards.append(f'<article class="wv-card"><h3>{link}</h3><p>{detail}</p></article>')
             text += '<div class="wv-grid">' + "".join(cards) + "</div>"
         elif kind in ROLES_WITH_ITEMS:
             items = slot.get("items", [])
@@ -180,18 +298,14 @@ def render_page(role, page, roles, source, prospect, photo):
             text += action("tel:" + phone, labels["call"])
         elif kind == "directions":
             text += action(directions, labels["directions"])
-        spacing = attrs.get("topPaddingDesktop", 72)
-        spacing = min(112, max(32, spacing)) if type(spacing) is int else 72
-        rendered.append(
-            f'<section class="wv-section wv-{kind}" data-wv-source-section="{index}" '
-            f'style="--wv-space:{spacing}px"><div class="wv-inner">{text}</div></section>'
-        )
-    html = '<div class="wv-preview">' + "".join(rendered) + "</div>"
-    return html.replace("[", "&#91;").replace("]", "&#93;")
+        rendered.append(section_html(kind, index, attrs, text))
+    return wrap_sections("".join(rendered))
 
 
-def compile_site(input_path, manifest, cache):
+def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
     prospect = CATALOG["read_json"](input_path)
+    if outreach:
+        verify_outreach(prospect)
     templates = (CATALOG["read_json"](manifest) if manifest else json.loads(fetch("manifest.json", 2_000_000)))["templates"]
     layouts = CATALOG["read_json"](CATALOG["DATA"] / "smb-template-layouts.json")
     candidate, layout = select_template(prospect, templates, layouts)
@@ -202,22 +316,22 @@ def compile_site(input_path, manifest, cache):
     require("[" not in footer and "]" not in footer, "Do not use WordPress shortcodes in the footer.")
     require(re.fullmatch(r"\+[1-9][0-9]{7,14}", prospect["phone"]), "Use an E.164 contact phone.")
     require(re.fullmatch(r"[a-z]{2}_[A-Z]{2}", prospect["locale"]), "Use a WordPress locale such as en_US.")
-    require(3 <= len(prospect["offerings"]) <= 12, "Supply three to twelve researched service descriptions.")
     require(len(prospect["sources"]) >= 2, "Supply source URLs for the business identity and services.")
     for url in prospect["sources"]:
         source_url(url)
-    for key in ("services", "call", "directions"):
+    for key in ("services", "call", "directions", "service_details"):
         copy(prospect["labels"], key, 3, 45)
     require(set(prospect["pages"]) == set(layout["pages"]), "Brief page set differs from the reviewed template.")
-    photo = prospect["photo"]
-    for key in ("alt", "caption", "credit"):
-        copy(photo, key, 8, 180)
-    source_url(photo["source"])
-    path = input_path.parent / photo["file"]
-    require(path.is_file() and 0 < path.stat().st_size <= 1_000_000, "Supply one reviewed JPEG under 1 MB.")
-    image = path.read_bytes()
-    require(image.startswith(b"\xff\xd8\xff") and all(type(photo[k]) is int and 0 < photo[k] <= 4096
-            for k in ("width", "height")), "Invalid JPEG or image dimensions.")
+    prospect["offerings"] = plan_services(prospect)
+    assets = {}
+
+    def accept_photo(photo):
+        asset = prepare_photo(photo, asset_dir or input_path.parent)
+        require(asset["sha256"] not in assets, "Select a distinct photo for each occupied image slot.")
+        assets[asset["sha256"]] = asset
+        return photo_markup(photo, asset), asset["sha256"]
+
+    hero_photo, hero_digest = accept_photo(prospect["photo"])
     source = source_layouts(candidate, layout, cache)
     pages = []
     seen_slugs = set()
@@ -226,31 +340,58 @@ def compile_site(input_path, manifest, cache):
         slug = page["slug"]
         require(CATALOG["SLUG"].fullmatch(slug) and len(slug) <= 55 and slug not in seen_slugs, "Invalid or duplicate route slug.")
         seen_slugs.add(slug)
+        if role == "home":
+            photo_html, digest = hero_photo, hero_digest
+        elif page.get("photo"):
+            photo_html, digest = accept_photo(page["photo"])
+        else:
+            photo_html, digest = "", None
         pages.append({"role": role, "slug": slug, "title": copy(page, "title", 2, 58),
+                      "route": "/" if role == "home" else f"/{slug}/",
                       "source": mapping["source"], "sections": mapping["sections"],
-                      "html": render_page(role, page, mapping["sections"], source[role], prospect, photo)})
+                      "indices": list(range(1, len(mapping["sections"]) + 1)),
+                      "image_sha256": digest,
+                      "html": render_page(role, page, mapping["sections"], source[role], prospect, photo_html)})
     require(len({prospect["pages"][role]["sections"]["hero"]["body"].strip().casefold()
                  for role in layout["pages"]}) == len(pages), "Hero introductions must be page-specific.")
+    detail = layout["service_detail"]
+    source_role, indices = detail["source_role"], detail["source_sections"]
+    service_base = prospect["pages"]["services"]["slug"]
+    for offering in prospect["offerings"]:
+        photo_html, digest = accept_photo(offering["photo"]) if offering["photo"] else ("", None)
+        roles, html = service_page(offering, prospect, source[source_role], indices, photo_html)
+        pages.append({"role": "service", "slug": offering["slug"], "title": offering["title"],
+                      "route": f"/{service_base}/{offering['slug']}/", "parent": "services",
+                      "source": layout["pages"][source_role]["source"], "sections": roles,
+                      "indices": indices, "image_sha256": digest, "html": html})
     accent = prospect.get("accent", "#e9b447")
     require(re.fullmatch(r"#[0-9a-fA-F]{6}", accent), "Accent must be a hex color.")
     css = (SCRIPTS / "wpwv-preview.css").read_text(encoding="utf-8")
     css = css.replace("@@WV_ACCENT@@", accent).replace("@@WV_BUTTON_TEXT@@", button_text(accent))
     return {"name": name, "tagline": tagline, "locale": prospect["locale"], "template": candidate,
             "phone": prospect["phone"], "footer": footer,
-            "pages": pages, "css": css, "image": base64.b64encode(image).decode(),
-            "image_sha256": sha256(image).hexdigest(), "image_width": photo["width"],
-            "image_height": photo["height"]}
+            "pages": pages, "css": css, "images": list(assets.values())}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("prospect", type=Path)
-    parser.add_argument("output", type=Path)
+    parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--template-cache", type=Path)
+    parser.add_argument("--asset-dir", type=Path, help="Directory for relative media paths")
+    checks = parser.add_mutually_exclusive_group()
+    checks.add_argument("--outreach", action="store_true", help="Require recent no-website and opt-in evidence")
+    checks.add_argument("--verify-website", action="store_true", help="Check website evidence before first contact")
     args = parser.parse_args()
+    if not args.verify_website and args.output is None:
+        parser.error("output is required when compiling a site")
     try:
-        result = compile_site(args.prospect, args.manifest, args.template_cache)
+        if args.verify_website:
+            verify_website_absence(CATALOG["read_json"](args.prospect))
+            print("Recent listing and official-site checks record no website.")
+            return
+        result = compile_site(args.prospect, args.manifest, args.template_cache, args.asset_dir, args.outreach)
         args.output.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
     except (OSError, KeyError, TypeError, ValueError, AttributeError) as exc:
         parser.exit(2, f"WebView brief needs review: {exc}\n")

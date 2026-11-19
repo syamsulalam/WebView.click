@@ -6,31 +6,42 @@ Direct Headless Google Maps Scraper (Playwright with Chrome):
 - Queries Google Maps directly with zero paid third-party API dependencies (no Serper / SerpApi required).
 - Auto-scrolls the results feed to collect local business listings.
 - Inspects each listing's DOM for phone, address, rating, review count, and website.
-- Strictly filters for SMB Outreach targets:
-    1. website is None or empty (Zero website listed)
-    2. valid phone number
-    3. rating >= 4.0
-- Outputs standard JSON compatible with `run-smb-pipeline.ps1` and `sync-google-contacts.mjs`.
+- Opens the individual listing to check for a website and fill missing contact details.
+- Keeps candidates pending an independent official-site search.
+- Outputs JSON for prospect research.
 """
 
-import sys
-import os
-import io
 import json
 import re
 import time
 import urllib.parse
-import urllib.request
 import argparse
-import importlib
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
-# Import enrich-business-brand module
-try:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    enrich = importlib.import_module("enrich-business-brand")
-except Exception as e:
-    enrich = None
+
+def read_listing(page, maps_url, expected_name):
+    if not maps_url:
+        return None
+    url = urllib.parse.urljoin("https://www.google.com", maps_url)
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or parts.netloc != "www.google.com" or not parts.path.startswith("/maps/place/"):
+        return None
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=8000)
+        page.get_by_role("heading", name=expected_name, exact=True, level=1).wait_for(timeout=4500)
+        address = page.locator('button[data-item-id="address"]').first
+        address.wait_for(timeout=3000)
+    except PlaywrightTimeoutError:
+        return None
+    website = page.locator('a[data-item-id="authority"], a[data-tooltip*="Website" i], '
+                           'a[data-tooltip*="Situs web" i], a[aria-label^="Website" i], '
+                           'a[aria-label^="Situs web" i]')
+    if website.count():
+        return None
+    phone_button = page.locator('button[data-item-id^="phone:tel:"]').first
+    phone_id = (phone_button.get_attribute("data-item-id", timeout=1000) or "") if phone_button.count() else ""
+    address_text = address.get_attribute("aria-label", timeout=1000) or ""
+    return phone_id.removeprefix("phone:tel:"), address_text.partition(": ")[2]
 
 def clean_text(text: str) -> str:
     if not text:
@@ -77,6 +88,7 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: st
             locale="en-US" if hl == "en" else "id-ID"
         )
         page = context.new_page()
+        details_page = context.new_page()
 
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=25000)
@@ -145,17 +157,23 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: st
                     # 3. Check for Website button
                     website_elem = card.query_selector('a[data-tooltip*="Situs web" i], a[data-tooltip*="Website" i], a[aria-label*="website" i]')
                     website_url = website_elem.get_attribute("href") if website_elem else None
-                    if website_url and "google.com" in website_url:
-                        website_url = None
+                    if website_url or (rating > 0 and rating < 4.0):
+                        continue
+                    listing = read_listing(details_page, maps_url, title)
+                    if listing is None:
+                        continue
+                    listing_phone, address = listing
 
                     # 4. Extract Text & Phone
                     card_text = card.inner_text()
                     lines = [clean_text(line) for line in card_text.split("\n") if clean_text(line)]
 
-                    phone = ""
+                    phone = re.sub(r"[^\d+]", "", listing_phone)
+                    if not phone.startswith("+"):
+                        phone = ""
                     # 1. Check for UAE phone pattern (+971, 00971, 971, 05x, 04, 02)
                     uae_match = re.search(r"(?:(?:\+971|00971|971|0)[\s-]?(?:5[024568]|4|2|6|7|9)[\s-]?\d{3}[\s-]?\d{4})", card_text)
-                    if uae_match:
+                    if not phone and uae_match:
                         raw_p = re.sub(r"[^\d+]", "", uae_match.group(0))
                         if raw_p.startswith("00971"):
                             phone = "+" + raw_p[2:]
@@ -186,21 +204,7 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: st
                         if gen_match:
                             phone = gen_match.group(0)
 
-                    address = ""
-                    for line in lines:
-                        if re.search(r"\b(Jl\.|Jalan|Kec\.|Kota|Kab\.|No\.|Malang|Surabaya|Jakarta|Dubai|Abu Dhabi|Sharjah|Al Quoz|Business Bay|Marina|Deira)\b", line, re.I):
-                            address = line
-                            break
-
-                    # FILTER RULES:
-                    # 1. Must NOT have a website
-                    if website_url:
-                        continue
-                    # 2. Must have a phone number for WhatsApp outreach
-                    if not phone:
-                        continue
-                    # 3. Must have reputable rating
-                    if rating > 0 and rating < 4.0:
+                    if not re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
                         continue
 
                     # Extract Category & Vertical
@@ -234,41 +238,6 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: st
 
                     vertical = map_category_to_vertical(category_raw or query)
 
-                    # Extract card photos
-                    photo_urls = []
-                    img_nodes = card.query_selector_all('img[src*="googleusercontent.com"], img[src*="ggpht.com"]')
-                    for img_node in img_nodes:
-                        src = img_node.get_attribute("src")
-                        if src and "http" in src:
-                            high_res = re.sub(r"=w\d+-h\d+.*", "=s800", src)
-                            if high_res not in photo_urls:
-                                photo_urls.append(high_res)
-
-                    # Download photos and enrich brand if enrich module loaded
-                    photos_dir = os.path.join("assets", "prospects", slug, "photos")
-                    os.makedirs(photos_dir, exist_ok=True)
-                    local_photos = []
-                    for p_idx, p_url in enumerate(photo_urls[:6]):
-                        try:
-                            local_p_path = os.path.join(photos_dir, f"photo_{p_idx}.jpg")
-                            req = urllib.request.Request(p_url, headers={"User-Agent": "Mozilla/5.0"})
-                            with urllib.request.urlopen(req, timeout=10) as resp, open(local_p_path, "wb") as out_f:
-                                out_f.write(resp.read())
-                            local_photos.append(local_p_path)
-                        except Exception:
-                            continue
-
-                    brand_meta = {
-                        "palette": enrich.NEUTRAL_FALLBACK_PALETTE if enrich else ["#046bd2", "#045cb4", "#1e293b", "#334155", "#f8fafc", "#ffffff", "#e2e8f0", "#f1f5f9", "#0f172a"],
-                        "palette_source": "neutral-fallback",
-                        "logo": {"status": "not_found", "path": None, "sha256": None, "source_id": None}
-                    }
-
-                    if enrich and local_photos:
-                        enriched_dummy = enrich.process_prospect_brand({"photos": local_photos}, photos_dir=photos_dir)
-                        if "brand" in enriched_dummy:
-                            brand_meta = enriched_dummy["brand"]
-
                     prospect = {
                         "schema_version": 1,
                         "name": title,
@@ -278,21 +247,21 @@ def scrape_google_maps(query: str, limit: int = 15, max_scrolls: int = 5, hl: st
                         "rating": rating,
                         "reviews": reviews,
                         "address": address,
-                        "website_state": "absent",
+                        "website_state": "unknown",
                         "website": None,
+                        "listing_website_absent": True,
                         "category": {
                             "raw": category_raw or query,
                             "vertical": vertical,
                             "source_id": "google_maps_card"
                         },
-                        "brand": brand_meta,
-                        "maps_url": maps_url or url,
+                        "maps_url": maps_url,
                         "source": "google_maps_playwright_direct"
                     }
 
                     seen_names.add(title)
                     prospects.append(prospect)
-                    print(f"  🎯 Found Target: {title} | Phone: {phone} | Rating: {rating}⭐ ({reviews} reviews)")
+                    print(f"  Candidate for official-site review: {title}")
 
                     if len(prospects) >= limit:
                         break
@@ -317,7 +286,7 @@ def main():
     args = parser.parse_args()
 
     results = scrape_google_maps(args.query, limit=args.limit, max_scrolls=args.scrolls, hl=args.hl)
-    print(f"\n✅ Total qualified no-website leads collected: {len(results)}")
+    print(f"\nCollected {len(results)} individual listing candidates for independent website review.")
     
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)

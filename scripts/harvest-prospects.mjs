@@ -4,34 +4,30 @@
  * 
  * Standalone CLI Prospect Harvester for SMB Lead Generation:
  * - Scrapes Google Maps / Places via Serper Places API or Google Places Text Search.
- * - Filters strictly for high-potential leads:
- *   1. No website listed (or website is null/empty)
- *   2. Has valid phone / WhatsApp number
- *   3. Rating >= 4.0 (established reputation)
- * - Outputs clean JSON compatible with `run-smb-pipeline.ps1` and `sync-google-contacts.mjs`.
+ * - Excludes known website links and requires a listed phone.
+ * - Outputs candidates for individual listing and independent website review.
  */
 
 import fs from "fs";
-import path from "path";
 
-async function harvestViaSerper(query, apiKey, limit = 20) {
+async function harvestViaSerper(query, apiKey, limit, country) {
   console.log(`🔍 Querying Serper Places API: "${query}"...`);
   const response = await fetch("https://google.serper.dev/places", {
     method: "POST",
+    signal: AbortSignal.timeout(15000),
     headers: {
       "X-API-KEY": apiKey,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
       q: query,
-      gl: "id",
-      hl: "id"
+      gl: country,
+      hl: country === "id" ? "id" : "en"
     })
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Serper API error (${response.status}): ${errText}`);
+    throw new Error(`Serper Places returned HTTP ${response.status}.`);
   }
 
   const data = await response.json();
@@ -60,8 +56,10 @@ async function harvestViaSerper(query, apiKey, limit = 20) {
       name: p.title,
       phone: p.phoneNumber,
       address: p.address || "",
-      rating: p.rating || 4.5,
-      reviews: p.ratingCount || 10,
+      rating: p.rating ?? null,
+      reviews: p.ratingCount ?? null,
+      website_state: "unknown",
+      website: null,
       category: p.category || "SMB",
       niche: query.split(" ")[0].toLowerCase(),
       latitude: p.latitude,
@@ -78,12 +76,12 @@ async function harvestViaSerper(query, apiKey, limit = 20) {
 async function harvestViaGooglePlaces(query, apiKey, limit = 20) {
   console.log(`🔍 Querying Google Maps TextSearch API: "${query}"...`);
   const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(searchUrl);
-  if (!res.ok) throw new Error(`Google API error: ${res.statusText}`);
+  const res = await fetch(searchUrl, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`Google Places returned HTTP ${res.status}.`);
   
   const data = await res.json();
   if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-    throw new Error(`Google Places status: ${data.status} - ${data.error_message || ""}`);
+    throw new Error("Google Places returned an unsuccessful search status.");
   }
 
   const results = data.results || [];
@@ -92,10 +90,12 @@ async function harvestViaGooglePlaces(query, apiKey, limit = 20) {
   const filtered = [];
   for (const r of results) {
     // Fetch details to inspect website and phone
-    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(r.place_id)}&fields=name,formatted_phone_number,international_phone_number,website,formatted_address,rating,user_ratings_total,opening_hours&key=${encodeURIComponent(apiKey)}`;
-    const dRes = await fetch(detailsUrl);
+    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(r.place_id)}&fields=name,formatted_phone_number,international_phone_number,website,url,formatted_address,rating,user_ratings_total,opening_hours&key=${encodeURIComponent(apiKey)}`;
+    const dRes = await fetch(detailsUrl, { signal: AbortSignal.timeout(15000) });
+    if (!dRes.ok) continue;
     const dData = await dRes.json();
-    const details = dData.result || {};
+    if (dData.status !== "OK" || !dData.result?.name) continue;
+    const details = dData.result;
 
     if (details.website && details.website.trim()) continue; // Skip if already has website
     const phone = details.international_phone_number || details.formatted_phone_number;
@@ -111,8 +111,13 @@ async function harvestViaGooglePlaces(query, apiKey, limit = 20) {
       name: details.name || r.name,
       phone: phone.replace(/[^0-9+]/g, ""),
       address: details.formatted_address || r.formatted_address || "",
-      rating: details.rating || r.rating || 4.5,
-      reviews: details.user_ratings_total || r.user_ratings_total || 5,
+      rating: details.rating ?? r.rating ?? null,
+      reviews: details.user_ratings_total ?? r.user_ratings_total ?? null,
+      website_state: "unknown",
+      website: null,
+      place_id: r.place_id,
+      maps_url: details.url ?? null,
+      listing_website_absent: true,
       niche: query.split(" ")[0].toLowerCase(),
       source: "google_places_api"
     });
@@ -128,11 +133,12 @@ async function main() {
   const queryIndex = args.indexOf("--query");
   const outIndex = args.indexOf("--out");
   const limitIndex = args.indexOf("--limit");
+  const countryIndex = args.indexOf("--country");
 
   if (args.length === 0 || args.includes("--help")) {
     console.log(`
 Usage:
-  node harvest-prospects.mjs --query "bengkel mobil malang" [--out prospects.json] [--limit 15]
+  node harvest-prospects.mjs --query "car repair Al Quoz Dubai" [--out prospects.json] [--limit 15] [--country ae]
 
 Environment variables:
   SERPER_API_KEY        (or SERPER_CODEV_RESEARCH_API_KEY)
@@ -144,10 +150,14 @@ Environment variables:
   const query = queryIndex !== -1 ? args[queryIndex + 1] : null;
   const outFile = outIndex !== -1 ? args[outIndex + 1] : "prospects.json";
   const limit = limitIndex !== -1 ? parseInt(args[limitIndex + 1], 10) : 15;
+  const country = countryIndex !== -1 ? args[countryIndex + 1] : "id";
 
   if (!query) {
     console.error("❌ Error: --query is required (e.g. --query 'salon surabaya barat').");
     process.exit(1);
+  }
+  if (!/^[a-z]{2}$/.test(country ?? "") || !Number.isInteger(limit) || limit < 1 || limit > 60) {
+    throw new Error("Supply a lowercase country code and a limit from 1 to 60.");
   }
 
   const serperKey = process.env.SERPER_API_KEY || process.env.SERPER_CODEV_RESEARCH_API_KEY;
@@ -155,7 +165,7 @@ Environment variables:
 
   let prospects = [];
   if (serperKey) {
-    prospects = await harvestViaSerper(query, serperKey, limit);
+    prospects = await harvestViaSerper(query, serperKey, limit, country);
   } else if (placesKey) {
     prospects = await harvestViaGooglePlaces(query, placesKey, limit);
   } else {
@@ -164,9 +174,12 @@ Environment variables:
     process.exit(1);
   }
 
-  console.log(`🎯 Successfully harvested ${prospects.length} high-intent no-website SMB lead(s)!`);
+  console.log(`Collected ${prospects.length} candidates for website review.`);
   fs.writeFileSync(outFile, JSON.stringify(prospects, null, 2), "utf8");
   console.log(`💾 Saved to: ${outFile}`);
 }
 
-main().catch(console.error);
+main().catch(error => {
+  console.error(error instanceof TypeError ? "Prospect harvest failed while reading a provider response." : error.message);
+  process.exitCode = 1;
+});

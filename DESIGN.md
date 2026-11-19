@@ -9,7 +9,7 @@ A small business owner should be able to recognize their business in a finished 
 | Stage | User Goal | Entry Point | Pages or Screens | Exit and Next Stage |
 |---|---|---|---|---|
 | Discover | Identify service and locality | Preview link | Home | See services or contact |
-| Evaluate | Check fit and understand what to ask | Main navigation | Services, About | Open Contact |
+| Evaluate | Check fit and understand what to ask | Main navigation | Services, Service detail, About | Open the relevant service or Contact |
 | Contact | Call or get directions | Page action or navigation | Contact | Open phone dialer or map |
 
 ## 3. Page and Screen Inventory
@@ -18,6 +18,7 @@ A small business owner should be able to recognize their business in a finished 
 |---|---|---|---|---|---|
 | home | Home | / | Discover | Call or browse services | Ready |
 | services | Services | /services/ | Evaluate | Compare services | Ready |
+| service-detail | Service detail | /services/<service>/ | Evaluate | Read scope or call | Ready |
 | about | About | /about/ | Evaluate | Learn about the business | Ready |
 | contact | Contact | /contact/ | Contact | Call or open directions | Ready |
 
@@ -227,10 +228,54 @@ Call or open directions. Use verified facts and labels from the brief. Phone and
 #### Verification
 Check /contact/ at desktop and mobile widths, including the primary action and contrast.
 
+### Page: Service detail
+
+#### Purpose and Journey
+Help a customer evaluate one confirmed offering and decide what to ask when calling.
+
+#### Layout and Hierarchy
+Use the selected service title, distinct intro, optional approved hero photo, clear service scope, and a closing call action.
+
+#### Components and States
+Render one page per confirmed service. Use the same detail shape for copy-only and approved-photo pages.
+
+#### Accessibility
+Expose the service links and menu children to keyboard users. Use explicit photo alt text and adjacent credit.
+
+#### Responsive Behavior
+Keep a single column on narrow screens and readable line lengths on desktop.
+
+#### Motion and Feedback
+Retain Astra's standard accessible menu behavior and visible link focus.
+
+#### Content and Forms
+Make one researched service the subject of each page. Use the real public phone link and no form dependency.
+
+#### Principle Adherence
+
+| Principle | Application | Verification |
+|---|---|---|
+| Fitts's Law | Keep the call target large. | Measure at mobile width. |
+| Visual Hierarchy | Lead with the service title and action. | Review the top of each page. |
+| Von Restorff Effect | Reserve accent fill for calling. | Inspect in Chromium. |
+| Object Constancy | Reuse the menu, brand identity and contact format. | Navigate from Services. |
+| Snapping | N/A. This page follows document flow. | Check for horizontal overflow. |
+| Motion Blur | N/A. The page uses static transitions. | Check reduced motion. |
+| Natural Mapping | Put the details under their service title. | Read the route and heading. |
+| Tabular Figures | Keep the phone digits readable. | Inspect the call label. |
+| Animate Only the Delta | N/A. Content is static. | Check reduced motion. |
+| Inertia | Use browser-native scrolling. | Scroll on mobile. |
+| Multimodal Feedback | Use clear link text and focus indication. | Keyboard test. |
+| Visual Cues | Style hover and keyboard focus. | Check CTA focus. |
+| Skeuomorphism | N/A. The page uses standard text links. | Review controls. |
+
+#### Verification
+Open each service from the index and navigation. Check the specific text, photo attribution where present, and the callback target.
+
 ## 6. Cross-Page Consistency
 
 Use the same header, menu, footer identity and contact methods on every page. Preserve normal navigation in both WordPress staging and the static ZIP.
 
 ## 7. Verification, Evidence, and Open Questions
 
-The 2026-11-19 automotive pilot used the verified Car Repair WXR. Chromium rendered all four pages at 1440px and 390px. The ZIP passed route, image, font and style loading checks, native mobile navigation, keyboard FAQ interaction, and phone and directions link checks. Evidence is in the OneDrive Companion catalog runbook and the local `Downloads/WebView-TheCarMan-Pilot` folder. Additional layout maps need their own verification.
+The 2026-11-19 automotive pilot used the verified Car Repair WXR. Chromium rendered all eight pages at 1440px and 390px, followed service cards and both navigation menus, and checked image credits, phone and directions links, ZIP files and the sitemap. Four shared pages have side-by-side screenshots against the Astra demo. Evidence is in the OneDrive Companion catalog runbook and `Downloads/WebView-TheCarMan-Comparison`. Additional layout maps need their own verification.

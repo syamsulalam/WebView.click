@@ -43,6 +43,7 @@ body.ast-page-builder-template .site-content > .ast-container { display: block; 
 .wv-grid > * { min-width: 0; }
 .wv-card, .wv-questions details { padding: 1.25rem; border: 1px solid #d8e4e3; border-radius: .8rem; background: #fff; }
 .wv-card p, .wv-questions details p { margin-bottom: 0; }
+.wv-preview a.wv-service-link { color: #153d48; text-decoration: underline; text-underline-offset: .15em; }
 .wv-questions summary { min-height: 2.75rem; padding-block: .5rem; cursor: pointer; font-weight: 700; }
 .wv-preview a.wv-button {
   display: inline-flex;

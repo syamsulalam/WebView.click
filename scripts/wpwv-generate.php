@@ -12,44 +12,50 @@ foreach (get_posts(['post_type' => 'page', 'post_status' => 'publish', 'numberpo
         !get_post_meta($post->ID, '_codev_planner_build_uuid', true)) {
         WP_CLI::error('The staging site contains a page outside WebView ownership.');
     }
-    $old[$post->post_name] = $post->ID;
-}
-
-$image = base64_decode($site['image'], true);
-$dimensions = $image ? getimagesizefromstring($image) : false;
-if (!$dimensions || $dimensions[2] !== IMAGETYPE_JPEG || $dimensions[0] !== $site['image_width'] ||
-    $dimensions[1] !== $site['image_height'] || strlen($image) > 1000000 ||
-    hash('sha256', $image) !== $site['image_sha256']) {
-    WP_CLI::error('The compiled preview image failed verification.');
+    $old[get_page_uri($post)] = $post->ID;
 }
 
 $uploads = wp_get_upload_dir();
 $directory = $uploads['basedir'] . '/webview-preview';
-$filename = $site['image_sha256'] . '.jpg';
-$destination = $directory . '/' . $filename;
-if ($uploads['error'] || !wp_mkdir_p($directory) || is_link($directory) || is_link($destination)) {
+if ($uploads['error'] || !wp_mkdir_p($directory) || is_link($directory)) {
     WP_CLI::error('The staging image directory is unavailable.');
 }
-if (!is_file($destination)) {
-    $temp = tempnam($directory, 'wv-');
-    if (!$temp) {
-        WP_CLI::error('Could not allocate the staging image.');
+$tokens = ['@@WV_HOME@@' => esc_url(home_url('/'))];
+foreach ($site['images'] as $asset) {
+    $image = base64_decode($asset['image'], true);
+    $dimensions = $image ? getimagesizefromstring($image) : false;
+    if (!$dimensions || $dimensions[2] !== IMAGETYPE_JPEG || $dimensions[0] !== $asset['width'] ||
+        $dimensions[1] !== $asset['height'] || strlen($image) > 1000000 ||
+        hash('sha256', $image) !== $asset['sha256']) {
+        WP_CLI::error('A compiled preview image failed verification.');
     }
-    $written = file_put_contents($temp, $image) === strlen($image) && chmod($temp, 0644)
-        && rename($temp, $destination);
-    if (!$written) {
-        if (is_file($temp)) {
-            unlink($temp);
+    $filename = $asset['sha256'] . '.jpg';
+    $destination = $directory . '/' . $filename;
+    if (is_link($destination)) {
+        WP_CLI::error('An image destination is a symlink.');
+    }
+    if (!is_file($destination)) {
+        $temp = tempnam($directory, 'wv-');
+        if (!$temp) {
+            WP_CLI::error('Could not allocate the staging image.');
         }
-        WP_CLI::error('Could not install the staging image.');
+        $written = file_put_contents($temp, $image) === strlen($image) && chmod($temp, 0644)
+            && rename($temp, $destination);
+        if (!$written) {
+            if (is_file($temp)) {
+                unlink($temp);
+            }
+            WP_CLI::error('Could not install the staging image.');
+        }
     }
+    if (hash_file('sha256', $destination) !== $asset['sha256']) {
+        WP_CLI::error('An existing staging image differs from the compiled image.');
+    }
+    $tokens['@@WV_IMAGE_' . $asset['sha256'] . '@@'] = esc_url($uploads['baseurl'] . '/webview-preview/' . $filename);
 }
-if (hash_file('sha256', $destination) !== $site['image_sha256']) {
-    WP_CLI::error('The existing staging image differs from the compiled image.');
-}
-$imageUrl = $uploads['baseurl'] . '/webview-preview/' . $filename;
 
 $ids = [];
+$menuItems = [];
 global $wpdb;
 $tables = [$wpdb->posts, $wpdb->postmeta, $wpdb->options, $wpdb->terms, $wpdb->term_taxonomy, $wpdb->term_relationships];
 foreach ($tables as $table) {
@@ -83,15 +89,16 @@ try {
         $check(wp_delete_post($item->ID, true));
     }
     foreach ($site['pages'] as $page) {
-        $body = str_replace(
-            ['@@WV_HOME@@', '@@WV_IMAGE@@'], [esc_url(home_url('/')), esc_url($imageUrl)], $page['html']
-        );
+        $body = strtr($page['html'], $tokens);
+        $path = $page['role'] === 'home' ? $page['slug'] : trim($page['route'], '/');
+        $parent = $page['parent'] ?? null;
         $id = $check(wp_insert_post(wp_slash([
-            'ID' => $old[$page['slug']] ?? 0,
+            'ID' => $old[$path] ?? 0,
             'post_type' => 'page',
             'post_status' => 'publish',
             'post_title' => $page['title'],
             'post_name' => $page['slug'],
+            'post_parent' => $parent ? $check($ids[$parent] ?? 0) : 0,
             'post_content' => '<!-- wp:html -->' . $body . '<!-- /wp:html -->',
             'meta_input' => [
                 '_webview_template' => $site['template']['slug'],
@@ -102,16 +109,17 @@ try {
                 'theme-transparent-header-meta' => 'disabled',
             ],
         ]), true));
-        if (get_post_field('post_name', $id) !== $page['slug']) {
+        if (get_page_uri($id) !== $path) {
             throw new RuntimeException('A staging route conflicts with an existing page.');
         }
-        unset($old[$page['slug']]);
+        unset($old[$path]);
         $ids[$page['role']] = $id;
-        $check(wp_update_nav_menu_item($menu, 0, [
+        $menuItems[$page['role']] = $check(wp_update_nav_menu_item($menu, 0, [
             'menu-item-title' => $page['title'],
             'menu-item-type' => 'post_type',
             'menu-item-object' => 'page',
             'menu-item-object-id' => $id,
+            'menu-item-parent-id' => $parent ? $check($menuItems[$parent] ?? 0) : 0,
             'menu-item-status' => 'publish',
         ]));
     }
@@ -143,4 +151,4 @@ try {
 }
 wp_cache_flush();
 flush_rewrite_rules(false);
-WP_CLI::success("WebView built {$site['template']['slug']} from " . count($ids) . ' verified source pages.');
+WP_CLI::success("WebView built " . count($site['pages']) . " pages from {$site['template']['slug']}.");

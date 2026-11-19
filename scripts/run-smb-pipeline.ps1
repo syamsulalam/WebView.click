@@ -114,19 +114,17 @@ foreach ($Biz in $Batch) {
     $LocalCompiled = Join-Path $env:TEMP "webview-$RunId-input.json"
     $RemoteCommand = "set -- '$RunId' '$Slug'" + [Environment]::NewLine + $BuildScript
 
-    Write-Host "⚙️ Generating and exporting $Slug on wpwv.codev.id..." -ForegroundColor Magenta
     $TransferStarted = $false
     try {
-        if ($Biz.photo.file -and -not [IO.Path]::IsPathRooted($Biz.photo.file)) {
-            $Biz.photo.file = Join-Path $ProspectDir $Biz.photo.file
-        }
         $Biz.phone = $Phone
         $Biz | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $LocalBrief -Encoding UTF8
-        $CompileArgs = @("$ScriptDir\compile-smb-site.py", $LocalBrief, $LocalCompiled)
+        $CompileArgs = @("$ScriptDir\compile-smb-site.py", $LocalBrief, $LocalCompiled, "--asset-dir", $ProspectDir)
         if ($TemplateManifest) { $CompileArgs += @("--manifest", $TemplateManifest) }
         if ($TemplateCache) { $CompileArgs += @("--template-cache", $TemplateCache) }
+        if (!$StageOnly) { $CompileArgs += "--outreach" }
         & python @CompileArgs
         if ($LASTEXITCODE -ne 0) { throw "Template or prospect brief needs review for $Slug." }
+        Write-Host "⚙️ Generating and exporting $Slug on wpwv.codev.id..." -ForegroundColor Magenta
         $TransferStarted = $true
         "umask 077; mkdir -- '$RemoteDir'" |
             & powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File $SshRunner -TimeoutSeconds 20

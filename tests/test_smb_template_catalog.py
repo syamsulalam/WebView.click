@@ -1,4 +1,5 @@
 import importlib.util
+from datetime import datetime, timezone
 from runpy import run_path
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ spec = importlib.util.spec_from_file_location("resolve_smb_template", SCRIPT)
 catalog = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(catalog)
 compiler = run_path(str(SCRIPT.parent / "compile-smb-site.py"))
+media = run_path(str(SCRIPT.parent / "prepare-smb-image.py"))
 
 
 class TemplateCatalogTest(unittest.TestCase):
@@ -70,6 +72,54 @@ class TemplateCatalogTest(unittest.TestCase):
             candidate = {"slug": "test-template", "wxr_bytes": 3, "wxr_sha256": "0" * 64}
             with self.assertRaisesRegex(ValueError, "WXR digest"):
                 compiler["source_layouts"](candidate, {}, cache)
+
+    def test_listing_context_only_produces_evidenced_services(self):
+        evidence = "https://example.test/confirmed-services"
+        guide = "Share the make and model and ask the business which checks it performs and what it may need from you before booking."
+        service = {"title": "Car A/C Service", "source": evidence,
+                   "summary": "Compare the symptoms before calling to discuss an inspection.",
+                   "description": guide}
+        brief = {"sources": [evidence], "place": {"primaryType": "car_repair", "services": [service]}}
+        self.assertEqual(compiler["plan_services"](brief)[0]["slug"], "car-a-c-service")
+        service["source"] = "https://example.test/other"
+        with self.assertRaisesRegex(ValueError, "source must be listed"):
+            compiler["plan_services"](brief)
+        with self.assertRaisesRegex(ValueError, "confirmed offerings"):
+            compiler["plan_services"]({"place": {"primaryType": "car_repair"}})
+
+    def test_outreach_requires_no_website_evidence_and_reply(self):
+        now = datetime(2026, 11, 19, 12, tzinfo=timezone.utc)
+        brief = {
+            "website_state": "absent", "website": None,
+            "website_check": {"listing_url": "https://www.google.com/maps/place/Example",
+                              "listing_website_absent": True, "official_site_found": False,
+                              "checked_at": "2026-11-19T10:00:00Z", "search_query": "Example business Dubai"},
+            "outreach": {"affirmative_reply": True},
+        }
+        compiler["verify_outreach"](brief, now)
+        compiler["verify_website_absence"]({**brief, "outreach": {}}, now)
+        with self.assertRaisesRegex(ValueError, "confirmed listing"):
+            compiler["verify_outreach"]({**brief, "website_state": "unknown"}, now)
+        with self.assertRaisesRegex(ValueError, "confirmed listing"):
+            compiler["verify_outreach"]({**brief, "place": {"websiteUri": "https://example.test"}}, now)
+        with self.assertRaisesRegex(ValueError, "confirmed listing"):
+            compiler["verify_website_absence"]({**brief, "website_url": "https://example.test"}, now)
+        for evidence in ({"official_site_found": True}, {"listing_website_absent": False}):
+            with self.assertRaisesRegex(ValueError, "confirmed listing"):
+                compiler["verify_website_absence"]({**brief, "website_check": {**brief["website_check"], **evidence}}, now)
+        with self.assertRaisesRegex(ValueError, "Refresh"):
+            compiler["verify_website_absence"](brief, datetime(2026, 11, 27, tzinfo=timezone.utc))
+        with self.assertRaisesRegex(ValueError, "affirmative reply"):
+            compiler["verify_outreach"]({**brief, "outreach": {}}, now)
+
+    def test_flare_request_binds_reference_and_exact_model(self):
+        request = media["make_request"](b"sample", "auto repair", "muted tones and tight framing")
+        self.assertEqual(request["model"], "gpt-image-2.6-flare")
+        self.assertEqual(request["images"], [{"image_url": "data:image/jpeg;base64,c2FtcGxl"}])
+        self.assertEqual(request["n"], 1)
+        self.assertIn("muted tones", request["prompt"])
+        with self.assertRaisesRegex(ValueError, "cleared for redistribution"):
+            compiler["prepare_photo"]({"origin": "google_places"}, Path("."))
 
 
 if __name__ == "__main__":
