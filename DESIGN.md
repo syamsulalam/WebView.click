@@ -318,6 +318,8 @@ Publish cleared media and authentic reviews only. Include name, source, rating a
 #### Verification
 Chromium verified the Gallery menu and route, five captioned images, three static review cards with distinct source links, business video and sitemap at 1440px and 390px on 2026-11-20.
 
+For the Elementor client preview, verify Home and Services against the pinned demo's testimonial position before the final contact action. Background-image heroes on Services, About and Contact use the demo's responsive background controls with a cleared business asset. Home uses the demo's inline-media position. Gallery contains business media and links to the original listing. Check that the booking action remains readable and operable at desktop and mobile widths.
+
 ## 6. Cross-Page Consistency
 
 Use the same header, menu, footer identity and contact methods on every page. The visit area at the foot of each page keeps the physical address, directions and approved map together. A labeled, lazy-loaded map leaves the directions link usable when the embed is unavailable. On About or Contact, group confirmed hours and access, facilities, booking and payment details for scanning. Keep source links to listing photos, videos and reviews together and label approved media. Preserve normal navigation in both WordPress staging and the static ZIP.

@@ -251,7 +251,7 @@ for path in paths:
     html = page.read_text(encoding="utf-8")
     if contract["template"]["builder"] == "elementor":
         # These widgets render on the server and use only Elementor CSS.
-        if any(widget.get("widgetType") not in {"html", "icon-box"} for container in expected[path]["elementor"]
+        if any(widget.get("widgetType") not in {"html", "icon-box", "testimonial"} for container in expected[path]["elementor"]
                for widget in container["elements"]):
             raise SystemExit(f"Review frontend dependencies for additional Elementor widgets on {path}")
         html = elementor_unneeded_runtime.sub("", html)
@@ -276,6 +276,11 @@ for path in paths:
         raise SystemExit(f"Missing service topic or icon widget on {path}")
     if not set(expected[path].get("gallery_links", [])).issubset(parsed.links):
         raise SystemExit(f"Missing source links on {path}")
+    if not set(expected[path].get("review_links", [])).issubset(parsed.links):
+        raise SystemExit(f"Missing testimonial sources on {path}")
+    background = expected[path].get("hero_background_sha256")
+    if background and not any(asset.name == f"{background}.jpg" for asset in assets):
+        raise SystemExit(f"Missing demo hero background asset on {path}")
     digests = [expected[path]["image_sha256"]] + expected[path].get("gallery_sha256", [])
     if any(digest and not any(image.endswith("/" + digest + ".jpg") for image in parsed.images) for digest in digests):
         raise SystemExit(f"The exported page is missing its reviewed image: {path}")

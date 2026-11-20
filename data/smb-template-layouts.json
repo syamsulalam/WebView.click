@@ -3,6 +3,7 @@
     "revision": "1.0.0",
     "wxr_sha256": "0342aa83ce8b0c234c3886b7c5fef5e53a9e60f50b7d0c4253ffa451e4497a9c",
     "service_detail": {"source_role": "services", "source_sections": [1, 2, 3, 4, 2, 5], "icon_source": {"role": "home", "section": 4}},
+    "testimonials": {"home": 5, "services": 4},
     "gallery": {"source_role": "services", "source_sections": {"hero": 1, "gallery": 2, "videos": 3, "reviews": 4}},
     "pages": {
       "home": {"source": "Home", "sections": ["hero", "details", "services", "guide", "questions", "callout"]},

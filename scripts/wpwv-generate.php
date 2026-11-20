@@ -119,6 +119,9 @@ try {
         if ($builder === 'elementor') {
             $elements = $page['elementor'];
             foreach ($elements as &$container) {
+                if (isset($container['settings']['background_image']['url'])) {
+                    $container['settings']['background_image']['url'] = strtr($container['settings']['background_image']['url'], $tokens);
+                }
                 foreach ($container['elements'] as &$widget) {
                     if ($widget['widgetType'] === 'html') {
                         $widget['settings']['html'] = strtr($widget['settings']['html'], $tokens);

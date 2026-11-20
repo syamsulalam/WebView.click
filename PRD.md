@@ -342,6 +342,13 @@ Google policy and supported surfaces define what may ship. [Places API policies]
 - Show up to three selected customer reviews, highest stars first, as static cards. Label them as selected reviews and include the reviewer's public display name, star rating and link to the original. Use approved text and an approved avatar when available. Where only public review links are available, use clearly labeled cards that open the original, with no live Google review panel.
 - Verify the Gallery route, sitemap, media, review attribution, no-data states, and all seven service topics at desktop and mobile widths. Record when third-party review quotations or avatars are still awaiting reuse clearance.
 
+### 16.1.5 Client delivery audit for Elementor previews
+
+- Inspect the pinned WXR and live demo at desktop and mobile. Use the demo's actual hero type and media placement, including its native background, position and overlay when present. Replace demo imagery with the business's own cleared media. Keep the call or booking action visible and readable over every crop.
+- Reuse up to three highest-rated attributed review records. A card may contain a short cleared excerpt or a verified editorial summary clearly labeled as such. Include actual reviewer, stars and original link. Put review text on Home and Services in the demo's testimonial position before the final booking action. Keep Gallery as secondary access and distinguish the curated selection from the full listing.
+- Treat Gallery as a record of the business's work. Use owner-cleared exact listing originals or an approved provider display. Expose source links and business-published playable video. Illustrations used elsewhere never become business Gallery photos. When inline assets are unavailable, link to the actual listing media and leave the preview in review.
+- Verify presentation and delivery separately. Review authentic media, editorial specificity, the review-to-booking path, branch facts, all routes, keyboard and mobile behavior, and the static ZIP. Record missing evidence before any client handoff. The owner confirms published claims and media rights before release.
+
 ### 16.2 Single-Upload Edge Architecture (Dynamic ZIP Streaming via `client-zip`)
 * `sites.webview.click` attaches to the `sites-webview-click` Worker as an exact Custom Domain. That hostname must resolve to the Worker before R2 preview or download links are sent.
 * The uploader uses the named `webview` Cloudflare profile for the project bucket. The Worker serves valid prospect slugs and assembles the ZIP from R2 objects one at a time to keep active object streams bounded.

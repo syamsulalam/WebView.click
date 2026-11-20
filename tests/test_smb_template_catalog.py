@@ -189,8 +189,31 @@ class TemplateCatalogTest(unittest.TestCase):
         self.assertEqual(html.count('class="wv-card wv-review"'), 3)
         self.assertLess(html.index("Reviewer 5"), html.index("Reviewer 4"))
         self.assertNotIn(links[0]["source"], sources)
-        with self.assertRaisesRegex(ValueError, "Link cards"):
+        with self.assertRaisesRegex(ValueError, "editorial summary"):
             compiler["review_markup"]({**links[0], "text": "Google review content"}, None, False)
+        summary = {**links[0], "summary": "They described the at-home ceramic coating appointment.", "summary_verified": True}
+        block, _ = compiler["review_markup"](summary, None, False)
+        self.assertIn("Review summary", block)
+        self.assertIn(summary["summary"], block)
+        self.assertNotIn("<blockquote>", block)
+        with self.assertRaisesRegex(ValueError, "original review"):
+            compiler["review_markup"]({**summary, "summary_verified": False}, None, False)
+        with self.assertRaisesRegex(ValueError, "actual business"):
+            gallery(config, {**fixture, "business_profile": {**fixture["business_profile"],
+                    "gallery": [{"origin": "licensed_illustration"}]}}, None, [])
+
+    def test_elementor_uses_native_hero_and_testimonial_settings(self):
+        digest = "a" * 64
+        source = [("a1b2c3d", {"background": {"background_position": "center right",
+                   "background_overlay_background": "gradient"}, "testimonial": {"testimonial_alignment": "left"}})]
+        proof = {"section": 1, "reviews": [{"testimonial_name": "Example reviewer"}]}
+        hero, testimonials = compiler["elementor_page"](source, [1], ["<p>Example</p>"], background=digest, proof=proof)
+        self.assertEqual(hero["settings"]["background_image"]["url"], f"@@WV_IMAGE_{digest}@@")
+        self.assertEqual(hero["settings"]["background_position"], "center right")
+        self.assertEqual(hero["settings"]["background_overlay_background"], "gradient")
+        widget = testimonials["elements"][0]
+        self.assertEqual(widget["widgetType"], "testimonial")
+        self.assertEqual(widget["settings"]["testimonial_alignment"], "left")
 
     def test_reviewed_service_draft_binds_exact_business_and_local_evidence(self):
         source = "https://example.test/services"

@@ -120,10 +120,27 @@ def elementor_sources(raw, layout):
             settings = node.get("settings") or {}
             padding = settings.get("padding") or {}
             spacing = padding.get("top")
-            sections.append((node["id"], {"topPaddingDesktop": int(float(spacing))
-                                          if padding.get("unit") == "px" and str(spacing).replace(".", "", 1).isdigit()
-                                          else 72}))
+            attrs = {"topPaddingDesktop": int(float(spacing))
+                     if padding.get("unit") == "px" and str(spacing).replace(".", "", 1).isdigit() else 72}
+            if (settings.get("background_image") or {}).get("url"):
+                attrs["background"] = {key: value for key, value in settings.items()
+                                       if key.startswith(("background_position", "background_size", "background_repeat",
+                                                          "background_overlay_"))}
+                overlay_color = (settings.get("__globals__") or {}).get("background_overlay_color")
+                if overlay_color:
+                    attrs["background"]["__globals__"] = {"background_overlay_color": overlay_color}
+            sections.append((node["id"], attrs))
         result[role] = sections
+    for role, index in layout.get("testimonials", {}).items():
+        nodes = [pages[layout["pages"][role]["source"]][index - 1]]
+        while nodes and nodes[0].get("widgetType") != "testimonial":
+            nodes.extend(nodes.pop(0).get("elements", []))
+        require(nodes, f"The reviewed testimonial widget is missing from {role}.")
+        result[role][index - 1][1]["testimonial"] = {
+            key: value for key, value in nodes[0]["settings"].items()
+            if key.startswith(("content_typography_", "name_typography_", "job_typography_")) or
+            key in {"testimonial_alignment", "name_text_color", "content_text_color", "job_text_color"}
+        }
     feature_source = layout["service_detail"]["icon_source"]
     icon_page = pages[layout["pages"][feature_source["role"]]["source"]]
     nodes = icon_page[feature_source["section"] - 1].get("elements", [])
@@ -135,7 +152,7 @@ def elementor_sources(raw, layout):
     return result
 
 
-def elementor_page(source, indices, sections, features=None):
+def elementor_page(source, indices, sections, features=None, background=None, proof=None):
     elements = []
     for offset, (index, section) in enumerate(zip(indices, sections, strict=True), 1):
         source_id = source[index - 1][0] if index else "visit"
@@ -143,6 +160,11 @@ def elementor_page(source, indices, sections, features=None):
         widget_id = sha256(f"{source_id}:{offset}:widget".encode()).hexdigest()[:7]
         widgets = [{"id": widget_id, "elType": "widget", "widgetType": "html", "isInner": False,
                     "settings": {"html": wrap_sections(section)}, "elements": []}]
+        settings = {"content_width": "full", "css_classes": "wv-elementor-section"}
+        if offset == 1 and background:
+            settings.update(source[index - 1][1]["background"], background_background="classic",
+                            background_image={"url": f"@@WV_IMAGE_{background}@@"},
+                            css_classes="wv-elementor-section wv-demo-background")
         if features and offset == features["after"]:
             elements.append({"id": element_id, "elType": "container", "isInner": False,
                              "settings": {"content_width": "full", "css_classes": "wv-elementor-section"},
@@ -156,12 +178,19 @@ def elementor_page(source, indices, sections, features=None):
                              "selected_icon": {"value": icon, "library": "fa-solid"}},
                 "elements": [],
             } for topic, title, body, icon in features["cards"]]
-            extra_class = " wv-native-features"
-        else:
-            extra_class = ""
+            settings["css_classes"] += " wv-native-features"
         elements.append({"id": element_id, "elType": "container", "isInner": False,
-                         "settings": {"content_width": "full", "css_classes": "wv-elementor-section" + extra_class},
-                         "elements": widgets})
+                         "settings": settings, "elements": widgets})
+        if proof and offset == proof["section"]:
+            native = source[index - 1][1]["testimonial"]
+            items = [{"id": sha256(f"{source_id}:{i}:testimonial".encode()).hexdigest()[:7],
+                      "elType": "widget", "widgetType": "testimonial", "elements": [],
+                      "settings": {**native, **review, "_css_classes": "wv-native-review"}}
+                     for i, review in enumerate(proof["reviews"])]
+            elements.append({"id": sha256(f"{source_id}:testimonials".encode()).hexdigest()[:7],
+                             "elType": "container", "isInner": False,
+                             "settings": {"content_width": "full", "css_classes": "wv-elementor-section wv-native-features"},
+                             "elements": items})
     return elements
 
 
@@ -347,12 +376,13 @@ def prepare_photo(photo, asset_dir):
     return {"sha256": digest, "image": base64.b64encode(image).decode(), "width": photo["width"], "height": photo["height"]}
 
 
-def photo_markup(photo, asset):
+def photo_markup(photo, asset, hero=False):
     license_link = ' · ' + action(photo["license"], photo["license_label"], "credit") if photo.get("license") else ""
+    loading = 'fetchpriority="high"' if hero else 'loading="lazy"'
     return (
         f'<figure class="wv-photo"><img src="@@WV_IMAGE_{asset["sha256"]}@@" '
         f'alt="{escape(photo["alt"], quote=True)}" width="{asset["width"]}" '
-        f'height="{asset["height"]}">'
+        f'height="{asset["height"]}" {loading}>'
         f'<figcaption>{escape(photo["caption"])} '
         f'{action(photo["source"], photo["credit"], "credit")}{license_link}</figcaption></figure>'
     )
@@ -418,30 +448,49 @@ def video_markup(video, local):
             + "</figcaption></figure>")
 
 
-def review_markup(review, accept_photo, local):
-    name = escape(copy(review, "reviewer", 2, 100))
+def review_content(review, local):
     source = source_url(copy(review, "source", 10, 900))
     label = copy(review, "source_label", 3, 80)
     rating = review.get("rating")
     require(type(rating) is int and 1 <= rating <= 5, "Review ratings must be whole stars from one through five.")
-    text, photo, digest = "", "", None
+    text = ""
     if review.get("origin") == "public_link":
         parts = urlsplit(source)
         require((parts.netloc == "www.google.com" and parts.path.startswith("/maps/reviews/")) or
                 (parts.netloc == "maps.app.goo.gl" and len(parts.path.strip("/")) >= 6),
                 "Use a direct shared Google review link.")
-        require(not review.get("text") and not review.get("avatar"), "Link cards only show verified review details and a link.")
+        require(not review.get("text") and not review.get("avatar"), "Use an editorial summary for public link cards.")
+        if "summary" in review:
+            require(review.get("summary_verified") is True, "Check the summary against the original review.")
+            summary_label = "Ringkasan ulasan" if local else "Review summary"
+            text = f'<p><strong>{summary_label}.</strong> {escape(copy(review, "summary", 20, 240))}</p>'
     else:
         require(review.get("origin") == "first_party" and review.get("redistribution_allowed") is True,
                 "Static review text needs first-party republication approval.")
         text = f'<blockquote>{escape(copy(review, "text", 15, 1100))}</blockquote>'
-        if review.get("avatar"):
-            photo, digest = accept_photo(review["avatar"])
+    return text, action(source, label, "service-link")
+
+
+def review_markup(review, accept_photo, local):
+    text, link = review_content(review, local)
+    name = escape(copy(review, "reviewer", 2, 100))
+    rating = review["rating"]
+    photo, digest = accept_photo(review["avatar"]) if review.get("avatar") else ("", None)
     rating_label = f"{rating} dari 5 bintang" if local else f"{rating} out of 5 stars"
     return (f'<article class="wv-card wv-review">{photo}<h3>{name}</h3>'
             f'<p class="wv-rating" aria-label="{rating_label}"><span aria-hidden="true">'
             f'{"★" * rating}{"☆" * (5 - rating)}</span></p>'
-            f'{text}<p>{action(source, label, "service-link")}</p></article>', digest)
+            f'{text}<p>{link}</p></article>', digest)
+
+
+def selected_reviews(config):
+    reviews = config.get("reviews", [])
+    require(isinstance(reviews, list) and len(reviews) <= 8, "Supply up to eight reviewed entries.")
+    require(all(isinstance(review, dict) and type(review.get("rating")) is int and 1 <= review["rating"] <= 5
+                and isinstance(review.get("source"), str) for review in reviews),
+            "Each review needs a source and whole stars from one through five.")
+    require(len({review["source"] for review in reviews}) == len(reviews), "Select distinct original reviews.")
+    return sorted(reviews, key=lambda review: review["rating"], reverse=True)[:3]
 
 
 def gallery_page(config, prospect, accept_photo, service_photos):
@@ -450,19 +499,20 @@ def gallery_page(config, prospect, accept_photo, service_photos):
     listing = google_place_url(profile["listing_url"]) if profile else None
     photos = profile.get("gallery", [])
     require(isinstance(photos, list) and len(photos) <= 5, "Supply up to five reviewed gallery images.")
+    require(all(photo.get("origin") in {"owner", "owner_listing"} for photo in photos),
+            "Gallery photos must show the actual business and come from an owner original.")
     images = [accept_photo(photo) for photo in photos]
     if config.get("show_service_photos") is True:
         images += service_photos
+    unique_images = {}
+    for markup, digest in images:
+        unique_images.setdefault(digest, markup)
+    images = [(markup, digest) for digest, markup in unique_images.items()]
     videos = profile.get("videos")
     if videos is None:
         videos = [profile["video"]] if profile.get("video") else []
     require(isinstance(videos, list) and len(videos) <= 4, "Supply up to four approved videos.")
-    reviews = config.get("reviews", [])
-    require(isinstance(reviews, list) and len(reviews) <= 8, "Supply up to eight approved review cards.")
-    require(all(type(review.get("rating")) is int and 1 <= review["rating"] <= 5 for review in reviews),
-            "Review ratings must be whole stars from one through five.")
-    require(len({review.get("source") for review in reviews}) == len(reviews), "Select distinct original reviews.")
-    reviews = sorted(reviews, key=lambda review: review["rating"], reverse=True)[:3]
+    reviews = selected_reviews(config)
     cards = [review_markup(review, accept_photo, local) for review in reviews]
     require(images or videos or cards or listing, "Gallery requires a verified media or review source.")
     photo_heading, video_heading, review_heading = ("Foto", "Video", "Ulasan pelanggan") if local else ("Photos", "Videos", "Customer reviews")
@@ -481,7 +531,7 @@ def gallery_page(config, prospect, accept_photo, service_photos):
         photo_links = (action(photos_url, "Foto dan video di Google Maps" if local else "Open listing photos and videos on Google Maps", "service-link")
                        if listing else "")
         photos_html = '<div class="wv-grid wv-gallery">' + "".join(markup for markup, _ in images) + "</div>" if images else ""
-        blocks.append(("gallery", f"<h2>{photo_heading}</h2>{photos_html}<p>{photo_links}</p>"))
+        blocks.append(("gallery", f"<h2>{photo_heading}</h2>{photos_html}" + (f"<p>{photo_links}</p>" if photo_links else "")))
         if photos_url:
             gallery_links.append(photos_url)
     if videos:
@@ -680,23 +730,37 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
     prospect["offerings"] = plan_services(prospect)
     assets = {}
 
-    def accept_photo(photo):
+    def accept_photo(photo, hero=False):
         asset = prepare_photo(photo, asset_dir or input_path.parent)
-        require(asset["sha256"] not in assets, "Select a distinct photo for each occupied image slot.")
-        assets[asset["sha256"]] = asset
-        return photo_markup(photo, asset), asset["sha256"]
+        assets.setdefault(asset["sha256"], asset)
+        return photo_markup(photo, asset, hero), asset["sha256"]
 
-    hero_photo, hero_digest = accept_photo(prospect["photo"])
     profile_html, visit_footer = profile_markup(prospect)
     source = source_layouts(candidate, layout, cache)
     pages = []
     seen_slugs = set()
+    gallery = prospect.get("gallery")
+    reviews = selected_reviews(gallery or {})
+    local = prospect["locale"] == "id_ID"
+    proof_reviews = []
+    for review in reviews:
+        content, link = review_content(review, local)
+        if content:
+            proof_reviews.append((review["source"], {
+                "testimonial_name": escape(copy(review, "reviewer", 2, 100)),
+                "testimonial_job": (f'{review["rating"]} dari 5 bintang' if local else f'{review["rating"]} out of 5 stars'),
+                "testimonial_content": content + f'<p>{link}</p>',
+            }))
+    business_photos = []
+    if outreach and layout.get("testimonials"):
+        require(proof_reviews, "Client delivery needs attributed review text or verified review summaries.")
 
-    def render(role_source, indices, sections, features=None):
+    def render(role_source, indices, sections, features=None, background=None, proof=None):
         if visit_footer:
             sections = sections + [visit_footer]
         if candidate["builder"] == "elementor":
-            return {"elementor": elementor_page(role_source, indices + ([0] if visit_footer else []), sections, features)}
+            return {"elementor": elementor_page(role_source, indices + ([0] if visit_footer else []), sections,
+                                                features, background, proof)}
         return {"html": wrap_sections("".join(sections))}
 
     for role, mapping in layout["pages"].items():
@@ -704,44 +768,69 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
         slug = page["slug"]
         require(CATALOG["SLUG"].fullmatch(slug) and len(slug) <= 55 and slug not in seen_slugs, "Invalid or duplicate route slug.")
         seen_slugs.add(slug)
-        if role == "home":
-            photo_html, digest = hero_photo, hero_digest
-        elif page.get("photo"):
-            photo_html, digest = accept_photo(page["photo"])
-        else:
-            photo_html, digest = "", None
+        photo = prospect.get("photo") if role == "home" else page.get("photo")
+        photo_html, digest = accept_photo(photo, hero=True) if photo else ("", None)
+        if role == "home" and not photo and (video := (prospect.get("business_profile") or {}).get("video")):
+            photo_html = '<div class="wv-photo">' + video_markup(video, local) + '</div>'
+        authentic = photo and photo.get("origin") in {"owner", "owner_listing"}
+        if outreach and layout.get("testimonials") and (role == "home" or "background" in source[role][0][1]):
+            require(authentic, f"Client delivery needs a cleared business hero photo for {role}.")
+        if authentic:
+            business_photos.append((photo_markup(photo, assets[digest]), digest))
+        background = digest if authentic and "background" in source[role][0][1] else None
+        if background:
+            photo_html = action(photo["source"], photo["credit"], "credit")
         indices = list(range(1, len(mapping["sections"]) + 1))
-        sections = render_page(role, page, mapping["sections"], source[role], prospect, photo_html)
+        roles = list(mapping["sections"])
+        sections = render_page(role, page, roles, source[role], prospect, photo_html)
         if role == "about" and profile_html:
             idx = mapping["sections"].index("guide")
             sections[idx] = sections[idx].removesuffix("</div></section>") + profile_html + "</div></section>"
+        if background:
+            sections[0] = sections[0].replace("wv-section wv-hero", "wv-section wv-hero wv-hero-with-background", 1)
+        proof = None
+        proof_index = layout.get("testimonials", {}).get(role)
+        if proof_reviews and proof_index:
+            position = roles.index("callout")
+            title = "Ulasan pelanggan" if local else "What customers say"
+            roles.insert(position, "proof")
+            indices.insert(position, proof_index)
+            sections.insert(position, section_html("proof", proof_index, source[role][proof_index - 1][1],
+                                                   f"<h2>{title}</h2>"))
+            proof = {"section": position + 1, "reviews": [item for _, item in proof_reviews]}
         pages.append({"role": role, "slug": slug, "title": copy(page, "title", 2, 58),
                       "route": "/" if role == "home" else f"/{slug}/",
-                      "source": mapping["source"], "sections": mapping["sections"],
-                      "indices": indices, "image_sha256": digest,
-                      **render(source[role], indices, sections)})
+                      "source": mapping["source"], "sections": roles,
+                      "indices": indices, "image_sha256": None if background else digest,
+                      "hero_background_sha256": background,
+                      "review_links": [url for url, _ in proof_reviews] if proof else [],
+                      **render(source[role], indices, sections, background=background, proof=proof)})
     require(len({prospect["pages"][role]["sections"]["hero"]["body"].strip().casefold()
                  for role in layout["pages"]}) == len(pages), "Hero introductions must be page-specific.")
     detail = layout["service_detail"]
     source_role, indices = detail["source_role"], detail["source_sections"]
     service_base = prospect["pages"]["services"]["slug"]
-    service_photos = []
     for offering in prospect["offerings"]:
         apply_reviewed_service_draft(prospect, offering, asset_dir or input_path.parent)
-        photo_html, digest = accept_photo(offering["photo"]) if offering["photo"] else ("", None)
-        if digest:
-            service_photos.append((photo_html, digest))
+        photo = offering["photo"]
+        photo_html, digest = accept_photo(photo, hero=True) if photo else ("", None)
+        authentic = photo and photo.get("origin") in {"owner", "owner_listing"}
+        if authentic:
+            business_photos.append((photo_markup(photo, assets[digest]), digest))
+        background = digest if authentic and "background" in source[source_role][indices[0] - 1][1] else None
+        if background:
+            photo_html = action(photo["source"], photo["credit"], "credit")
         roles, sections, features = service_page(offering, prospect, source[source_role], indices, photo_html,
                                                  candidate["builder"] == "elementor")
+        if background:
+            sections[0] = sections[0].replace("wv-section wv-hero", "wv-section wv-hero wv-hero-with-background", 1)
         pages.append({"role": "service", "slug": offering["slug"], "title": offering["title"],
                       "route": f"/{service_base}/{offering['slug']}/", "parent": "services",
                       "source": layout["pages"][source_role]["source"], "sections": roles,
-                      "indices": indices, "image_sha256": digest,
-                      **render(source[source_role], indices, sections, features)})
-    gallery = prospect.get("gallery")
-    media = [(hero_photo, hero_digest)] + service_photos
-    if gallery is not None or prospect.get("business_profile") or service_photos or prospect["photo"]["origin"] in {"owner", "owner_listing"}:
-        local = prospect["locale"] == "id_ID"
+                      "indices": indices, "image_sha256": None if background else digest,
+                      "hero_background_sha256": background,
+                      **render(source[source_role], indices, sections, features, background)})
+    if gallery is not None or prospect.get("business_profile") or business_photos:
         default_title = "Galeri" if local else "Gallery"
         default_intro = ("Lihat media dan sumber ulasan yang tersedia untuk bisnis ini." if local else
                          "Explore the available media and customer review sources for this business.")
@@ -749,7 +838,11 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
                    "intro": default_intro, "show_service_photos": True, **(gallery or {})}
         slug = copy(gallery, "slug", 1, 55)
         require(CATALOG["SLUG"].fullmatch(slug) and slug not in seen_slugs, "Gallery needs a distinct route slug.")
-        blocks, digests, gallery_links = gallery_page(gallery, prospect, accept_photo, media)
+        blocks, digests, gallery_links = gallery_page(gallery, prospect, accept_photo, business_photos)
+        if outreach and layout.get("testimonials"):
+            require((prospect.get("business_profile") or {}).get("gallery") or
+                    (gallery["show_service_photos"] and business_photos),
+                    "Client delivery needs cleared Gallery photos of the actual business.")
         gallery_map = layout["gallery"]
         gallery_source = source[gallery_map["source_role"]]
         indices = [gallery_map["source_sections"][role] for role, _ in blocks]

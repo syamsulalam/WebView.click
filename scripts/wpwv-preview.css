@@ -21,6 +21,7 @@ body.ast-page-builder-template .site-content > .ast-container { display: block; 
 .wv-section { padding: clamp(2.35rem, 6.5vw, var(--wv-space)) clamp(1.25rem, 5vw, 3rem); }
 .wv-inner { width: min(100%, 70rem); margin: auto; }
 .wv-hero { background: var(--wv-pale); }
+.wv-demo-background .wv-preview:has(.wv-hero-with-background), .wv-hero.wv-hero-with-background { background: transparent; }
 .wv-hero .wv-inner:has(.wv-photo) {
   display: grid;
   grid-template-columns: 1fr 1fr;
