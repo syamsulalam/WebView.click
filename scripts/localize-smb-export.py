@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 
 
 SKIP = {"script", "style", "noscript", "template", "svg"}
+VOID = set("area base br col embed hr img input link meta param source track wbr".split())
 TEXT_ATTRS = {"alt", "aria-label", "title", "placeholder"}
 PHONE = re.compile(r"(\+[1-9]\d[\d \u00a0]*\d)")
 FLAGS = {
@@ -38,6 +39,8 @@ class Page(HTMLParser):
         self.skip = []
         self.lang = "en"
         self.pending = []
+        self.header = []
+        self.nav_slots = {}
 
     def text(self, value):
         raw = value.strip()
@@ -101,15 +104,18 @@ class Page(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         self.parts.append(self.tag(tag, attrs, False))
-        if tag == "body" and self.locale:
-            target = self.original.path if self.alternate else self.translated.path
-            language = self.lang if self.alternate else self.locale["tag"]
-            label = self.locale["source_label"] if self.alternate else self.locale["label"]
-            code = language.split("-", 1)[0].upper()
-            self.parts.append(f'<div class="wv-language"><a href="{escape(target, quote=True)}" '
-                              f'lang="{escape(language, quote=True)}" hreflang="{escape(language, quote=True)}" '
-                              f'aria-label="{escape(label, quote=True)}" title="{escape(label, quote=True)}">'
-                              f'{language_flag(language)}<span aria-hidden="true">{escape(code)}</span></a></div>')
+        if self.locale and tag not in VOID and (self.header or tag == "header"):
+            self.header.append((tag, dict(attrs)))
+
+    def language_link(self):
+        target = self.original.path if self.alternate else self.translated.path
+        language = self.lang if self.alternate else self.locale["tag"]
+        label = self.locale["source_label"] if self.alternate else self.locale["label"]
+        code = language.split("-", 1)[0].upper()
+        return (f'<a class="wv-language" href="{escape(target, quote=True)}" '
+                f'lang="{escape(language, quote=True)}" hreflang="{escape(language, quote=True)}" '
+                f'aria-label="{escape(label, quote=True)}" title="{escape(label, quote=True)}">'
+                f'{language_flag(language)}<span aria-hidden="true">{escape(code)}</span></a>')
 
     def handle_startendtag(self, tag, attrs):
         self.parts.append(self.tag(tag, attrs, True))
@@ -118,12 +124,28 @@ class Page(HTMLParser):
         self.flush_text()
         if self.skip and self.skip[-1] == tag:
             self.skip.pop()
+        if self.header and self.header[-1][0] == tag:
+            _, attrs = self.header.pop()
+            identity = attrs.get("id")
+            ancestors = {attrs.get("id") for _, attrs in self.header}
+            if tag == "ul" and "primary-site-navigation-desktop" in ancestors and (
+                    "main-header-menu" in (attrs.get("class") or "").split()):
+                self.nav_slots.setdefault("desktop", len(self.parts))
+            if tag == "div" and "ast-mobile-header" in ancestors and (
+                    "ast-button-wrap" in (attrs.get("class") or "").split()):
+                self.nav_slots.setdefault("mobile", len(self.parts))
+            if tag == "nav" and identity != "ast-mobile-site-navigation":
+                self.nav_slots.setdefault("nav", len(self.parts))
+            if tag == "header":
+                self.nav_slots.setdefault("header", len(self.parts))
         if tag == "head" and self.locale:
-            self.parts.append('<style>.wv-language{display:flex;justify-content:flex-end;padding:4px clamp(1rem,5vw,4rem);border-block-end:1px solid #dbe3e7;background:#f7fafb}'
-                              '.wv-language a{display:inline-flex;align-items:center;gap:.35rem;min-height:44px;padding-inline:.65rem;'
-                              'border:1px solid #c0cdd3;border-radius:6px;color:#153d48;background:#fff;font-weight:700;text-decoration:none}'
-                              '.wv-language svg{width:22px;height:auto;border-radius:2px}'
-                              '.wv-language a:focus-visible{outline:2px solid currentColor}'
+            self.parts.append('<style id="wv-language-style">.wv-language-menu-item{display:flex;align-items:center}'
+                              '#ast-mobile-header .ast-button-wrap:has(>.wv-language){display:inline-flex;align-items:center;gap:.5rem}'
+                              '.site-header a.wv-language,a.wv-language{display:inline-flex;align-items:center;'
+                              'justify-content:center;gap:.3rem;min-block-size:44px;min-inline-size:44px;'
+                              'padding-inline:.5rem;white-space:nowrap;color:inherit;font-size:.875rem;font-weight:600;text-decoration:none}'
+                              '.wv-language svg{inline-size:20px;block-size:auto;border-radius:2px}'
+                              '.wv-language:focus-visible{outline:2px solid currentColor;outline-offset:-2px}'
                               '[dir="rtl"] .ast-desktop .main-header-menu > .menu-item-has-children > .sub-menu'
                               '{left:auto;right:0}[dir="rtl"] .site-branding{padding-inline-start:1rem}</style>')
             for lang, url in ((self.lang, self.original), (self.locale["tag"], self.translated)):
@@ -143,6 +165,23 @@ class Page(HTMLParser):
         self.feed(html)
         self.close()
         self.flush_text()
+        if self.locale:
+            link = self.language_link()
+            slots = self.nav_slots
+            desktop = slots.get("desktop")
+            mobile = slots.get("mobile")
+            inserts = {}
+            if desktop is not None:
+                inserts[desktop] = f'<li class="menu-item wv-language-menu-item">{link}</li>'
+            if mobile is not None:
+                inserts[mobile] = link
+            if desktop is None:
+                fallback = slots.get("nav", slots.get("header"))
+                if fallback is None:
+                    raise ValueError("Bilingual export requires a page header.")
+                inserts[fallback] = link
+            for index, markup in sorted(inserts.items(), reverse=True):
+                self.parts.insert(index, markup)
         return "".join(self.parts)
 
 

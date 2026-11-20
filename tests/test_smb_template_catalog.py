@@ -257,18 +257,26 @@ class TemplateCatalogTest(unittest.TestCase):
             export = Path(temp)
             (export / "sitemap.xml").write_text('<urlset><url><loc>https://sites.webview.click/example/</loc></url></urlset>')
             (export / "index.html").write_text('<html lang="en-US"><head><title>Welcome</title></head><body>'
-                                               '<a href="/example/">Home</a><p>Call +971 55 555 5555</p>'
+                                               '<header><div id="ast-desktop-header"><nav id="primary-site-navigation-desktop">'
+                                               '<ul class="main-header-menu"><li><a href="/example/">Home</a></li></ul>'
+                                               '</nav></div><div id="ast-mobile-header"><div class="ast-button-wrap">'
+                                               '<button>Menu</button></div></div></header><p>Call +971 55 555 5555</p>'
                                                '<script>const text = "Keep"</script>'
                                                '</body></html>')
-            self.assertEqual(set(localize(export)), {"Welcome", "Home", "Call +971 55 555 5555"})
+            self.assertEqual(set(localize(export)), {"Welcome", "Home", "Menu", "Call +971 55 555 5555"})
             localize(export, {"tag": "ar-AE", "direction": "rtl", "label": "العربية", "source_label": "English",
-                              "text": {"Welcome": "مرحباً", "Home": "الرئيسية",
+                              "text": {"Welcome": "مرحباً", "Home": "الرئيسية", "Menu": "القائمة",
                                        "Call +971 55 555 5555": "اتصل على +971 55 555 5555"}})
             original = (export / "index.html").read_text(encoding="utf-8")
             alternate = (export / "ar-ae" / "index.html").read_text(encoding="utf-8")
             self.assertIn('href="/example/ar-ae/"', original)
             self.assertIn('aria-label="العربية"', original)
             self.assertIn('>AR</span>', original)
+            for page in (original, alternate):
+                self.assertIn('<body><header>', page)
+                self.assertIn('<li class="menu-item wv-language-menu-item"><a class="wv-language"', page)
+                self.assertIn('</button><a class="wv-language"', page)
+                self.assertEqual(page.count('<a class="wv-language"'), 2)
             self.assertIn('lang="ar-AE" dir="rtl"', alternate)
             self.assertIn('href="/example/ar-ae/">الرئيسية', alternate)
             self.assertIn('<bdi dir="ltr">+971 55 555 5555</bdi>', alternate)

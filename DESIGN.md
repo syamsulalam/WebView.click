@@ -412,12 +412,14 @@ Open the page from the footer. Check identity, contact details, reading order, m
 
 ## 6. Cross-Page Consistency
 
-- Add labeled icons to principal navigation and actions, and visually display review stars with a screen-reader equivalent. Native Elementor feature icons follow the business accent. Place a compact flag and language-code link at the top of every bilingual static page, with the complete target language available to assistive technology. Validate that footer links stay outside the primary menu.
+- Add labeled icons to principal navigation and actions, and visually display review stars with a screen-reader equivalent. Native Elementor feature icons follow the business accent. On every bilingual static page, place the compact flag and language-code link in the desktop navbar and beside the mobile menu button. Use the target language as the accessible name, show keyboard focus, and keep the language code legible without the flag. The link opens the equivalent page without JavaScript. Validate that footer links stay outside the primary menu.
 
 - R2 preview pages add a floating download link with an icon and visible label. Keep it clear of the theme's bottom-right controls, retain keyboard focus, and link to the current site's ZIP. Keep the review heading and testimonials in one section with no empty image slots.
 
 Use the same header, menu, footer identity and contact methods on every page. The visit area at the foot of each page keeps the physical address, directions and approved map together. A labeled, lazy-loaded map leaves the directions link usable when the embed is unavailable. On About or Contact, group confirmed hours and access, facilities, booking and payment details for scanning. Keep source links to listing photos, videos and reviews together and label approved media. Preserve normal navigation in both WordPress staging and the static ZIP.
 
 ## 7. Verification, Evidence, and Open Questions
+
+Opera GX rendered the language link inside the header on all 22 TheCarMan routes at 1440px and 390px. Each viewport exposed one link to the matching page in the other locale. Keyboard activation opened the Arabic route with scripts disabled. The ZIP and navbar captures are in `Downloads/WebView-TheCarMan-Navbar`.
 
 The Elementor automotive pilot used the verified Car Repair 02 WXR. Chromium rendered all eight exported pages at 1440px and 390px with no missing local assets. It followed the service menus, operated the questions by keyboard, checked the visiting information, footer map, contact links, and ZIP sitemap. The business’s YouTube player loaded on staging. Evidence is in `Downloads/WebView-TheCarMan-Elementor`. The live Places UI Kit panel still needs configured-provider verification. Additional layout maps need their own verification.

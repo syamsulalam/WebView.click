@@ -354,10 +354,12 @@ Google policy and supported surfaces define what may ship. [Places API policies]
 
 ### 16.1.6 Visual cues, legal pages, and static language switching
 
+- For a demo image slot with no usable business photo, allow an operator to generate a single AI illustration through AI Bridge's signed-in workstation CLI. Use the selected template's crop, palette and photography brief and an approved reference when available. Review the returned JPEG and preserve the receipt. Label it as an illustration wherever it could be mistaken for business evidence.
+
 - Use a consistent set of icons with visible labels in primary navigation, phone and direction actions, service and feature cards, and useful media links. Show gold star icons for review ratings and expose the numeric rating to assistive technology.
 - Generate Privacy Policy and Terms of Use from reusable templates. Fill the verified business name, address and contact phone. Describe actual website behavior and embeds. Include both routes in the sitemap and link them from the footer. Keep bespoke legal and operational claims for owner review.
 - Support an optional, reviewed additional locale, selected for the target market independently of the default locale. Export both languages as separate static routes with equivalent links, language labels, document language and reading direction, and alternate metadata. Offer a language switch on each translated page. A single-language site needs no switch or runtime provider.
-- Draft locale catalogs through AI Bridge in bounded resumable batches. Apply the reviewed catalog through the static export tool. Use an accessible compact flag and language code in both desktop and mobile exports.
+- Draft locale catalogs through AI Bridge in bounded resumable batches. Apply the reviewed catalog through the static export tool. Place the compact flag and language code inside the desktop navbar and alongside the mobile menu button in the same header row. Use a labeled link to the equivalent route that works without JavaScript. Keep the language code visible when a browser cannot render a regional flag emoji.
 - Keep icons, legal routes, localization and packaging shared across reviewed Elementor layouts. Qualify each vendor revision against its actual section structure. Native widget icons use a contrast-safe shade of the business accent.
 - A reviewer who makes a photo public on Maps has made it available there. Republishing on the client site requires a suitable license or another applicable basis. Accept cleared customer photos with the original source and creator credit. Distinguish them from the business's own uploads.
 
