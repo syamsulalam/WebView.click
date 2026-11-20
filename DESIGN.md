@@ -23,6 +23,8 @@ A small business owner should be able to recognize their business in a finished 
 | about | About | /about/ | Evaluate | Learn about the business | Ready |
 | gallery | Gallery | /gallery/ | Evaluate | View photos, videos or reviews | Ready |
 | contact | Contact | /contact/ | Contact | Call or open directions | Ready |
+| privacy | Privacy Policy | /privacy-policy/ | Evaluate | Read data practices or contact the business | Ready |
+| terms | Terms of Use | /terms-of-use/ | Evaluate | Read site terms or contact the business | Ready |
 
 ## Art Direction
 
@@ -320,7 +322,97 @@ Chromium verified the Gallery menu and route, five captioned images, three stati
 
 For the Elementor client preview, verify Home and Services against the pinned demo's testimonial position before the final contact action. Background-image heroes on Services, About and Contact use the demo's responsive background controls with a cleared business asset. Home uses the demo's inline-media position. Gallery contains business media and links to the original listing. Check that the booking action remains readable and operable at desktop and mobile widths.
 
+### Page: Privacy Policy
+
+#### Purpose and Journey
+Explain information shared through visits, enquiries and optional third-party embeds.
+
+#### Layout and Hierarchy
+Use the selected template’s type and section spacing, with a clear heading and short reading sections.
+
+#### Components and States
+Use a shared static document template and include a business contact action.
+
+#### Accessibility
+Use semantic headings and descriptive footer links. Preserve visible keyboard focus.
+
+#### Responsive Behavior
+Keep text and contact details readable at narrow widths.
+
+#### Motion and Feedback
+Use standard links and normal document flow.
+
+#### Content and Forms
+Bind facts from the brief. Describe only the website features in the build and keep owner-specific policy review separate.
+
+#### Principle Adherence
+
+| Principle | Application | Verification |
+|---|---|---|
+| Fitts's Law | Keep media and review targets spaced. | Check mobile. |
+| Visual Hierarchy | Give each media or review group a heading. | Check page order. |
+| Von Restorff Effect | Make the direct review or video action clear. | Inspect contrasts. |
+| Object Constancy | Keep the shared menu and contact footer. | Follow links. |
+| Snapping | N/A. The gallery uses document flow. | Check grid. |
+| Motion Blur | N/A. There is no auto animation. | Check reduced motion. |
+| Natural Mapping | Put captions and sources next to their media. | Read a card. |
+| Tabular Figures | Use legible rating digits. | Check review cards. |
+| Animate Only the Delta | N/A. The review cards are static. | Check source links. |
+| Inertia | Use native scrolling. | Check mobile. |
+| Multimodal Feedback | Pair star glyphs with accessible rating values. | Check accessible name. |
+| Visual Cues | Style keyboard focus. | Tab through media. |
+| Skeuomorphism | Use stars as a visual rating with text. | Inspect labels. |
+
+#### Verification
+Open the page from the footer. Check identity, contact details, reading order, mobile layout and ZIP route.
+
+### Page: Terms of Use
+
+#### Purpose and Journey
+Explain the site’s purpose, booking enquiries, and links to other services.
+
+#### Layout and Hierarchy
+Use the selected template’s type and section spacing, with a clear heading and short reading sections.
+
+#### Components and States
+Use a shared static document template and include a business contact action.
+
+#### Accessibility
+Use semantic headings and descriptive footer links. Preserve visible keyboard focus.
+
+#### Responsive Behavior
+Keep text and contact details readable at narrow widths.
+
+#### Motion and Feedback
+Use standard links and normal document flow.
+
+#### Content and Forms
+Bind facts from the brief. Describe only the website features in the build and keep owner-specific policy review separate.
+
+#### Principle Adherence
+
+| Principle | Application | Verification |
+|---|---|---|
+| Fitts's Law | Keep media and review targets spaced. | Check mobile. |
+| Visual Hierarchy | Give each media or review group a heading. | Check page order. |
+| Von Restorff Effect | Make the direct review or video action clear. | Inspect contrasts. |
+| Object Constancy | Keep the shared menu and contact footer. | Follow links. |
+| Snapping | N/A. The gallery uses document flow. | Check grid. |
+| Motion Blur | N/A. There is no auto animation. | Check reduced motion. |
+| Natural Mapping | Put captions and sources next to their media. | Read a card. |
+| Tabular Figures | Use legible rating digits. | Check review cards. |
+| Animate Only the Delta | N/A. The review cards are static. | Check source links. |
+| Inertia | Use native scrolling. | Check mobile. |
+| Multimodal Feedback | Pair star glyphs with accessible rating values. | Check accessible name. |
+| Visual Cues | Style keyboard focus. | Tab through media. |
+| Skeuomorphism | Use stars as a visual rating with text. | Inspect labels. |
+
+#### Verification
+Open the page from the footer. Check identity, contact details, reading order, mobile layout and ZIP route.
+
 ## 6. Cross-Page Consistency
+
+- Add labeled icons to principal navigation and actions, and visually display review stars with a screen-reader equivalent. Offer localized counterpart links on every translated static page. Validate that footer links stay outside the primary menu.
 
 - R2 preview pages add a floating download link with an icon and visible label. Keep it clear of the theme's bottom-right controls, retain keyboard focus, and link to the current site's ZIP. Keep the review heading and testimonials in one section with no empty image slots.
 

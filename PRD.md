@@ -352,6 +352,13 @@ Google policy and supported surfaces define what may ship. [Places API policies]
 - Treat Gallery as a record of the business's work. Use owner-cleared exact listing originals or an approved provider display. Expose source links and business-published playable video. Illustrations used elsewhere never become business Gallery photos. When inline assets are unavailable, link to the actual listing media and leave the preview in review.
 - Verify presentation and delivery separately. Review authentic media, editorial specificity, the review-to-booking path, branch facts, all routes, keyboard and mobile behavior, and the static ZIP. Record missing evidence before any client handoff. The owner confirms published claims and media rights before release.
 
+### 16.1.6 Visual cues, legal pages, and static language switching
+
+- Use a consistent set of icons with visible labels in primary navigation, phone and direction actions, service and feature cards, and useful media links. Show gold star icons for review ratings and expose the numeric rating to assistive technology.
+- Generate Privacy Policy and Terms of Use from reusable templates. Fill the verified business name, address and contact phone. Describe actual website behavior and embeds. Include both routes in the sitemap and link them from the footer. Keep bespoke legal and operational claims for owner review.
+- Support an optional, reviewed additional locale, selected for the target market independently of the default locale. Export both languages as separate static routes with equivalent links, language labels, document language and reading direction, and alternate metadata. Offer a language switch on each translated page. A single-language site needs no switch or runtime provider.
+- A reviewer who makes a photo public on Maps has made it available there. Republishing on the client site requires a suitable license or another applicable basis. Accept cleared customer photos with the original source and creator credit. Distinguish them from the business's own uploads.
+
 ### 16.2 Single-Upload Edge Architecture (Dynamic ZIP Streaming via `client-zip`)
 
 - Add a floating, named ZIP download link with a download icon on successful R2 HTML previews. It links to the current site's `/download` route and belongs to the preview chrome. Downloaded files retain their original bytes.

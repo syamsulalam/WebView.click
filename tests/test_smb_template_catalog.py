@@ -242,6 +242,35 @@ class TemplateCatalogTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exact locality"):
                 compiler["apply_reviewed_service_draft"]({**prospect, "locality": "Another city"}, offering, folder)
 
+    def test_legal_copy_and_static_alternate_language(self):
+        brief = {"name": "Example business", "address": "Example Street", "locale": "en_US", "phone": "+971555555555",
+                 "business_profile": {"video": {"youtube_id": "example-id"}}}
+        docs = compiler["legal_documents"](brief)
+        self.assertIn("YouTube", docs["privacy"][1])
+        self.assertNotIn("Google Maps", docs["privacy"][1])
+        self.assertIn('href="tel:+971555555555"', docs["terms"][1])
+        self.assertEqual(compiler["rating_stars"](5, False).count('wv-i-star"'), 5)
+
+        localize = run_path(str(Path(__file__).resolve().parents[1] / "scripts" / "localize-smb-export.py"))["localize"]
+        with TemporaryDirectory() as temp:
+            export = Path(temp)
+            (export / "sitemap.xml").write_text('<urlset><url><loc>https://sites.webview.click/example/</loc></url></urlset>')
+            (export / "index.html").write_text('<html lang="en-US"><head><title>Welcome</title></head><body>'
+                                               '<a href="/example/">Home</a><p>Call +971 55 555 5555</p>'
+                                               '<script>const text = "Keep"</script>'
+                                               '</body></html>')
+            self.assertEqual(set(localize(export)), {"Welcome", "Home", "Call +971 55 555 5555"})
+            localize(export, {"tag": "ar-AE", "direction": "rtl", "label": "العربية", "source_label": "English",
+                              "text": {"Welcome": "مرحباً", "Home": "الرئيسية",
+                                       "Call +971 55 555 5555": "اتصل على +971 55 555 5555"}})
+            original = (export / "index.html").read_text(encoding="utf-8")
+            alternate = (export / "ar-ae" / "index.html").read_text(encoding="utf-8")
+            self.assertIn('href="/example/ar-ae/"', original)
+            self.assertIn('lang="ar-AE" dir="rtl"', alternate)
+            self.assertIn('href="/example/ar-ae/">الرئيسية', alternate)
+            self.assertIn('<bdi dir="ltr">+971 55 555 5555</bdi>', alternate)
+            self.assertIn('const text = "Keep"', alternate)
+
     def test_flare_request_binds_reference_and_exact_model(self):
         request = media["make_request"](b"sample", "auto repair", "muted tones and tight framing")
         self.assertEqual(request["model"], "gpt-image-2.6-flare")

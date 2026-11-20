@@ -149,6 +149,9 @@ try {
         }
         unset($old[$path]);
         $ids[$page['role']] = $id;
+        if (($page['nav'] ?? true) === false) {
+            continue;
+        }
         $menuItems[$page['role']] = $check(wp_update_nav_menu_item($menu, 0, [
             'menu-item-title' => $page['title'],
             'menu-item-type' => 'post_type',
@@ -156,6 +159,7 @@ try {
             'menu-item-object-id' => $id,
             'menu-item-parent-id' => $parent ? $check($menuItems[$parent] ?? 0) : 0,
             'menu-item-status' => 'publish',
+            'menu-item-classes' => 'wv-nav-' . $page['role'],
         ]));
     }
     foreach ($old as $id) {

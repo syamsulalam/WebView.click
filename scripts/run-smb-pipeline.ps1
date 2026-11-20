@@ -44,7 +44,9 @@ param(
 
     [string]$TemplateManifest = "",
 
-    [string]$TemplateCache = ""
+    [string]$TemplateCache = "",
+
+    [string]$LocalizationFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -144,6 +146,10 @@ foreach ($Biz in $Batch) {
         Expand-Archive -LiteralPath $LocalZip -DestinationPath $LocalExportDir
         if (-not (Test-Path -LiteralPath (Join-Path $LocalExportDir "index.html") -PathType Leaf)) {
             throw "Missing exported homepage for $Slug."
+        }
+        if ($LocalizationFile) {
+            & python "$ScriptDir\localize-smb-export.py" $LocalExportDir --catalog $LocalizationFile
+            if ($LASTEXITCODE -ne 0) { throw "Localized static export needs review for $Slug." }
         }
     } finally {
         foreach ($LocalTemp in @($LocalBrief, $LocalCompiled, $LocalZip)) {

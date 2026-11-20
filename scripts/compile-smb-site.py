@@ -24,6 +24,8 @@ MARK = "@@WV_HOME@@"
 DNS_RESOLVERS = ("https://dns.google/resolve", "https://cloudflare-dns.com/dns-query")
 SERVICE_TOPICS = ("what", "why", "included", "when", "deferral", "how", "who")
 SERVICE_ICONS = {"why": "fas fa-check-circle", "included": "fas fa-list-ul", "who": "fas fa-user"}
+BUSINESS_PHOTOS = {"owner", "owner_listing", "customer_listing"}
+LEGAL_ROUTES = {"privacy": "privacy-policy", "terms": "terms-of-use"}
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -225,8 +227,22 @@ def source_url(value):
     return value
 
 
-def action(url, label, kind="button"):
-    return f'<a class="wv-{kind}" href="{escape(url, quote=True)}">{escape(label)}</a>'
+def icon(name):
+    return f'<span class="wv-icon wv-i-{name}" aria-hidden="true"></span>'
+
+
+def action(url, label, kind="button", symbol=None):
+    if url.startswith("tel:"):
+        symbol = "phone"
+    cue = icon(symbol) if symbol else ""
+    return f'<a class="wv-{kind}" href="{escape(url, quote=True)}">{cue}{escape(label)}</a>'
+
+
+def rating_stars(rating, local):
+    label = f"{rating} dari 5 bintang" if local else f"{rating} out of 5 stars"
+    gold = icon("star") * rating
+    empty = icon("star-empty") * (5 - rating)
+    return f'<span class="wv-rating" role="img" aria-label="{label}">{gold}{empty}</span>'
 
 
 def button_text(accent):
@@ -350,13 +366,13 @@ def verify_outreach(prospect, now=None):
 
 
 def prepare_photo(photo, asset_dir):
-    require(photo.get("origin") in {"owner", "owner_listing", "licensed_illustration", "gpt_image_26_flare"}
+    require(photo.get("origin") in BUSINESS_PHOTOS | {"licensed_illustration", "gpt_image_26_flare"}
             and photo.get("redistribution_allowed") is True,
             "Use an owner original, a licensed illustration, or a reviewed Flare image cleared for redistribution.")
     for key in ("alt", "caption", "credit"):
         copy(photo, key, 8, 180)
     source_url(photo["source"])
-    if photo["origin"] == "owner_listing":
+    if photo["origin"] in {"owner_listing", "customer_listing"}:
         copy(photo, "permission_record", 8, 250)
     if photo.get("license"):
         source_url(photo["license"])
@@ -416,7 +432,8 @@ def profile_markup(prospect):
             require(evidence in prospect["sources"] and row.get("confirmed_for_export") is True,
                     "Business profile facts need a listed source and export approval.")
             items.append(f'<li>{statement}</li>')
-        facts.append(f'<div><h3>{titles[local]}</h3><ul>{"".join(items)}</ul></div>')
+        symbol = {"hours": "clock", "special_hours": "clock", "payments": "card", "parking": "pin"}.get(key, "check")
+        facts.append(f'<div><h3>{icon(symbol)}{titles[local]}</h3><ul>{"".join(items)}</ul></div>')
     details_title = "Informasi kunjungan" if local else "Visiting information"
     section = f'<h2>{details_title}</h2><div class="wv-grid">{"".join(facts)}</div>' if facts else ""
     maps = profile.get("map_embed_url")
@@ -432,7 +449,7 @@ def profile_markup(prospect):
     visit_title = "Lokasi" if local else "Location"
     footer = (f'<footer class="wv-section wv-visit" data-wv-visit><div class="wv-inner"><h2>{visit_title}</h2>'
               f'<address>{escape(prospect["address"])}</address>'
-              f'<p>{action(listing, prospect["labels"]["directions"], "secondary")}</p>{frame}</div></footer>')
+              f'<p>{action(listing, prospect["labels"]["directions"], "secondary", "pin")}</p>{frame}</div></footer>')
     return section, footer
 
 
@@ -445,7 +462,7 @@ def video_markup(video, local):
             f'title="{escape(title, quote=True)}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" '
             'allow="encrypted-media; picture-in-picture" allowfullscreen></iframe><figcaption>'
             f'{escape(title)} · '
-            + action("https://www.youtube.com/watch?v=" + video_id, "Tonton di YouTube" if local else "Watch on YouTube", "service-link")
+            + action("https://www.youtube.com/watch?v=" + video_id, "Tonton di YouTube" if local else "Watch on YouTube", "service-link", "play")
             + "</figcaption></figure>")
 
 
@@ -482,10 +499,8 @@ def review_markup(review, accept_photo, local):
     name = escape(copy(review, "reviewer", 2, 100))
     rating = review["rating"]
     photo, digest = accept_photo(review["avatar"]) if review.get("avatar") else ("", None)
-    rating_label = f"{rating} dari 5 bintang" if local else f"{rating} out of 5 stars"
     return (f'<article class="wv-card wv-review">{photo}<h3>{name}</h3>'
-            f'<p class="wv-rating" aria-label="{rating_label}"><span aria-hidden="true">'
-            f'{"★" * rating}{"☆" * (5 - rating)}</span></p>'
+            f'<p>{rating_stars(rating, local)}</p>'
             f'{text}<p>{link}</p></article>', digest)
 
 
@@ -505,8 +520,8 @@ def gallery_page(config, prospect, accept_photo, service_photos):
     listing = google_place_url(profile["listing_url"]) if profile else None
     photos = profile.get("gallery", [])
     require(isinstance(photos, list) and len(photos) <= 5, "Supply up to five reviewed gallery images.")
-    require(all(photo.get("origin") in {"owner", "owner_listing"} for photo in photos),
-            "Gallery photos must show the actual business and come from an owner original.")
+    require(all(photo.get("origin") in BUSINESS_PHOTOS for photo in photos),
+            "Gallery photos must show the actual business and be cleared for reuse.")
     images = [accept_photo(photo) for photo in photos]
     if config.get("show_service_photos") is True:
         images += service_photos
@@ -527,14 +542,14 @@ def gallery_page(config, prospect, accept_photo, service_photos):
     for available, section, title in ((images or listing, "gallery", photo_heading), (videos, "videos", video_heading),
                                       (cards or listing, "reviews", review_heading)):
         if available:
-            jumps.append(action(f"#gallery-{section}", title, "secondary"))
+            jumps.append(action(f"#gallery-{section}", title, "secondary", {"gallery": "image", "videos": "play", "reviews": "star"}[section]))
     blocks = [("hero", f'<h1>{escape(copy(config, "heading", 8, 120))}</h1>'
                        f'<p>{escape(copy(config, "intro", 42, 400))}</p>'
                        f'<div class="wv-actions">{call}{"".join(jumps)}</div>')]
     gallery_links = []
     if images or listing:
         photos_url = google_place_url(profile.get("photos_url", listing)) if listing else None
-        photo_links = (action(photos_url, "Foto dan video di Google Maps" if local else "Open listing photos and videos on Google Maps", "service-link")
+        photo_links = (action(photos_url, "Foto dan video di Google Maps" if local else "Open listing photos and videos on Google Maps", "service-link", "image")
                        if listing else "")
         photos_html = '<div class="wv-grid wv-gallery">' + "".join(markup for markup, _ in images) + "</div>" if images else ""
         blocks.append(("gallery", f"<h2>{photo_heading}</h2>{photos_html}" + (f"<p>{photo_links}</p>" if photo_links else "")))
@@ -613,7 +628,7 @@ def service_page(offering, prospect, source, indices, photo_html, native_cards):
     title = escape(offering["title"] + (" di " if local else " in ") + prospect["locality"])
     parent = MARK + prospect["pages"]["services"]["slug"] + "/"
     call = action("tel:" + prospect["phone"], prospect["labels"]["call"])
-    index = action(parent, prospect["labels"]["services"], "secondary")
+    index = action(parent, prospect["labels"]["services"], "secondary", "tools")
     byline = escape(prospect["name"]) + " · " + escape(prospect["address"])
     headings = ("What this service is", "Why it matters", "What can be included", "When to book",
                 "What happens if you wait", "How it works", "Who needs it")
@@ -625,7 +640,8 @@ def service_page(offering, prospect, source, indices, photo_html, native_cards):
     topic_title = dict(zip(SERVICE_TOPICS, headings, strict=True))
     cards = [(topic, topic_title[topic], answers[topic], icon) for topic, icon in SERVICE_ICONS.items()]
     def topic_markup(topic, level=2):
-        return (f'<div data-wv-topic="{topic}"><h{level}>{topic_title[topic]}</h{level}>'
+        cue = icon({"why": "check", "included": "list", "who": "user", "when": "clock", "deferral": "alert", "how": "list"}[topic]) if topic != "what" else ""
+        return (f'<div data-wv-topic="{topic}"><h{level}>{cue}{topic_title[topic]}</h{level}>'
                 f'<p>{escape(answers[topic])}</p></div>')
     feature_html = "" if native_cards else '<div class="wv-grid">' + "".join(
         f'<article class="wv-card">{topic_markup(topic, 3)}</article>' for topic in SERVICE_ICONS) + '</div>'
@@ -658,6 +674,42 @@ def section_html(kind, index, attrs, html):
             f'style="--wv-space:{spacing}px"{anchor}><div class="wv-inner">{html}</div></section>')
 
 
+def legal_documents(prospect):
+    local = prospect["locale"] == "id_ID"
+    name = prospect["name"]
+    profile = prospect.get("business_profile") or {}
+    providers = []
+    if profile.get("map_embed_url"):
+        providers.append("Google Maps")
+    if profile.get("videos") or profile.get("video"):
+        providers.append("YouTube")
+    privacy_title, terms_title = ("Kebijakan Privasi", "Ketentuan Penggunaan") if local else ("Privacy Policy", "Terms of Use")
+    if local:
+        privacy = [("Kunjungan situs", "Penyedia hosting dapat memproses alamat IP dan informasi peramban untuk menayangkan situs dan menjaga keamanannya."),
+                   ("Saat Anda menghubungi kami", f"Jika Anda menghubungi {name}, informasi yang Anda berikan dapat digunakan untuk menjawab pertanyaan dan mengatur layanan."),
+                   ("Pertanyaan privasi", "Hubungi bisnis untuk menanyakan informasi yang Anda berikan, meminta koreksi, atau menanyakan pilihan yang tersedia.")]
+        terms = [("Informasi layanan", f"Situs ini menjelaskan layanan {name}. Hubungi bisnis untuk memastikan ketersediaan, cakupan pekerjaan dan harga."),
+                 ("Janji temu", "Janji temu dikonfirmasi langsung dengan bisnis. Sepakati waktu, lokasi dan rincian layanan sebelum pekerjaan dimulai."),
+                 ("Tautan pihak ketiga", "Layanan yang ditautkan memiliki ketentuan dan kebijakan privasinya sendiri.")]
+    else:
+        privacy = [("Website visits", "The hosting provider may process your IP address and browser information to serve the website and keep it secure."),
+                   ("When you contact the business", f"If you contact {name}, the details you share may be used to reply to your enquiry and arrange the requested service."),
+                   ("Privacy questions", "Contact the business about information you supplied, corrections, or the privacy options available to you.")]
+        terms = [("Service information", f"This site describes services from {name}. Contact the business to confirm availability, scope and prices for your enquiry."),
+                 ("Appointments", "The business confirms appointments directly. Agree on the time, location and service details before work begins."),
+                 ("Third-party links", "Linked services have their own terms and privacy policies.")]
+    if providers:
+        names = ", ".join(providers)
+        privacy.insert(2, ("Layanan pihak ketiga", f"Konten tersemat dari {names} dapat memproses informasi sesuai kebijakan privasi penyedia tersebut.") if local else
+                          ("Third-party embeds", f"Embedded content from {names} may process information under the providers’ own privacy policies."))
+    contact_title = "Kontak" if local else "Contact"
+    details = (f'<h2>{contact_title}</h2><address>{escape(name)}<br>{escape(prospect["address"])}</address>'
+               f'<p>{action("tel:" + prospect["phone"], prospect["phone"], "service-link")}</p>')
+    return {role: (title, f'<h1>{title}</h1>' + "".join(f'<h2>{heading}</h2><p>{escape(body)}</p>'
+                   for heading, body in entries) + details)
+            for role, title, entries in (("privacy", privacy_title, privacy), ("terms", terms_title, terms))}
+
+
 def wrap_sections(sections):
     return ('<div class="wv-preview">' + sections + "</div>").replace("[", "&#91;").replace("]", "&#93;")
 
@@ -681,14 +733,14 @@ def render_page(role, page, roles, source, prospect, photo_html):
         if kind == "hero":
             controls = action("tel:" + phone, labels["call"])
             if role == "home":
-                controls += action(services, labels["services"], "secondary")
+                controls += action(services, labels["services"], "secondary", "tools")
             text = f'<div>{text}<div class="wv-actions">{controls}</div></div>'
             text += photo_html
         elif kind == "services":
             cards = []
             for offering in prospect["offerings"]:
                 detail = escape(copy(offering, "summary", 42, 320))
-                link = action(services + offering["slug"] + "/", offering["title"], "service-link")
+                link = action(services + offering["slug"] + "/", offering["title"], "service-link", "tools")
                 cards.append(f'<article class="wv-card"><h3>{link}</h3><p>{detail}</p></article>')
             text += '<div class="wv-grid">' + "".join(cards) + "</div>"
         elif kind in ROLES_WITH_ITEMS:
@@ -701,12 +753,12 @@ def render_page(role, page, roles, source, prospect, photo_html):
                 if kind == "questions":
                     cards.append(f'<details><summary>{label}</summary><p>{detail}</p></details>')
                 else:
-                    cards.append(f'<article class="wv-card"><h3>{label}</h3><p>{detail}</p></article>')
+                    cards.append(f'<article class="wv-card"><h3>{icon("check")}{label}</h3><p>{detail}</p></article>')
             text += '<div class="wv-grid">' + "".join(cards) + "</div>"
         elif kind == "callout":
             text += action("tel:" + phone, labels["call"])
         elif kind == "directions":
-            text += action(directions, labels["directions"])
+            text += action(directions, labels["directions"], symbol="pin")
         rendered.append(section_html(kind, index, attrs, text))
     return rendered
 
@@ -741,6 +793,11 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
         return photo_markup(photo, asset, hero), asset["sha256"]
 
     profile_html, visit_footer = profile_markup(prospect)
+    legal = legal_documents(prospect)
+    legal_links = "".join(action(MARK + LEGAL_ROUTES[role] + "/", title, "service-link", "document")
+                          for role, (title, _) in legal.items())
+    legal_label = "Informasi situs" if prospect["locale"] == "id_ID" else "Site information"
+    shared_footer = visit_footer + f'<footer class="wv-legal-footer"><nav aria-label="{legal_label}">{legal_links}</nav></footer>'
     source = source_layouts(candidate, layout, cache)
     pages = []
     seen_slugs = set()
@@ -753,8 +810,8 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
         if content:
             testimonial = {
                 "testimonial_name": escape(copy(review, "reviewer", 2, 100)),
-                "testimonial_job": (f'{review["rating"]} dari 5 bintang' if local else f'{review["rating"]} out of 5 stars'),
-                "testimonial_content": content + f'<p>{link}</p>',
+                "testimonial_job": "",
+                "testimonial_content": f'<p>{rating_stars(review["rating"], local)}</p>' + content + f'<p>{link}</p>',
                 "testimonial_image": {"url": "", "id": ""},
             }
             if review.get("avatar"):
@@ -766,10 +823,9 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
         require(proof_reviews, "Client delivery needs attributed review text or verified review summaries.")
 
     def render(role_source, indices, sections, features=None, background=None, proof=None):
-        if visit_footer:
-            sections = sections + [visit_footer]
+        sections = sections + [shared_footer]
         if candidate["builder"] == "elementor":
-            return {"elementor": elementor_page(role_source, indices + ([0] if visit_footer else []), sections,
+            return {"elementor": elementor_page(role_source, indices + [0], sections,
                                                 features, background, proof)}
         return {"html": wrap_sections("".join(sections))}
 
@@ -782,7 +838,7 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
         photo_html, digest = accept_photo(photo, hero=True) if photo else ("", None)
         if role == "home" and not photo and (video := (prospect.get("business_profile") or {}).get("video")):
             photo_html = '<div class="wv-photo">' + video_markup(video, local) + '</div>'
-        authentic = photo and photo.get("origin") in {"owner", "owner_listing"}
+        authentic = photo and photo.get("origin") in BUSINESS_PHOTOS
         if outreach and layout.get("testimonials") and (role == "home" or "background" in source[role][0][1]):
             require(authentic, f"Client delivery needs a cleared business hero photo for {role}.")
         if authentic:
@@ -824,7 +880,7 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
         apply_reviewed_service_draft(prospect, offering, asset_dir or input_path.parent)
         photo = offering["photo"]
         photo_html, digest = accept_photo(photo, hero=True) if photo else ("", None)
-        authentic = photo and photo.get("origin") in {"owner", "owner_listing"}
+        authentic = photo and photo.get("origin") in BUSINESS_PHOTOS
         if authentic:
             business_photos.append((photo_markup(photo, assets[digest]), digest))
         background = digest if authentic and "background" in source[source_role][indices[0] - 1][1] else None
@@ -863,6 +919,14 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
                       "sections": [role for role, _ in blocks], "indices": indices, "image_sha256": None,
                       "gallery_sha256": digests, "gallery_links": gallery_links,
                       **render(gallery_source, indices, sections)})
+        seen_slugs.add(slug)
+    for role, (title, body) in legal.items():
+        slug = LEGAL_ROUTES[role]
+        require(slug not in seen_slugs, "A page uses a reserved legal route.")
+        sections = [section_html("legal", 1, source["contact"][0][1], body)]
+        pages.append({"role": role, "slug": slug, "title": title, "route": f"/{slug}/", "nav": False,
+                      "source": layout["pages"]["contact"]["source"], "sections": ["legal"], "indices": [1],
+                      "image_sha256": None, **render(source["contact"], [1], sections)})
     accent = prospect.get("accent", "#e9b447")
     require(re.fullmatch(r"#[0-9a-fA-F]{6}", accent), "Accent must be a hex color.")
     css = (SCRIPTS / "wpwv-preview.css").read_text(encoding="utf-8")
