@@ -365,6 +365,10 @@ Google policy and supported surfaces define what may ship. [Places API policies]
 
 ### 16.2 Single-Upload Edge Architecture (Dynamic ZIP Streaming via `client-zip`)
 
+- One CLI run takes a reviewed prospect brief through the Companion's Elementor plan, WordPress generation, Simply Static, optional localization, static link validation, and R2. The generated name is `[business-name]-[niche]-[country-code]-[city]`, with lowercase hyphenated segments. Supply a reviewed city and two-letter country code independently of the copy locale. Use the same name in the export URLs, sitemap, R2 key prefix and downloadable ZIP.
+- Check every exported HTML page's internal links and fragment targets before upload. Preserve real contact and external source links, and verify the public preview and ZIP against the exported files when delivering an approved site. Third-party endpoints retain their own availability and access rules.
+- `-VerifyR2` uploads to a private, run-specific R2 prefix and checks bytes read back from R2. `-StageOnly` stops after local validation. Public delivery uses the existing affirmative-reply check. Neither verification mode creates contacts or sends outreach.
+
 - Add a floating, named ZIP download link with a download icon on successful R2 HTML previews. It links to the current site's `/download` route and belongs to the preview chrome. Downloaded files retain their original bytes.
 * `sites.webview.click` attaches to the `sites-webview-click` Worker as an exact Custom Domain. That hostname must resolve to the Worker before R2 preview or download links are sent.
 * The uploader uses the named `webview` Cloudflare profile for the project bucket. The Worker serves valid prospect slugs and assembles the ZIP from R2 objects one at a time to keep active object streams bounded.

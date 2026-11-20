@@ -26,7 +26,23 @@
     },
     "slug": {
       "type": "string",
-      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Legacy research slug. The static publishing CLI derives its own name."
+    },
+    "niche": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reviewed publication niche. If absent the CLI uses category.raw."
+    },
+    "country": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{2}$",
+      "description": "Reviewed country code, required by the static publishing CLI."
+    },
+    "city": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reviewed city, required by the static publishing CLI."
     },
     "locale": {
       "type": "string",

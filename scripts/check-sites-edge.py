@@ -1,7 +1,9 @@
-"""Verify the public WebView publishing fixture and its ZIP."""
+"""Verify the public WebView publishing fixture or compare a published site to its export."""
 
+import argparse
 import concurrent.futures
 import io
+from pathlib import Path
 import re
 import urllib.error
 import urllib.request
@@ -10,6 +12,8 @@ import zipfile
 HOST = "https://sites.webview.click"
 SLUG = "webview-publishing-check-20261119"
 PREFIX = f"/{SLUG}/"
+PREVIEW_STYLE = re.compile(rb'<style id="webview-download-style">.*?</style>', re.S)
+PREVIEW_DOWNLOAD = re.compile(rb'<a id="webview-download"[^>]*>.*?</a>', re.S)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -62,11 +66,59 @@ def main():
         for name, url in files.items():
             preview = responses[url][2]
             if name.endswith(".html"):
-                preview = re.sub(rb'<style id="webview-download-style">.*?</style>', b'', preview, count=1, flags=re.S)
-                preview = re.sub(rb'<a id="webview-download"[^>]*>.*?</a>', b'', preview, count=1, flags=re.S)
+                preview = PREVIEW_DOWNLOAD.sub(b"", PREVIEW_STYLE.sub(b"", preview, count=1), count=1)
             assert archive.read(name) == preview, name
     print(f"Verified the live WebView preview, redirects, 404 and ZIP ({len(data)} bytes).")
 
 
+def verify_published(folder, slug):
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) or len(slug) > 63:
+        raise ValueError("Invalid site name.")
+    prefix = f"/{slug}/"
+    files = {path.relative_to(folder).as_posix(): path for path in folder.rglob("*") if path.is_file()}
+    status, headers, body = get(prefix + "download")
+    if status != 200 or headers.get_content_type() != "application/zip":
+        raise ValueError("The published ZIP is unavailable.")
+    with zipfile.ZipFile(io.BytesIO(body)) as archive:
+        if len(archive.namelist()) != len(files) or set(archive.namelist()) != files.keys():
+            raise ValueError("The published ZIP file set differs from the export.")
+        for name, path in files.items():
+            if archive.read(name) != path.read_bytes():
+                raise ValueError(f"Published ZIP bytes differ for {name}.")
+
+    def check(item):
+        name, path = item
+        route = prefix + (name.removesuffix("index.html") if path.name == "index.html" else name)
+        code, headers, data = get(route)
+        if code != 200:
+            raise ValueError(f"Published GET {route} returned {code}.")
+        if name.endswith(".html"):
+            if (headers.get_content_type() != "text/html" or data.count(b'id="webview-download"') != 1 or
+                    f'href="{prefix}download"'.encode() not in data):
+                raise ValueError(f"Published page or download link is invalid for {route}.")
+            data = PREVIEW_DOWNLOAD.sub(b"", PREVIEW_STYLE.sub(b"", data, count=1), count=1)
+        elif name.endswith(".css") and headers.get_content_type() != "text/css":
+            raise ValueError(f"Published stylesheet has the wrong content type: {route}.")
+        if data != path.read_bytes():
+            raise ValueError(f"Preview bytes differ for {route}.")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        for _ in pool.map(check, files.items()):
+            pass
+    print(f"Verified {len(files)} live files and matching ZIP at {HOST}{prefix}")
+
+
 if __name__ == "__main__":
-    main()
+    cli = argparse.ArgumentParser(description=__doc__)
+    cli.add_argument("--export", type=Path)
+    cli.add_argument("--slug")
+    args = cli.parse_args()
+    if bool(args.export) != bool(args.slug):
+        cli.error("Supply --export and --slug together.")
+    if args.export:
+        try:
+            verify_published(args.export, args.slug)
+        except (OSError, ValueError, zipfile.BadZipFile) as exc:
+            cli.exit(2, f"Published site verification failed: {exc}\n")
+    else:
+        main()

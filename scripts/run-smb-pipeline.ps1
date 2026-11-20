@@ -6,12 +6,11 @@
 .DESCRIPTION
     Executes the pipeline:
     1. Ingestion: Direct Google Maps Scraper (Playwright) or reads prospect JSON.
-    2. Contact Sync: Saves prospect to Google Contacts as "[SMB] <Business Name>" via gog.exe or .vcf.
-    3. Headless WP Staging: Builds a prospect-grounded site on wpwv.codev.id.
-    4. Static Export: Runs Simply Static to compile flat HTML/CSS/JS.
-    5. Single Edge R2 Sync: Pushes flat assets to R2 bucket 'webview-sites' under 'sites/<slug>/'.
+    2. Headless WP Staging: Builds a prospect-grounded site on wpwv.codev.id.
+    3. Static Export: Runs Simply Static, optionally localizes, and checks links and routes.
+    4. Single Edge R2 Sync: Pushes flat assets to R2 and verifies the result.
        (Dynamic ZIP downloads are streamed on the fly via Cloudflare Worker at https://sites.webview.click/<slug>/download).
-    6. Mockup Capture: Takes a high-resolution mobile screenshot (390x844).
+    5. Public delivery: Verifies the preview and ZIP before contact sync and mobile mockup capture.
     The resulting artifacts can be used by the separate LusmoBot outreach workflow.
 
 .PARAMETER ProspectFile
@@ -24,6 +23,9 @@
     Maximum prospects to process in this run (default: 15).
 .PARAMETER StageOnly
     Generate and download the static artifact. Skip contacts, R2 and mockups.
+.PARAMETER VerifyR2
+    Verify the compiled static site through a private R2 upload and byte read-back.
+    Skip contacts, public publication and mockups.
 #>
 
 [CmdletBinding()]
@@ -42,6 +44,8 @@ param(
 
     [switch]$StageOnly,
 
+    [switch]$VerifyR2,
+
     [string]$TemplateManifest = "",
 
     [string]$TemplateCache = "",
@@ -51,6 +55,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+if ($StageOnly -and $VerifyR2) { throw "Choose either -StageOnly or -VerifyR2." }
+$Publish = !$StageOnly -and !$VerifyR2
 
 Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host " 🚀 WebView.click SMB Site Generation & Outreach Pipeline " -ForegroundColor Cyan
@@ -93,37 +99,31 @@ if ($Batch.Count -eq 0) { throw "No prospects selected." }
 Write-Host "📋 Loaded $($Batch.Count) prospect(s) for processing (Target pace: 15/day)." -ForegroundColor Green
 
 foreach ($Biz in $Batch) {
-    $Slug = if ($Biz.slug) { $Biz.slug } else { $Biz.name.ToLower() -replace '[^a-z0-9]+', '-' -replace '^-|-$', '' }
     $Phone = $Biz.phone -replace '[^0-9+]', ''
     $Name = $Biz.name
     $Niche = if ($Biz.niche) { $Biz.niche } else { "general" }
-    if ($Slug -isnot [string] -or $Slug -cnotmatch '\A[a-z0-9]+(?:-[a-z0-9]+)*\z' -or $Slug.Length -gt 63) {
-        throw "Invalid prospect slug. Use up to 63 lowercase letters, digits and single hyphens."
-    }
     if ([string]::IsNullOrWhiteSpace($Name) -or $Name.Length -gt 160 -or $Phone -notmatch '\A\+[1-9][0-9]{7,14}\z') {
         throw "A prospect must have a business name and an E.164 phone number."
     }
     
-    Write-Host "`n───────────────────────────────────────────────────────────" -ForegroundColor Gray
-    Write-Host "🏢 Processing: $Name ($Slug) | 📱 $Phone" -ForegroundColor Yellow
-    Write-Host "───────────────────────────────────────────────────────────" -ForegroundColor Gray
-
     $RunId = [guid]::NewGuid().ToString('N')
     $RemoteDir = "/tmp/webview-$RunId"
-    $LocalExportDir = Join-Path $ProjectRoot "dist-staging\$Slug-$RunId"
-    $LocalZip = "$LocalExportDir.zip"
+    $LocalZip = Join-Path $env:TEMP "webview-$RunId-site.zip"
     $LocalBrief = Join-Path $env:TEMP "webview-$RunId-brief.json"
     $LocalCompiled = Join-Path $env:TEMP "webview-$RunId-input.json"
-    $RemoteCommand = "set -- '$RunId' '$Slug'" + [Environment]::NewLine + $BuildScript
 
     $TransferStarted = $false
     try {
         $Biz.phone = $Phone
         $Biz | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $LocalBrief -Encoding UTF8
+        $Slug = & python "$ScriptDir\check-smb-export.py" slug $LocalBrief
+        if ($LASTEXITCODE -ne 0) { throw "Review the business name, niche, country and city for $Name." }
+        $LocalExportDir = Join-Path $ProjectRoot "dist-staging\$Slug-$RunId"
+        $RemoteCommand = "set -- '$RunId' '$Slug'" + [Environment]::NewLine + $BuildScript
         $CompileArgs = @("$ScriptDir\compile-smb-site.py", $LocalBrief, $LocalCompiled, "--asset-dir", $ProspectDir)
         if ($TemplateManifest) { $CompileArgs += @("--manifest", $TemplateManifest) }
         if ($TemplateCache) { $CompileArgs += @("--template-cache", $TemplateCache) }
-        if (!$StageOnly) { $CompileArgs += "--outreach" }
+        if ($Publish) { $CompileArgs += "--outreach" }
         & python @CompileArgs
         if ($LASTEXITCODE -ne 0) { throw "Template or prospect brief needs review for $Slug." }
         Write-Host "⚙️ Generating and exporting $Slug on wpwv.codev.id..." -ForegroundColor Magenta
@@ -151,6 +151,8 @@ foreach ($Biz in $Batch) {
             & python "$ScriptDir\localize-smb-export.py" $LocalExportDir --catalog $LocalizationFile
             if ($LASTEXITCODE -ne 0) { throw "Localized static export needs review for $Slug." }
         }
+        & python "$ScriptDir\check-smb-export.py" check $LocalExportDir $Slug
+        if ($LASTEXITCODE -ne 0) { throw "Static references failed validation for $Slug." }
     } finally {
         foreach ($LocalTemp in @($LocalBrief, $LocalCompiled, $LocalZip)) {
             if (Test-Path -LiteralPath $LocalTemp) { Remove-Item -LiteralPath $LocalTemp }
@@ -163,6 +165,16 @@ foreach ($Biz in $Batch) {
     }
     Write-Host "Static artifact: $LocalExportDir" -ForegroundColor Green
     if ($StageOnly) { continue }
+
+    Write-Host "☁️ Syncing flat assets to Cloudflare R2..." -ForegroundColor Magenta
+    $DeployArgs = @("$ScriptDir\deploy-site-to-r2.mjs", "--dir", $LocalExportDir, "--slug", $Slug)
+    if ($VerifyR2) { $DeployArgs += @("--verification-run", $RunId) }
+    & node @DeployArgs
+    if ($LASTEXITCODE -ne 0) { throw "R2 upload failed for $Slug." }
+    if ($VerifyR2) { continue }
+
+    & python "$ScriptDir\check-sites-edge.py" --export $LocalExportDir --slug $Slug
+    if ($LASTEXITCODE -ne 0) { throw "Public preview or ZIP verification failed for $Slug." }
 
     Write-Host "👤 Syncing to Google Contacts as '[SMB] $Name'..." -ForegroundColor Magenta
     
@@ -194,10 +206,6 @@ foreach ($Biz in $Batch) {
         Remove-Item -LiteralPath $TempContactJson -ErrorAction SilentlyContinue
     }
 
-    Write-Host "☁️ Syncing flat assets to Cloudflare R2..." -ForegroundColor Magenta
-    node "$ScriptDir\deploy-site-to-r2.mjs" --dir $LocalExportDir --slug $Slug --bucket "webview-sites"
-    if ($LASTEXITCODE -ne 0) { throw "R2 upload failed for $Slug." }
-
     Write-Host "📸 Capturing mobile mockup for WhatsApp delivery..." -ForegroundColor Magenta
     $PreviewUrl = "https://sites.webview.click/$Slug/"
     $MockupPath = Join-Path $ProjectRoot "mockups\$Slug-mobile.jpg"
@@ -213,7 +221,7 @@ foreach ($Biz in $Batch) {
     Write-Host "   👤 Contact:   [SMB] $Name ($Phone)" -ForegroundColor Cyan
 }
 
-if ($StageOnly) { return }
+if (!$Publish) { return }
 
 Write-Host "`n═══════════════════════════════════════════════════════════" -ForegroundColor Green
 Write-Host " 🏁 Batch complete! Ready for LusmoBot 15/day dispatch.    " -ForegroundColor Green

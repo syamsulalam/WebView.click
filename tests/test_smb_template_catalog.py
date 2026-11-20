@@ -14,9 +14,41 @@ catalog = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(catalog)
 compiler = run_path(str(SCRIPT.parent / "compile-smb-site.py"))
 media = run_path(str(SCRIPT.parent / "prepare-smb-image.py"))
+export = run_path(str(SCRIPT.parent / "check-smb-export.py"))
 
 
 class TemplateCatalogTest(unittest.TestCase):
+    def test_static_publish_name_and_link_closure(self):
+        prospect = {"name": "Élan Motors", "category": {"raw": "Car Repair"}, "country": "AE",
+                    "city": "Dubai", "slug": "historical-slug", "locale": "en_US"}
+        slug = export["publication_slug"](prospect)
+        self.assertEqual(slug, "elan-motors-car-repair-ae-dubai")
+        with self.assertRaisesRegex(ValueError, "two-letter country"):
+            export["publication_slug"]({**prospect, "country": "United Arab Emirates"})
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            prefix = f"/{slug}/"
+            (root / "about").mkdir()
+            about = root / "about/index.html"
+            (root / "site.css").touch()
+            (root / "sitemap.xml").write_text(
+                f'<urlset><url><loc>https://sites.webview.click{prefix}</loc></url>'
+                f'<url><loc>https://sites.webview.click{prefix}about/</loc></url></urlset>'
+            )
+            home = root / "index.html"
+            home.write_text('<link rel="stylesheet" href="site.css"><a href="about/#hours">Hours</a>')
+            about.write_text('<h1 id="hours">Hours</h1><a href="../">Home</a>')
+            self.assertEqual(export["verify_export"](root, slug)["internal_references"], 3)
+            about.write_text('<h1 id="address">Address</h1>')
+            with self.assertRaisesRegex(ValueError, "missing fragment"):
+                export["verify_export"](root, slug)
+            home.write_text('<a href="https://wpwv.codev.id/about/">Staging</a>')
+            with self.assertRaisesRegex(ValueError, "WordPress staging"):
+                export["verify_export"](root, slug)
+            home.write_text(f'<a href="{prefix}missing/">Missing route</a>')
+            with self.assertRaisesRegex(ValueError, "missing file or page"):
+                export["verify_export"](root, slug)
+
     def test_market_lookup_and_outreach_exclusion(self):
         known, _ = catalog.load_requests()
         dubai = known[catalog.normalized("Car detailing Business Bay, Dubai")]
