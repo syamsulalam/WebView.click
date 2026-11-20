@@ -113,6 +113,7 @@ root, routes, package, receipt = map(Path, sys.argv[1:])
 contract = json.loads(receipt.read_text(encoding="utf-8"))
 expected = {p["route"]: p for p in contract["pages"]}
 prefix = os.environ["WEBVIEW_PREFIX"] + "/"
+gallery_route = next((p["route"] for p in contract["pages"] if p["role"] == "gallery"), None)
 origin = "https://wpwv.codev.id"
 extensions = set("css js png jpg jpeg webp avif gif svg ico woff woff2 ttf otf eot mp4 webm".split())
 css_urls = re.compile(r"""url\(\s*(['"]?)([^'")]+)\1\s*\)""", re.I)
@@ -186,13 +187,18 @@ class Page(HTMLParser):
         self.links = set()
         self.images = set()
         self.frames = set()
+        self.topics = set()
         self.is_elementor = False
         self.visit_footer = False
 
     def handle_starttag(self, tag, attrs):
         fields = dict(attrs)
-        if "elementor" in fields.get("class", "").split() and fields.get("data-elementor-type") == "wp-page":
+        classes = fields.get("class", "").split()
+        if "elementor" in classes and fields.get("data-elementor-type") == "wp-page":
             self.is_elementor = True
+        if fields.get("data-wv-topic"):
+            self.topics.add(fields["data-wv-topic"])
+        self.topics.update(value.removeprefix("wv-topic-") for value in classes if value.startswith("wv-topic-"))
         if tag == "footer" and "data-wv-visit" in fields:
             self.visit_footer = True
         if tag == "iframe" and fields.get("src"):
@@ -244,9 +250,8 @@ for path in paths:
         raise SystemExit(f"Missing static page: {path}")
     html = page.read_text(encoding="utf-8")
     if contract["template"]["builder"] == "elementor":
-        # WebView emits HTML widgets only. They use Elementor CSS and native controls,
-        # so the unused frontend runtime would download unrelated lazy widget chunks.
-        if any(widget.get("widgetType") != "html" for container in expected[path]["elementor"]
+        # These widgets render on the server and use only Elementor CSS.
+        if any(widget.get("widgetType") not in {"html", "icon-box"} for container in expected[path]["elementor"]
                for widget in container["elements"]):
             raise SystemExit(f"Review frontend dependencies for additional Elementor widgets on {path}")
         html = elementor_unneeded_runtime.sub("", html)
@@ -265,6 +270,12 @@ for path in paths:
         raise SystemExit(f"Export sections differ from the reviewed template on {path}")
     if "tel:" + contract["phone"] not in parsed.links:
         raise SystemExit(f"Missing verified contact action on {path}")
+    if gallery_route and prefix.rstrip("/") + gallery_route not in parsed.links:
+        raise SystemExit(f"Missing Gallery navigation on {path}")
+    if expected[path]["role"] == "service" and parsed.topics != {"what", "why", "included", "when", "deferral", "how", "who"}:
+        raise SystemExit(f"Missing service topic or icon widget on {path}")
+    if not set(expected[path].get("gallery_links", [])).issubset(parsed.links):
+        raise SystemExit(f"Missing source links on {path}")
     digests = [expected[path]["image_sha256"]] + expected[path].get("gallery_sha256", [])
     if any(digest and not any(image.endswith("/" + digest + ".jpg") for image in parsed.images) for digest in digests):
         raise SystemExit(f"The exported page is missing its reviewed image: {path}")

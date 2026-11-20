@@ -49,7 +49,29 @@ body.ast-page-builder-template .site-content > .ast-container { display: block; 
 .wv-preview .wv-map { height: clamp(220px, 38vw, 380px); }
 .wv-preview .wv-video { aspect-ratio: 16 / 9; height: auto; min-height: 200px; }
 .wv-preview .wv-gallery { margin-block: 1.5rem; }
-.wv-live-place gmp-place-details { display: block; width: min(100%, 400px); height: 480px; margin-block: 1rem; }
+.wv-preview .wv-gallery .wv-photo img { aspect-ratio: 4 / 3; object-fit: cover; }
+.wv-preview .wv-videos, .wv-preview .wv-process { background: #eef4f3; }
+.wv-preview .wv-reviews { background: #fff; }
+.wv-film { max-width: 50rem; margin: 1.5rem 0; }
+.wv-review blockquote { margin: .75rem 0; }
+.wv-review .wv-photo img { width: 3rem; height: 3rem; object-fit: cover; border-radius: 50%; }
+.wv-review .wv-rating { margin: .4rem 0; color: #815600; letter-spacing: .12em; }
+.wv-elementor-section.wv-native-features.e-con {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem;
+  width: min(calc(100% - 2.5rem), 70rem);
+  margin: 0 auto clamp(2.35rem, 5vw, 4rem);
+}
+.wv-native-features .wv-native-card { padding: 1.25rem; border: 1px solid #d8e4e3; border-radius: .8rem; }
+.wv-native-card .elementor-icon-box-title { color: #11252d; font-size: 1.2rem; }
+.wv-native-card .elementor-icon { color: #29667b; font-size: 1.5rem; }
+.wv-native-card .elementor-icon svg { fill: currentColor; }
+.wv-native-card .elementor-icon-box-description { color: #314950; line-height: 1.6; }
+.wv-when .wv-card { margin-top: 1.25rem; max-width: 46rem; }
+.wv-technical summary { cursor: pointer; }
+.wv-native-features .elementor-icon-box-wrapper { text-align: left; }
+.wv-hero h1:has(+ .wv-service-intro) { max-width: 24ch; font-size: clamp(2.2rem, 4.5vw, 4.15rem); }
 .wv-preview .wv-when { background: #fff; }
 .wv-card p, .wv-questions details p { margin-bottom: 0; }
 .wv-preview a.wv-service-link { color: #153d48; text-decoration: underline; text-underline-offset: .15em; }

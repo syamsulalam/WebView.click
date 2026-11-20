@@ -119,7 +119,12 @@ try {
         if ($builder === 'elementor') {
             $elements = $page['elementor'];
             foreach ($elements as &$container) {
-                $container['elements'][0]['settings']['html'] = strtr($container['elements'][0]['settings']['html'], $tokens);
+                foreach ($container['elements'] as &$widget) {
+                    if ($widget['widgetType'] === 'html') {
+                        $widget['settings']['html'] = strtr($widget['settings']['html'], $tokens);
+                    }
+                }
+                unset($widget);
             }
             unset($container);
             $elementorData = wp_json_encode($elements, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

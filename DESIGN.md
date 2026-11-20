@@ -10,6 +10,7 @@ A small business owner should be able to recognize their business in a finished 
 |---|---|---|---|---|
 | Discover | Identify service and locality | Preview link | Home | See services or contact |
 | Evaluate | Check fit and understand what to ask | Main navigation | Services, Service detail, About | Open the relevant service or Contact |
+| Evaluate | See example work and independently sourced feedback | Main navigation | Gallery | Open media, review source or Contact |
 | Contact | Call or get directions | Page action or navigation | Contact | Open phone dialer or map |
 
 ## 3. Page and Screen Inventory
@@ -20,6 +21,7 @@ A small business owner should be able to recognize their business in a finished 
 | services | Services | /services/ | Evaluate | Compare services | Ready |
 | service-detail | Service detail | /services/<service>/ | Evaluate | Read scope or call | Ready |
 | about | About | /about/ | Evaluate | Learn about the business | Ready |
+| gallery | Gallery | /gallery/ | Evaluate | View photos, videos or reviews | Ready |
 | contact | Contact | /contact/ | Contact | Call or open directions | Ready |
 
 ## Art Direction
@@ -271,6 +273,50 @@ Make one researched service the subject of each page. Use the real public phone 
 
 #### Verification
 Open each service from the index and navigation. Check the specific text, photo attribution where present, and the callback target.
+
+### Page: Gallery
+
+#### Purpose and Journey
+Let visitors find the business's media and independently sourced reviews from the main menu.
+
+#### Layout and Hierarchy
+Lead with the business and locality. Show photos with captions, videos with a direct watch link, and a separate reviews section.
+
+#### Components and States
+Use the reviewed photo grid and video frame. Distinguish licensed illustrations from business photos. Use three static review cards with direct source links and a separate link to all listing reviews.
+
+#### Accessibility
+Use descriptive alt text, titled video frames, named rating values and descriptive links to the original reviews.
+
+#### Responsive Behavior
+Stack media and cards at narrow widths. Preserve video aspect ratio and keyboard access.
+
+#### Motion and Feedback
+Leave playback under visitor control. Keep native focus visible on media controls and review links.
+
+#### Content and Forms
+Publish cleared media and authentic reviews only. Include name, source, rating and an authorized avatar when available.
+
+#### Principle Adherence
+
+| Principle | Application | Verification |
+|---|---|---|
+| Fitts's Law | Keep media and review targets spaced. | Check mobile. |
+| Visual Hierarchy | Give each media or review group a heading. | Check page order. |
+| Von Restorff Effect | Make the direct review or video action clear. | Inspect contrasts. |
+| Object Constancy | Keep the shared menu and contact footer. | Follow links. |
+| Snapping | N/A. The gallery uses document flow. | Check grid. |
+| Motion Blur | N/A. There is no auto animation. | Check reduced motion. |
+| Natural Mapping | Put captions and sources next to their media. | Read a card. |
+| Tabular Figures | Use legible rating digits. | Check review cards. |
+| Animate Only the Delta | N/A. The review cards are static. | Check source links. |
+| Inertia | Use native scrolling. | Check mobile. |
+| Multimodal Feedback | Pair star glyphs with accessible rating values. | Check accessible name. |
+| Visual Cues | Style keyboard focus. | Tab through media. |
+| Skeuomorphism | Use stars as a visual rating with text. | Inspect labels. |
+
+#### Verification
+Chromium verified the Gallery menu and route, five captioned images, three static review cards with distinct source links, business video and sitemap at 1440px and 390px on 2026-11-20.
 
 ## 6. Cross-Page Consistency
 

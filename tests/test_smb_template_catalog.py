@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from datetime import datetime, timezone
 from runpy import run_path
 import unittest
@@ -142,24 +143,72 @@ class TemplateCatalogTest(unittest.TestCase):
                    "details": {"accessibility": [facet]}}
         brief = {"locale": "en_US", "address": "Example location", "labels": {"directions": "Get directions"},
                  "sources": [source], "business_profile": profile}
-        content, footer, digests = compiler["profile_markup"](brief, lambda photo: None)
+        content, footer = compiler["profile_markup"](brief)
         self.assertIn(facet["text"], content)
         self.assertIn('loading="lazy"', footer)
         self.assertIn(url, footer)
-        self.assertEqual(digests, [])
         facet["confirmed_for_export"] = False
         with self.assertRaisesRegex(ValueError, "export approval"):
-            compiler["profile_markup"](brief, lambda photo: None)
+            compiler["profile_markup"](brief)
         facet["confirmed_for_export"] = True
         profile["map_embed_url"] = "https://example.test/maps/embed?pb=!1m1"
         with self.assertRaisesRegex(ValueError, "Share"):
-            compiler["profile_markup"](brief, lambda photo: None)
+            compiler["profile_markup"](brief)
 
     def test_service_requires_substantive_reviewed_sections(self):
         with self.assertRaisesRegex(ValueError, "expanded service"):
             compiler["service_detail_copy"](None, "Car Maintenance")
         with self.assertRaisesRegex(ValueError, "distinct"):
-            compiler["service_detail_copy"](dict.fromkeys(("scope", "when", "process"), "sample copy " * 20), "Car Maintenance")
+            compiler["service_detail_copy"](dict.fromkeys(compiler["SERVICE_TOPICS"], "sample copy " * 20), "Car Maintenance")
+        partial = dict.fromkeys(("what", "why", "included", "when", "how", "who"), "service content " * 10)
+        with self.assertRaisesRegex(ValueError, "deferral"):
+            compiler["service_detail_copy"](partial, "Car Maintenance")
+
+    def test_gallery_requires_attributed_review_permission_and_preserves_fallback(self):
+        review = {"origin": "first_party", "redistribution_allowed": True, "reviewer": "Example customer",
+                  "text": "The shop explained the estimate before starting.", "rating": 4,
+                  "source": "https://example.test/feedback", "source_label": "Customer feedback"}
+        fixture = {"locale": "en_US", "phone": "+971555555555", "labels": {"call": "Call now"},
+                   "business_profile": {"listing_url": "https://www.google.com/maps/place/Example"}}
+        config = {"heading": "A reviewed gallery", "intro": "Find approved photos and review links on the page below."}
+        gallery = compiler["gallery_page"]
+        blocks, _, links = gallery(config, fixture, None, [])
+        self.assertEqual(set(links), {fixture["business_profile"]["listing_url"]})
+        self.assertIn("Read customer reviews", dict(blocks)["reviews"])
+        blocks, _, _ = gallery({**config, "reviews": [review]}, fixture, None, [])
+        self.assertIn("4 out of 5 stars", dict(blocks)["reviews"])
+        self.assertIn(review["reviewer"], dict(blocks)["reviews"])
+        self.assertIn(review["source"], dict(blocks)["reviews"])
+        with self.assertRaisesRegex(ValueError, "republication approval"):
+            compiler["review_markup"]({**review, "origin": "google"}, None, False)
+        links = [{"origin": "public_link", "reviewer": f"Reviewer {stars}",
+                  "rating": stars, "source": f"https://www.google.com/maps/reviews/data={stars}",
+                  "source_label": "Read on Google Maps"} for stars in (2, 3, 5, 4)]
+        blocks, _, sources = gallery({**config, "reviews": links}, fixture, None, [])
+        html = dict(blocks)["reviews"]
+        self.assertEqual(html.count('class="wv-card wv-review"'), 3)
+        self.assertLess(html.index("Reviewer 5"), html.index("Reviewer 4"))
+        self.assertNotIn(links[0]["source"], sources)
+        with self.assertRaisesRegex(ValueError, "Link cards"):
+            compiler["review_markup"]({**links[0], "text": "Google review content"}, None, False)
+
+    def test_reviewed_service_draft_binds_exact_business_and_local_evidence(self):
+        source = "https://example.test/services"
+        prospect = {"name": "Example garage", "locale": "en_US", "locality": "Business Bay, Dubai",
+                    "address": "Example Tower, Business Bay, Dubai", "sources": [source]}
+        offering = {"slug": "car-maintenance", "title": "Car maintenance", "source": source,
+                    "summary": "Routine vehicle maintenance.", "description": "Follow your vehicle’s schedule.",
+                    "guidance": [{"source": source, "text": "Drivers should consider the scheduled mileage and time intervals."}],
+                    "reviewed_draft": "maintenance.json"}
+        with TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            artifact = {"service_slug": offering["slug"], "reviewed": True, "detail": {"what": "Approved copy"},
+                        "context_sha256": compiler["service_context_digest"](prospect, offering)}
+            (folder / "maintenance.json").write_text(json.dumps(artifact), encoding="utf-8")
+            compiler["apply_reviewed_service_draft"](prospect, offering, folder)
+            self.assertEqual(offering["detail"], artifact["detail"])
+            with self.assertRaisesRegex(ValueError, "exact locality"):
+                compiler["apply_reviewed_service_draft"]({**prospect, "locality": "Another city"}, offering, folder)
 
     def test_flare_request_binds_reference_and_exact_model(self):
         request = media["make_request"](b"sample", "auto repair", "muted tones and tight framing")
