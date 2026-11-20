@@ -70,7 +70,7 @@ body.ast-page-builder-template .site-content > .ast-container { display: block; 
 }
 .wv-native-features .wv-native-card { padding: 1.25rem; border: 1px solid #d8e4e3; border-radius: .8rem; }
 .wv-native-card .elementor-icon-box-title { color: #11252d; font-size: 1.2rem; }
-.wv-native-card .elementor-icon { color: #29667b; font-size: 1.5rem; }
+.wv-native-card .elementor-icon { font-size: 1.5rem; }
 .wv-native-card .elementor-icon svg { fill: currentColor; }
 .wv-native-card .elementor-icon-box-description { color: #314950; line-height: 1.6; }
 .wv-when .wv-card { margin-top: 1.25rem; max-width: 46rem; }

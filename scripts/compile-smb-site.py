@@ -137,13 +137,18 @@ def elementor_sources(raw, layout):
         nodes = [pages[layout["pages"][role]["source"]][index - 1]]
         while nodes and nodes[0].get("widgetType") != "testimonial":
             nodes.extend(nodes.pop(0).get("elements", []))
+        if not nodes and layout.get("native_testimonial_source") is False:
+            result[role][index - 1][1]["testimonial"] = {}
+            continue
         require(nodes, f"The reviewed testimonial widget is missing from {role}.")
         result[role][index - 1][1]["testimonial"] = {
             key: value for key, value in nodes[0]["settings"].items()
             if key.startswith(("content_typography_", "name_typography_", "job_typography_")) or
             key in {"testimonial_alignment", "name_text_color", "content_text_color", "job_text_color"}
         }
-    feature_source = layout["service_detail"]["icon_source"]
+    feature_source = layout["service_detail"].get("icon_source")
+    if not feature_source:
+        return result
     icon_page = pages[layout["pages"][feature_source["role"]]["source"]]
     nodes = icon_page[feature_source["section"] - 1].get("elements", [])
     found_icons = 0
@@ -154,7 +159,7 @@ def elementor_sources(raw, layout):
     return result
 
 
-def elementor_page(source, indices, sections, features=None, background=None, proof=None):
+def elementor_page(source, indices, sections, features=None, background=None, proof=None, icon_color=None):
     elements = []
     for offset, (index, section) in enumerate(zip(indices, sections, strict=True), 1):
         source_id = source[index - 1][0] if index else "visit"
@@ -177,6 +182,7 @@ def elementor_page(source, indices, sections, features=None, background=None, pr
                 "elType": "widget", "widgetType": "icon-box", "isInner": False,
                 "settings": {"title_text": escape(title), "description_text": escape(body),
                              "title_size": "h3", "position": "top", "_css_classes": f"wv-native-card wv-topic-{topic}",
+                             "primary_color": icon_color,
                              "selected_icon": {"value": icon, "library": "fa-solid"}},
                 "elements": [],
             } for topic, title, body, icon in features["cards"]]
@@ -245,11 +251,20 @@ def rating_stars(rating, local):
     return f'<span class="wv-rating" role="img" aria-label="{label}">{gold}{empty}</span>'
 
 
-def button_text(accent):
+def luminance(accent):
     srgb = [int(accent[i:i + 2], 16) / 255 for i in (1, 3, 5)]
     linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in srgb]
-    luminance = sum(c * w for c, w in zip(linear, (0.2126, 0.7152, 0.0722)))
-    return "#000" if (luminance + 0.05) / 0.05 >= 4.5 else "#fff"
+    return sum(c * w for c, w in zip(linear, (0.2126, 0.7152, 0.0722)))
+
+
+def button_text(accent):
+    return "#000" if (luminance(accent) + 0.05) / 0.05 >= 4.5 else "#fff"
+
+
+def feature_icon_color(accent):
+    while 1.05 / (luminance(accent) + 0.05) < 3.0:
+        accent = "#" + "".join(f"{int(int(accent[i:i+2], 16) * 0.92):02x}" for i in (1, 3, 5))
+    return accent
 
 
 def plan_services(prospect):
@@ -765,6 +780,9 @@ def render_page(role, page, roles, source, prospect, photo_html):
 
 def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
     prospect = CATALOG["read_json"](input_path)
+    accent = prospect.get("accent", "#e9b447")
+    require(isinstance(accent, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", accent), "Accent must be a hex color.")
+    icon_color = feature_icon_color(accent)
     if outreach:
         verify_outreach(prospect)
     templates = (CATALOG["read_json"](manifest) if manifest else json.loads(fetch("manifest.json", 2_000_000)))["templates"]
@@ -826,7 +844,7 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
         sections = sections + [shared_footer]
         if candidate["builder"] == "elementor":
             return {"elementor": elementor_page(role_source, indices + [0], sections,
-                                                features, background, proof)}
+                                                features, background, proof, icon_color)}
         return {"html": wrap_sections("".join(sections))}
 
     for role, mapping in layout["pages"].items():
@@ -927,8 +945,6 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
         pages.append({"role": role, "slug": slug, "title": title, "route": f"/{slug}/", "nav": False,
                       "source": layout["pages"]["contact"]["source"], "sections": ["legal"], "indices": [1],
                       "image_sha256": None, **render(source["contact"], [1], sections)})
-    accent = prospect.get("accent", "#e9b447")
-    require(re.fullmatch(r"#[0-9a-fA-F]{6}", accent), "Accent must be a hex color.")
     css = (SCRIPTS / "wpwv-preview.css").read_text(encoding="utf-8")
     css = css.replace("@@WV_ACCENT@@", accent).replace("@@WV_BUTTON_TEXT@@", button_text(accent))
     return {"name": name, "tagline": tagline, "locale": prospect["locale"], "template": candidate,

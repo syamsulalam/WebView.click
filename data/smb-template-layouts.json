@@ -12,6 +12,34 @@
       "contact": {"source": "Contact", "sections": ["hero", "details", "directions"]}
     }
   },
+  "car-wash": {
+    "revision": "1.0.0",
+    "wxr_sha256": "4e3393162d0c361aa1876e373f535a08c41170dc6ce2919cc5b8913546715a9c",
+    "service_detail": {"source_role": "services", "source_sections": [1, 2, 2, 2, 2, 3]},
+    "native_testimonial_source": false,
+    "testimonials": {"home": 5, "services": 2},
+    "gallery": {"source_role": "home", "source_sections": {"hero": 1, "gallery": 3, "videos": 4, "reviews": 5}},
+    "pages": {
+      "home": {"source": "Home", "sections": ["hero", "details", "services", "guide", "questions", "callout"]},
+      "services": {"source": "Services", "sections": ["hero", "services", "callout"]},
+      "about": {"source": "About", "sections": ["hero", "details", "guide", "callout"]},
+      "contact": {"source": "Contact", "sections": ["hero", "details", "directions"]}
+    }
+  },
+  "mechanic": {
+    "revision": "1.0.0",
+    "wxr_sha256": "06f6fefbb0c2421b06b86497fa223fec01d48a3d3162c4a2b4be6867cf0929dd",
+    "service_detail": {"source_role": "services", "source_sections": [1, 2, 3, 4, 3, 5], "icon_source": {"role": "home", "section": 6}},
+    "native_testimonial_source": false,
+    "testimonials": {"home": 6, "services": 4},
+    "gallery": {"source_role": "home", "source_sections": {"hero": 1, "gallery": 3, "videos": 4, "reviews": 5}},
+    "pages": {
+      "home": {"source": "Home", "sections": ["hero", "details", "services", "guide", "questions", "assurance", "visit", "callout"]},
+      "services": {"source": "Services", "sections": ["hero", "services", "guide", "questions", "callout"]},
+      "about": {"source": "About", "sections": ["hero", "details", "guide", "questions", "callout"]},
+      "contact": {"source": "Contact", "sections": ["hero", "details", "directions", "questions"]}
+    }
+  },
   "car-repair-08": {
     "revision": "1.0.0",
     "wxr_sha256": "869e387af13e224527aa8ff7574f272a7b9c4d1cb3989114e01494334e79b1c7",
@@ -20,6 +48,20 @@
     "pages": {
       "home": {"source": "Home", "sections": ["hero", "details", "services", "guide", "questions", "callout"]},
       "services": {"source": "Services", "sections": ["hero", "services", "guide", "questions", "callout"]},
+      "about": {"source": "About", "sections": ["hero", "details", "guide", "callout"]},
+      "contact": {"source": "Contact", "sections": ["hero", "details", "directions"]}
+    }
+  },
+  "plumber-2": {
+    "revision": "1.0.0",
+    "wxr_sha256": "9540bbb27c50ffb597c569d463cb73584d11f1c164998c8287a6901af6f929c0",
+    "service_detail": {"source_role": "services", "source_sections": [1, 2, 2, 2, 2, 3], "icon_source": {"role": "contact", "section": 2}},
+    "testimonials": {"home": 4, "services": 2},
+    "native_testimonial_source": false,
+    "gallery": {"source_role": "home", "source_sections": {"hero": 1, "gallery": 3, "videos": 4, "reviews": 5}},
+    "pages": {
+      "home": {"source": "Home", "sections": ["hero", "details", "services", "guide", "questions", "callout"]},
+      "services": {"source": "Services", "sections": ["hero", "services", "callout"]},
       "about": {"source": "About", "sections": ["hero", "details", "guide", "callout"]},
       "contact": {"source": "Contact", "sections": ["hero", "details", "directions"]}
     }

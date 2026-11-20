@@ -20,6 +20,7 @@ class TemplateCatalogTest(unittest.TestCase):
         known, _ = catalog.load_requests()
         dubai = known[catalog.normalized("Car detailing Business Bay, Dubai")]
         self.assertEqual(dubai["candidates"], ["car-wash-08", "car-repair-08"])
+        self.assertEqual(dubai["elementor_candidates"], ["car-wash"])
         self.assertEqual(known["coffee shop"]["outreach_tier"], "Tier C")
 
     def test_missing_and_builder_mismatch_do_not_fall_back(self):
@@ -266,10 +267,17 @@ class TemplateCatalogTest(unittest.TestCase):
             original = (export / "index.html").read_text(encoding="utf-8")
             alternate = (export / "ar-ae" / "index.html").read_text(encoding="utf-8")
             self.assertIn('href="/example/ar-ae/"', original)
+            self.assertIn('aria-label="العربية"', original)
+            self.assertIn('>AR</span>', original)
             self.assertIn('lang="ar-AE" dir="rtl"', alternate)
             self.assertIn('href="/example/ar-ae/">الرئيسية', alternate)
             self.assertIn('<bdi dir="ltr">+971 55 555 5555</bdi>', alternate)
             self.assertIn('const text = "Keep"', alternate)
+
+    def test_palette_maintains_icon_contrast(self):
+        self.assertEqual(compiler["feature_icon_color"]("#562d75"), "#562d75")
+        gold = compiler["feature_icon_color"]("#e9b447")
+        self.assertGreaterEqual(1.05 / (compiler["luminance"](gold) + .05), 3)
 
     def test_flare_request_binds_reference_and_exact_model(self):
         request = media["make_request"](b"sample", "auto repair", "muted tones and tight framing")

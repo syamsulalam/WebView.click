@@ -139,6 +139,10 @@ Gallery uses cleared business photos, embeds and verified listing links. Include
 
 Both builders add labeled visual cues and footer links to generated Privacy Policy and Terms of Use pages. Review these starting templates against the business’s data handling and booking practices before launch. To add a static language, collect the text after a fresh export with `python scripts/localize-smb-export.py <export-dir> --collect <source.json>`. Supply a complete reviewed `text` mapping and `tag`, `direction`, `label`, and `source_label`. Rebuild with `-LocalizationFile <catalog.json>`, or run `python scripts/localize-smb-export.py <export-dir> --catalog <catalog.json>` against the same untouched export. The switch points to equivalent routes. Assets are shared.
 
+Use `python scripts/localize-smb-export.py <export-dir> --draft <locale-config.json> --output <new-catalog.json> --oracle-runner <Invoke-OracleSsh.ps1>` to draft translations with AI Bridge. The config supplies `tag`, `direction`, `label` and `source_label`. Rerun with the same output path after a partial failure to reuse completed batches. Check the draft, set `reviewed: true` and pass it to `-LocalizationFile`. The compact flag link has a full accessible name. The switch belongs to the bilingual static artifact. The shared WordPress tenant holds the source-language build.
+
+The reviewed Elementor routes include Car Repair, Mechanic, Car Wash and Plumber. Register a new niche in `data/smb-template-routes.json` and pin its vendor revision and actual section map in `data/smb-template-layouts.json`. Follow the selected layout’s page role keys when preparing the business brief. The same compilation, media, testimonials, legal, localization and ZIP checks run for each layout. Native icon boxes use the business accent or a darker shade of it for contrast.
+
 The writer uses the compiled plan and exports it through Simply Static Free. In `-StageOnly`, review the unique printed `Static artifact` directory. Test all pages, images, navigation, and call or directions links on mobile. The static bundle expects the original `/<slug>/` hosting prefix.
 
 ---

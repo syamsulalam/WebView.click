@@ -412,7 +412,7 @@ Open the page from the footer. Check identity, contact details, reading order, m
 
 ## 6. Cross-Page Consistency
 
-- Add labeled icons to principal navigation and actions, and visually display review stars with a screen-reader equivalent. Offer localized counterpart links on every translated static page. Validate that footer links stay outside the primary menu.
+- Add labeled icons to principal navigation and actions, and visually display review stars with a screen-reader equivalent. Native Elementor feature icons follow the business accent. Place a compact flag and language-code link at the top of every bilingual static page, with the complete target language available to assistive technology. Validate that footer links stay outside the primary menu.
 
 - R2 preview pages add a floating download link with an icon and visible label. Keep it clear of the theme's bottom-right controls, retain keyboard focus, and link to the current site's ZIP. Keep the review heading and testimonials in one section with no empty image slots.
 
