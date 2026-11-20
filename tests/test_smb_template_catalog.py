@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from hashlib import sha256
 from datetime import datetime, timezone
 from runpy import run_path
 import unittest
@@ -293,8 +294,30 @@ class TemplateCatalogTest(unittest.TestCase):
         self.assertEqual(request["images"], [{"image_url": "data:image/jpeg;base64,c2FtcGxl"}])
         self.assertEqual(request["n"], 1)
         self.assertIn("muted tones", request["prompt"])
-        with self.assertRaisesRegex(ValueError, "cleared for redistribution"):
+        with self.assertRaisesRegex(ValueError, "cleared business photo"):
             compiler["prepare_photo"]({"origin": "google_places"}, Path("."))
+
+    def test_native_cli_illustration_binds_review_and_receipt(self):
+        with TemporaryDirectory() as temp:
+            directory = Path(temp)
+            jpeg = b"\xff\xd8\xff test JPEG"
+            (directory / "illustration.jpg").write_bytes(jpeg)
+            receipt = {"status": "success", "provenance": "ai_illustration", "provider": "codex",
+                       "auth_route": "signed-in-native-cli", "sha256": sha256(jpeg).hexdigest(),
+                       "bytes": len(jpeg)}
+            (directory / "receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
+            photo = {"origin": "ai_bridge_illustration", "redistribution_allowed": True, "visual_reviewed": True,
+                     "file": "illustration.jpg", "provenance": "receipt.json", "width": 120, "height": 80,
+                     "alt": "A generic workbench", "caption": "AI illustration of a workbench",
+                     "credit": "Generated with Codex", "source": "https://openai.com/codex/"}
+            self.assertEqual(compiler["prepare_photo"](photo, directory)["sha256"], receipt["sha256"])
+            with self.assertRaisesRegex(ValueError, "visual review"):
+                compiler["prepare_photo"]({**photo, "visual_reviewed": False}, directory)
+            with self.assertRaisesRegex(ValueError, "inside the media directory"):
+                compiler["prepare_photo"]({**photo, "provenance": "../receipt.json"}, directory)
+            (directory / "illustration.jpg").write_bytes(jpeg + b"changed")
+            with self.assertRaisesRegex(ValueError, "matching native CLI image receipt"):
+                compiler["prepare_photo"](photo, directory)
 
 
 if __name__ == "__main__":

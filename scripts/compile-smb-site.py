@@ -381,9 +381,10 @@ def verify_outreach(prospect, now=None):
 
 
 def prepare_photo(photo, asset_dir):
-    require(photo.get("origin") in BUSINESS_PHOTOS | {"licensed_illustration", "gpt_image_26_flare"}
+    origin = photo.get("origin")
+    require(origin in BUSINESS_PHOTOS | {"licensed_illustration", "gpt_image_26_flare", "ai_bridge_illustration"}
             and photo.get("redistribution_allowed") is True,
-            "Use an owner original, a licensed illustration, or a reviewed Flare image cleared for redistribution.")
+            "Use a cleared business photo, licensed illustration, or reviewed AI illustration.")
     for key in ("alt", "caption", "credit"):
         copy(photo, key, 8, 180)
     source_url(photo["source"])
@@ -391,20 +392,31 @@ def prepare_photo(photo, asset_dir):
         copy(photo, "permission_record", 8, 250)
     if photo.get("license"):
         source_url(photo["license"])
-    path = asset_dir / photo["file"]
-    require(path.is_file() and 0 < path.stat().st_size <= 1_000_000, "Supply a reviewed JPEG under 1 MB.")
+    path = (asset_dir / photo["file"]).resolve()
+    require(path.is_relative_to(asset_dir.resolve()) and path.is_file() and 0 < path.stat().st_size <= 1_000_000,
+            "Supply a reviewed JPEG under 1 MB inside the media directory.")
     image = path.read_bytes()
     require(image.startswith(b"\xff\xd8\xff") and all(type(photo[k]) is int and 0 < photo[k] <= 4096
             for k in ("width", "height")), "Invalid JPEG or image dimensions.")
     digest = sha256(image).hexdigest()
-    if photo["origin"] == "gpt_image_26_flare":
-        provenance = CATALOG["read_json"](asset_dir / photo["provenance"])
-        require(provenance.get("model") == "gpt-image-2.6-flare" and provenance.get("status") == "success"
+    if origin in {"gpt_image_26_flare", "ai_bridge_illustration"}:
+        receipt = (asset_dir / photo["provenance"]).resolve()
+        require(receipt.is_relative_to(asset_dir.resolve()), "Image receipt must be inside the media directory.")
+        provenance = CATALOG["read_json"](receipt)
+        require(isinstance(provenance, dict) and provenance.get("status") == "success" and photo.get("visual_reviewed") is True
+                and "illustration" in photo["caption"].casefold(),
+                "Generated assets need successful provenance, visual review and an illustration caption.")
+    if origin == "gpt_image_26_flare":
+        require(provenance.get("model") == "gpt-image-2.6-flare"
                 and provenance.get("jpeg_sha256") == digest and
-                re.fullmatch(r"[0-9a-f]{64}", provenance.get("reference_sha256", "")) and
-                photo.get("visual_reviewed") is True and
-                "illustration" in photo["caption"].casefold(),
+                re.fullmatch(r"[0-9a-f]{64}", provenance.get("reference_sha256", "")),
                 "Flare assets need a verified model/reference receipt and an illustration caption.")
+    if origin == "ai_bridge_illustration":
+        require(provenance.get("provenance") == "ai_illustration"
+                and provenance.get("auth_route") == "signed-in-native-cli"
+                and provenance.get("provider") in {"codex", "agy"}
+                and provenance.get("sha256") == digest and provenance.get("bytes") == len(image),
+                "AI Bridge assets need a matching native CLI image receipt.")
     return {"sha256": digest, "image": base64.b64encode(image).decode(), "width": photo["width"], "height": photo["height"]}
 
 
@@ -861,9 +873,10 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
             require(authentic, f"Client delivery needs a cleared business hero photo for {role}.")
         if authentic:
             business_photos.append((photo_markup(photo, assets[digest]), digest))
-        background = digest if authentic and "background" in source[role][0][1] else None
+        illustrated = photo and photo.get("origin") == "ai_bridge_illustration"
+        background = digest if (authentic or illustrated) and "background" in source[role][0][1] else None
         if background:
-            photo_html = action(photo["source"], photo["credit"], "credit")
+            photo_html = action(photo["source"], photo["caption"] if illustrated else photo["credit"], "credit")
         indices = list(range(1, len(mapping["sections"]) + 1))
         roles = list(mapping["sections"])
         sections = render_page(role, page, roles, source[role], prospect, photo_html)
@@ -901,9 +914,10 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
         authentic = photo and photo.get("origin") in BUSINESS_PHOTOS
         if authentic:
             business_photos.append((photo_markup(photo, assets[digest]), digest))
-        background = digest if authentic and "background" in source[source_role][indices[0] - 1][1] else None
+        illustrated = photo and photo.get("origin") == "ai_bridge_illustration"
+        background = digest if (authentic or illustrated) and "background" in source[source_role][indices[0] - 1][1] else None
         if background:
-            photo_html = action(photo["source"], photo["credit"], "credit")
+            photo_html = action(photo["source"], photo["caption"] if illustrated else photo["credit"], "credit")
         roles, sections, features = service_page(offering, prospect, source[source_role], indices, photo_html,
                                                  candidate["builder"] == "elementor")
         if background:
