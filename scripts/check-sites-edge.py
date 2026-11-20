@@ -2,6 +2,7 @@
 
 import concurrent.futures
 import io
+import re
 import urllib.error
 import urllib.request
 import zipfile
@@ -43,6 +44,13 @@ def main():
     assert responses["/"][1]["Location"].rstrip("/") == "https://webview.click"
     assert responses[PREFIX.rstrip("/")][1]["Location"] == HOST + PREFIX
     assert responses[PREFIX + "site.css"][1].get_content_type() == "text/css"
+    for url in (PREFIX, PREFIX + "about/"):
+        html = responses[url][2]
+        assert html.count(b'id="webview-download"') == 1
+        assert f'href="{PREFIX}download"'.encode() in html
+        assert b'aria-hidden="true"' in html and b'Download ZIP</a>' in html
+        html_status, html_headers, html_body = get(url, "HEAD")
+        assert html_status == 200 and not html_body and "ETag" not in html_headers
     status, headers, body = get(PREFIX + "download", "HEAD")
     assert status == 200 and not body and headers.get_content_type() == "application/zip"
     _, headers, data = responses[PREFIX + "download"]
@@ -52,7 +60,11 @@ def main():
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         assert archive.testzip() is None and set(archive.namelist()) == files.keys()
         for name, url in files.items():
-            assert archive.read(name) == responses[url][2], name
+            preview = responses[url][2]
+            if name.endswith(".html"):
+                preview = re.sub(rb'<style id="webview-download-style">.*?</style>', b'', preview, count=1, flags=re.S)
+                preview = re.sub(rb'<a id="webview-download"[^>]*>.*?</a>', b'', preview, count=1, flags=re.S)
+            assert archive.read(name) == preview, name
     print(f"Verified the live WebView preview, redirects, 404 and ZIP ({len(data)} bytes).")
 
 

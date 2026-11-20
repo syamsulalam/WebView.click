@@ -239,6 +239,13 @@ class Page(HTMLParser):
 paths = routes.read_text().splitlines()
 if len(paths) != len(expected) or set(paths) != set(expected):
     raise SystemExit("Export routes differ from the reviewed build contract.")
+
+def widget_types(elements):
+    for element in elements:
+        if element["elType"] == "widget":
+            yield element["widgetType"]
+        yield from widget_types(element["elements"])
+
 for path in paths:
     if not path.startswith("/") or ".." in Path(path).parts:
         raise SystemExit("Invalid WordPress page route.")
@@ -251,8 +258,7 @@ for path in paths:
     html = page.read_text(encoding="utf-8")
     if contract["template"]["builder"] == "elementor":
         # These widgets render on the server and use only Elementor CSS.
-        if any(widget.get("widgetType") not in {"html", "icon-box", "testimonial"} for container in expected[path]["elementor"]
-               for widget in container["elements"]):
+        if set(widget_types(expected[path]["elementor"])) - {"html", "icon-box", "testimonial"}:
             raise SystemExit(f"Review frontend dependencies for additional Elementor widgets on {path}")
         html = elementor_unneeded_runtime.sub("", html)
     parsed = Page(path)

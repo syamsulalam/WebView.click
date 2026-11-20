@@ -322,6 +322,8 @@ For the Elementor client preview, verify Home and Services against the pinned de
 
 ## 6. Cross-Page Consistency
 
+- R2 preview pages add a floating download link with an icon and visible label. Keep it clear of the theme's bottom-right controls, retain keyboard focus, and link to the current site's ZIP. Keep the review heading and testimonials in one section with no empty image slots.
+
 Use the same header, menu, footer identity and contact methods on every page. The visit area at the foot of each page keeps the physical address, directions and approved map together. A labeled, lazy-loaded map leaves the directions link usable when the embed is unavailable. On About or Contact, group confirmed hours and access, facilities, booking and payment details for scanning. Keep source links to listing photos, videos and reviews together and label approved media. Preserve normal navigation in both WordPress staging and the static ZIP.
 
 ## 7. Verification, Evidence, and Open Questions

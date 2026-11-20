@@ -187,10 +187,11 @@ def elementor_page(source, indices, sections, features=None, background=None, pr
                       "elType": "widget", "widgetType": "testimonial", "elements": [],
                       "settings": {**native, **review, "_css_classes": "wv-native-review"}}
                      for i, review in enumerate(proof["reviews"])]
-            elements.append({"id": sha256(f"{source_id}:testimonials".encode()).hexdigest()[:7],
-                             "elType": "container", "isInner": False,
-                             "settings": {"content_width": "full", "css_classes": "wv-elementor-section wv-native-features"},
-                             "elements": items})
+            settings.update(css_classes="wv-elementor-section wv-testimonials", html_tag="section")
+            elements[-1]["elements"].append({"id": sha256(f"{source_id}:testimonials".encode()).hexdigest()[:7],
+                "elType": "container", "isInner": True,
+                "settings": {"content_width": "full", "css_classes": "wv-elementor-section wv-native-features"},
+                "elements": items})
     return elements
 
 
@@ -459,8 +460,13 @@ def review_content(review, local):
         require((parts.netloc == "www.google.com" and parts.path.startswith("/maps/reviews/")) or
                 (parts.netloc == "maps.app.goo.gl" and len(parts.path.strip("/")) >= 6),
                 "Use a direct shared Google review link.")
-        require(not review.get("text") and not review.get("avatar"), "Use an editorial summary for public link cards.")
-        if "summary" in review:
+        require(not review.get("text") and not review.get("avatar"), "Use a verified excerpt for public link cards.")
+        if "excerpt" in review:
+            require(review.get("excerpt_verified") is True, "Check the excerpt against the original review.")
+            excerpt = copy(review, "excerpt", 8, 180).rstrip(". …")
+            text = f'<blockquote cite="{escape(source, quote=True)}">{escape(excerpt)}…</blockquote>'
+            label = "Baca ulasan lengkap di Google Maps" if local else "Read full review on Google Maps"
+        elif "summary" in review:
             require(review.get("summary_verified") is True, "Check the summary against the original review.")
             summary_label = "Ringkasan ulasan" if local else "Review summary"
             text = f'<p><strong>{summary_label}.</strong> {escape(copy(review, "summary", 20, 240))}</p>'
@@ -537,8 +543,7 @@ def gallery_page(config, prospect, accept_photo, service_photos):
     if videos:
         blocks.append(("videos", f"<h2>{video_heading}</h2>" + "".join(video_markup(video, local) for video in videos)))
     if listing or cards:
-        selection = "Pilihan ulasan berperingkat tertinggi." if local else "Selected reviews, highest rating first."
-        verified_reviews = (f'<p>{selection}</p><div class="wv-grid">' + "".join(markup for markup, _ in cards) + "</div>") if cards else ""
+        verified_reviews = ('<div class="wv-grid">' + "".join(markup for markup, _ in cards) + "</div>") if cards else ""
         provider = ""
         if listing:
             review_label = "Baca ulasan di Google Maps" if local else "Read customer reviews on Google Maps"
@@ -746,11 +751,16 @@ def compile_site(input_path, manifest, cache, asset_dir=None, outreach=False):
     for review in reviews:
         content, link = review_content(review, local)
         if content:
-            proof_reviews.append((review["source"], {
+            testimonial = {
                 "testimonial_name": escape(copy(review, "reviewer", 2, 100)),
                 "testimonial_job": (f'{review["rating"]} dari 5 bintang' if local else f'{review["rating"]} out of 5 stars'),
                 "testimonial_content": content + f'<p>{link}</p>',
-            }))
+                "testimonial_image": {"url": "", "id": ""},
+            }
+            if review.get("avatar"):
+                _, digest = accept_photo(review["avatar"])
+                testimonial["testimonial_image"]["url"] = f"@@WV_IMAGE_{digest}@@"
+            proof_reviews.append((review["source"], testimonial))
     business_photos = []
     if outreach and layout.get("testimonials"):
         require(proof_reviews, "Client delivery needs attributed review text or verified review summaries.")

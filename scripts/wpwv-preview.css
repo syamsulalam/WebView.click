@@ -53,6 +53,10 @@ body.ast-page-builder-template .site-content > .ast-container { display: block; 
 .wv-preview .wv-gallery .wv-photo img { aspect-ratio: 4 / 3; object-fit: cover; }
 .wv-preview .wv-videos, .wv-preview .wv-process { background: #eef4f3; }
 .wv-preview .wv-reviews { background: #fff; }
+.wv-testimonials { background: #fff; }
+.wv-testimonials .wv-proof { padding-bottom: 1.25rem; }
+.wv-testimonials .wv-native-review blockquote { margin: 0 0 .75rem; }
+.wv-testimonials .wv-native-review .elementor-testimonial-name { color: inherit; }
 .wv-film { max-width: 50rem; margin: 1.5rem 0; }
 .wv-review blockquote { margin: .75rem 0; }
 .wv-review .wv-photo img { width: 3rem; height: 3rem; object-fit: cover; border-radius: 50%; }

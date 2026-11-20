@@ -52,6 +52,42 @@ function objectBody(object: R2Object | R2ObjectBody) {
   return "body" in object && object.body instanceof ReadableStream ? object.body : null;
 }
 
+const downloadStyle = `<style id="webview-download-style">
+#webview-download{position:fixed;inset:auto auto calc(1rem + env(safe-area-inset-bottom,0px)) calc(1rem + env(safe-area-inset-left,0px));z-index:1000;box-sizing:border-box;display:inline-flex;align-items:center;gap:.5rem;min-height:44px;padding:.625rem .875rem;border:1px solid #fff;border-radius:999px;background:#172b3a;color:#fff;font:600 14px/1.25 system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px #0003}
+#webview-download:hover{text-decoration:underline}#webview-download:focus-visible{outline:3px solid #14619b;outline-offset:2px}
+#webview-download svg{flex:none;width:1.125rem;height:1.125rem}
+html:has(#webview-download){scroll-padding-bottom:calc(4rem + env(safe-area-inset-bottom,0px))}
+</style>`;
+
+function withPreviewDownload(response: Response, slug: string, head: boolean) {
+  if (response.status !== 200 || !response.headers.get("Content-Type")?.startsWith("text/html")) {
+    return head ? new Response(null, response) : response;
+  }
+  const outgoing = new Response(head ? null : response.body, response);
+  // These describe the original R2 object, whose bytes are kept in the ZIP and cache.
+  outgoing.headers.delete("ETag");
+  outgoing.headers.delete("Content-Length");
+  if (head) return outgoing;
+  const link = `<a id="webview-download" href="/${slug}/download"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Download ZIP</a>`;
+  let hasHead = false;
+  let hasBody = false;
+  return new HTMLRewriter()
+    .on("head", { element(element) {
+      hasHead = true;
+      element.append(downloadStyle, { html: true });
+    } })
+    .on("body", { element(element) {
+      hasBody = true;
+      element.append(link, { html: true });
+    } })
+    .onDocument({ end(end) {
+      // Some valid static outputs omit explicit head and body tags.
+      if (!hasHead) end.append(downloadStyle, { html: true });
+      if (!hasBody) end.append(link, { html: true });
+    } })
+    .transform(outgoing);
+}
+
 async function* zipEntries(bucket: R2Bucket, objects: R2Object[], prefix: string) {
   for (const { key, etag } of objects) {
     const name = key.slice(prefix.length);
@@ -96,7 +132,7 @@ export default {
     const cacheKey = new Request(url.toString());
     const cachedResponse = await cache.match(cacheKey);
     if (cachedResponse) {
-      return head ? new Response(null, cachedResponse) : cachedResponse;
+      return withPreviewDownload(cachedResponse, slug, head);
     }
 
     // =========================================================================
@@ -219,6 +255,6 @@ export default {
 
     const response = new Response(objectBody(object), { headers });
     if (!head) ctx.waitUntil(cache.put(cacheKey, response.clone()));
-    return response;
+    return withPreviewDownload(response, slug, head);
   }
 };

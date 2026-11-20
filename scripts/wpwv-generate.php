@@ -62,6 +62,18 @@ foreach ($site['images'] as $asset) {
 $ids = [];
 $pageIds = [];
 $menuItems = [];
+$bindElement = static function (array $element) use (&$bindElement, $tokens): array {
+    if (($element['widgetType'] ?? '') === 'html') {
+        $element['settings']['html'] = strtr($element['settings']['html'], $tokens);
+    }
+    foreach (['background_image', 'testimonial_image'] as $image) {
+        if (isset($element['settings'][$image]['url'])) {
+            $element['settings'][$image]['url'] = strtr($element['settings'][$image]['url'], $tokens);
+        }
+    }
+    $element['elements'] = array_map($bindElement, $element['elements']);
+    return $element;
+};
 global $wpdb;
 $tables = [$wpdb->posts, $wpdb->postmeta, $wpdb->options, $wpdb->terms, $wpdb->term_taxonomy, $wpdb->term_relationships];
 foreach ($tables as $table) {
@@ -117,19 +129,7 @@ try {
         ]), true));
         $pageIds[] = $id;
         if ($builder === 'elementor') {
-            $elements = $page['elementor'];
-            foreach ($elements as &$container) {
-                if (isset($container['settings']['background_image']['url'])) {
-                    $container['settings']['background_image']['url'] = strtr($container['settings']['background_image']['url'], $tokens);
-                }
-                foreach ($container['elements'] as &$widget) {
-                    if ($widget['widgetType'] === 'html') {
-                        $widget['settings']['html'] = strtr($widget['settings']['html'], $tokens);
-                    }
-                }
-                unset($widget);
-            }
-            unset($container);
+            $elements = array_map($bindElement, $page['elementor']);
             $elementorData = wp_json_encode($elements, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             $check($elementorData);
             update_post_meta($id, '_elementor_edit_mode', 'builder');
