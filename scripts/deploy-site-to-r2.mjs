@@ -4,7 +4,7 @@
  * 
  * Synchronizes static SMB site assets into Cloudflare R2:
  * - Uploads files to `sites/<slug>/*` with proper MIME-types.
- * - ZERO ZIP UPLOAD NEEDED: The edge worker at `sites.webview.click/<slug>/download`
+ * - ZERO ZIP UPLOAD NEEDED: The edge worker at `sites.webview.click/<slug>.zip`
  *   assembles and streams the ZIP file on the fly directly from the `sites/<slug>/*` assets!
  */
 
@@ -161,7 +161,7 @@ Arguments:
   console.log(`
 🎉 Single-Upload Sync Complete!
 🌐 Live Preview URL: https://sites.webview.click/${slug}/
-📦 Dynamic ZIP URL:  https://sites.webview.click/${slug}/download (streamed dynamically via edge worker)
+📦 Dynamic ZIP URL:  https://sites.webview.click/${slug}.zip (streamed dynamically via edge worker)
   `);
 }
 

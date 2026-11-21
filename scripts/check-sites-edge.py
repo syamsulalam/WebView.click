@@ -12,6 +12,7 @@ import zipfile
 HOST = "https://sites.webview.click"
 SLUG = "webview-publishing-check-20261119"
 PREFIX = f"/{SLUG}/"
+ZIP_PATH = f"/{SLUG}.zip"
 PREVIEW_STYLE = re.compile(rb'<style id="webview-download-style">.*?</style>', re.S)
 PREVIEW_DOWNLOAD = re.compile(rb'<a id="webview-download"[^>]*>.*?</a>', re.S)
 
@@ -38,8 +39,12 @@ def main():
         PREFIX: 200,
         PREFIX + "site.css": 200,
         PREFIX + "about/": 200,
+        ZIP_PATH: 200,
         PREFIX + "download": 200,
+        PREFIX + "download.zip": 200,
+        PREFIX + "about.zip": 404,
         "/webview-absent-20261119/": 404,
+        "/webview-absent-20261119.zip": 404,
     }
     with concurrent.futures.ThreadPoolExecutor() as pool:
         responses = dict(zip(checks, pool.map(get, checks)))
@@ -51,13 +56,13 @@ def main():
     for url in (PREFIX, PREFIX + "about/"):
         html = responses[url][2]
         assert html.count(b'id="webview-download"') == 1
-        assert f'href="{PREFIX}download"'.encode() in html
+        assert f'href="{ZIP_PATH}"'.encode() in html
         assert b'aria-hidden="true"' in html and b'Download ZIP</a>' in html
         html_status, html_headers, html_body = get(url, "HEAD")
         assert html_status == 200 and not html_body and "ETag" not in html_headers
-    status, headers, body = get(PREFIX + "download", "HEAD")
+    status, headers, body = get(ZIP_PATH, "HEAD")
     assert status == 200 and not body and headers.get_content_type() == "application/zip"
-    _, headers, data = responses[PREFIX + "download"]
+    _, headers, data = responses[ZIP_PATH]
     assert headers.get_content_type() == "application/zip"
     assert headers["Content-Disposition"] == f'attachment; filename="{SLUG}.zip"'
     files = {"index.html": PREFIX, "site.css": PREFIX + "site.css", "about/index.html": PREFIX + "about/"}
@@ -68,6 +73,12 @@ def main():
             if name.endswith(".html"):
                 preview = PREVIEW_DOWNLOAD.sub(b"", PREVIEW_STYLE.sub(b"", preview, count=1), count=1)
             assert archive.read(name) == preview, name
+        for alias in ("download", "download.zip"):
+            _, alias_headers, alias_data = responses[PREFIX + alias]
+            assert alias_headers.get_content_type() == "application/zip"
+            with zipfile.ZipFile(io.BytesIO(alias_data)) as alias_archive:
+                assert set(alias_archive.namelist()) == files.keys()
+                assert all(alias_archive.read(name) == archive.read(name) for name in files)
     print(f"Verified the live WebView preview, redirects, 404 and ZIP ({len(data)} bytes).")
 
 
@@ -76,8 +87,10 @@ def verify_published(folder, slug):
         raise ValueError("Invalid site name.")
     prefix = f"/{slug}/"
     files = {path.relative_to(folder).as_posix(): path for path in folder.rglob("*") if path.is_file()}
-    status, headers, body = get(prefix + "download")
-    if status != 200 or headers.get_content_type() != "application/zip":
+    zip_path = f"/{slug}.zip"
+    status, headers, body = get(zip_path)
+    if (status != 200 or headers.get_content_type() != "application/zip" or
+            headers.get("Content-Disposition") != f'attachment; filename="{slug}.zip"'):
         raise ValueError("The published ZIP is unavailable.")
     with zipfile.ZipFile(io.BytesIO(body)) as archive:
         if len(archive.namelist()) != len(files) or set(archive.namelist()) != files.keys():
@@ -94,7 +107,7 @@ def verify_published(folder, slug):
             raise ValueError(f"Published GET {route} returned {code}.")
         if name.endswith(".html"):
             if (headers.get_content_type() != "text/html" or data.count(b'id="webview-download"') != 1 or
-                    f'href="{prefix}download"'.encode() not in data):
+                    f'href="{zip_path}"'.encode() not in data):
                 raise ValueError(f"Published page or download link is invalid for {route}.")
             data = PREVIEW_DOWNLOAD.sub(b"", PREVIEW_STYLE.sub(b"", data, count=1), count=1)
         elif name.endswith(".css") and headers.get_content_type() != "text/css":

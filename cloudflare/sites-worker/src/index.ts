@@ -4,7 +4,7 @@
  * Features:
  * - Single-Asset Source: Upload once to `sites/<slug>/*`.
  * - Dynamic On-The-Fly ZIP Generation via client-zip:
- *   /<slug>/download streams a compressed ZIP assembled directly from R2 objects without storing a separate .zip file!
+ *   /<slug>.zip streams a ZIP assembled directly from R2 objects.
  * - Automatic index.html resolution for root and subdirectories
  * - Extension-less URL resolution (/about -> /about.html or /about/index.html)
  * - Trailing slash normalization (308 redirect)
@@ -68,7 +68,7 @@ function withPreviewDownload(response: Response, slug: string, head: boolean) {
   outgoing.headers.delete("ETag");
   outgoing.headers.delete("Content-Length");
   if (head) return outgoing;
-  const link = `<a id="webview-download" href="/${slug}/download"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Download ZIP</a>`;
+  const link = `<a id="webview-download" href="/${slug}.zip"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Download ZIP</a>`;
   let hasHead = false;
   let hasBody = false;
   return new HTMLRewriter()
@@ -121,7 +121,9 @@ export default {
     } catch {
       return new Response("Bad request", { status: 400 });
     }
-    const [slug = "", ...segments] = pathSegments;
+    const [firstSegment = "", ...segments] = pathSegments;
+    const directZip = segments.length === 0 && !pathname.endsWith("/") && firstSegment.endsWith(".zip");
+    const slug = directZip ? firstSegment.slice(0, -4) : firstSegment;
     if (slug.length > 63 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ||
         segments.some(part => part === "." || part === ".." || /[/\\\p{Cc}]/u.test(part))) {
       return new Response("Not found", { status: 404 });
@@ -136,9 +138,9 @@ export default {
     }
 
     // =========================================================================
-    // Dynamic On-The-Fly ZIP Streaming: /<slug>/download or /<slug>/download.zip
+    // Dynamic ZIP streaming with compatibility for existing download links.
     // =========================================================================
-    if (subPath === "download" || subPath === "download.zip") {
+    if (directZip || subPath === "download" || subPath === "download.zip") {
       const sitePrefix = `sites/${slug}/`;
       // Reserve one of the Workers Free internal subrequests for listing.
       const listed = await env.SITES_BUCKET.list({ prefix: sitePrefix, limit: 999 });

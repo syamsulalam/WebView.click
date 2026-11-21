@@ -9,7 +9,7 @@
     2. Headless WP Staging: Builds a prospect-grounded site on wpwv.codev.id.
     3. Static Export: Runs Simply Static, optionally localizes, and checks links and routes.
     4. Single Edge R2 Sync: Pushes flat assets to R2 and verifies the result.
-       (Dynamic ZIP downloads are streamed on the fly via Cloudflare Worker at https://sites.webview.click/<slug>/download).
+       (Dynamic ZIP downloads are streamed on the fly via Cloudflare Worker at https://sites.webview.click/<slug>.zip).
     5. Public delivery: Verifies the preview and ZIP before contact sync and mobile mockup capture.
     The resulting artifacts can be used by the separate LusmoBot outreach workflow.
 
@@ -216,7 +216,7 @@ foreach ($Biz in $Batch) {
 
     Write-Host "`n✅ Successfully Provisioned: $Name" -ForegroundColor Green
     Write-Host "   🌐 Live Site: $PreviewUrl" -ForegroundColor Cyan
-    Write-Host "   📦 Dynamic ZIP: https://sites.webview.click/$Slug/download" -ForegroundColor Cyan
+    Write-Host "   📦 Dynamic ZIP: https://sites.webview.click/${Slug}.zip" -ForegroundColor Cyan
     Write-Host "   🖼️ Mockup:    $MockupPath" -ForegroundColor Cyan
     Write-Host "   👤 Contact:   [SMB] $Name ($Phone)" -ForegroundColor Cyan
 }

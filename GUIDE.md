@@ -3,7 +3,7 @@
 **Target:** Scale to 1,000 SMB contacts at a sustainable, ban-proof pace of **15 contacts / day**.  
 **Dedicated Headless Staging:** `https://wpwv.codev.id` (OracleServer `codev-wpwv`)  
 **Live Edge House:** `https://sites.webview.click` (Cloudflare Worker + R2)  
-**Edge ZIP Magic:** Zero duplicate ZIP uploads — `sites.webview.click/<slug>/download` generates streaming ZIPs on the fly via `client-zip`!  
+The Worker streams the download at `sites.webview.click/<slug>.zip` directly from the static R2 files.
 **Contact Tooling:** `gog.exe` (Go static binary at `C:\Users\THINKPAD\scripts\gog.exe`).  
 **Core Invariant (JIT Generation):** Sites are generated **ONLY upon human reply to the initial identity check** — zero compute/storage wasted on unresponsive numbers!  
 **SOP & Policy Authority:** [`SOP.md`](file:///C:/Users/THINKPAD/WebView.click/SOP.md) | City DB: [`data/cities.json`](file:///C:/Users/THINKPAD/WebView.click/data/cities.json) | Niche DB: [`data/smb_niches.json`](file:///C:/Users/THINKPAD/WebView.click/data/smb_niches.json)
@@ -158,7 +158,7 @@ The production recovery on 2026-11-19 replaced HTTP 522 with a redirect from `ht
 ```
 *Live Links:*
 - Preview: `https://sites.webview.click/bengkel-jaya-motor-malang/`
-- Download: `https://sites.webview.click/bengkel-jaya-motor-malang/download` *(Generated on the fly by Cloudflare Worker!)*
+- Download: `https://sites.webview.click/bengkel-jaya-motor-malang.zip`
 
 #### 4.2 Capture High-Impact Mobile Screenshot
 ```powershell
@@ -210,7 +210,7 @@ Use the sample wording when the business has no official site. For an unavailabl
 > *I've also attached a full-page mobile preview above so you can see how it looks.*
 >
 > *It's 100% yours for free — no strings attached. You can download the complete static site files right here to host wherever you like:*  
-> 📦 `https://sites.webview.click/[slug]/download`
+> 📦 `https://sites.webview.click/[slug].zip`
 >
 > *If you're not technical and would like me to connect a custom domain or host it for you, just let me know. Either way, hope it helps your business!*
 >
@@ -223,7 +223,7 @@ Use the sample wording when the business has no official site. For an unavailabl
 > 🔗 `https://sites.webview.click/[slug]/`
 >
 > *Ini 100% gratis buat kalian, silakan dipakai atau di-download file aslinya kalau mau di-hosting sendiri:*  
-> 📦 `https://sites.webview.click/[slug]/download`
+> 📦 `https://sites.webview.click/[slug].zip`
 >
 > *Kalau sekiranya kalian repot atau butuh bantuan pasangkan domain dan hostingnya, kabari saja ya."*
 

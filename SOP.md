@@ -41,7 +41,7 @@ For infrastructure verification, run `python scripts/check-sites-edge.py` agains
 ### 🥉 Invariant 3: Confident Value-First Gift Framing + Clean Opt-Out
 When delivering the completed website in Step 2:
 - Frame it as a **completed gift**, not a sales pitch.
-- Provide the live preview (`sites.webview.click/<slug>/`) AND the direct dynamic ZIP download link (`sites.webview.click/<slug>/download`).
+- Provide the live preview (`sites.webview.click/<slug>/`) and direct ZIP download (`sites.webview.click/<slug>.zip`).
 - Provide an effortless, friction-free opt-out clause (*"If you prefer not to hear from me again, simply reply 'STOP'..."*) to guarantee 100% compliance with international electronic communications regulations (Singapore PDPA, UAE TDRA, UK PECR/GDPR).
 
 ---
@@ -131,7 +131,7 @@ I went ahead and designed a clean, mobile-responsive website for your business t
 I've also attached a full-page mobile preview above so you can see how it looks.
 
 It's 100% yours for free — no strings attached. You can download the complete static site files right here to host wherever you like:
-📦 Direct ZIP: https://sites.webview.click/[slug]/download
+📦 Direct ZIP: https://sites.webview.click/[slug].zip
 
 If you're not technical and would like me to connect a custom domain or host it for you, just let me know. Either way, hope it helps your business!
 

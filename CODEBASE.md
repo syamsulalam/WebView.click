@@ -60,7 +60,7 @@ To solve the stacked-blocks, fragile responsive grids, and generic AI filler of 
 2. **Single-Upload Edge Router (`sites.webview.click`)**:
    - `cloudflare/sites-worker/` binds private Standard APAC bucket `webview-sites` in the same account as the `webview-click` Pages project. Wrangler attaches the exact `sites.webview.click` Custom Domain.
    - `scripts/deploy-site-to-r2.mjs` uploads static files to `sites/<slug>/*`. For that bucket, it defaults to the `webview` profile and binds its account ID. When a profile is selected, the uploader removes the ambient API token from the child process environment.
-   - `GET /<slug>/download` streams a ZIP from a bounded listing via `client-zip`, opening each R2 object as the ZIP consumes it. The archive and preview HTML cache at the edge for one hour. `no-transform` keeps the hosted HTML equal to the original ZIP entry and prevents Cloudflare from inserting its analytics beacon on preview pages.
+   - `GET /<slug>.zip` streams a ZIP from a bounded listing via `client-zip`, opening each R2 object as the ZIP consumes it. The floating button and publishing CLI use this route. `/<slug>/download` and `/<slug>/download.zip` remain valid. The archive and preview HTML cache at the edge for one hour. `no-transform` keeps the hosted HTML equal to the original ZIP entry and prevents Cloudflare from inserting its analytics beacon on preview pages.
    - `scripts/check-sites-edge.py` verifies the synthetic public fixture, root and slug redirects, missing routes, MIME, ZIP HEAD, ZIP integrity, and byte parity between the live preview files and the download.
 
 3. **Google Contacts Mutual Trust Shield (`gog.exe` & `.vcf`)**:

@@ -258,14 +258,14 @@ UUPM's 34 `landing.csv` patterns supersede its own deprecated style rows 20/21/2
 │ 3. HEADLESS WORDPRESS STAGING (OracleServer: wp-oracle)                │
 │    CLI: run-smb-pipeline.ps1 → reviewed WXR → Simply Static Free      │
 │    Compiler: compile-smb-site.py and tenant-scoped WordPress writer   │
-│    Archive: Compiles flat directory + generates <slug>.zip             │
+│    Export: Produces a checked static directory                        │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 4. CLOUDFLARE R2 EDGE ROUTER (sites.webview.click)                     │
 │    Bucket: webview-sites                                               │
-│    Objects: sites/<slug>/* (flat assets) & zips/<slug>.zip             │
+│    Objects: sites/<slug>/* (flat assets)                              │
 │    Worker Router: Automatic index.html, clean URLs, Edge Caching       │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
@@ -290,7 +290,7 @@ UUPM's 34 `landing.csv` patterns supersede its own deprecated style rows 20/21/2
   > 🔗 `https://sites.webview.click/[slug]/`
   >
   > *Ini 100% gratis buat kalian, silakan dipakai atau di-download file aslinya kalau mau di-hosting sendiri:*  
-  > 📦 `https://sites.webview.click/[slug]/download`
+  > 📦 `https://sites.webview.click/[slug].zip`
   >
   > *Kalau sekiranya kalian repot atau butuh bantuan pasangkan domain dan hostingnya, kabari saja ya."*
 
@@ -369,10 +369,10 @@ Google policy and supported surfaces define what may ship. [Places API policies]
 - Check every exported HTML page's internal links and fragment targets before upload. Preserve real contact and external source links, and verify the public preview and ZIP against the exported files when delivering an approved site. Third-party endpoints retain their own availability and access rules.
 - `-VerifyR2` uploads to a private, run-specific R2 prefix and checks bytes read back from R2. `-StageOnly` stops after local validation. Public delivery uses the existing affirmative-reply check. Neither verification mode creates contacts or sends outreach.
 
-- Add a floating, named ZIP download link with a download icon on successful R2 HTML previews. It links to the current site's `/download` route and belongs to the preview chrome. Downloaded files retain their original bytes.
+- Approved client sites use `https://sites.webview.click/<slug>/` for the preview and `https://sites.webview.click/<slug>.zip` for direct download. The shorter preview URL without the slash redirects to the canonical preview. The floating download button uses the same direct ZIP URL. Keep existing `/<slug>/download` and `/<slug>/download.zip` links working.
 * `sites.webview.click` attaches to the `sites-webview-click` Worker as an exact Custom Domain. That hostname must resolve to the Worker before R2 preview or download links are sent.
 * The uploader uses the named `webview` Cloudflare profile for the project bucket. The Worker serves valid prospect slugs and assembles the ZIP from R2 objects one at a time to keep active object streams bounded.
-* **Zero Duplicate Storage**: The Cloudflare Worker at `sites.webview.click` dynamically streams ZIP downloads on the fly (`GET /<slug>/download`) using `client-zip` directly from R2 asset keys `sites/<slug>/*`.
+* **Zero Duplicate Storage**: The Cloudflare Worker at `sites.webview.click` streams the ZIP attachment on demand from R2 asset keys `sites/<slug>/*` using `client-zip`. The download contains the original static files.
 * Uploading an explicit separate `.zip` archive to R2 is obsolete; the Worker synthesizes the ZIP archive dynamically, halving storage consumption and upload bandwidth.
 
 ### 16.3 Semantic Purity & Content Grounding (Contract SMB-GROUND-1)
