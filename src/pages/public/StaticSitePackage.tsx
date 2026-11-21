@@ -25,7 +25,8 @@ export default function StaticSitePackage() {
       template.innerHTML = html;
       const home = template.content;
       const siteName = (home.querySelector('meta[property="og:site_name"]')?.getAttribute("content") ||
-        home.querySelector("#masthead .site-title, title")?.textContent || "").trim().slice(0, 160) || slug.replace(/-/g, " ");
+        home.querySelector("#masthead .site-title")?.textContent ||
+        home.querySelector("title")?.textContent || "").trim().slice(0, 160) || slug.replace(/-/g, " ");
       const sitemap = new DOMParser().parseFromString(xml, "application/xml");
       const urls = new Set([previewUrl]);
       for (const element of sitemap.getElementsByTagName("loc")) {
