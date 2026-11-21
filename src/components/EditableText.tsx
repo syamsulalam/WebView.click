@@ -1,4 +1,5 @@
 import { type CSSProperties, type ClipboardEvent, type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import DOMPurify from "dompurify";
 
 type EditableTextProps = {
   as?: EditableTextTag;
@@ -23,6 +24,10 @@ function plainTextToHtml(value: string) {
   return escapeHtml(value).replace(/\n/g, "<br>");
 }
 
+function formatOnly(value: string) {
+  return DOMPurify.sanitize(value, { ALLOWED_TAGS: ["b", "strong", "i", "em", "u", "br", "div", "p"], ALLOWED_ATTR: [] });
+}
+
 export default function EditableText({
   as = "span",
   storageKey,
@@ -43,11 +48,11 @@ export default function EditableText({
 
   useEffect(() => {
     const saved = window.localStorage.getItem(localStorageKey);
-    setHtml(saved || initialHtml);
+    setHtml(saved ? formatOnly(saved) : initialHtml);
   }, [initialHtml, localStorageKey]);
 
   const saveCurrent = () => {
-    const next = ref.current?.innerHTML || "";
+    const next = formatOnly(ref.current?.innerHTML || "");
     setHtml(next);
     window.localStorage.setItem(localStorageKey, next);
   };

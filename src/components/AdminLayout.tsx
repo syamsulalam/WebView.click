@@ -7,9 +7,12 @@ import AdminDocsReader from "./AdminDocsReader";
 import AdminSidebarFlyout from "./AdminSidebarFlyout";
 
 export default function AdminLayout() {
-  const isDevHost = window.location.hostname.includes('run.app') || window.location.hostname.includes('localhost');
+  const isDevHost = import.meta.env.DEV && ["localhost", "127.0.0.1"].includes(window.location.hostname);
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "";
-  const isDevBypass = !clerkKey || (clerkKey.startsWith('pk_live_') && isDevHost);
+  const isDevBypass = isDevHost && (!clerkKey || clerkKey.startsWith("pk_live_"));
+  if (!clerkKey && !isDevBypass) {
+    return <main role="alert" className="p-6">Admin sign-in is unavailable.</main>;
+  }
 
   return (
     <AdminToastProvider>

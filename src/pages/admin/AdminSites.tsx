@@ -876,7 +876,6 @@ export default function AdminSites() {
       existingOptions[0]?.colors,
       siteJson?.brand?.palette,
       siteJson?.meta?.brandPalette,
-      colorsFromSiteData(siteJson),
     ) || ["#111827", "#4F46E5", "#F3F4F6"];
     if (totalOptions() < MIN_OWNER_PALETTE_OPTIONS && buildOptions.allowSingleImageVariants !== false) {
       buildPaletteRoleOptions({

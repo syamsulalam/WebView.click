@@ -31,6 +31,13 @@
 | ★ Dedicated WP Staging | `https://wpwv.codev.id` | Dedicated headless WordPress staging workbench on OracleServer (`codev-wpwv`) |
 | ★ Contacts CLI | `C:\Users\THINKPAD\scripts\gog.exe` | Single static Go binary (v0.48.1) for Google Contacts API batch creation & deduplication |
 
+### Production API and browser security
+
+- `functions/api/_shared/adminAccess.ts` enumerates the intentional public method and path pairs. Every other API request passes Clerk session verification against approved origins and checks the user's server-read admin role before accessing D1. Clerk configuration uses the production `CLERK_SECRET_KEY` and `VITE_CLERK_PUBLISHABLE_KEY` bindings. Manual CRM attribution comes from the verified session.
+- The admin settings API returns a presence marker for credentials. Leaving a marker in an input preserves the stored value. Manage replacement and rotation through approved provider credentials. Provider-facing Gemini requests send the key in a header.
+- Site previews and their owner exports display SVG logos as image resources and sanitize approved rich text. The public screenshot control can download a local capture. R2 screenshot reads and writes require admin access.
+- The production build emits frontend assets in `dist/` and Cloudflare builds Pages Functions separately. Use `pnpm run build:local-server` for the legacy Express bundle under `build/`.
+
 ## 0.2 Headless WordPress + R2 Edge Router + CLI Architecture
 
 To solve the stacked-blocks, fragile responsive grids, and generic AI filler of raw HTML generators, WebView.click v2.1 introduced a headless WordPress + Simply Static + R2 edge hosting pipeline:

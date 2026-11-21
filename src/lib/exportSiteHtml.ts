@@ -1104,7 +1104,7 @@ export async function downloadOwnerSiteZip(siteData: any, businessId = "website"
   const fontLinkTags = fontLinks.map((href) => `<link rel="stylesheet" href="${escapeHtml(href)}">`).join("\n");
   const jsonLd = localBusinessStructuredData(siteData);
   const html = `<!doctype html>
-<html lang="${lang}">
+<html lang="${escapeHtml(String(lang))}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

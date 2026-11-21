@@ -70,7 +70,7 @@ function validPhone(value: string) {
   return /^\+?[0-9\s().-]{7,20}$/.test(value) && digits.length >= 7 && digits.length <= 15 && !/^1?0{7,}$/.test(digits);
 }
 
-export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Database, segments: string[]): Promise<Response> {
+export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Database, segments: string[], adminId?: string): Promise<Response> {
   if (request.method === "GET" && segments.length === 1) {
     let leads;
     try {
@@ -142,7 +142,7 @@ export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Datab
     const id = segments[1];
     const body = await deps.readJsonBody(request);
     const status = deps.asString(body.status, "scraped");
-    const staffId = deps.asString(body.staffId, "system");
+    const staffId = adminId || "system";
 
     const leadColumns = await deps.tableColumns(db, "leads");
     const leadUpdates = [
@@ -171,7 +171,7 @@ export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Datab
     const body = await deps.readJsonBody(request);
     const email = deps.asString(body.email).trim();
     const phone = deps.asString(body.phone).trim();
-    const staffId = deps.asString(body.staffId, "admin");
+    const staffId = adminId || "admin";
 
     if (email && (!validEmail(email) || /^hello@example\.com$/i.test(email))) return deps.errorJson("Enter a valid email address.", 400);
     if (phone && !validPhone(phone)) return deps.errorJson("Enter a valid phone number with 7-15 digits.", 400);
@@ -206,7 +206,7 @@ export async function handleLeads(deps: LeadsDeps, request: Request, db: D1Datab
     const payerEmail = deps.asString(body.payerEmail).trim();
     const paymentReference = deps.asString(body.paymentReference).trim();
     const proofNotes = deps.asString(body.proofNotes).trim();
-    const verifiedBy = deps.asString(body.verifiedBy, "admin");
+    const verifiedBy = adminId || "admin";
     const amountUsd = Math.max(0, Number(body.amountUsd || 0) || 0);
     const amountIdr = Math.max(0, Math.round(Number(body.amountIdr || 0) || 0));
 

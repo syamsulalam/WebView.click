@@ -27,6 +27,8 @@ export type R2Bucket = {
 };
 
 export type Env = {
+  CLERK_SECRET_KEY?: string;
+  VITE_CLERK_PUBLISHABLE_KEY?: string;
   DB?: D1Database;
   R2?: R2Bucket;
   R2_PUBLIC_BASE_URL?: string;

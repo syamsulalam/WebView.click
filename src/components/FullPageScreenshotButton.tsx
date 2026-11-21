@@ -143,6 +143,7 @@ async function waitForIframeRef(ref: RefObject<HTMLIFrameElement | null>) {
 
 async function fetchScreenshotMetadata(businessId: string) {
   const response = await fetch(`/api/sites/${encodeURIComponent(businessId)}/screenshot`, { cache: "no-store" });
+  if (response.status === 401 || response.status === 403) return emptyMetadata();
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error || `Screenshot metadata failed: HTTP ${response.status}`);
   return { ...emptyMetadata(), ...data } as ScreenshotMetadata;
@@ -154,6 +155,7 @@ async function uploadScreenshot(businessId: string, blob: Blob) {
     headers: { "content-type": "image/webp" },
     body: blob,
   });
+  if (response.status === 401 || response.status === 403) return null;
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error || `Screenshot upload failed: HTTP ${response.status}`);
   return { ...emptyMetadata(), ...data, exists: true } as ScreenshotMetadata;
@@ -222,7 +224,7 @@ export default function FullPageScreenshotButton({
       updateMetadata(next);
       saveAs(blob, `${sanitizeFilename(businessId)}-full-page.webp`);
       setStatus("saved");
-      setMessage(`Screenshot saved to R2 and downloaded. ${formatBytes(blob.size)}`);
+      setMessage(`${next ? "Screenshot saved to R2 and downloaded." : "Screenshot downloaded."} ${formatBytes(blob.size)}`);
       window.setTimeout(() => setStatus("idle"), 1800);
     } catch (error) {
       setStatus("failed");

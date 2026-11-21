@@ -1214,9 +1214,9 @@ async function callAiJsonObjectProvider(deps: AiSiteGenerationDeps, input: {
     const key = await deps.getSetting(db, env, "GEMINI_API_KEY");
     if (!key) return "";
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
-    const apiRes = await fetchProvider(`${endpoint}?key=${encodeURIComponent(key)}`, {
+    const apiRes = await fetchProvider(endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ system_instruction: { parts: [{ text: systemMsg }] }, contents: [{ parts: [{ text: userMsg }] }], generationConfig: { responseMimeType: "application/json" } }),
     });
     if (!apiRes.ok) await readApiError(apiRes, endpoint);
@@ -1670,10 +1670,11 @@ Return only the copy patch JSON.`;
     const key = await deps.getSetting(db, env, "GEMINI_API_KEY");
     if (!key) return missingKey("Gemini");
     const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    const apiRes = await fetchAiProvider("Gemini", `${geminiEndpoint}?key=${encodeURIComponent(key)}`, {
+    const apiRes = await fetchAiProvider("Gemini", geminiEndpoint, {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "x-goog-api-key": key,
       },
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemMsg }] },

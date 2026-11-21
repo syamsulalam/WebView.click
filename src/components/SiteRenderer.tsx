@@ -1,4 +1,5 @@
 import { type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from "react";
+import DOMPurify from "dompurify";
 import {
   Briefcase,
   CheckCircle2,
@@ -872,6 +873,9 @@ export default function SiteRenderer({
   const pendingImageKey = useRef("");
 
   const { meta, colors: baseColors, typography, stylePreset, visualStyle, shaderPreset, shaderConfig, fontPairing, designIntent, designAudit, brand, businessProfile, trust, offers, products, services, capabilities, sourceData, location, servedAreas, hours, conversion, globalConfig, navigation, pages } = normalizeSiteData(siteData);
+  const logoImage = typeof brand.logoSvg === "string" && brand.logoSvg
+    ? `data:image/svg+xml,${encodeURIComponent(brand.logoSvg)}`
+    : "";
   const imageReplacementKey = imageReplacementStorageKey(businessId, meta.businessId);
   const iconStorageKey = siteIconStorageKey(businessId, meta.businessId);
   const legacyIconStorageKey = legacyButtonIconStorageKey(businessId, meta.businessId);
@@ -1539,7 +1543,7 @@ export default function SiteRenderer({
           className="min-w-0 max-w-full justify-self-start font-bold text-xl tracking-tight leading-tight flex items-center gap-3 text-left hover:opacity-85 transition"
           aria-label={`Go to ${meta.businessName} home`}
         >
-          {brand.logoSvg ? <span className="h-8 w-8 shrink-0 [&>svg]:h-full [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
+          {logoImage ? <img className="h-8 w-8 shrink-0" src={logoImage} alt="" /> : null}
           {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
           {editableText("header.businessName", meta.businessName, "span", "min-w-0 truncate leading-tight")}
         </button>
@@ -1582,7 +1586,7 @@ export default function SiteRenderer({
           </nav>
           {/* Always rendered (hidden when closed) so the owner HTML export keeps a working mobile menu via its inline script. */}
           <div data-wv-mobile-nav-panel="true" className={`${mobileNavOpen ? "" : "hidden "}absolute inset-x-0 top-full z-50 max-h-[70vh] overflow-y-auto border-t border-slate-200 shadow-xl md:hidden`} style={{ backgroundColor: "var(--wv-header-submenu-bg, #fff)" }}>
-              {headerMenuWithAreas.map((menu: any, idx: number) => {
+              {navigation.headerMenu.map((menu: any, idx: number) => {
                 const menuPageId = String(menu.href || "").replace("#", "");
                 const menuChildren = Array.isArray(menu.children) ? menu.children : [];
                 return (
@@ -1755,7 +1759,7 @@ export default function SiteRenderer({
                       ? "h-[360px] md:h-[540px] rounded-xl overflow-hidden border border-stone-200 shadow-xl bg-stone-100"
                       : "h-[360px] md:h-[520px] rounded-2xl overflow-hidden border border-slate-200 shadow-xl bg-slate-100";
                 const heroLogoMark = brand.logoSvg
-                  ? <span className="h-24 w-24 shrink-0 [&>svg]:h-full [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} />
+                  ? <img className="h-24 w-24 shrink-0" src={logoImage} alt="" />
                   : isUsableImage(brand.logoImageUrl)
                     ? <img src={brand.logoImageUrl} alt={meta.businessName} data-wv-image-role="logo" className="h-24 w-24 rounded-full object-cover" />
                     : <span className="flex h-24 w-24 items-center justify-center rounded-full text-4xl font-bold" style={{ backgroundColor: colors.primary, color: colors.onPrimary }}>{String(meta.businessName || "?").trim().slice(0, 1).toUpperCase()}</span>;
@@ -2409,7 +2413,10 @@ export default function SiteRenderer({
                     <div className={`max-w-6xl mx-auto flex flex-col md:flex-row gap-12 items-center ${section.content.layout === "imageRight" ? "md:flex-row-reverse" : ""}`}>
                       <div className="flex-1">
                         {editableText(`${section.id}.title`, section.content.title, "h2", "text-3xl font-bold mb-6")}
-                        <div className="opacity-80 prose max-w-none" dangerouslySetInnerHTML={{ __html: section.content.bodyHtml }} />
+                        <div className="opacity-80 prose max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(section.content.bodyHtml, {
+                          ALLOWED_TAGS: ["p", "br", "h2", "h3", "h4", "ul", "ol", "li", "strong", "em", "b", "i", "a"],
+                          ALLOWED_ATTR: ["href"],
+                        }) }} />
                       </div>
                       <div className="flex-1 w-full relative h-[400px] bg-gray-100 rounded-xl overflow-hidden shadow-lg border border-gray-200">
                         {editableImage(imageEditKey(page.pageId, section.id, "text-image"), section.content.image, section.content.title, brandPhotoAttribution(section.content.image), `section-${section.content.title || section.id}`)}
@@ -2684,7 +2691,7 @@ export default function SiteRenderer({
         <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1.3fr_0.8fr_0.8fr_1fr]">
           <div>
             <button type="button" data-wv-tab={homePageId} onClick={() => changeTab(homePageId)} className="mb-4 flex items-center gap-3 text-left text-lg font-bold hover:opacity-85">
-              {brand.logoSvg ? <span className="w-8 h-8 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: brand.logoSvg }} /> : null}
+              {logoImage ? <img className="h-8 w-8" src={logoImage} alt="" /> : null}
               {isUsableImage(brand.logoImageUrl) ? <img src={brand.logoImageUrl} alt="" data-wv-image-role="logo" className="w-8 h-8 rounded-full object-cover" /> : null}
               {editableText("footer.businessName", meta.businessName, "span")}
             </button>

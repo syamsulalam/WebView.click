@@ -32,7 +32,6 @@ const clerkAppearance = {
 const AppWrapper = () => {
   if (!PUBLISHABLE_KEY) {
     // If no key, just run without Clerk for preview purposes
-    console.warn("Clerk Publishable Key is missing from .env. Running without auth.");
     return (
       <BrowserRouter>
         <App />
@@ -41,7 +40,7 @@ const AppWrapper = () => {
   }
 
   // Cek penggunaan pk_live_ di environment AI Studio (bukan domain utama)
-  const isDevHost = window.location.hostname.includes('run.app') || window.location.hostname.includes('localhost');
+  const isDevHost = import.meta.env.DEV && ["localhost", "127.0.0.1"].includes(window.location.hostname);
   const isDevBypass = !PUBLISHABLE_KEY || (PUBLISHABLE_KEY.startsWith('pk_live_') && isDevHost);
 
   if (isDevBypass) {

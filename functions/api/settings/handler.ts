@@ -1,4 +1,5 @@
 import type { D1Database, SettingRow } from "../_shared/types";
+import { isCredentialSetting, SECRET_PRESENT } from "../_shared/secrets";
 
 export type SettingsDeps = {
   json: (data: unknown, status?: number) => Response;
@@ -7,7 +8,7 @@ export type SettingsDeps = {
   tableColumns: (db: D1Database, table: string) => Promise<Set<string>>;
 };
 
-export async function handleSettings(deps: SettingsDeps, request: Request, db: D1Database): Promise<Response> {
+export async function handleSettings(deps: SettingsDeps, request: Request, db: D1Database, env: Record<string, unknown>): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname.endsWith("/settings/paypal-plan-cache")) {
     try {
@@ -117,7 +118,11 @@ export async function handleSettings(deps: SettingsDeps, request: Request, db: D
   if (request.method === "GET") {
     try {
       const rows = await db.prepare("SELECT key, value FROM system_settings").all<SettingRow>();
-      const settings = Object.fromEntries((rows.results || []).map((row) => [row.key, row.value]));
+      const settings = Object.fromEntries((rows.results || []).map(({ key, value }) =>
+        [key, isCredentialSetting(key) && value ? SECRET_PRESENT : value]));
+      for (const [key, value] of Object.entries(env)) {
+        if (isCredentialSetting(key) && typeof value === "string" && value) settings[key] = SECRET_PRESENT;
+      }
       return deps.json(settings);
     } catch (error) {
       console.error("Settings fallback:", error);
@@ -129,7 +134,7 @@ export async function handleSettings(deps: SettingsDeps, request: Request, db: D
     const settings = await deps.readJsonBody(request);
     const columns = await deps.tableColumns(db, "system_settings");
     const statements = Object.entries(settings)
-      .filter(([, value]) => value !== undefined && value !== null)
+      .filter(([key, value]) => value !== undefined && value !== null && !(isCredentialSetting(key) && value === SECRET_PRESENT))
       .map(([key, value]) => {
         const values: Record<string, unknown> = {
           key,

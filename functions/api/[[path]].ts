@@ -1,4 +1,5 @@
 import templateSchema from "../../JSON/template-schema.json";
+import { authenticateAdmin, isPublicApiRequest } from "./_shared/adminAccess";
 import { createGenerationJob, ensureColumn, ensureRequiredColumns, getDailyUsage, getDb, getSetting, incrementDailyUsage, insertCrmActivitySafe, isMissingColumnError, saveJsonSiteRecord, tableColumns, updateGenerationJob, updateProspectRecord, upsertLeadRecord } from "./_shared/db";
 import { asString, corsHeaders, errorJson, json, normalizeBusinessId, parseJsonArray, parseJsonObject, readJsonBody, sha256Json } from "./_shared/response";
 import { checkoutRequiredColumns, databaseRepairReport, generateRequiredColumns, paymentLedgerRequiredColumns, prospectDetailsRequiredColumns, prospectListRequiredColumns, prospectStatusRequiredColumns, prospectWebsiteCheckRequiredColumns, selectionRequiredColumns, setupTables } from "./_shared/schema";
@@ -216,7 +217,26 @@ async function route(context: PagesContext): Promise<Response> {
   }
 
   const url = new URL(request.url);
-  const segments = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  let segments: string[];
+  try {
+    segments = url.pathname.replace(/^\/api(?:\/|$)/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return errorJson("Invalid API path.", 400);
+  }
+  if (segments.some((segment) => /[/\\\p{Cc}]/u.test(segment))) return errorJson("Invalid API path.", 400);
+
+  let adminId: string | undefined;
+  if (!isPublicApiRequest(request.method, segments, url.searchParams)) {
+    const admin = await authenticateAdmin(request, env);
+    if (typeof admin !== "string") {
+      const message = admin === 401 ? "Sign in required." : admin === 403 ? "Admin access required." : "Admin authentication unavailable.";
+      return errorJson(message, admin);
+    }
+    adminId = admin;
+  }
+  if (request.method === "GET" && segments.length === 0) {
+    return json({ ok: true, service: "webview-click-api" });
+  }
 
   try {
     const db = getDb(env);
@@ -226,12 +246,8 @@ async function route(context: PagesContext): Promise<Response> {
       console.error("DB setup fallback:", setupError);
     }
 
-    if (segments.length === 0) {
-      return json({ ok: true, service: "webview-click-api" });
-    }
-
     if (segments[0] === "settings") {
-      return handleSettings(settingsDeps, request, db);
+      return handleSettings(settingsDeps, request, db, env);
     }
 
     if (request.method === "GET" && segments[0] === "public-settings") {
@@ -255,7 +271,7 @@ async function route(context: PagesContext): Promise<Response> {
     }
 
     if (segments[0] === "leads") {
-      return handleLeads(leadsDeps, request, db, segments);
+      return handleLeads(leadsDeps, request, db, segments, adminId);
     }
 
     if (segments[0] === "outreach") {
@@ -340,9 +356,8 @@ async function route(context: PagesContext): Promise<Response> {
 
     return errorJson("Not Found", 404);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("API error:", error);
-    return errorJson(message, 500);
+    console.error("API request failed", { method: request.method, scope: segments[0] });
+    return errorJson("The request could not be completed.", 500);
   }
 }
 
