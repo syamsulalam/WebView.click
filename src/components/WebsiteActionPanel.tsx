@@ -9,6 +9,7 @@ type WebsiteActionPanelProps = {
   businessId?: string;
   variant: "demo" | "public";
   onDownloadZip?: (siteData?: any) => void | Promise<void>;
+  staticPackage?: { downloadUrl: string; urls: string[]; previewUrl: string };
   fontPairings?: FontPairing[];
   selectedFontPairing?: string;
   onFontPairingChange?: (id: string) => void;
@@ -437,11 +438,16 @@ function formatUsd(value: number) {
   return `$${Number(value || 0).toFixed(Number.isInteger(value) ? 0 : 2)}`;
 }
 
+function staticPageLabel(url: string, previewUrl: string) {
+  return url === previewUrl ? "Home" : url.slice(previewUrl.length).replace(/\/$/, "").replace(/-/g, " ");
+}
+
 export default function WebsiteActionPanel({
   siteData,
   businessId = "demo-site",
   variant,
   onDownloadZip,
+  staticPackage,
   fontPairings = [],
   selectedFontPairing = "",
   onFontPairingChange,
@@ -532,13 +538,19 @@ export default function WebsiteActionPanel({
   const [reviewNow, setReviewNow] = useState(() => Date.now());
 
   const existingPageOptions = useMemo(() => {
+    if (staticPackage) {
+      return staticPackage.urls.map((url) => ({
+        id: new URL(url).pathname,
+        label: staticPageLabel(url, staticPackage.previewUrl),
+      }));
+    }
     const pages = Array.isArray(siteData?.pages) ? siteData.pages : [];
     const options = pages.map((page: any, index: number) => ({
       id: String(page?.pageId || `page-${index + 1}`),
       label: pageLabel(page, index),
     }));
     return options.length ? options : [{ id: "home", label: "Home" }];
-  }, [siteData?.pages]);
+  }, [siteData?.pages, staticPackage]);
   const hasPageActions = newPages + editedPages > 0;
   const setupSteps: SetupStep[] = setupMode === "addons"
     ? (hasPageActions
@@ -618,7 +630,7 @@ export default function WebsiteActionPanel({
   }, [editedPages, existingPageOptions]);
 
   useEffect(() => {
-    if (variant !== "public" || typeof window === "undefined") {
+    if (staticPackage || variant !== "public" || typeof window === "undefined") {
       setOwnerReviewVisible(false);
       setOwnerReviewStartedAt(null);
       return;
@@ -655,7 +667,7 @@ export default function WebsiteActionPanel({
     }
     setOwnerReviewStartedAt(startedAt);
     setReviewNow(Date.now());
-  }, [variant, effectiveBusinessId]);
+  }, [variant, effectiveBusinessId, staticPackage]);
 
   useEffect(() => {
     if (!ownerReviewVisible || !ownerReviewStartedAt || typeof window === "undefined") return;
@@ -956,7 +968,7 @@ export default function WebsiteActionPanel({
         </div>
       )}
 
-      <div className={panelPosition} data-export-remove="true" data-wv-tool-ui="website-action-panel">
+      {!staticPackage && <div className={panelPosition} data-export-remove="true" data-wv-tool-ui="website-action-panel">
         {panelOpen && (
           <div className="mb-3 w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -1087,21 +1099,21 @@ export default function WebsiteActionPanel({
           <Download size={18} />
           Download / Setup
         </button>
-      </div>
+      </div>}
 
-      {downloadInfoOpen && onDownloadZip && (
-        <div className="hide-in-export fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4" data-export-remove="true" data-wv-tool-ui="website-download-modal">
+      {((staticPackage && !checkoutOpen) || (downloadInfoOpen && onDownloadZip)) && (
+        <div className={staticPackage ? "" : "hide-in-export fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/50 p-4"} data-export-remove="true" data-wv-tool-ui="website-download-modal">
           <div
             ref={downloadModalScrollRef}
             onScroll={updateDownloadScrollNotice}
-            className="max-h-[min(92vh,820px)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+            className={staticPackage ? "rounded-2xl border border-slate-200 bg-white" : "max-h-[min(92vh,820px)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"}
           >
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div className="min-w-0 flex-1 text-center">
                 <p className="text-lg font-semibold text-slate-950">Your starter website package is ready</p>
                 <p className="mt-1 text-sm leading-6 text-slate-500">Review the included files, pages, and launch options.</p>
               </div>
-              <button
+              {!staticPackage && <button
                 type="button"
                 onClick={() => setDownloadInfoOpen(false)}
                 disabled={downloadPreparing}
@@ -1109,7 +1121,7 @@ export default function WebsiteActionPanel({
                 aria-label="Close download details"
               >
                 <X size={18} />
-              </button>
+              </button>}
             </div>
             <div className="space-y-5 p-5">
               <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
@@ -1158,7 +1170,13 @@ export default function WebsiteActionPanel({
                 )}
               </div>
 
-              <div>
+              {staticPackage && (
+                <a href={staticPackage.downloadUrl} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white hover:bg-slate-800">
+                  <Download size={18} aria-hidden="true" /> Download my $0 website package
+                </a>
+              )}
+
+              {!staticPackage && <div>
                 <p className="text-center text-lg font-semibold text-slate-950">Included website features</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {downloadFeatures.map((feature) => (
@@ -1173,15 +1191,25 @@ export default function WebsiteActionPanel({
                     </div>
                   ))}
                 </div>
-              </div>
+              </div>}
 
               <div>
                 <p className="text-center text-lg font-semibold text-slate-950">Pages included</p>
                 <p className="mx-auto mt-1 max-w-xl text-center text-sm leading-6 text-slate-500">
-                  These are the preview URLs for the generated pages. After downloading your site, the same page links work inside your website files.
+                  {staticPackage
+                    ? `Extract the ZIP and put its files under the ${new URL(staticPackage.previewUrl).pathname} path on your host. Open the pages below to see what’s included.`
+                    : "These are the preview URLs for the generated pages. After downloading your site, the same page links work inside your website files."}
                 </p>
                 <div className="mt-3 space-y-2">
-                  {downloadPages.map((page) => (
+                  {staticPackage ? (
+                    <ul className="grid gap-2 text-sm sm:grid-cols-2">
+                      {staticPackage.urls.map((url) => (
+                        <li key={url}><a href={url} className="break-words text-indigo-700 underline">
+                          {staticPageLabel(url, staticPackage.previewUrl)}
+                        </a></li>
+                      ))}
+                    </ul>
+                  ) : downloadPages.map((page) => (
                     <div key={`${page.id}-${page.url}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <div className="flex flex-col items-center gap-2 text-center">
                         <div className="min-w-0">
@@ -1238,7 +1266,7 @@ export default function WebsiteActionPanel({
                 </button>
               </div>
 
-              <button
+              {!staticPackage && <button
                 type="button"
                 onClick={handleOwnerPackageDownload}
                 disabled={downloadPreparing}
@@ -1246,7 +1274,7 @@ export default function WebsiteActionPanel({
               >
                 {downloadPreparing ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
                 {downloadPreparing ? "Preparing PDF guide..." : "Download my $0 website package"}
-              </button>
+              </button>}
             </div>
           </div>
           {downloadScrollNoticeVisible && !downloadPreparing && (

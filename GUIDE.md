@@ -158,9 +158,14 @@ The production recovery on 2026-11-19 replaced HTTP 522 with a redirect from `ht
 ```
 Use `-StageOnly` for a local export or `-VerifyR2` for private storage verification. Use `-PrepareOutreach` only for the reply-gated contact and mockup workflow.
 
+To update a site, run the same command with the revised brief and keep its slug inputs stable. The CLI checks the staged release, activates it at the same URLs, verifies the live preview and ZIP, then removes the superseded files. To republish an existing verified export, run `node scripts/deploy-site-to-r2.mjs --dir <export-folder> --slug <existing-slug>` from the publishing workstation.
+
 *Live Links:*
 - Preview: `https://sites.webview.click/bengkel-jaya-motor-car-repair-id-malang/`
+- Owner offer: `https://webview.click/site-package/bengkel-jaya-motor-car-repair-id-malang`
 - Download: `https://sites.webview.click/bengkel-jaya-motor-car-repair-id-malang.zip`
+
+The floating **Download Your Site** button opens the free self-hosting offer and optional managed setup. To self-host the static files, extract the ZIP under the original slug path so absolute page and asset links keep working.
 
 Check account-wide Standard R2 usage from the repository with `python scripts/check-r2-usage.py`. See the [free-tier audit](docs/FREE_TIER_LIMITS_AUDIT.md) for how to read the figures.
 

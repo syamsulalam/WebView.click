@@ -2,15 +2,16 @@
 /**
  * deploy-site-to-r2.mjs
  * 
- * Synchronizes static SMB site assets into Cloudflare R2:
- * - Uploads files to `sites/<slug>/*` with proper MIME-types.
- * - ZERO ZIP UPLOAD NEEDED: The edge worker at `sites.webview.click/<slug>.zip`
- *   assembles and streams the ZIP file on the fly directly from the `sites/<slug>/*` assets!
+ * Publishes a verified static release at a stable business slug.
+ * The edge worker streams the ZIP from the active release's own files.
  */
 
 import fs from "fs";
 import path from "path";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -63,9 +64,11 @@ Usage:
 Arguments:
   --dir       Directory holding exported flat HTML/CSS/JS (from Simply Static)
   --slug      Clean URL slug (e.g. 'bengkel-jaya-motor-auto-repair-id-malang')
-  --bucket    Cloudflare R2 bucket name (default: 'webview-sites')
+  --bucket    R2 bucket for verification runs (default: 'webview-sites')
   --profile   Cloudflare CLI profile (default: 'webview' for 'webview-sites')
   --verification-run  Store this run under private qa/<slug>/<run>/ and compare bytes
+
+  Public runs publish or replace a site at the same slug.
     `);
     process.exit(0);
   }
@@ -81,6 +84,9 @@ Arguments:
 
   if ((profileIndex !== -1 && !profile) || (profile && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(profile))) {
     throw new Error("Invalid Cloudflare CLI profile.");
+  }
+  if (!verificationRun && (bucket !== "webview-sites" || profile !== "webview")) {
+    throw new Error("Public publishing requires the webview-sites bucket and webview profile.");
   }
 
   if (!siteDir || !fs.existsSync(siteDir)) {
@@ -100,7 +106,7 @@ Arguments:
     throw new Error("The export is missing index.html.");
   }
   console.log(`📁 Found ${files.length} static assets to sync.`);
-  if (files.length > 999 || files.some(({ relPath }) =>
+  if (files.length > 998 || files.some(({ relPath }) =>
     !/^[a-zA-Z0-9_./-]+$/.test(relPath) || relPath.split("/").some(part => part.startsWith(".")) ||
     ["download", "download.zip"].includes(relPath.split("/")[0]))) {
     throw new Error("The export exceeds the ZIP limit or contains an unsupported object name.");
@@ -123,46 +129,102 @@ Arguments:
     command = process.execPath;
     commandArgs = [path.join(path.dirname(shim), "node_modules", "cf", "bin", "cf")];
   }
-  const prefix = verificationRun ? `qa/${slug}/${verificationRun}/` : `sites/${slug}/`;
   const cf = (args_) => execFileSync(command,
     [...commandArgs, ...profileArgs, "r2", "buckets", ...args_, "--bucket-name", bucket],
     { stdio: "pipe", env: cliEnv, timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+  const list = (prefix, limit = 1) => {
+    const objects = JSON.parse(cf(["objects", "list", "--prefix", prefix, "--per-page", String(limit)]));
+    if (!Array.isArray(objects) || objects.some(({ key }) => typeof key !== "string" || !key.startsWith(prefix))) {
+      throw new Error(`Unexpected R2 listing for ${prefix}.`);
+    }
+    return objects.map(({ key }) => key);
+  };
+  const upload = (key, file, mime) => cf(["objects", "upload", key, "--file", file, "--content-type", mime]);
+  const get = (key) => cf(["objects", "get", key]);
+  const remove = (key) => cf(["objects", "delete", key, "--force"]);
+  function stage(prefix, attempted) {
+    if (list(prefix).length) throw new Error(`R2 prefix already contains files: ${prefix}`);
+    for (const { fullPath, relPath } of files) {
+      const key = prefix + relPath;
+      attempted.push(key);
+      upload(key, fullPath, MIME_TYPES[path.extname(relPath).toLowerCase()] || "application/octet-stream");
+      if (!get(key).equals(fs.readFileSync(fullPath))) throw new Error(`R2 read-back differs for ${key}.`);
+      if (attempted.length % 20 === 0 || attempted.length === files.length) {
+        console.log(`  Verified ${attempted.length}/${files.length} R2 objects.`);
+      }
+    }
+  }
   if (verificationRun) {
     const managed = JSON.parse(cf(["domains", "managed", "list"]));
     const custom = JSON.parse(cf(["domains", "custom", "list"]));
     if (managed.enabled !== false || !Array.isArray(custom.domains) || custom.domains.length) {
       throw new Error("R2 verification requires a bucket without public domain access.");
     }
-  }
-  const previous = JSON.parse(cf(["objects", "list", "--prefix", prefix, "--per-page", "1"]));
-  if (!Array.isArray(previous) || previous.length) {
-    throw new Error(`R2 prefix already contains files or could not be verified: ${prefix}`);
-  }
-  files.sort((a, b) => Number(a.relPath === "index.html") - Number(b.relPath === "index.html"));
-  let uploaded = 0;
-  for (const f of files) {
-    const ext = path.extname(f.relPath).toLowerCase();
-    const mime = MIME_TYPES[ext] || "application/octet-stream";
-    const key = prefix + f.relPath;
-    cf(["objects", "upload", key, "--file", f.fullPath, "--content-type", mime]);
-    if (verificationRun && !cf(["objects", "get", key]).equals(fs.readFileSync(f.fullPath))) {
-      throw new Error(`R2 read-back differs for ${key}.`);
-    }
-    uploaded++;
-    if (uploaded % 20 === 0 || uploaded === files.length) {
-      console.log(`  ✓ Synced ${uploaded}/${files.length} assets...`);
-    }
-  }
-  if (verificationRun) {
-    console.log(`Verified ${uploaded} objects byte-for-byte at r2://${bucket}/${prefix}`);
+    const prefix = `qa/${slug}/${verificationRun}/`;
+    stage(prefix, []);
+    console.log(`Verified ${files.length} objects byte-for-byte at r2://${bucket}/${prefix}`);
     return;
   }
 
-  console.log(`
-🎉 Single-Upload Sync Complete!
-🌐 Live Preview URL: https://sites.webview.click/${slug}/
-📦 Dynamic ZIP URL:  https://sites.webview.click/${slug}.zip (streamed dynamically via edge worker)
-  `);
+  const releaseRoot = `releases/${slug}/`;
+  const currentKey = releaseRoot + "current.json";
+  const revision = randomUUID().replaceAll("-", "");
+  const prefix = releaseRoot + revision + "/";
+  // ponytail: one publishing workstation. Use a conditional R2 write before enabling multi-host publishing.
+  const lockPath = path.join(tmpdir(), `webview-publish-${slug}.lock`);
+  let lock;
+  try {
+    lock = fs.openSync(lockPath, "wx");
+  } catch (error) {
+    if (error.code === "EEXIST") throw new Error(`Publication already locked: ${lockPath}`);
+    throw error;
+  }
+  const recordFile = lockPath + ".json";
+  try {
+    fs.writeFileSync(lock, String(process.pid));
+    const active = () => {
+      if (!list(currentKey).includes(currentKey)) return null;
+      const rev = JSON.parse(get(currentKey));
+      if (typeof rev !== "string" || !/^[a-f0-9]{32}$/.test(rev)) throw new Error("Invalid R2 release record.");
+      return rev;
+    };
+    const previous = active();
+    const previousPrefix = previous ? releaseRoot + previous + "/" : `sites/${slug}/`;
+    const superseded = list(previousPrefix, 1000);
+    if (superseded.length > 999) throw new Error("Previous release exceeds the supported cleanup size.");
+    const attempted = [];
+    try {
+      stage(prefix, attempted);
+    } catch (error) {
+      for (const key of attempted) {
+        try { remove(key); } catch { console.warn(`Could not remove incomplete object ${key}.`); }
+      }
+      throw error;
+    }
+    if (active() !== previous) throw new Error("The active release changed during staging.");
+    fs.writeFileSync(recordFile, JSON.stringify(revision));
+    try {
+      upload(currentKey, recordFile, "application/json");
+    } catch (error) {
+      // A lost acknowledgement can follow a successful write. Keep the possibly active files.
+      if (active() !== revision) {
+        throw new Error(`Activation uncertain for ${revision}. Staged and previous files were kept.`, { cause: error });
+      }
+    }
+    if (active() !== revision) throw new Error("The candidate release is not active.");
+    execFileSync("python", [
+      fileURLToPath(new URL("check-sites-edge.py", import.meta.url)),
+      "--export", siteDir, "--slug", slug, "--revision", revision,
+    ], { stdio: "inherit", timeout: 180000 });
+    if (active() !== revision) throw new Error("The active release changed during verification.");
+    for (const key of superseded) remove(key);
+    console.log(`Published ${revision} at https://sites.webview.click/${slug}/`);
+    console.log(`ZIP: https://sites.webview.click/${slug}.zip`);
+  } finally {
+    fs.closeSync(lock);
+    fs.rmSync(recordFile, { force: true });
+    fs.unlinkSync(lockPath);
+  }
 }
 
 main().catch(error => {

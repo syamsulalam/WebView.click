@@ -15,6 +15,7 @@ const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
 const AdminReachout = lazy(() => import('./pages/admin/AdminReachout'));
 const AdminLayout = lazy(() => import('./components/AdminLayout'));
 const PublicViewer = lazy(() => import('./pages/public/PublicViewer'));
+const StaticSitePackage = lazy(() => import('./pages/public/StaticSitePackage'));
 const HubPage = lazy(() => import('./pages/public/HubPage'));
 const DemoSite = lazy(() => import('./pages/public/DemoSite'));
 const TermsRefund = lazy(() => import('./pages/public/TermsRefund'));
@@ -101,6 +102,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HubPage />} />
         <Route path="/demo" element={<DemoSite />} />
+        <Route path="/site-package/:slug" element={<StaticSitePackage />} />
         <Route path="/terms-refund" element={<TermsRefund />} />
         <Route path="/audit/:businessId" element={<MarketingAuditViewer />} />
         <Route path="/admin" element={<AdminLayout />}>

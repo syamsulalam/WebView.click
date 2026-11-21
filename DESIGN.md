@@ -12,6 +12,7 @@ A small business owner should be able to recognize their business in a finished 
 | Evaluate | Check fit and understand what to ask | Main navigation | Services, Service detail, About | Open the relevant service or Contact |
 | Evaluate | See example work and independently sourced feedback | Main navigation | Gallery | Open media, review source or Contact |
 | Contact | Call or get directions | Page action or navigation | Contact | Open phone dialer or map |
+| Take site | Get the free site or arrange launch help | Floating Download Your Site link | Owner site package | Download ZIP, start setup, or return to preview |
 
 ## 3. Page and Screen Inventory
 
@@ -25,6 +26,7 @@ A small business owner should be able to recognize their business in a finished 
 | contact | Contact | /contact/ | Contact | Call or open directions | Ready |
 | privacy | Privacy Policy | /privacy-policy/ | Evaluate | Read data practices or contact the business | Ready |
 | terms | Terms of Use | /terms-of-use/ | Evaluate | Read site terms or contact the business | Ready |
+| owner-package | Owner site package | webview.click/site-package/<slug> | Take site | Download site or start managed setup | Ready |
 
 ## Art Direction
 
@@ -410,11 +412,63 @@ Bind facts from the brief. Describe only the website features in the build and k
 #### Verification
 Open the page from the footer. Check identity, contact details, reading order, mobile layout and ZIP route.
 
+### Page: Owner site package
+
+#### Purpose and Journey
+
+Let a business owner download the free static site, choose optional setup, or return to the business preview.
+
+#### Layout and Hierarchy
+
+Use the shared WebView download and setup panel. Lead with the free offer and keep the optional paid service distinct.
+
+#### Components and States
+
+The floating link leads to the package page. Show the shared offer when the site data loads. An unavailable package shows an error.
+
+#### Accessibility
+
+Use a visible heading, ordinary links, keyboard focus, and labeled controls.
+
+#### Responsive Behavior
+
+Stack choices and keep actions reachable in the shared scrollable panel at mobile widths.
+
+#### Motion and Feedback
+
+Use standard navigation and the existing download and checkout feedback.
+
+#### Content and Forms
+
+Explain free use and self-hosting. Show the published page list. Use the existing domain and payment workflow for optional setup.
+
+#### Principle Adherence
+
+| Principle | Application | Verification |
+|---|---|---|
+| Fitts's Law | Large download and setup targets. | Check mobile. |
+| Visual Hierarchy | Lead with the free offer. | Read the first screen. |
+| Von Restorff Effect | Emphasize the download action. | Inspect action contrast. |
+| Object Constancy | Keep the same WebView offer and checkout. | Compare with public preview. |
+| Snapping | N/A. This is a standard document and scrollable panel. | Scroll normally. |
+| Motion Blur | N/A. No custom movement is required. | Observe open and close. |
+| Natural Mapping | Put labels beside the actions they describe. | Follow both options. |
+| Tabular Figures | The shared offer keeps prices legible. | Inspect dollar amounts. |
+| Animate Only the Delta | N/A. The shared setup form changes steps without animation. | Step through setup. |
+| Inertia | Keep native scrolling. | Scroll on mobile. |
+| Multimodal Feedback | Pair action icons with visible labels. | Check accessible names. |
+| Visual Cues | Provide focus indication and clear optional setup. | Tab through actions. |
+| Skeuomorphism | The download icon accompanies the action label. | Check the floating link. |
+
+#### Verification
+
+Follow the live floating link, open the offer, download the correct ZIP and enter the shared setup flow at desktop and mobile widths.
+
 ## 6. Cross-Page Consistency
 
 - Add labeled icons to principal navigation and actions, and visually display review stars with a screen-reader equivalent. Native Elementor feature icons follow the business accent. On every bilingual static page, place the compact flag and language-code link in the desktop navbar and beside the mobile menu button. Use the target language as the accessible name, show keyboard focus, and keep the language code legible without the flag. The link opens the equivalent page without JavaScript. Validate that footer links stay outside the primary menu.
 
-- R2 preview pages add a floating download link with an icon and visible label. Keep it clear of the theme's bottom-right controls, retain keyboard focus, and link to the current site's ZIP. Keep the review heading and testimonials in one section with no empty image slots.
+- R2 preview pages add a floating Download Your Site link with an icon and visible label. Keep it clear of the theme's bottom-right controls and link to the shared WebView owner package. Keep the review heading and testimonials in one section with no empty image slots.
 
 Use the same header, menu, footer identity and contact methods on every page. The visit area at the foot of each page keeps the physical address, directions and approved map together. A labeled, lazy-loaded map leaves the directions link usable when the embed is unavailable. On About or Contact, group confirmed hours and access, facilities, booking and payment details for scanning. Keep source links to listing photos, videos and reviews together and label approved media. Preserve normal navigation in both WordPress staging and the static ZIP.
 

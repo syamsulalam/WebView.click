@@ -2,7 +2,7 @@
  * sites.webview.click - Edge Static Site Router & Dynamic R2 Hosting Engine
  * 
  * Features:
- * - Single-Asset Source: Upload once to `sites/<slug>/*`.
+ * - One active version of the files serves both preview and download.
  * - Dynamic On-The-Fly ZIP Generation via client-zip:
  *   /<slug>.zip streams a ZIP assembled directly from R2 objects.
  * - Automatic index.html resolution for root and subdirectories
@@ -53,10 +53,10 @@ function objectBody(object: R2Object | R2ObjectBody) {
 }
 
 const downloadStyle = `<style id="webview-download-style">
-#webview-download{position:fixed;inset:auto auto calc(1rem + env(safe-area-inset-bottom,0px)) calc(1rem + env(safe-area-inset-left,0px));z-index:1000;box-sizing:border-box;display:inline-flex;align-items:center;gap:.5rem;min-height:44px;padding:.625rem .875rem;border:1px solid #fff;border-radius:999px;background:#172b3a;color:#fff;font:600 14px/1.25 system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px #0003}
+#webview-download{position:fixed;inset:auto calc(1rem + env(safe-area-inset-right,0px)) calc(4.5rem + env(safe-area-inset-bottom,0px)) auto;z-index:1000;box-sizing:border-box;display:inline-flex;align-items:center;gap:.5rem;min-height:44px;padding:.625rem .875rem;border:1px solid #fff;border-radius:999px;background:#172b3a;color:#fff;font:600 14px/1.25 system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px #0003}
 #webview-download:hover{text-decoration:underline}#webview-download:focus-visible{outline:3px solid #14619b;outline-offset:2px}
 #webview-download svg{flex:none;width:1.125rem;height:1.125rem}
-html:has(#webview-download){scroll-padding-bottom:calc(4rem + env(safe-area-inset-bottom,0px))}
+html:has(#webview-download){scroll-padding-bottom:calc(7.5rem + env(safe-area-inset-bottom,0px))}
 </style>`;
 
 function withPreviewDownload(response: Response, slug: string, head: boolean) {
@@ -68,7 +68,7 @@ function withPreviewDownload(response: Response, slug: string, head: boolean) {
   outgoing.headers.delete("ETag");
   outgoing.headers.delete("Content-Length");
   if (head) return outgoing;
-  const link = `<a id="webview-download" href="/${slug}.zip"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Download ZIP</a>`;
+  const link = `<a id="webview-download" href="https://webview.click/site-package/${slug}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Download Your Site</a>`;
   let hasHead = false;
   let hasBody = false;
   return new HTMLRewriter()
@@ -130,20 +130,43 @@ export default {
     }
     const subPath = segments.join("/");
     const head = request.method === "HEAD";
+    if (pathSegments.length === 1 && !pathname.endsWith("/") && !directZip) {
+      return Response.redirect(`${url.origin}/${slug}/${url.search}`, 308);
+    }
+
+    const current = await env.SITES_BUCKET.get(`releases/${slug}/current.json`);
+    let revision = "";
+    if (current) {
+      const record = await current.json<unknown>().catch(() => null);
+      if (typeof record !== "string" || !/^[a-f0-9]{32}$/.test(record)) {
+        return new Response("Published revision unavailable", { status: 503 });
+      }
+      revision = record;
+    }
+    const sitePrefix = revision ? `releases/${slug}/${revision}/` : `sites/${slug}/`;
+    const archive = directZip || subPath === "download" || subPath === "download.zip";
     const cache = caches.default;
-    const cacheKey = new Request(url.toString());
+    const internalUrl = new URL(url);
+    internalUrl.pathname = `/.webview-cache/${revision || "flat"}${archive ? `/archive/${slug}.zip` : `/page${pathname}`}`;
+    internalUrl.search = "";
+    const cacheKey = new Request(internalUrl);
+    const deliver = (response: Response) => {
+      const outgoing = new Response(head ? null : response.body, response);
+      outgoing.headers.set("Cache-Control", "private, no-store, no-transform");
+      outgoing.headers.set("X-WebView-Release", revision || "flat");
+      return withPreviewDownload(outgoing, slug, head);
+    };
     const cachedResponse = await cache.match(cacheKey);
-    if (cachedResponse) {
-      return withPreviewDownload(cachedResponse, slug, head);
+    if (cachedResponse && (head || cachedResponse.body)) {
+      return deliver(cachedResponse);
     }
 
     // =========================================================================
     // Dynamic ZIP streaming with compatibility for existing download links.
     // =========================================================================
-    if (directZip || subPath === "download" || subPath === "download.zip") {
-      const sitePrefix = `sites/${slug}/`;
-      // Reserve one of the Workers Free internal subrequests for listing.
-      const listed = await env.SITES_BUCKET.list({ prefix: sitePrefix, limit: 999 });
+    if (archive) {
+      // Reserve two R2 requests for the current version and the object listing.
+      const listed = await env.SITES_BUCKET.list({ prefix: sitePrefix, limit: 998 });
 
       if (!listed.objects || listed.objects.length === 0) {
         return new Response(`Site files for "${slug}" not found in storage.`, { status: 404 });
@@ -157,16 +180,11 @@ export default {
         "Content-Disposition": `attachment; filename="${slug}.zip"`,
         "Cache-Control": "public, max-age=300, s-maxage=3600",
       });
-      if (head) return new Response(null, { headers });
+      if (head) return deliver(new Response(null, { headers }));
 
       const response = new Response(downloadZip(zipEntries(env.SITES_BUCKET, listed.objects, sitePrefix)).body, { headers });
       ctx.waitUntil(cache.put(cacheKey, response.clone()));
-      return response;
-    }
-
-    // Trailing slash enforcement for site root: /<slug> -> /<slug>/
-    if (pathSegments.length === 1 && !pathname.endsWith("/")) {
-      return Response.redirect(`${url.origin}/${slug}/${url.search}`, 308);
+      return deliver(response);
     }
 
     // =========================================================================
@@ -175,15 +193,15 @@ export default {
     const candidateKeys: string[] = [];
 
     if (!subPath || subPath === "") {
-      candidateKeys.push(`sites/${slug}/index.html`);
+      candidateKeys.push(sitePrefix + "index.html");
     } else {
       const hasExtension = subPath.includes(".") && !subPath.endsWith("/");
       if (hasExtension) {
-        candidateKeys.push(`sites/${slug}/${subPath}`);
+        candidateKeys.push(sitePrefix + subPath);
       } else {
         const cleanSub = subPath.replace(/\/$/, "");
-        candidateKeys.push(`sites/${slug}/${cleanSub}/index.html`);
-        candidateKeys.push(`sites/${slug}/${cleanSub}.html`);
+        candidateKeys.push(sitePrefix + cleanSub + "/index.html");
+        candidateKeys.push(sitePrefix + cleanSub + ".html");
       }
     }
 
@@ -201,12 +219,12 @@ export default {
 
     // Custom 404 handling
     if (!object) {
-      const notFoundKey = `sites/${slug}/404.html`;
+      const notFoundKey = sitePrefix + "404.html";
       const custom404 = await (head ? env.SITES_BUCKET.head(notFoundKey) : env.SITES_BUCKET.get(notFoundKey));
       if (custom404) {
         const headers = new Headers();
         headers.set("Content-Type", "text/html; charset=utf-8");
-        headers.set("Cache-Control", "public, max-age=300, no-transform");
+        headers.set("Cache-Control", "private, no-store, no-transform");
         return new Response(objectBody(custom404), { status: 404, headers });
       }
 
@@ -234,7 +252,7 @@ export default {
   </div>
 </body>
 </html>`,
-        { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } }
+        { status: 404, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } }
       );
     }
 
@@ -257,6 +275,6 @@ export default {
 
     const response = new Response(objectBody(object), { headers });
     if (!head) ctx.waitUntil(cache.put(cacheKey, response.clone()));
-    return withPreviewDownload(response, slug, head);
+    return deliver(response);
   }
 };

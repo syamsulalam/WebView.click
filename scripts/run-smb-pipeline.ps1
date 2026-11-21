@@ -179,9 +179,6 @@ foreach ($Biz in $Batch) {
     if ($LASTEXITCODE -ne 0) { throw "R2 upload failed for $Slug." }
     if ($VerifyR2) { continue }
 
-    & python "$ScriptDir\check-sites-edge.py" --export $LocalExportDir --slug $Slug
-    if ($LASTEXITCODE -ne 0) { throw "Public preview or ZIP verification failed for $Slug." }
-
     $PreviewUrl = "https://sites.webview.click/$Slug/"
     Write-Host "🌐 Live Site: $PreviewUrl" -ForegroundColor Cyan
     Write-Host "📦 Dynamic ZIP: https://sites.webview.click/${Slug}.zip" -ForegroundColor Cyan

@@ -17,6 +17,10 @@ PREVIEW_STYLE = re.compile(rb'<style id="webview-download-style">.*?</style>', r
 PREVIEW_DOWNLOAD = re.compile(rb'<a id="webview-download"[^>]*>.*?</a>', re.S)
 
 
+def package_link(slug):
+    return f'href="https://webview.click/site-package/{slug}"'.encode()
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
@@ -56,8 +60,8 @@ def main():
     for url in (PREFIX, PREFIX + "about/"):
         html = responses[url][2]
         assert html.count(b'id="webview-download"') == 1
-        assert f'href="{ZIP_PATH}"'.encode() in html
-        assert b'aria-hidden="true"' in html and b'Download ZIP</a>' in html
+        assert package_link(SLUG) in html
+        assert b'aria-hidden="true"' in html and b'Download Your Site</a>' in html
         html_status, html_headers, html_body = get(url, "HEAD")
         assert html_status == 200 and not html_body and "ETag" not in html_headers
     status, headers, body = get(ZIP_PATH, "HEAD")
@@ -82,7 +86,7 @@ def main():
     print(f"Verified the live WebView preview, redirects, 404 and ZIP ({len(data)} bytes).")
 
 
-def verify_published(folder, slug):
+def verify_published(folder, slug, revision=None):
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) or len(slug) > 63:
         raise ValueError("Invalid site name.")
     prefix = f"/{slug}/"
@@ -90,6 +94,7 @@ def verify_published(folder, slug):
     zip_path = f"/{slug}.zip"
     status, headers, body = get(zip_path)
     if (status != 200 or headers.get_content_type() != "application/zip" or
+            (revision and headers.get("X-WebView-Release") != revision) or
             headers.get("Content-Disposition") != f'attachment; filename="{slug}.zip"'):
         raise ValueError("The published ZIP is unavailable.")
     with zipfile.ZipFile(io.BytesIO(body)) as archive:
@@ -105,9 +110,11 @@ def verify_published(folder, slug):
         code, headers, data = get(route)
         if code != 200:
             raise ValueError(f"Published GET {route} returned {code}.")
+        if revision and headers.get("X-WebView-Release") != revision:
+            raise ValueError(f"Published GET {route} returned the wrong release.")
         if name.endswith(".html"):
             if (headers.get_content_type() != "text/html" or data.count(b'id="webview-download"') != 1 or
-                    f'href="{zip_path}"'.encode() not in data):
+                    package_link(slug) not in data):
                 raise ValueError(f"Published page or download link is invalid for {route}.")
             data = PREVIEW_DOWNLOAD.sub(b"", PREVIEW_STYLE.sub(b"", data, count=1), count=1)
         elif name.endswith(".css") and headers.get_content_type() != "text/css":
@@ -125,12 +132,13 @@ if __name__ == "__main__":
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--export", type=Path)
     cli.add_argument("--slug")
+    cli.add_argument("--revision")
     args = cli.parse_args()
-    if bool(args.export) != bool(args.slug):
+    if bool(args.export) != bool(args.slug) or (args.revision and not args.export):
         cli.error("Supply --export and --slug together.")
     if args.export:
         try:
-            verify_published(args.export, args.slug)
+            verify_published(args.export, args.slug, args.revision)
         except (OSError, ValueError, zipfile.BadZipFile) as exc:
             cli.exit(2, f"Published site verification failed: {exc}\n")
     else:
