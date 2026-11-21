@@ -45,7 +45,18 @@ if (home_url("/") !== "https://wpwv.codev.id/" ||
 }'
 
 work=$(mktemp -d /home/codev-wpwv/tmp/webview-build.XXXXXXXX)
-trap 'rm -rf -- "$work"' EXIT
+export_verified=0
+restore_export() {
+    if [[ "$export_verified" == 0 && -d "$work/previous-export" ]]; then
+        if [[ -e "$output" || -L "$output" ]]; then
+            mv -T -- "$output" "$work/failed-export" || return
+        fi
+        mv -T -- "$work/previous-export" "$output" || return
+    fi
+    rm -rf -- "$work"
+}
+trap restore_export EXIT
+trap 'exit 143' TERM
 timeout --kill-after=5s 115s wp --path="$site" --url=https://wpwv.codev.id eval-file "$transfer/wpwv-generate.php" "$transfer/input.json"
 wpv eval '
 foreach (get_posts(["post_type"=>"page","post_status"=>"publish","numberposts"=>-1]) as $p) {
@@ -306,7 +317,10 @@ ET.ElementTree(sitemap).write(package / "sitemap.xml", encoding="utf-8", xml_dec
 print(f"Verified {len(paths)} exported pages and {len(assets)} referenced local assets.")
 PY
 cd "$work/package"
-zip -q -r - . >&3
+zip -q -r "$work/site.zip" .
+unzip -tq "$work/site.zip" >/dev/null
+cat "$work/site.zip" >&3
+export_verified=1
 echo "Packaged Simply Static export $export_id"
 BASH
 

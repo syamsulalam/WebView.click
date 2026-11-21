@@ -908,7 +908,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     if (!env.R2?.get) {
       return errorJson("R2 binding is not configured. Cannot scan R2 JSON health.", 400);
     }
-    const body = await readJsonBody(request).catch(() => ({}));
+    const body = await readJsonBody(request).catch((): Record<string, unknown> => ({}));
     const limit = Math.max(1, Math.min(25, Math.floor(Number(body.limit || 10))));
     const offset = Math.max(0, Math.floor(Number(body.offset || 0)));
     await ensureRequiredColumns(db, [
@@ -971,7 +971,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
   }
 
   if (request.method === "POST" && segments.length === 2 && segments[1] === "backfill-lead-phones") {
-    const body = await readJsonBody(request).catch(() => ({}));
+    const body = await readJsonBody(request).catch((): Record<string, unknown> => ({}));
     const limit = Math.max(1, Math.min(50, Math.floor(Number(body.limit || 25))));
     await ensureRequiredColumns(db, [
       { table: "leads", column: "phone", definition: "TEXT" },
@@ -1095,7 +1095,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "downloaded") {
     const businessId = segments[1];
-    const body = await readJsonBody(request).catch(() => ({}));
+    const body = await readJsonBody(request).catch((): Record<string, unknown> => ({}));
     const source = asString(body.source, "website_action_panel").trim() || "website_action_panel";
     const now = new Date().toISOString();
 
@@ -1213,7 +1213,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "ai-fill-about-nav-start") {
     const startStartedMs = Date.now();
     const businessId = segments[1];
-    const body = await readJsonBody(request).catch(() => ({}));
+    const body = await readJsonBody(request).catch((): Record<string, unknown> => ({}));
     const provider = asString(body.provider);
     const model = asString(body.model);
     await ensureRequiredColumns(db, [
@@ -1245,18 +1245,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const aboutNavFillStartedAt = new Date().toISOString();
     const meta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
     siteJson.meta = { ...meta, lastAboutNavFillStartedAt: aboutNavFillStartedAt };
-    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
-    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
-    let r2JsonUrl = asString(storage.r2JsonUrl);
-    if (r2JsonKey || env.R2) {
-      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
-      if (nextKey) {
-        r2JsonKey = nextKey;
-        r2JsonUrl = publicR2Url(env, nextKey);
-        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
-        await uploadJsonToR2(siteJson, env, businessId);
-      }
-    }
+    const r2JsonKey = await uploadJsonToR2(siteJson, env, businessId);
+    const r2JsonUrl = r2JsonKey ? publicR2Url(env, r2JsonKey) : "";
     const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
     const d1JsonContent = r2JsonKey
       ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
@@ -1339,7 +1329,7 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "ai-fill-about-nav-finalize") {
     const finalizeStartedMs = Date.now();
     const businessId = segments[1];
-    const body = await readJsonBody(request).catch(() => ({}));
+    const body = await readJsonBody(request).catch((): Record<string, unknown> => ({}));
     const copyPatchSource = body.copyPatch || body.prepatchedCopyPatch;
     const copyPatch = copyPatchSource && typeof copyPatchSource === "object" && !Array.isArray(copyPatchSource)
       ? copyPatchSource as Record<string, unknown>
@@ -1388,18 +1378,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
       lastAboutNavFillJobId: asString(body.parentGenerationJobId),
     };
 
-    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
-    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
-    let r2JsonUrl = asString(storage.r2JsonUrl);
-    if (r2JsonKey || env.R2) {
-      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
-      if (nextKey) {
-        r2JsonKey = nextKey;
-        r2JsonUrl = publicR2Url(env, nextKey);
-        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
-        await uploadJsonToR2(siteJson, env, businessId);
-      }
-    }
+    const r2JsonKey = await uploadJsonToR2(siteJson, env, businessId);
+    const r2JsonUrl = r2JsonKey ? publicR2Url(env, r2JsonKey) : "";
     const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
     const d1JsonContent = r2JsonKey
       ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
@@ -1457,18 +1437,8 @@ export async function handleSites(deps: SitesHandlerDeps, request: Request, db: 
     const meta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
     siteJson.meta = { ...meta, lastJsonSummaryRepairAt: repairedAt };
 
-    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
-    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
-    let r2JsonUrl = asString(storage.r2JsonUrl);
-    if (r2JsonKey || env.R2) {
-      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
-      if (nextKey) {
-        r2JsonKey = nextKey;
-        r2JsonUrl = publicR2Url(env, nextKey);
-        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
-        await uploadJsonToR2(siteJson, env, businessId);
-      }
-    }
+    const r2JsonKey = await uploadJsonToR2(siteJson, env, businessId);
+    const r2JsonUrl = r2JsonKey ? publicR2Url(env, r2JsonKey) : "";
     const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
     const d1JsonContent = r2JsonKey
       ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
@@ -1541,11 +1511,11 @@ function buildUpgradedSiteJson(siteJson: Record<string, unknown>, body: Record<s
   const designConfig = recordValue(working.design);
   const visualDesignContext = [
     businessName,
-    asString(originData.formatted_address, asString(originData.formattedAddress)),
+    asString(originData.formatted_address),
     Array.isArray(originData.types) ? originData.types.join(" ") : "",
     asString(originData.searchQuery),
   ].filter(Boolean).join(" ");
-  const visualSeed = [businessName, businessId, asString(originData.place_id), asString(originData.formatted_address, asString(originData.formattedAddress))].filter(Boolean).join(" ");
+  const visualSeed = [businessName, businessId, asString(originData.place_id), asString(originData.formatted_address)].filter(Boolean).join(" ");
   if (body.randomizeStyle === true || asString(recordValue(designConfig.visualStyleConfig).selectionMode) !== "stable_seeded_business_variant") {
     designConfig.visualStyle = seededVisualStyleForBusiness(visualDesignContext, `${visualSeed} ${upgradedAt}`);
     designConfig.visualStyleConfig = {
@@ -1588,20 +1558,9 @@ async function persistUpgradedSiteJson(
   env: SitesEnv,
   businessId: string,
   siteJson: Record<string, unknown>,
-  rowR2Key: string | undefined,
 ) {
-  const storage = recordValue(siteJson.storage);
-  let r2JsonKey = asString(storage.r2JsonKey, asString(rowR2Key));
-  let r2JsonUrl = asString(storage.r2JsonUrl);
-  if (r2JsonKey || env.R2) {
-    const nextKey = await uploadJsonToR2(siteJson, env, businessId);
-    if (nextKey) {
-      r2JsonKey = nextKey;
-      r2JsonUrl = publicR2Url(env, nextKey);
-      siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
-      await uploadJsonToR2(siteJson, env, businessId);
-    }
-  }
+  const r2JsonKey = await uploadJsonToR2(siteJson, env, businessId);
+  const r2JsonUrl = r2JsonKey ? publicR2Url(env, r2JsonKey) : "";
   const jsonSummary = siteSummaryFromJson(deps.siteStorageDeps, siteJson, businessId);
   const d1JsonContent = r2JsonKey
     ? JSON.stringify(compactSiteManifest(deps.siteStorageDeps, siteJson, env, businessId, r2JsonKey))
@@ -1619,7 +1578,7 @@ async function persistUpgradedSiteJson(
     const row = await readUpgradeableSiteRow(deps, db, businessId);
     if (!row?.json_content) return errorJson("Site not found", 404);
 
-    const body = await readJsonBody(request).catch(() => ({}));
+    const body = await readJsonBody(request).catch((): Record<string, unknown> => ({}));
     const siteJson = await readSiteJsonFromStorage(siteStorageDeps, row, env);
     if (!siteJson || typeof siteJson !== "object" || Array.isArray(siteJson)) {
       return errorJson("Saved site JSON is not an object and cannot be previewed.", 422);
@@ -1647,7 +1606,7 @@ async function persistUpgradedSiteJson(
     const upgradeRow = await readUpgradeableSiteRow(deps, db, businessId);
     if (!upgradeRow?.json_content) return errorJson("Site not found", 404);
 
-    const upgradeBody = await readJsonBody(request).catch(() => ({}));
+    const upgradeBody = await readJsonBody(request).catch((): Record<string, unknown> => ({}));
     const upgradeJson = await readSiteJsonFromStorage(siteStorageDeps, upgradeRow, env);
     if (!upgradeJson || typeof upgradeJson !== "object" || Array.isArray(upgradeJson)) {
       return errorJson("Saved site JSON is not an object and cannot be upgraded.", 422);
@@ -1671,7 +1630,7 @@ async function persistUpgradedSiteJson(
     }
 
     const rollback = await backupSiteJsonToHistory(computed.beforeJson, env, businessId);
-    const saved = await persistUpgradedSiteJson(deps, db, env, businessId, computed.upgraded, upgradeRow.r2_json_key);
+    const saved = await persistUpgradedSiteJson(deps, db, env, businessId, computed.upgraded);
 
     const leadRow = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
     if (leadRow?.id) {
@@ -1705,7 +1664,7 @@ async function persistUpgradedSiteJson(
 
   if (request.method === "POST" && segments.length === 3 && segments[2] === "restore-backup") {
     const businessId = segments[1];
-    const body = await readJsonBody(request).catch(() => ({}));
+    const body = await readJsonBody(request).catch((): Record<string, unknown> => ({}));
     const backupKey = asString(body.key);
     const historyPrefix = siteHistoryPrefix(businessId);
     if (!backupKey.startsWith(historyPrefix) || !backupKey.endsWith(".json") || backupKey.includes("..") || !env.R2) {
@@ -1731,7 +1690,7 @@ async function persistUpgradedSiteJson(
       lastRestoredFromBackupAt: new Date().toISOString(),
       restoredFromBackupKey: backupKey,
     };
-    const saved = await persistUpgradedSiteJson(deps, db, env, businessId, restored, row.r2_json_key);
+    const saved = await persistUpgradedSiteJson(deps, db, env, businessId, restored);
     const restoreLeadRow = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
     if (restoreLeadRow?.id) {
       await insertCrmActivitySafe(db, {
@@ -1832,18 +1791,8 @@ async function persistUpgradedSiteJson(
     applySeededFontPairing(finalJson, businessName, businessId, originData);
     normalizeSiteColorContrast(finalJson);
 
-    let r2JsonKey = "";
-    let r2JsonUrl = "";
-    if (env.R2) {
-      const nextKey = await uploadJsonToR2(finalJson, env, businessId);
-      if (nextKey) {
-        r2JsonKey = nextKey;
-        r2JsonUrl = publicR2Url(env, nextKey);
-        const storage = finalJson.storage && typeof finalJson.storage === "object" ? finalJson.storage as Record<string, unknown> : {};
-        finalJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
-        await uploadJsonToR2(finalJson, env, businessId);
-      }
-    }
+    const r2JsonKey = await uploadJsonToR2(finalJson, env, businessId);
+    const r2JsonUrl = r2JsonKey ? publicR2Url(env, r2JsonKey) : "";
     const jsonSummary = siteSummaryFromJson(siteStorageDeps, finalJson, businessId);
     const d1JsonContent = r2JsonKey
       ? JSON.stringify(compactSiteManifest(siteStorageDeps, finalJson, env, businessId, r2JsonKey))
@@ -1893,18 +1842,8 @@ async function persistUpgradedSiteJson(
     const imageRepairAt = new Date().toISOString();
     const meta = siteJson.meta && typeof siteJson.meta === "object" ? siteJson.meta as Record<string, unknown> : {};
     siteJson.meta = { ...meta, lastImageRepairAt: imageRepairAt };
-    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
-    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
-    let r2JsonUrl = asString(storage.r2JsonUrl);
-    if (r2JsonKey || env.R2) {
-      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
-      if (nextKey) {
-        r2JsonKey = nextKey;
-        r2JsonUrl = publicR2Url(env, nextKey);
-        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
-        await uploadJsonToR2(siteJson, env, businessId);
-      }
-    }
+    const r2JsonKey = await uploadJsonToR2(siteJson, env, businessId);
+    const r2JsonUrl = r2JsonKey ? publicR2Url(env, r2JsonKey) : "";
     const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
     const d1JsonContent = r2JsonKey
       ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
@@ -1952,7 +1891,7 @@ async function persistUpgradedSiteJson(
     const profile = siteJson.businessProfile && typeof siteJson.businessProfile === "object" ? siteJson.businessProfile as Record<string, unknown> : {};
     const businessName = asString(meta.businessName, asString(profile.name, businessId));
     const sourceData = siteJson.sourceData && typeof siteJson.sourceData === "object" ? siteJson.sourceData as Record<string, unknown> : {};
-    const body = await readJsonBody(request).catch(() => ({}));
+    const body = await readJsonBody(request).catch((): Record<string, unknown> => ({}));
     const variationResult = applySeededFontPairing(siteJson, businessName, businessId, sourceData, true);
     const incomingPaletteOptions = Array.isArray(body.paletteOptions)
       ? body.paletteOptions.filter((option) => option && typeof option === "object" && Array.isArray((option as Record<string, unknown>).colors))
@@ -2018,18 +1957,8 @@ async function persistUpgradedSiteJson(
     const visualVariationAt = new Date().toISOString();
     siteJson.meta = { ...meta, lastVisualVariationAt: visualVariationAt };
     normalizeSiteColorContrast(siteJson);
-    const storage = siteJson.storage && typeof siteJson.storage === "object" ? siteJson.storage as Record<string, unknown> : {};
-    let r2JsonKey = asString(storage.r2JsonKey, asString(row.r2_json_key));
-    let r2JsonUrl = asString(storage.r2JsonUrl);
-    if (r2JsonKey || env.R2) {
-      const nextKey = await uploadJsonToR2(siteJson, env, businessId);
-      if (nextKey) {
-        r2JsonKey = nextKey;
-        r2JsonUrl = publicR2Url(env, nextKey);
-        siteJson.storage = { ...storage, r2JsonKey, r2JsonUrl };
-        await uploadJsonToR2(siteJson, env, businessId);
-      }
-    }
+    const r2JsonKey = await uploadJsonToR2(siteJson, env, businessId);
+    const r2JsonUrl = r2JsonKey ? publicR2Url(env, r2JsonKey) : "";
     const jsonSummary = siteSummaryFromJson(siteStorageDeps, siteJson, businessId);
     const d1JsonContent = r2JsonKey
       ? JSON.stringify(compactSiteManifest(siteStorageDeps, siteJson, env, businessId, r2JsonKey))
@@ -2296,11 +2225,11 @@ async function persistUpgradedSiteJson(
     const allowedVisualStyles = ["soft-rounded", "boxy-editorial", "industrial-diagonal", "clean-minimal", "bold-sport"];
     const visualDesignContext = [
       businessName,
-      asString(originData.formatted_address, asString(originData.formattedAddress)),
+      asString(originData.formatted_address),
       Array.isArray(originData.types) ? originData.types.join(" ") : "",
       asString(originData.searchQuery),
     ].filter(Boolean).join(" ");
-    const visualSeed = [businessName, businessId, originPlaceId, asString(originData.formatted_address, asString(originData.formattedAddress))].filter(Boolean).join(" ");
+    const visualSeed = [businessName, businessId, originPlaceId, asString(originData.formatted_address)].filter(Boolean).join(" ");
     const shouldSeedVisualStyle = asString(recordValue(designConfig.visualStyleConfig).selectionMode) !== "stable_seeded_business_variant";
     if (shouldSeedVisualStyle || !allowedVisualStyles.includes(asString(designConfig.visualStyle))) {
       designConfig.visualStyle = seededVisualStyleForBusiness(visualDesignContext, visualSeed);
@@ -2436,27 +2365,14 @@ async function persistUpgradedSiteJson(
     if (finalDesignIntent) jobMetadata.designIntent = finalDesignIntent;
     if (finalDesignAudit) jobMetadata.designAudit = finalDesignAudit;
 
-    try {
-      normalizeImageFilenames(finalJson, businessId);
-      const assetKeys = await uploadImageAssetsToR2(finalJson, env, new URL(request.url).origin, businessId);
-      const jsonKey = await uploadJsonToR2(finalJson, env, businessId);
-      if (jsonKey || assetKeys.length) {
-        finalJson.storage = {
-          ...(finalJson.storage && typeof finalJson.storage === "object" ? finalJson.storage as Record<string, unknown> : {}),
-          r2JsonKey: jsonKey,
-          r2JsonUrl: jsonKey ? publicR2Url(env, jsonKey) : "",
-          r2AssetKeys: assetKeys,
-        };
-        if (jsonKey) {
-          await uploadJsonToR2(finalJson, env, businessId);
-        }
-      }
-    } catch (error) {
-      console.error("R2 sync failed, continuing with D1 site save:", error);
-      finalJson.storage = {
-        ...(finalJson.storage && typeof finalJson.storage === "object" ? finalJson.storage as Record<string, unknown> : {}),
-        r2SyncError: error instanceof Error ? error.message : String(error),
-      };
+    delete finalJson.storage;
+    delete finalJson.storageOnly;
+    delete finalJson.r2JsonKey;
+    delete finalJson.r2JsonUrl;
+    normalizeImageFilenames(finalJson, businessId);
+    if (env.R2) {
+      finalJson.storage = { r2AssetKeys: await uploadImageAssetsToR2(finalJson, env, businessId) };
+      await uploadJsonToR2(finalJson, env, businessId);
     }
 
     const leadId = crypto.randomUUID();

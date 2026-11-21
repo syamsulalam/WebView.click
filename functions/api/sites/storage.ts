@@ -65,7 +65,7 @@ function isImageMetadataField(key: string) {
 }
 
 function isImageAssetField(key: string) {
-  return isImageField(key) && !isImageMetadataField(key);
+  return isImageField(key) && !isImageMetadataField(key) && !key.toLowerCase().endsWith("svg");
 }
 
 export function normalizeImageFilenames(value: unknown, businessId: string, hint = "asset"): unknown {
@@ -154,32 +154,55 @@ function replaceStringValue(value: unknown, from: string, to: string): unknown {
   return objectValue;
 }
 
-export async function uploadImageAssetsToR2(finalJson: Record<string, unknown>, env: SiteStorageEnv, origin: string, businessId: string) {
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+
+async function readImage(body: ReadableStream<Uint8Array>) {
+  let size = 0;
+  const bounded = body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      size += chunk.byteLength;
+      if (size > MAX_IMAGE_BYTES) throw new Error("Image exceeds the mirror size limit.");
+      controller.enqueue(chunk);
+    },
+  }));
+  return new Response(bounded).arrayBuffer();
+}
+
+export async function uploadImageAssetsToR2(finalJson: Record<string, unknown>, env: SiteStorageEnv, businessId: string) {
   if (!env.R2) {
     return [] as string[];
   }
 
   const urls = new Set<string>();
   collectImageUrls(finalJson, urls);
+  const assetOrigin = new URL(publicR2Url(env, "")).origin;
+  const revision = crypto.randomUUID();
   const assetKeys: string[] = [];
   let index = 1;
 
-  for (const imageUrl of urls) {
+  for (const imageUrl of [...urls].slice(0, 24)) {
+    if (!imageUrl.startsWith("https://")) continue;
     try {
-      const absoluteUrl = new URL(imageUrl, origin).toString();
-      const response = await fetch(absoluteUrl);
+      const url = new URL(imageUrl);
+      if (url.username || url.password || url.port || url.origin === assetOrigin ||
+          url.origin !== "https://images.unsplash.com") continue;
+      const response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(8000) });
       if (!response.ok) continue;
-      const contentType = response.headers.get("content-type");
-      if (!contentType?.startsWith("image/")) continue;
+      const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() || "";
+      if (!["image/png", "image/webp", "image/gif", "image/jpeg"].includes(contentType) || !response.body ||
+          Number(response.headers.get("content-length")) > MAX_IMAGE_BYTES) {
+        await response.body?.cancel();
+        continue;
+      }
       const extension = extensionFromContentType(contentType);
-      const key = `sites/${businessId}/assets/${businessId}-asset-${String(index).padStart(2, "0")}.${extension}`;
-      await env.R2.put(key, await response.arrayBuffer(), { httpMetadata: { contentType } });
+      const key = `sites/${businessId}/assets/${revision}/${businessId}-asset-${String(index).padStart(2, "0")}.${extension}`;
+      await env.R2.put(key, await readImage(response.body), { httpMetadata: { contentType } });
       const publicUrl = publicR2Url(env, key);
       replaceStringValue(finalJson, imageUrl, publicUrl);
       assetKeys.push(key);
       index += 1;
-    } catch (error) {
-      console.error("R2 asset upload failed:", error);
+    } catch {
+      console.warn("An approved image could not be mirrored.");
     }
   }
 
@@ -188,8 +211,11 @@ export async function uploadImageAssetsToR2(finalJson: Record<string, unknown>, 
 
 export async function uploadJsonToR2(finalJson: Record<string, unknown>, env: SiteStorageEnv, businessId: string) {
   if (!env.R2) return "";
-  const key = `sites/${businessId}/${businessId}.json`;
-  await env.R2.put(key, JSON.stringify(finalJson, null, 2), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
+  const key = `sites/${businessId}/revisions/${crypto.randomUUID()}.json`;
+  const storage = recordField(finalJson, "storage");
+  const stored = { ...storage, r2JsonKey: key, r2JsonUrl: publicR2Url(env, key) };
+  await env.R2.put(key, JSON.stringify({ ...finalJson, storage: stored }, null, 2), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
+  finalJson.storage = stored;
   return key;
 }
 
@@ -451,7 +477,7 @@ export async function readSiteJsonFromStorage(deps: Pick<SiteStorageDeps, "asStr
   const r2Key = deps.asString(row.r2_json_key, deps.asString(parsed.r2JsonKey));
   const storageOnly = parsed.storageOnly === true || Boolean(r2Key);
 
-  if (r2Key && env.R2?.get) {
+  if (validStoredSiteKey(row.business_id, r2Key) && env.R2?.get) {
     const object = await env.R2.get(r2Key);
     const text = object ? await object.text() : "";
     if (text) return JSON.parse(text);
@@ -462,6 +488,12 @@ export async function readSiteJsonFromStorage(deps: Pick<SiteStorageDeps, "asStr
   }
 
   throw new Error(`Site JSON for ${row.business_id} is stored in R2 but could not be read.`);
+}
+
+function validStoredSiteKey(businessId: string, key: string) {
+  const prefix = `sites/${businessId}/`;
+  return key === prefix + `${businessId}.json` ||
+    (key.startsWith(prefix) && /^revisions\/[a-f0-9-]{36}\.json$/.test(key.slice(prefix.length)));
 }
 
 export async function migrateOldSiteJsonRowsToR2(deps: SiteStorageDeps, request: Request, db: D1DatabaseLike, env: SiteStorageEnv) {
@@ -502,7 +534,8 @@ export async function migrateOldSiteJsonRowsToR2(deps: SiteStorageDeps, request:
       }
 
       const manifestKey = deps.asString(parsed.r2JsonKey);
-      if (parsed.storageOnly === true && manifestKey) {
+      if (parsed.storageOnly === true) {
+        if (!validStoredSiteKey(row.business_id, manifestKey)) throw new Error("Invalid site storage pointer.");
         await deps.saveJsonSiteRecord(db, row.business_id, row.json_content, {
           r2_json_key: manifestKey,
           r2_json_url: deps.asString(parsed.r2JsonUrl, publicR2Url(env, manifestKey)),
@@ -513,14 +546,9 @@ export async function migrateOldSiteJsonRowsToR2(deps: SiteStorageDeps, request:
       }
 
       const businessId = deps.asString(parsed?.meta && typeof parsed.meta === "object" ? (parsed.meta as Record<string, unknown>).businessId : "", row.business_id);
-      const key = `sites/${row.business_id}/${row.business_id}.json`;
-      const storage = parsed.storage && typeof parsed.storage === "object" ? parsed.storage as Record<string, unknown> : {};
-      storage.r2JsonKey = key;
-      storage.r2JsonUrl = publicR2Url(env, key);
-      parsed.storage = storage;
+      const key = await uploadJsonToR2(parsed, env, row.business_id);
       const summary = siteSummaryFromJson(deps, parsed, businessId || row.business_id);
 
-      await env.R2.put(key, JSON.stringify(parsed, null, 2), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
       await deps.saveJsonSiteRecord(db, row.business_id, JSON.stringify(compactSiteManifest(deps, parsed, env, row.business_id, key)), {
         r2_json_key: key,
         r2_json_url: publicR2Url(env, key),

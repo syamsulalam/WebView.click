@@ -23,7 +23,7 @@ export type AiReadinessDeps = {
   asString: (value: unknown, fallback?: string) => string;
   parseJsonObject: (value: string | null | undefined) => Record<string, unknown>;
   getSetting: (db: D1DatabaseLike, env: unknown, key: string) => Promise<string | undefined>;
-  incrementDailyUsage: (db: D1DatabaseLike, counterKey: "ai_readiness_remote", amount?: number) => Promise<void>;
+  reserveDailyUsage: (db: D1DatabaseLike, counterKey: "ai_readiness_remote") => Promise<boolean>;
 };
 
 export const aiProviderKeyMap: Record<string, string> = {
@@ -304,7 +304,7 @@ async function validateAiModelRemotely(deps: AiReadinessDeps, db: D1DatabaseLike
   if (normalizedProvider === "Gemini") {
     const key = await deps.getSetting(db, env, "GEMINI_API_KEY");
     const modelPath = normalizedModel.startsWith("models/") ? normalizedModel : `models/${normalizedModel}`;
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${modelPath}?key=${encodeURIComponent(key || "")}`);
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${modelPath}`, { headers: { "x-goog-api-key": key || "" } });
     return { ...baseResult, supported: true, valid: response.ok, status: response.status, message: response.ok ? `Gemini model metadata found for ${model}.` : `Gemini model validation failed for ${model}: ${await errorSnippet(response)}` };
   }
 
@@ -383,8 +383,8 @@ export async function getAiReadiness(deps: AiReadinessDeps, db: D1DatabaseLike, 
       if (cachedValidation) {
         remoteValidation = cachedValidation;
       } else {
-        if (["OpenRouter", "OpenAI", "Gemini", "KIE"].includes(normalizedProvider)) {
-          await deps.incrementDailyUsage(db, "ai_readiness_remote");
+        if (["OpenRouter", "OpenAI", "Gemini", "KIE"].includes(normalizedProvider) && !await deps.reserveDailyUsage(db, "ai_readiness_remote")) {
+          throw new Error("Daily provider validation budget reached.");
         }
         remoteValidation = await validateAiModelRemotely(deps, db, env, normalizedProvider, model.trim());
       }

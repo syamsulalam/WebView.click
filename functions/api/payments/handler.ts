@@ -14,6 +14,7 @@ type D1PreparedStatement<T = unknown> = {
 
 type D1DatabaseLike = {
   prepare: <T = unknown>(query: string) => D1PreparedStatement<T>;
+  batch: (statements: D1PreparedStatement[]) => Promise<D1Result[]>;
 };
 
 export type PaymentsDeps = {
@@ -25,6 +26,7 @@ export type PaymentsDeps = {
   checkoutRequiredColumns: unknown[];
   paymentLedgerRequiredColumns: unknown[];
   getSetting: (db: D1DatabaseLike, env: unknown, key: string) => Promise<string | undefined>;
+  quoteNewDomain?: (db: D1DatabaseLike, env: unknown, domain: string, fee: number) => Promise<{ supportedForMvp: boolean }>;
   upsertLeadRecord: (db: D1DatabaseLike, values: Record<string, unknown>) => Promise<void>;
   insertCrmActivitySafe: (db: D1DatabaseLike, values: Record<string, unknown>) => Promise<void>;
 };
@@ -158,15 +160,6 @@ function parseJsonObject(value: unknown) {
   } catch {
     return {};
   }
-}
-
-function mergedPaymentRawJson(existingRawJson: unknown, update: Record<string, unknown>) {
-  const existing = parseJsonObject(existingRawJson);
-  return JSON.stringify({
-    ...existing,
-    ...update,
-    previousSource: existing.source && existing.source !== update.source ? existing.source : undefined,
-  });
 }
 
 function firstNumber(...values: unknown[]) {
@@ -561,547 +554,230 @@ async function createPaypalCheckoutOrder(options: {
   return data;
 }
 
-function extractPaypalPaymentFromOrder(order: Record<string, unknown>, fallbackReference = "") {
-  const purchaseUnits = Array.isArray(order.purchase_units) ? order.purchase_units : [];
-  const firstPurchaseUnit = objectValue(purchaseUnits[0]);
-  const payments = objectValue(firstPurchaseUnit.payments);
-  const captures = Array.isArray(payments.captures) ? payments.captures : [];
-  const capture = objectValue(captures[0]);
-  const captureAmount = objectValue(capture.amount);
-  const payer = objectValue(order.payer);
-  const paymentSource = objectValue(order.payment_source);
-  const paypalSource = objectValue(paymentSource.paypal);
-  const reference = firstString(firstPurchaseUnit.invoice_id, fallbackReference);
-  return {
-    transactionId: firstString(capture.id, order.id),
-    captureStatus: firstString(capture.status, order.status),
-    payerEmail: firstString(paypalSource.email_address, payer.email_address),
-    amountUsd: firstNumber(captureAmount.value),
-    paymentReference: reference,
-    businessId: firstString(firstPurchaseUnit.custom_id, reference.includes("|") ? reference.split("|")[0].trim() : ""),
-  };
+type PaypalLedgerRow = {
+  id: string;
+  lead_id: string;
+  business_id: string;
+  amount_usd: number;
+  payment_reference: string;
+  payment_status: string;
+  transaction_id?: string;
+  payer_email?: string;
+  raw_json?: string;
+};
+
+function ledgerMetadata(row: PaypalLedgerRow) {
+  try {
+    return objectValue(JSON.parse(row.raw_json || "{}"));
+  } catch {
+    return {};
+  }
 }
 
-function extractPaypalPayment(event: Record<string, unknown>) {
-  const resource = objectValue(event.resource);
-  const purchaseUnits = Array.isArray(resource.purchase_units) ? resource.purchase_units : [];
-  const firstPurchaseUnit = objectValue(purchaseUnits[0]);
-  const payments = objectValue(firstPurchaseUnit.payments);
-  const captures = Array.isArray(payments.captures) ? payments.captures : [];
-  const capture = objectValue(captures[0]);
-  const amount = objectValue(resource.amount);
-  const captureAmount = objectValue(capture.amount);
-  const payer = objectValue(resource.payer);
-  const payerName = objectValue(payer.name);
-  const reference = firstString(resource.invoice_id, firstPurchaseUnit.invoice_id, resource.custom_id, firstPurchaseUnit.custom_id);
-  return {
-    eventType: firstString(event.event_type),
-    transactionId: firstString(capture.id, resource.id),
-    payerEmail: firstString(payer.email_address, resource.payer_email),
-    payerName: firstString(payerName.given_name, payerName.surname),
-    amountUsd: firstNumber(captureAmount.value, amount.value),
-    paymentReference: reference,
-    businessId: reference.includes("|") ? reference.split("|")[0].trim() : firstString(resource.custom_id, firstPurchaseUnit.custom_id),
-  };
+async function paypalLedgerOrder(db: D1DatabaseLike, reference: string, mode: string) {
+  if (!reference || reference.length > 127) return null;
+  const row = await db.prepare(
+    "SELECT * FROM lead_payments WHERE processor = 'paypal' AND payment_reference = ? LIMIT 1",
+  ).bind(reference).first<PaypalLedgerRow>();
+  return row && ledgerMetadata(row).paypalMode === mode ? row : null;
 }
 
-async function recordPaypalWebhookPayment(deps: PaymentsDeps, db: D1DatabaseLike, event: Record<string, unknown>, verifiedBy: string) {
-  await deps.ensureRequiredColumns(db, deps.paymentLedgerRequiredColumns);
-  const payment = extractPaypalPayment(event);
-  if (!payment.transactionId || !payment.amountUsd) {
-    return { recorded: false, reason: "missing_transaction_or_amount", payment };
-  }
+function cents(value: unknown) {
+  return Math.round(firstNumber(value) * 100);
+}
 
-  const existing = await db.prepare("SELECT id FROM lead_payments WHERE transaction_id = ? LIMIT 1").bind(payment.transactionId).first<{ id: string }>();
-  if (existing?.id) {
-    return { recorded: false, duplicate: true, paymentId: existing.id, payment };
-  }
-
-  const lead = payment.businessId
-    ? await db.prepare("SELECT id, business_id, business_name FROM leads WHERE business_id = ?").bind(payment.businessId).first<{ id: string; business_id: string; business_name: string }>()
-    : null;
-  if (!lead?.id) {
-    return { recorded: false, reason: "lead_not_matched", payment };
-  }
+async function settlePaypalOrder(db: D1DatabaseLike, order: PaypalLedgerRow, transactionId: string, amount: Record<string, unknown>, actor: string) {
+  if (!transactionId || amount.currency_code !== "USD" || cents(amount.value) !== cents(order.amount_usd) || cents(amount.value) <= 0) return false;
+  if (order.payment_status === "paid") return order.transaction_id === transactionId;
+  if (order.payment_status !== "pending") return false;
 
   const now = new Date().toISOString();
-  const pendingPayment = payment.paymentReference
-    ? await db
-      .prepare(
-        `SELECT id, raw_json FROM lead_payments
-         WHERE lead_id = ? AND payment_status = 'pending' AND payment_reference = ?
-         ORDER BY datetime(created_at) DESC
-         LIMIT 1`,
-      )
-      .bind(lead.id, payment.paymentReference)
-      .first<{ id: string; raw_json?: string }>()
-    : null;
-  const paymentId = pendingPayment?.id || crypto.randomUUID();
-  const rawJson = mergedPaymentRawJson(pendingPayment?.raw_json, { source: "paypal_webhook", event });
-  if (pendingPayment?.id) {
-    await db
-      .prepare(
-        `UPDATE lead_payments
-         SET processor = 'paypal', payment_status = 'paid', amount_usd = ?, amount_idr = 0, transaction_id = ?, payer_email = ?,
-             proof_notes = ?, raw_json = ?, verified_at = ?, verified_by = ?, updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(payment.amountUsd, payment.transactionId, payment.payerEmail, `Verified PayPal webhook event ${payment.eventType || "unknown"}.`, rawJson, now, verifiedBy, now, paymentId)
-      .run();
-  } else {
-    await db
-      .prepare(
-        `INSERT INTO lead_payments (
-          id, lead_id, business_id, processor, payment_status, amount_usd, amount_idr,
-          transaction_id, payer_email, payment_reference, proof_notes, raw_json, verified_at, verified_by, updated_at
-        ) VALUES (?, ?, ?, 'paypal', 'paid', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        paymentId,
-        lead.id,
-        lead.business_id,
-        payment.amountUsd,
-        payment.transactionId,
-        payment.payerEmail,
-        payment.paymentReference,
-        `Verified PayPal webhook event ${payment.eventType || "unknown"}.`,
-        rawJson,
-        now,
-        verifiedBy,
-        now,
-      )
-      .run();
-  }
-
-  const subscription = await db.prepare("SELECT id FROM subscriptions WHERE lead_id = ? ORDER BY datetime(created_at) DESC LIMIT 1").bind(lead.id).first<{ id: string }>();
-  if (subscription?.id) {
-    await db
-      .prepare(
-        `UPDATE subscriptions
-         SET package_type = ?, amount_paid = ?, payment_status = 'paid', payment_method = 'paypal', payment_reference = ?, subscription_start_date = COALESCE(subscription_start_date, ?), updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind("managed_launch_support", payment.amountUsd, payment.transactionId, now, now, subscription.id)
-      .run();
-  } else {
-    await db
-      .prepare(
-        `INSERT INTO subscriptions (id, lead_id, package_type, amount_paid, payment_status, payment_method, payment_reference, subscription_start_date, created_at, updated_at)
-         VALUES (?, ?, 'managed_launch_support', ?, 'paid', 'paypal', ?, ?, ?, ?)`,
-      )
-      .bind(crypto.randomUUID(), lead.id, payment.amountUsd, payment.transactionId, now, now, now)
-      .run();
-  }
-
-  await db.prepare("UPDATE leads SET status = 'won_paid', email = COALESCE(NULLIF(?, ''), email), updated_at = ? WHERE id = ?").bind(payment.payerEmail, now, lead.id).run();
-  await deps.insertCrmActivitySafe(db, {
-    id: crypto.randomUUID(),
-    lead_id: lead.id,
-    staff_id: verifiedBy,
-    activity_type: "payment_verified",
-    description: `PayPal webhook verified payment. Amount: $${payment.amountUsd}. Transaction: ${payment.transactionId}. Payer: ${payment.payerEmail || "not recorded"}. Reference: ${payment.paymentReference || "not recorded"}.`,
-  });
-
-  return { recorded: true, paymentId, payment };
+  const proof = "Verified PayPal order settlement.";
+  // Every downstream write depends on the same committed ledger row in this D1 transaction.
+  const paid = "SELECT 1 FROM lead_payments WHERE id = ? AND transaction_id = ? AND payment_status = 'paid'";
+  await db.batch([
+    db.prepare(`UPDATE lead_payments SET payment_status = 'paid', transaction_id = ?, proof_notes = ?,
+      verified_at = ?, verified_by = ?, updated_at = ? WHERE id = ? AND payment_status = 'pending'`)
+      .bind(transactionId, proof, now, actor, now, order.id),
+    db.prepare(`INSERT OR IGNORE INTO subscriptions
+      (id, lead_id, package_type, amount_paid, payment_status, payment_method, payment_reference, subscription_start_date)
+      SELECT ?, ?, 'managed_launch_support', ?, 'paid', 'paypal', ?, ? WHERE EXISTS (${paid})`)
+      .bind("paypal-order-" + order.id, order.lead_id, order.amount_usd, transactionId, now, order.id, transactionId),
+    db.prepare(`UPDATE leads SET status = 'won_paid', updated_at = ? WHERE id = ? AND EXISTS (${paid})`)
+      .bind(now, order.lead_id, order.id, transactionId),
+    db.prepare(`INSERT OR IGNORE INTO crm_activities (id, lead_id, staff_id, activity_type, description)
+      SELECT ?, ?, ?, 'payment_verified', ? WHERE EXISTS (${paid})`)
+      .bind("paypal-order-" + order.id, order.lead_id, actor, proof, order.id, transactionId),
+  ]);
+  const saved = await db.prepare("SELECT transaction_id, payment_status FROM lead_payments WHERE id = ?")
+    .bind(order.id).first<PaypalLedgerRow>();
+  return saved?.payment_status === "paid" && saved.transaction_id === transactionId;
 }
 
 async function handlePaypalWebhook(deps: PaymentsDeps, request: Request, db: D1DatabaseLike, env: unknown) {
+  if (!["paypal-auth-algo", "paypal-cert-url", "paypal-transmission-id", "paypal-transmission-sig", "paypal-transmission-time"]
+    .every((header) => request.headers.get(header))) return deps.errorJson("PayPal signature headers are required.", 400);
   const event = await deps.readJsonBody(request);
   const credentials = await getPaypalApiCredentials(deps, db, env);
-
   if (!credentials.clientId || !credentials.clientSecret || !credentials.webhookId) {
-    return deps.json({
-      success: true,
-      configured: false,
-      ignored: true,
-      mode: credentials.mode,
-      message: `PayPal webhook endpoint is available but ${credentials.mode} API credentials/webhook ID are not configured yet.`,
-    });
+    return deps.errorJson("PayPal webhook verification is unavailable.", 503);
   }
 
-  const baseUrl = paypalApiBase(credentials.isProduction);
-  const accessToken = await paypalAccessToken(baseUrl, credentials.clientId, credentials.clientSecret);
-  const verified = await verifyPaypalWebhookSignature(baseUrl, accessToken, credentials.webhookId, request, event);
-  if (!verified) {
+  const base = paypalApiBase(credentials.isProduction);
+  const token = await paypalAccessToken(base, credentials.clientId, credentials.clientSecret);
+  if (!await verifyPaypalWebhookSignature(base, token, credentials.webhookId, request, event)) {
     return deps.errorJson("PayPal webhook signature verification failed.", 400);
   }
 
   const eventType = deps.asString(event.event_type);
   const resource = objectValue(event.resource);
+  let settled = true;
   if (eventType === "BILLING.SUBSCRIPTION.ACTIVATED") {
-    const result = await recordPaypalApprovedSubscription(deps, db, resource, firstString(resource.custom_id), "paypal_webhook");
-    return deps.json({ success: true, configured: true, verified: true, eventType, ...result });
+    settled = await bindPaypalSubscription(db, resource, credentials.mode);
+  } else if (eventType === "PAYMENT.SALE.COMPLETED" && firstString(resource.billing_agreement_id)) {
+    settled = await recordPaypalSubscriptionSale(db, resource, credentials.mode);
+  } else if (eventType === "PAYMENT.CAPTURE.COMPLETED") {
+    const providerOrderId = firstString(objectValue(objectValue(resource.supplementary_data).related_ids).order_id);
+    const order = await paypalBoundOrder(db, credentials.mode, "paypalOrderId", providerOrderId);
+    settled = Boolean(order && (!resource.invoice_id || resource.invoice_id === order.payment_reference) &&
+      resource.status === "COMPLETED" &&
+      await settlePaypalOrder(db, order, firstString(resource.id), objectValue(resource.amount), "paypal_webhook"));
   }
-  if (eventType === "PAYMENT.SALE.COMPLETED" && firstString(resource.billing_agreement_id)) {
-    const result = await recordPaypalSubscriptionSale(deps, db, event, "paypal_webhook");
-    return deps.json({ success: true, configured: true, verified: true, eventType, ...result });
-  }
-
-  const shouldRecord = ["PAYMENT.CAPTURE.COMPLETED", "PAYMENT.SALE.COMPLETED"].includes(eventType);
-  if (!shouldRecord) {
-    return deps.json({ success: true, configured: true, verified: true, ignored: true, eventType });
-  }
-
-  const result = await recordPaypalWebhookPayment(deps, db, event, "paypal_webhook");
-  return deps.json({ success: true, configured: true, verified: true, eventType, ...result });
-}
-
-async function recordPaypalCapturedOrder(
-  deps: PaymentsDeps,
-  db: D1DatabaseLike,
-  order: Record<string, unknown>,
-  paymentReference: string,
-  verifiedBy: string,
-) {
-  await deps.ensureRequiredColumns(db, deps.paymentLedgerRequiredColumns);
-  const payment = extractPaypalPaymentFromOrder(order, paymentReference);
-  if (!payment.transactionId || !payment.amountUsd) {
-    return { recorded: false, reason: "missing_transaction_or_amount", payment };
-  }
-  if (payment.captureStatus && payment.captureStatus !== "COMPLETED") {
-    return { recorded: false, reason: "capture_not_completed", payment };
-  }
-  if (paymentReference && payment.paymentReference && payment.paymentReference !== paymentReference) {
-    return { recorded: false, reason: "payment_reference_mismatch", payment };
-  }
-
-  const existing = await db.prepare("SELECT id FROM lead_payments WHERE transaction_id = ? LIMIT 1").bind(payment.transactionId).first<{ id: string }>();
-  if (existing?.id) {
-    return { recorded: false, duplicate: true, paymentId: existing.id, payment };
-  }
-
-  const lead = payment.businessId
-    ? await db.prepare("SELECT id, business_id, business_name FROM leads WHERE business_id = ?").bind(payment.businessId).first<{ id: string; business_id: string; business_name: string }>()
-    : null;
-  if (!lead?.id) {
-    return { recorded: false, reason: "lead_not_matched", payment };
-  }
-
-  const now = new Date().toISOString();
-  const pendingPayment = payment.paymentReference
-    ? await db
-      .prepare(
-        `SELECT id, raw_json FROM lead_payments
-         WHERE lead_id = ? AND payment_status = 'pending' AND payment_reference = ?
-         ORDER BY datetime(created_at) DESC
-         LIMIT 1`,
-      )
-      .bind(lead.id, payment.paymentReference)
-      .first<{ id: string; raw_json?: string }>()
-    : null;
-  const paymentId = pendingPayment?.id || crypto.randomUUID();
-  const rawJson = mergedPaymentRawJson(pendingPayment?.raw_json, { source: "paypal_checkout_capture", order });
-  if (pendingPayment?.id) {
-    await db
-      .prepare(
-        `UPDATE lead_payments
-         SET processor = 'paypal', payment_status = 'paid', amount_usd = ?, amount_idr = 0, transaction_id = ?, payer_email = ?,
-             proof_notes = ?, raw_json = ?, verified_at = ?, verified_by = ?, updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(payment.amountUsd, payment.transactionId, payment.payerEmail, "Captured by PayPal Checkout Orders API.", rawJson, now, verifiedBy, now, paymentId)
-      .run();
-  } else {
-    await db
-      .prepare(
-        `INSERT INTO lead_payments (
-          id, lead_id, business_id, processor, payment_status, amount_usd, amount_idr,
-          transaction_id, payer_email, payment_reference, proof_notes, raw_json, verified_at, verified_by, updated_at
-        ) VALUES (?, ?, ?, 'paypal', 'paid', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        paymentId,
-        lead.id,
-        lead.business_id,
-        payment.amountUsd,
-        payment.transactionId,
-        payment.payerEmail,
-        payment.paymentReference,
-        "Captured by PayPal Checkout Orders API.",
-        rawJson,
-        now,
-        verifiedBy,
-        now,
-      )
-      .run();
-  }
-
-  const subscription = await db.prepare("SELECT id FROM subscriptions WHERE lead_id = ? ORDER BY datetime(created_at) DESC LIMIT 1").bind(lead.id).first<{ id: string }>();
-  if (subscription?.id) {
-    await db
-      .prepare(
-        `UPDATE subscriptions
-         SET package_type = ?, amount_paid = ?, payment_status = 'paid', payment_method = 'paypal', payment_reference = ?, subscription_start_date = COALESCE(subscription_start_date, ?), updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind("managed_launch_support", payment.amountUsd, payment.transactionId, now, now, subscription.id)
-      .run();
-  } else {
-    await db
-      .prepare(
-        `INSERT INTO subscriptions (id, lead_id, package_type, amount_paid, payment_status, payment_method, payment_reference, subscription_start_date, created_at, updated_at)
-         VALUES (?, ?, 'managed_launch_support', ?, 'paid', 'paypal', ?, ?, ?, ?)`,
-      )
-      .bind(crypto.randomUUID(), lead.id, payment.amountUsd, payment.transactionId, now, now, now)
-      .run();
-  }
-
-  await db.prepare("UPDATE leads SET status = 'won_paid', email = COALESCE(NULLIF(?, ''), email), updated_at = ? WHERE id = ?").bind(payment.payerEmail, now, lead.id).run();
-  await deps.insertCrmActivitySafe(db, {
-    id: crypto.randomUUID(),
-    lead_id: lead.id,
-    staff_id: verifiedBy,
-    activity_type: "payment_verified",
-    description: `PayPal Checkout captured payment. Amount: $${payment.amountUsd}. Transaction: ${payment.transactionId}. Payer: ${payment.payerEmail || "not recorded"}. Reference: ${payment.paymentReference || "not recorded"}.`,
-  });
-
-  return { recorded: true, paymentId, payment };
+  if (!settled) return deps.errorJson("PayPal event requires reconciliation. Retry later.", 503);
+  return deps.json({ success: true, verified: true, eventType });
 }
 
 async function handlePaypalCaptureOrder(deps: PaymentsDeps, request: Request, db: D1DatabaseLike, env: unknown) {
   const body = await deps.readJsonBody(request);
   const orderId = deps.asString(body.orderId || body.orderID).trim();
   const paymentReference = deps.asString(body.paymentReference).trim();
-  if (!/^[A-Z0-9]{1,36}$/.test(orderId)) {
-    return deps.errorJson("Invalid PayPal order ID.", 400);
-  }
+  if (!/^[A-Z0-9]{1,36}$/.test(orderId)) return deps.errorJson("Invalid PayPal order ID.", 400);
 
   const credentials = await getPaypalApiCredentials(deps, db, env);
-  if (!credentials.clientId || !credentials.clientSecret) {
-    return deps.errorJson(`PayPal ${credentials.mode} API credentials are not configured.`, 400, credentials.isProduction ? ["PAYPAL_LIVE_CLIENT_ID", "PAYPAL_LIVE_CLIENT_SECRET"] : ["PAYPAL_SANDBOX_CLIENT_ID", "PAYPAL_SANDBOX_CLIENT_SECRET"]);
+  const order = await paypalLedgerOrder(db, paymentReference, credentials.mode);
+  if (!order || ledgerMetadata(order).paypalOrderId !== orderId) {
+    return deps.errorJson("No matching checkout order.", 404);
   }
+  if (order.payment_status === "paid") return deps.json({ success: true, status: "paid", paymentReference });
+  if (order.payment_status !== "pending") return deps.errorJson("Checkout order is unavailable.", 409);
+  if (!credentials.clientId || !credentials.clientSecret) return deps.errorJson("PayPal capture is unavailable.", 503);
 
-  const baseUrl = paypalApiBase(credentials.isProduction);
-  const accessToken = await paypalAccessToken(baseUrl, credentials.clientId, credentials.clientSecret);
-  const response = await fetch(`${baseUrl}/v2/checkout/orders/${orderId}/capture`, {
+  const base = paypalApiBase(credentials.isProduction);
+  const token = await paypalAccessToken(base, credentials.clientId, credentials.clientSecret);
+  const url = `${base}/v2/checkout/orders/${orderId}`;
+  const response = await fetch(url + "/capture", {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json",
-      "paypal-request-id": `${orderId}-capture`,
-      prefer: "return=representation",
-    },
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "paypal-request-id": `${orderId}-capture`, prefer: "return=representation" },
     body: "{}",
   });
-  const data = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) {
-    return deps.errorJson(firstString(data.message, `PayPal capture failed with HTTP ${response.status}`), 502, data);
+  // PayPal can report an already-captured order after a timeout or an interrupted local save.
+  const details = response.ok ? response : await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+  if (!details.ok) return deps.errorJson("PayPal has not confirmed the payment.", 502);
+  const result = objectValue(await details.json());
+  const units = Array.isArray(result.purchase_units) ? result.purchase_units : [];
+  const unit = objectValue(units[0]);
+  const payments = objectValue(unit.payments);
+  const captures = Array.isArray(payments.captures) ? payments.captures : [];
+  const capture = objectValue(captures[0]);
+  if (result.id !== orderId || units.length !== 1 || unit.invoice_id !== paymentReference ||
+      captures.length !== 1 || capture.status !== "COMPLETED" ||
+      !await settlePaypalOrder(db, order, firstString(capture.id), objectValue(capture.amount), "paypal_checkout")) {
+    return deps.errorJson("PayPal payment could not be reconciled. Contact WebView with the checkout reference.", 409);
   }
-
-  const result = await recordPaypalCapturedOrder(deps, db, data, paymentReference, "paypal_checkout");
-  if (!result.recorded && result.reason) {
-    return deps.errorJson(`PayPal captured, but CRM recording failed: ${result.reason}`, 409, result);
-  }
-  return deps.json({ success: true, processor: "paypal", order: data, ...result });
+  return deps.json({ success: true, status: "paid", paymentReference });
 }
 
-function extractPaypalSubscription(value: Record<string, unknown>, fallbackReference = "") {
-  const subscriber = objectValue(value.subscriber);
-  const billingInfo = objectValue(value.billing_info);
-  const lastPayment = objectValue(billingInfo.last_payment);
-  const lastAmount = objectValue(lastPayment.amount);
-  return {
-    subscriptionId: firstString(value.id),
-    status: firstString(value.status),
-    planId: firstString(value.plan_id),
-    payerEmail: firstString(subscriber.email_address),
-    paymentReference: firstString(value.custom_id, fallbackReference),
-    amountUsd: firstNumber(lastAmount.value),
-  };
+async function paypalBoundOrder(db: D1DatabaseLike, mode: string, field: "paypalOrderId" | "paypalSubscriptionId", value: string) {
+  if (!value || value.length > 64) return null;
+  return db.prepare(`SELECT * FROM lead_payments WHERE processor = 'paypal'
+    AND json_extract(CASE WHEN json_valid(raw_json) THEN raw_json ELSE '{}' END, '$.paypalMode') = ?
+    AND json_extract(CASE WHEN json_valid(raw_json) THEN raw_json ELSE '{}' END, ?) = ? LIMIT 1`)
+    .bind(mode, "$." + field, value).first<PaypalLedgerRow>();
 }
 
-async function recordPaypalApprovedSubscription(
-  deps: PaymentsDeps,
-  db: D1DatabaseLike,
-  subscription: Record<string, unknown>,
-  paymentReference: string,
-  verifiedBy: string,
-) {
-  await deps.ensureRequiredColumns(db, deps.paymentLedgerRequiredColumns);
-  const payment = extractPaypalSubscription(subscription, paymentReference);
-  if (!payment.subscriptionId) {
-    return { recorded: false, reason: "missing_subscription_id", payment };
-  }
-  if (paymentReference && payment.paymentReference && payment.paymentReference !== paymentReference) {
-    return { recorded: false, reason: "payment_reference_mismatch", payment };
-  }
-
-  const businessId = payment.paymentReference.includes("|") ? payment.paymentReference.split("|")[0].trim() : "";
-  const lead = businessId
-    ? await db.prepare("SELECT id, business_id, business_name FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string; business_id: string; business_name: string }>()
-    : null;
-  if (!lead?.id) {
-    return { recorded: false, reason: "lead_not_matched", payment };
-  }
-
-  const now = new Date().toISOString();
-  const pendingPayment = await db
-    .prepare(
-      `SELECT id, amount_usd, raw_json FROM lead_payments
-       WHERE lead_id = ? AND payment_status = 'pending' AND payment_reference = ?
-       ORDER BY datetime(created_at) DESC
-       LIMIT 1`,
-    )
-    .bind(lead.id, payment.paymentReference)
-    .first<{ id: string; amount_usd?: number; raw_json?: string }>();
-  const existing = await db.prepare("SELECT id FROM lead_payments WHERE transaction_id = ? LIMIT 1").bind(payment.subscriptionId).first<{ id: string }>();
-  if (existing?.id && existing.id !== pendingPayment?.id) {
-    return { recorded: false, duplicate: true, paymentId: existing.id, payment };
-  }
-
-  const active = ["ACTIVE", "APPROVED"].includes(payment.status);
-  const paymentStatus = active ? "paid" : "pending";
-  const amountUsd = firstNumber(payment.amountUsd, pendingPayment?.amount_usd);
-  const rawJson = mergedPaymentRawJson(pendingPayment?.raw_json, { source: "paypal_subscription_approved", paypalSubscription: subscription });
-  if (pendingPayment?.id) {
-    await db
-      .prepare(
-        `UPDATE lead_payments
-         SET processor = 'paypal', payment_status = ?, amount_usd = ?, amount_idr = 0, transaction_id = ?, payer_email = ?,
-             proof_notes = ?, raw_json = ?, verified_at = ?, verified_by = ?, updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(paymentStatus, amountUsd, payment.subscriptionId, payment.payerEmail, `PayPal subscription ${payment.status || "approved"} for yearly billing.`, rawJson, active ? now : null, verifiedBy, now, pendingPayment.id)
-      .run();
-  } else {
-    await db
-      .prepare(
-        `INSERT INTO lead_payments (
-          id, lead_id, business_id, processor, payment_status, amount_usd, amount_idr,
-          transaction_id, payer_email, payment_reference, proof_notes, raw_json, verified_at, verified_by, updated_at
-        ) VALUES (?, ?, ?, 'paypal', ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(crypto.randomUUID(), lead.id, lead.business_id, paymentStatus, amountUsd, payment.subscriptionId, payment.payerEmail, payment.paymentReference, `PayPal subscription ${payment.status || "approved"} for yearly billing.`, rawJson, active ? now : null, verifiedBy, now)
-      .run();
-  }
-
-  const existingSubscription = await db.prepare("SELECT id FROM subscriptions WHERE lead_id = ? ORDER BY datetime(created_at) DESC LIMIT 1").bind(lead.id).first<{ id: string }>();
-  if (existingSubscription?.id) {
-    await db
-      .prepare(
-        `UPDATE subscriptions
-         SET package_type = ?, amount_paid = ?, payment_status = ?, payment_method = 'paypal_subscription', payment_reference = ?, subscription_start_date = COALESCE(subscription_start_date, ?), updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind("managed_launch_subscription", amountUsd, paymentStatus, payment.subscriptionId, now, now, existingSubscription.id)
-      .run();
-  } else {
-    await db
-      .prepare(
-        `INSERT INTO subscriptions (id, lead_id, package_type, amount_paid, payment_status, payment_method, payment_reference, subscription_start_date, created_at, updated_at)
-         VALUES (?, ?, 'managed_launch_subscription', ?, ?, 'paypal_subscription', ?, ?, ?, ?)`,
-      )
-      .bind(crypto.randomUUID(), lead.id, amountUsd, paymentStatus, payment.subscriptionId, now, now, now)
-      .run();
-  }
-
-  if (active) {
-    await db.prepare("UPDATE leads SET status = 'won_paid', email = COALESCE(NULLIF(?, ''), email), updated_at = ? WHERE id = ?").bind(payment.payerEmail, now, lead.id).run();
-  }
-  await deps.insertCrmActivitySafe(db, {
-    id: crypto.randomUUID(),
-    lead_id: lead.id,
-    staff_id: verifiedBy,
-    activity_type: active ? "payment_verified" : "checkout_pending",
-    description: `PayPal subscription ${payment.status || "approved"}. Subscription: ${payment.subscriptionId}. Plan: ${payment.planId || "not recorded"}. Payer: ${payment.payerEmail || "not recorded"}. Reference: ${payment.paymentReference || "not recorded"}.`,
-  });
-
-  return { recorded: true, paymentId: pendingPayment?.id, payment };
+async function bindPaypalSubscription(db: D1DatabaseLike, subscription: Record<string, unknown>, mode: string) {
+  const id = firstString(subscription.id);
+  const reference = firstString(subscription.custom_id);
+  const row = await paypalLedgerOrder(db, reference, mode);
+  if (!row || !/^I-[A-Z0-9]{1,36}$/.test(id) || !["APPROVED", "ACTIVE"].includes(firstString(subscription.status))) return false;
+  const metadata = ledgerMetadata(row);
+  if (!metadata.paypalSubscriptionPlanId || metadata.paypalSubscriptionPlanId !== subscription.plan_id) return false;
+  if (metadata.paypalSubscriptionId) return metadata.paypalSubscriptionId === id;
+  if (row.payment_status !== "pending") return false;
+  await db.prepare(`UPDATE lead_payments SET raw_json = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND payment_status = 'pending' AND raw_json = ?`)
+    .bind(JSON.stringify({ ...metadata, paypalSubscriptionId: id }), row.id, row.raw_json).run();
+  const saved = await paypalLedgerOrder(db, reference, mode);
+  return Boolean(saved && ledgerMetadata(saved).paypalSubscriptionId === id);
 }
 
-async function recordPaypalSubscriptionSale(deps: PaymentsDeps, db: D1DatabaseLike, event: Record<string, unknown>, verifiedBy: string) {
-  await deps.ensureRequiredColumns(db, deps.paymentLedgerRequiredColumns);
-  const resource = objectValue(event.resource);
-  const amount = objectValue(resource.amount);
-  const transactionId = firstString(resource.id);
+async function recordPaypalSubscriptionSale(db: D1DatabaseLike, resource: Record<string, unknown>, mode: string) {
+  const id = firstString(resource.id);
   const subscriptionId = firstString(resource.billing_agreement_id);
-  const amountUsd = firstNumber(amount.total, amount.value);
-  if (!transactionId || !subscriptionId || !amountUsd) {
-    return { recorded: false, reason: "missing_subscription_sale_fields", subscriptionId, transactionId, amountUsd };
-  }
-  const existing = await db.prepare("SELECT id FROM lead_payments WHERE transaction_id = ? LIMIT 1").bind(transactionId).first<{ id: string }>();
-  if (existing?.id) {
-    return { recorded: false, duplicate: true, paymentId: existing.id, subscriptionId, transactionId };
-  }
-  const parentPayment = await db
-    .prepare("SELECT lead_id, business_id, payer_email, created_at FROM lead_payments WHERE transaction_id = ? ORDER BY datetime(updated_at) DESC LIMIT 1")
-    .bind(subscriptionId)
-    .first<{ lead_id: string; business_id?: string; payer_email?: string; created_at?: string }>();
-  if (!parentPayment?.lead_id) {
-    return { recorded: false, reason: "subscription_parent_not_matched", subscriptionId, transactionId };
-  }
+  const amount = objectValue(resource.amount);
+  const value = cents(amount.total ?? amount.value);
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(id) || firstString(amount.currency, amount.currency_code) !== "USD" ||
+      value <= 0 || firstString(resource.state, resource.status).toLowerCase() !== "completed") return false;
+  const parent = await paypalBoundOrder(db, mode, "paypalSubscriptionId", subscriptionId);
+  if (!parent || !["pending", "settled"].includes(parent.payment_status)) return false;
+  const pricing = objectValue(ledgerMetadata(parent).pricing);
+  const entryId = `paypal-sale-${mode}-${id}`;
+  const prior = await db.prepare("SELECT payment_reference, amount_usd FROM lead_payments WHERE id = ?")
+    .bind(entryId).first<PaypalLedgerRow>();
+  if (prior) return prior.payment_reference === parent.id && cents(prior.amount_usd) === value;
+
+  const amounts = parent.payment_status === "pending"
+    ? [cents(parent.amount_usd), cents(pricing.addOnUsd), cents(pricing.annualDiscountedUsd)]
+    : [cents(pricing.annualDiscountedUsd)];
+  if (!amounts.includes(value)) return false;
 
   const now = new Date().toISOString();
-  const saleTime = Date.parse(firstString(resource.create_time, event.create_time, now));
-  const parentTime = Date.parse(firstString(parentPayment.created_at, now));
-  const looksLikeInitialSale = Number.isFinite(saleTime) && Number.isFinite(parentTime) && Math.abs(saleTime - parentTime) < 7 * 24 * 60 * 60 * 1000;
-  await db
-    .prepare(
-      `INSERT INTO lead_payments (
-        id, lead_id, business_id, processor, payment_status, amount_usd, amount_idr,
-        transaction_id, payer_email, payment_reference, proof_notes, raw_json, verified_at, verified_by, updated_at
-      ) VALUES (?, ?, ?, 'paypal', 'paid', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      crypto.randomUUID(),
-      parentPayment.lead_id,
-      parentPayment.business_id || "",
-      amountUsd,
-      transactionId,
-      parentPayment.payer_email || "",
-      subscriptionId,
-      "Verified PayPal subscription billing payment.",
-      JSON.stringify({ source: "paypal_subscription_sale", event }),
-      now,
-      verifiedBy,
-      now,
-    )
-    .run();
-  await db
-    .prepare(`UPDATE subscriptions SET amount_paid = ${looksLikeInitialSale ? "amount_paid" : "COALESCE(amount_paid, 0) + ?"}, payment_status = 'paid', updated_at = ? WHERE lead_id = ? AND payment_reference = ?`)
-    .bind(...(looksLikeInitialSale ? [now, parentPayment.lead_id, subscriptionId] : [amountUsd, now, parentPayment.lead_id, subscriptionId]))
-    .run();
-  await deps.insertCrmActivitySafe(db, {
-    id: crypto.randomUUID(),
-    lead_id: parentPayment.lead_id,
-    staff_id: verifiedBy,
-    activity_type: "payment_verified",
-    description: `PayPal subscription billing payment verified. Amount: $${amountUsd}. Sale: ${transactionId}. Subscription: ${subscriptionId}.`,
-  });
-  return { recorded: true, subscriptionId, transactionId, amountUsd, initialSaleAlreadyCounted: looksLikeInitialSale };
+  const settledCents = `SELECT ROUND(COALESCE(SUM(amount_usd), 0) * 100) FROM lead_payments
+    WHERE processor = 'paypal' AND payment_status = 'paid' AND payment_reference = ?`;
+  const completed = "SELECT 1 FROM lead_payments WHERE id = ? AND payment_status = 'settled'";
+  await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO lead_payments
+      (id, lead_id, business_id, processor, payment_status, amount_usd, amount_idr, transaction_id,
+       payment_reference, payer_email, proof_notes, verified_at, verified_by)
+      VALUES (?, ?, ?, 'paypal', 'paid', ?, 0, ?, ?, ?, 'Verified PayPal subscription sale.', ?, 'paypal_webhook')`)
+      .bind(entryId, parent.lead_id, parent.business_id, value / 100, id, parent.id, parent.payer_email || "", now),
+    db.prepare(`UPDATE lead_payments SET payment_status = 'settled', updated_at = ?
+      WHERE id = ? AND payment_status = 'pending' AND (${settledCents}) >= ?`)
+      .bind(now, parent.id, parent.id, cents(parent.amount_usd)),
+    db.prepare(`INSERT INTO subscriptions (id, lead_id, package_type, amount_paid, payment_status, payment_method,
+      payment_reference, subscription_start_date, updated_at)
+      SELECT ?, ?, 'managed_launch_subscription', (${settledCents}) / 100.0, 'paid', 'paypal_subscription', ?, ?, ?
+      WHERE EXISTS (${completed})
+      ON CONFLICT(id) DO UPDATE SET amount_paid = excluded.amount_paid, updated_at = excluded.updated_at`)
+      .bind("paypal-subscription-" + parent.id, parent.lead_id, parent.id, subscriptionId, now, now, parent.id),
+    db.prepare(`UPDATE leads SET status = 'won_paid', updated_at = ? WHERE id = ? AND EXISTS (${completed})`)
+      .bind(now, parent.lead_id, parent.id),
+    db.prepare(`INSERT OR IGNORE INTO crm_activities (id, lead_id, staff_id, activity_type, description)
+      VALUES (?, ?, 'paypal_webhook', 'payment_verified', 'Verified PayPal subscription sale.')`).bind(entryId, parent.lead_id),
+  ]);
+  return true;
 }
 
 async function handlePaypalSubscriptionApproved(deps: PaymentsDeps, request: Request, db: D1DatabaseLike, env: unknown) {
   const body = await deps.readJsonBody(request);
-  const subscriptionId = deps.asString(body.subscriptionId).trim();
-  const paymentReference = deps.asString(body.paymentReference).trim();
-  if (!/^I-[A-Z0-9]+$/.test(subscriptionId)) {
-    return deps.errorJson("Invalid PayPal subscription ID.", 400);
-  }
+  const id = deps.asString(body.subscriptionId).trim();
+  const reference = deps.asString(body.paymentReference).trim();
+  if (!/^I-[A-Z0-9]{1,36}$/.test(id)) return deps.errorJson("Invalid PayPal subscription ID.", 400);
 
   const credentials = await getPaypalApiCredentials(deps, db, env);
-  if (!credentials.clientId || !credentials.clientSecret) {
-    return deps.errorJson(`PayPal ${credentials.mode} API credentials are not configured.`, 400, credentials.isProduction ? ["PAYPAL_LIVE_CLIENT_ID", "PAYPAL_LIVE_CLIENT_SECRET"] : ["PAYPAL_SANDBOX_CLIENT_ID", "PAYPAL_SANDBOX_CLIENT_SECRET"]);
-  }
+  const order = await paypalLedgerOrder(db, reference, credentials.mode);
+  if (!order || !ledgerMetadata(order).paypalSubscriptionPlanId) return deps.errorJson("No matching checkout order.", 404);
+  if (!credentials.clientId || !credentials.clientSecret) return deps.errorJson("PayPal subscriptions are unavailable.", 503);
 
-  const baseUrl = paypalApiBase(credentials.isProduction);
-  const accessToken = await paypalAccessToken(baseUrl, credentials.clientId, credentials.clientSecret);
-  const response = await fetch(`${baseUrl}/v1/billing/subscriptions/${subscriptionId}`, {
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json",
-    },
-  });
-  const data = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) {
-    return deps.errorJson(firstString(data.message, `PayPal subscription lookup failed with HTTP ${response.status}`), 502, data);
+  const base = paypalApiBase(credentials.isProduction);
+  const token = await paypalAccessToken(base, credentials.clientId, credentials.clientSecret);
+  const response = await fetch(`${base}/v1/billing/subscriptions/${id}`, { headers: { authorization: `Bearer ${token}` } });
+  const subscription = response.ok ? objectValue(await response.json()) : {};
+  if (subscription.id !== id || subscription.custom_id !== reference ||
+      !await bindPaypalSubscription(db, subscription, credentials.mode)) {
+    return deps.errorJson("PayPal subscription could not be reconciled. Contact WebView with the checkout reference.", 409);
   }
-
-  const result = await recordPaypalApprovedSubscription(deps, db, data, paymentReference, "paypal_subscription");
-  if (!result.recorded && result.reason) {
-    return deps.errorJson(`PayPal subscription approved, but CRM recording failed: ${result.reason}`, 409, result);
-  }
-  return deps.json({ success: true, processor: "paypal", subscription: data, ...result });
+  return deps.json({ success: true, status: "awaiting_settlement", paymentReference: reference });
 }
 
 export async function handlePayments(deps: PaymentsDeps, request: Request, db: D1DatabaseLike, env: unknown, segments: string[]): Promise<Response> {
@@ -1124,10 +800,13 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   const body = await deps.readJsonBody(request);
   const businessId = normalizeBusinessId(deps.asString(body.businessId, "demo-site"));
   const businessName = deps.asString(body.businessName, "Demo Site");
-  const requestedDomain = deps.asString(body.domain);
+  const requestedDomain = deps.asString(body.domain).trim().toLowerCase();
   const domainMode = deps.asString(body.domainMode, "new") === "owned" ? "owned" : "new";
   const customerEmail = deps.asString(body.email);
-  const crmOwnerSession = body.ownerReviewSession === true;
+  if (requestedDomain.length > 253 ||
+      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])$/i.test(requestedDomain)) {
+    return deps.errorJson("Enter a valid domain name.", 400);
+  }
   const origin = new URL(request.url).origin;
   const [
     selectedProcessorRaw,
@@ -1200,8 +879,18 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   const domainFeeUsd = Math.max(0, Number(paymentDomainFeeUsdSetting || 17) || 17);
   const addOnPageUsd = Math.max(50, Number(paymentAddOnPageUsdSetting || 50) || 50);
   const pricing = checkoutPricing(basePaymentAmountUsd, domainFeeUsd, addOnPageUsd, domainMode, body.addOns, body.billingPlan);
+  if (pricing.billingCadence === "annual_recurring" && paymentProcessor !== "paypal") {
+    return deps.errorJson("Annual billing is unavailable for this payment method. Select prepaid billing.", 409);
+  }
   const setupRequest = checkoutSetupRequest(pricing, body.setupRequest);
-  const domainQuote = checkoutDomainQuote(domainMode, requestedDomain, body.domainQuote);
+  let domainQuote = null;
+  if (domainMode === "new") {
+    const quote = await deps.quoteNewDomain?.(db, env, requestedDomain, domainFeeUsd).catch(() => null);
+    if (!quote?.supportedForMvp) {
+      return deps.errorJson("We could not confirm this domain at the listed price. Choose another domain or contact WebView for a quote.", 409);
+    }
+    domainQuote = checkoutDomainQuote(domainMode, requestedDomain, quote);
+  }
   const paymentAmountUsd = pricing.totalUsd;
   const usdToIdrRate = Math.max(1, Number(usdToIdrRateSetting || 16000) || 16000);
   const amountIdr = Math.max(1000, Math.round(paymentAmountUsd * usdToIdrRate));
@@ -1209,8 +898,8 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   const packageName = packageNameSetting || "WebView.click Done-for-you Website Setup";
   const packageDescription = packageDescriptionSetting || `$${money(pricing.hostingAnnualUsd)}/year hosting${domainMode === "new" ? ` + $${money(pricing.domainAnnualUsd)}/year domain fee` : ""}: done-for-you website setup.`;
   const adminWhatsApp = adminWhatsAppSetting || "081233838173";
-  const orderId = `wv-${Date.now()}-${businessId}`.replace(/[^a-zA-Z0-9._~-]+/g, "-").slice(0, 50);
-  const paymentReference = `${businessId} | ${orderId}`.slice(0, 127);
+  const orderId = crypto.randomUUID().replaceAll("-", "");
+  const paymentReference = `${businessId.slice(0, 80)} | ${orderId}`;
   const paypalAccountMode = deps.asString(paypalAccountModeSetting, "business");
   const paypalRiskAcknowledged = deps.asString(paypalRiskAcknowledgedSetting) === "true";
   const paypalPaymentNote = deps.asString(
@@ -1230,24 +919,23 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
   );
   const adminNotifyUrl = `https://wa.me/${normalizeWhatsAppNumber(adminWhatsApp)}?text=${notifyText}`;
 
-  let row: { id: string } | null = null;
-  if (crmOwnerSession) {
-    await deps.ensureRequiredColumns(db, [...deps.checkoutRequiredColumns, ...deps.paymentLedgerRequiredColumns]);
-    const leadId = crypto.randomUUID();
-    await deps.upsertLeadRecord(db, {
-      id: leadId,
-      business_id: businessId,
-      business_name: businessName,
-      niche: "demo",
-      email: customerEmail,
-      status: "checkout_pending",
-      view_count: 0,
-      updated_at: new Date().toISOString(),
-    });
-
-    row = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
+  let row = body.staticPackage === true ? null : await db.prepare(
+    "SELECT id FROM leads WHERE business_id = ? AND EXISTS (SELECT 1 FROM json_sites WHERE business_id = leads.business_id)",
+  ).bind(businessId).first<{ id: string }>();
+  if (body.staticPackage === true && businessId.length <= 63 && businessId === body.businessId) {
+    const published = await fetch(`https://sites.webview.click/${businessId}/`, {
+      method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(8000),
+    }).catch(() => null);
+    if (published?.ok && published.headers.has("X-WebView-Release")) {
+      await db.prepare(
+        "INSERT INTO leads (id, business_id, business_name, status) VALUES (?, ?, ?, 'checkout_pending') ON CONFLICT(business_id) DO NOTHING",
+      ).bind(crypto.randomUUID(), businessId, businessName.trim().slice(0, 160)).run();
+      row = await db.prepare("SELECT id FROM leads WHERE business_id = ?").bind(businessId).first<{ id: string }>();
+    }
   }
-  if (crmOwnerSession && row?.id) {
+  const crmOwnerSession = Boolean(row?.id);
+  const pendingPaymentId = crypto.randomUUID();
+  if (row?.id) {
     const existingPendingPayment = await db
       .prepare("SELECT id FROM lead_payments WHERE lead_id = ? AND payment_reference = ? AND payment_status = 'pending' LIMIT 1")
       .bind(row.id, paymentReference)
@@ -1261,7 +949,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
           ) VALUES (?, ?, ?, ?, 'pending', ?, ?, '', ?, ?, ?, ?, ?)`,
         )
         .bind(
-          crypto.randomUUID(),
+          pendingPaymentId,
           row.id,
           businessId,
           paymentProcessor,
@@ -1270,7 +958,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
           customerEmail,
           paymentReference,
           "Checkout requested; waiting for manual payment verification.",
-          JSON.stringify({ source: "checkout_request", crmOwnerSession, businessId, businessName, requestedDomain, domainMode, domainQuote, paymentProcessor, paymentReference, pricing, billingPlan: { termYears: pricing.termYears, billingCadence: pricing.billingCadence, termDiscountRate: pricing.termDiscountRate, hostingAnnualUsd: pricing.hostingAnnualUsd, hostingAfterDiscountUsd: pricing.hostingAfterDiscountUsd, domainAnnualUsd: pricing.domainAnnualUsd, annualDiscountedUsd: pricing.annualDiscountedUsd, packageTermTotalUsd: pricing.packageTermTotalUsd, packageDueTodayUsd: pricing.packageDueTodayUsd }, setupRequest, setupNote: setupRequest.setupNote }),
+          JSON.stringify({ source: "checkout_request", crmOwnerSession, businessId, businessName, requestedDomain, domainMode, domainQuote, paymentProcessor, paymentReference, paypalMode: activePaypalMode, pricing, billingPlan: { termYears: pricing.termYears, billingCadence: pricing.billingCadence, annualDiscountedUsd: pricing.annualDiscountedUsd }, setupRequest, setupNote: setupRequest.setupNote }),
           new Date().toISOString(),
         )
         .run();
@@ -1300,8 +988,17 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
     setupNote: setupRequest.setupNote,
     paymentReference,
     missing,
-    message: crmOwnerSession ? message : "Checkout prepared for preview/testing. CRM lead status and payment pending were not changed because this was not opened from a real owner review link.",
+    message,
   });
+  if (!row?.id) return mockResponse("Checkout requires a published WebView package.");
+  async function bindPaypalCheckout(fields: Record<string, unknown>) {
+    const update = await db.prepare(`UPDATE lead_payments SET raw_json = json_patch(raw_json, ?), updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND payment_status = 'pending'`).bind(JSON.stringify(fields), pendingPaymentId).run();
+    const current = await paypalLedgerOrder(db, paymentReference, activePaypalMode);
+    if (update.success === false || !current || Object.entries(fields).some(([key, value]) => ledgerMetadata(current)[key] !== value)) {
+      throw new Error("Could not bind PayPal checkout to its CRM order.");
+    }
+  }
 
   if (paymentProcessor === "xendit") {
     if (!xenditSecretKey) return mockResponse("Xendit belum dikonfigurasi. Checkout disimpan sebagai mock checkout_pending.", ["XENDIT_SECRET_KEY"]);
@@ -1406,15 +1103,9 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
             paypalMode: activePaypalMode,
             pricing,
           });
-          if (row?.id) {
-            const pending = await db.prepare("SELECT id, raw_json FROM lead_payments WHERE lead_id = ? AND payment_reference = ? AND payment_status = 'pending' LIMIT 1").bind(row.id, paymentReference).first<{ id: string; raw_json?: string }>();
-            if (pending?.id) {
-              await db
-                .prepare("UPDATE lead_payments SET raw_json = ?, updated_at = ? WHERE id = ?")
-                .bind(mergedPaymentRawJson(pending.raw_json, { paypalSubscriptionProductId: paypalSubscription.product.id, paypalSubscriptionPlanId: paypalSubscription.plan.id, paypalSubscriptionPlanStatus: paypalSubscription.plan.status, paypalSubscriptionPlanCacheKey: paypalSubscription.cacheKey, paypalSubscriptionPlanCached: paypalSubscription.plan.cached === true }), new Date().toISOString(), pending.id)
-                .run();
-            }
-          }
+          const planCached = "cached" in paypalSubscription.plan && paypalSubscription.plan.cached === true;
+          if (!paypalSubscription.plan.id) throw new Error("PayPal plan is unavailable.");
+          await bindPaypalCheckout({ paypalSubscriptionPlanId: paypalSubscription.plan.id });
           return deps.json({
             success: true,
             mock: false,
@@ -1437,7 +1128,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
             paypalSubscriptionPlanId: paypalSubscription.plan.id,
             paypalSubscriptionPlanStatus: paypalSubscription.plan.status,
             paypalSubscriptionProductId: paypalSubscription.product.id,
-            paypalSubscriptionPlanCached: paypalSubscription.plan.cached === true,
+            paypalSubscriptionPlanCached: planCached,
           });
         }
         const paypalOrder = await createPaypalCheckoutOrder({
@@ -1454,6 +1145,8 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
           origin,
           pricing,
         });
+        if (!paypalOrder.id) throw new Error("PayPal order is unavailable.");
+        await bindPaypalCheckout({ paypalOrderId: paypalOrder.id });
         const approvalUrl = (paypalOrder.links || []).find((link) => link.rel === "payer-action" || link.rel === "approve")?.href || "";
         return deps.json({
           success: true,
@@ -1484,7 +1177,7 @@ export async function handlePayments(deps: PaymentsDeps, request: Request, db: D
           processor: paymentProcessor,
           checkoutUrl: paypalBusinessUrl || "",
           adminNotifyUrl,
-          error: error instanceof Error ? error.message : String(error),
+          error: "PayPal checkout could not be prepared.",
           message: paypalBusinessUrl
             ? "PayPal API checkout failed. Falling back to the configured PayPal Business link for manual review."
             : "PayPal API checkout failed and no fallback PayPal Business link is configured. Request tetap dicatat sebagai checkout_pending.",

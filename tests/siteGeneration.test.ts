@@ -70,7 +70,7 @@ test("applyAiOfferingOutline normalizes offerings and rebuilds detail pages/navi
   assert.equal((site.offers as any[]).length, 12);
 
   const pages = site.pages as Array<Record<string, unknown>>;
-  const pageIds = pages.map((page) => page.pageId);
+  const pageIds = pages.map((page) => String(page.pageId));
   assert.equal(pageIds.includes("services"), false);
   assert.equal(pageIds.includes("service-old"), false);
   assert.equal(pageIds.filter((pageId) => pageId.startsWith("service-") || pageId.startsWith("product-")).length, 12);

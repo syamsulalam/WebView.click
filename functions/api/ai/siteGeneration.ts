@@ -1,4 +1,5 @@
 export type AiSiteGenerationDeps = {
+  reserveProviderCall?: (db: unknown) => Promise<boolean>;
   getSetting: (db: unknown, env: unknown, key: string) => Promise<string | undefined>;
   getAiReadiness: (db: unknown, env: unknown, provider: string, model: string, requiresAi?: boolean, remoteValidate?: boolean, refreshRemoteValidation?: boolean) => Promise<{ ready?: boolean; message?: string }>;
   buildAiFailureDiagnostics: (input: {
@@ -156,9 +157,9 @@ function copyAuditText(value: unknown, maxLength = 260) {
 }
 
 function copyAuditPathLabel(path: Array<string | number>) {
-  return path.reduce((result, part) => (
+  return path.reduce<string>((result, part) => (
     typeof part === "number" ? `${result}[${part}]` : result ? `${result}.${part}` : part
-  ), "" as string);
+  ), "");
 }
 
 function readCopyAuditPath(root: unknown, path: Array<string | number>) {
@@ -835,7 +836,7 @@ function priceRangeLabel(value: unknown) {
   const amount = (part: unknown) => {
     const amountRecord = objectValue(part);
     const units = asString(amountRecord.units, typeof part === "string" || typeof part === "number" ? String(part) : "");
-    const code = asString(amountRecord.currencyCode, amountRecord.currency_code);
+    const code = asString(amountRecord.currencyCode, asString(amountRecord.currency_code));
     return { units: units.trim(), code: code.trim() };
   };
   const start = amount(firstDefined(record.startPrice, record.start_price));
@@ -1162,8 +1163,9 @@ async function callAiJsonObjectProvider(deps: AiSiteGenerationDeps, input: {
     throw error;
   };
   const fetchProvider = async (endpoint: string, init: RequestInit): Promise<Response> => {
+    if (deps.reserveProviderCall && !await deps.reserveProviderCall(db)) throw new Error("Daily AI request budget reached.");
     try {
-      return await fetch(endpoint, init);
+      return await fetch(endpoint, { ...init, redirect: "manual", signal: init.signal || AbortSignal.timeout(90000) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       fail(
@@ -1176,7 +1178,7 @@ async function callAiJsonObjectProvider(deps: AiSiteGenerationDeps, input: {
     const text = await response.text().catch(() => "");
     const details = deps.extractProviderErrorDetails(text);
     const message = details.message.slice(0, 600);
-    fail(
+    return fail(
       `${providerName} ${contextLabel} API returned HTTP ${response.status}${message ? `: ${message}` : ""}`,
       deps.buildAiFailureDiagnostics({ provider: providerName, model: modelName, endpoint, stage: "provider_http", httpStatus: response.status, message, rawSnippet: details.rawSnippet, providerCode: details.providerCode, providerStatus: details.providerStatus }),
     );
@@ -1448,8 +1450,9 @@ export async function generateAiCopyPatch(
   };
 
   const fetchAiProvider = async (providerName: string, endpoint: string, init: RequestInit) => {
+    if (deps.reserveProviderCall && !await deps.reserveProviderCall(db)) throw new Error("Daily AI request budget reached.");
     try {
-      return await fetch(endpoint, init);
+      return await fetch(endpoint, { ...init, redirect: "manual", signal: init.signal || AbortSignal.timeout(90000) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throwWithAiFailure(

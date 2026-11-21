@@ -175,7 +175,10 @@ export function useGenerationJobRetry({
   ) => {
     let data: any = null;
     for (let attempt = 0; attempt < 24; attempt += 1) {
-      data = await runChunkedStepRequest(jobId, "offeringCopy", label, attempt === 0 ? firstExtraBody : {});
+      const expectedOfferingCursor = Number(data?.metadata?.offeringCopyCursor ?? firstExtraBody.expectedOfferingCursor ?? 0);
+      data = await runChunkedStepRequest(jobId, "offeringCopy", label, {
+        ...(attempt === 0 ? firstExtraBody : {}), expectedOfferingCursor,
+      });
       const completed = Number(data?.progress?.completed ?? data?.metadata?.offeringCopyCursor ?? 0);
       const total = Number(data?.progress?.total ?? data?.metadata?.offeringCopyTotal ?? 0);
       const itemTitle = String(data?.progress?.itemTitle || data?.metadata?.offeringCopyLastItem?.title || "").trim();
@@ -218,7 +221,7 @@ export function useGenerationJobRetry({
     setRetryingChunkStep(retryKey);
     try {
       const data = step === "offeringCopy"
-        ? await runOfferingCopyUntilFinalizeReady(job.id, "Retry")
+        ? await runOfferingCopyUntilFinalizeReady(job.id, "Retry", { expectedOfferingCursor: Number(job.metadata?.offeringCopyCursor || 0) })
         : await runChunkedStepRequest(job.id, step, "Retry");
       const nextStatus = data.completedStep === "finalize" ? "success" : "running";
       const nextJob = {
@@ -266,7 +269,11 @@ export function useGenerationJobRetry({
     setRetryingCopyOnlyJobId(retryKey);
     try {
       const previousCoverage = offeringCopyCoverage(job);
-      const chunkedJob = await resolveChunkedRetryJob(job);
+      const parent = await resolveChunkedRetryJob(job);
+      const path = `/api/generation-jobs/${encodeURIComponent(parent.id)}/copy-retry`;
+      const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
+      const fork = await readApiJson<any>(response, "Create copy retry job", path);
+      const chunkedJob = { ...parent, id: fork.id, metadata: fork.metadata };
       const steps: ChunkedGenerationStep[] = mode === "offerings"
         ? ["offeringCopy", "finalize"]
         : ["siteCopy", "offeringCopy", "finalize"];

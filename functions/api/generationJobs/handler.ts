@@ -394,6 +394,27 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
     return deps.json({ success: true, id, nextStep: metadata.nextStep });
   }
 
+  if (request.method === "POST" && segments.length === 3 && segments[2] === "copy-retry") {
+    const body = await deps.readJsonBody(request);
+    if (body.mode !== "offerings" && body.mode !== "allCopy") return deps.errorJson("Invalid copy retry mode.", 400);
+    const source = await db.prepare("SELECT * FROM generation_jobs WHERE id = ?").bind(segments[1]).first<{
+      id: string; business_id?: string; place_id?: string; provider?: string; model?: string; metadata_json?: string;
+    }>();
+    if (!source) return deps.errorJson("Generation job not found.", 404);
+    const original = deps.parseJsonObject(source.metadata_json);
+    if (original.chunked !== true || !Object.keys(chunkedGenerationPayload(original)).length) {
+      return deps.errorJson("The source job has no saved chunked input.", 409);
+    }
+    const id = crypto.randomUUID();
+    const nextStep = body.mode === "offerings" ? "offeringCopy" : "siteCopy";
+    const metadata = { ...original, nextStep, step: "copy_retry_pending", offeringCopyCursor: 0, copyRetryOf: source.id,
+      finalizeResult: null, failureMessage: "", failureStage: "" };
+    await deps.ensureRequiredColumns(db, deps.generateRequiredColumns);
+    await deps.createGenerationJob(db, { id, business_id: source.business_id, place_id: source.place_id,
+      provider: source.provider, model: source.model, status: "running", metadata_json: JSON.stringify(metadata) });
+    return deps.json({ success: true, id, nextStep, metadata });
+  }
+
   if (request.method === "POST" && segments.length === 3 && segments[2] === "run-step") {
     const jobId = segments[1];
     const body = await deps.readJsonBody(request);
@@ -408,18 +429,44 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
     const payload = chunkedGenerationPayload(metadata);
     if (!Object.keys(payload).length) return deps.errorJson("Chunked generation payload is missing.", 400);
     const businessName = deps.asString(payload.businessName, deps.asString(metadata.businessName, row.business_id || "Untitled Business"));
-    const requestedStep = deps.asString(body.step, deps.asString(metadata.nextStep, "outline"));
-    const aboutNavJob = isAboutNavPayload(deps, payload);
-    const stepStartedMs = Date.now();
-    if (aboutNavJob) {
-      metadata.aboutNavCurrentStep = {
-        step: requestedStep,
-        startedAt: new Date(stepStartedMs).toISOString(),
-      };
-      await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+    const nextStep = metadata.nextStep === "copy" ? "siteCopy" : deps.asString(metadata.nextStep, "outline");
+    const requestedStep = body.step === "copy" ? "siteCopy" : deps.asString(body.step, nextStep);
+    if (row.status === "success") {
+      return requestedStep === "finalize"
+        ? deps.json({ success: true, id: jobId, completedStep: "finalize", result: metadata.finalizeResult, metadata })
+        : deps.errorJson("This generation job has already completed.", 409);
+    }
+    if (!["outline", "siteCopy", "offeringCopy", "finalize"].includes(requestedStep) || requestedStep !== nextStep) {
+      return deps.errorJson("Generation step is stale. Refresh the job and resume its next step.", 409);
+    }
+    if (requestedStep === "offeringCopy" && body.expectedOfferingCursor !== undefined &&
+        body.expectedOfferingCursor !== Number(metadata.offeringCopyCursor || 0)) {
+      return deps.errorJson("Service copy progress changed. Refresh the job before retrying.", 409);
     }
 
+    const token = crypto.randomUUID();
+    const now = Date.now();
+    const claimed = await db.prepare(`UPDATE generation_jobs
+      SET step_claim_token = ?, step_claim_until = ?
+      WHERE id = ? AND status = ? AND COALESCE(metadata_json, '') = ?
+        AND (step_claim_token IS NULL OR step_claim_until <= ?) RETURNING id`)
+      .bind(token, now + 300000, jobId, row.status, row.metadata_json || "", now).first<{ id: string }>();
+    if (!claimed) return deps.errorJson("This generation step is already running or has changed.", 409);
+
+    async function checkpoint(status: "running" | "success" | "failed", error: string | null = null) {
+      const saved = await db.prepare(`UPDATE generation_jobs
+        SET status = ?, error = ?, metadata_json = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND step_claim_token = ? RETURNING id`)
+        .bind(status, error, JSON.stringify(metadata), jobId, token).first<{ id: string }>();
+      if (!saved) throw new Error("Generation step ownership has expired.");
+    }
+    const aboutNavJob = isAboutNavPayload(deps, payload);
+    const stepStartedMs = Date.now();
     try {
+      if (aboutNavJob) {
+        metadata.aboutNavCurrentStep = { step: requestedStep, startedAt: new Date(stepStartedMs).toISOString() };
+        await checkpoint("running");
+      }
       if (requestedStep === "outline") {
         const finalJson = chunkedGenerationBaseJson(deps, payload);
         const outlineResult = await deps.generateAiOfferingOutline(db, env, payload, finalJson, payload.originData || {}, businessName);
@@ -443,7 +490,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
         metadata.step = "outline_complete";
         metadata.nextStep = "siteCopy";
         metadata.updatedAt = new Date().toISOString();
-        await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+        await checkpoint("running");
         return deps.json({ success: true, id: jobId, completedStep: "outline", nextStep: "siteCopy", metadata });
       }
 
@@ -494,7 +541,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
             patchHash: copyPatchResult.copyPatchHash,
           });
         }
-        await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+        await checkpoint("running");
         return deps.json({ success: true, id: jobId, completedStep: "siteCopy", nextStep: "offeringCopy", metadata });
       }
 
@@ -540,7 +587,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
               skipped: true,
             });
           }
-          await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+          await checkpoint("running");
           return deps.json({ success: true, id: jobId, completedStep: "offeringCopy", nextStep: "finalize", metadata, progress: { step: "offeringCopy", completed: total, total } });
         }
 
@@ -635,7 +682,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
             patchHash: offeringPatchResult.copyPatchHash,
           });
         }
-        await deps.updateGenerationJob(db, jobId, { status: "running", error: null, metadata_json: JSON.stringify(metadata) });
+        await checkpoint("running");
         return deps.json({
           success: true,
           id: jobId,
@@ -707,7 +754,7 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
             saveDurationMs: typeof finalizeData.finalizeDurationMs === "number" ? finalizeData.finalizeDurationMs : undefined,
           });
         }
-        await deps.updateGenerationJob(db, jobId, { status: "success", error: null, metadata_json: JSON.stringify(metadata) });
+        await checkpoint("success");
         return deps.json({ success: true, id: jobId, completedStep: "finalize", result: finalizeData, metadata });
       }
 
@@ -730,8 +777,13 @@ export async function handleGenerationJobs(deps: GenerationJobsDeps, request: Re
       metadata.failureMessage = message;
       metadata.nextStep = requestedStep;
       metadata.updatedAt = new Date().toISOString();
-      await deps.updateGenerationJob(db, jobId, { status: "failed", error: message, metadata_json: JSON.stringify(metadata) });
+      await checkpoint("failed", message);
       return deps.errorJson(message, 502);
+    } finally {
+      await db.prepare(`UPDATE generation_jobs SET step_claim_token = NULL, step_claim_until = NULL
+        WHERE id = ? AND step_claim_token = ? RETURNING id`).bind(jobId, token).first().catch(() => {
+        console.warn("Generation step lease will expire automatically.");
+      });
     }
   }
 

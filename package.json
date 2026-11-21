@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "prebuild": "pnpm run check:syntax",
+    "prebuild": "pnpm run check:syntax && pnpm run test:api-handlers",
     "check:syntax": "node scripts/check-build-syntax.mjs",
     "build": "vite build",
     "build:local-server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=build/server.cjs",
@@ -24,7 +24,7 @@
     "test:preset-inference": "tsx tests/stylePresetInference.test.ts",
     "test:site-history": "tsx tests/siteHistoryBackup.test.ts",
     "test:admin-generation": "tsx tests/adminSiteGeneration.test.ts",
-    "test:api-handlers": "tsx --test tests/apiHandlers.test.ts tests/apiAccess.test.ts",
+    "test:api-handlers": "tsx --test tests/apiHandlers.test.ts tests/apiAccess.test.ts tests/paypalSettlement.test.ts tests/staticRelease.test.ts tests/generationLease.test.ts",
     "r2:cors": "pnpm exec wrangler r2 bucket cors set webview --file cloudflare/r2-cors-webview.json --force",
     "r2:cors:list": "pnpm exec wrangler r2 bucket cors list webview"
   },

@@ -1,10 +1,13 @@
 import type { D1Database, Env, SettingRow } from "./types";
+import { isCredentialSetting } from "./secrets";
 
 const dailyUsageLimits = {
   places_search: { label: "Places search", warnAt: 50, dangerAt: 100 },
   places_details: { label: "Places details", warnAt: 250, dangerAt: 500 },
   ai_readiness_remote: { label: "Remote AI readiness", warnAt: 50, dangerAt: 100 },
   site_generation: { label: "Site generation", warnAt: 30, dangerAt: 75 },
+  ai_provider_calls: { label: "AI provider requests", warnAt: 150, dangerAt: 250 },
+  places_photo: { label: "Public Places photo requests", warnAt: 750, dangerAt: 1000 },
 } as const;
 
 export type DailyUsageKey = keyof typeof dailyUsageLimits;
@@ -214,8 +217,10 @@ export async function insertCrmActivitySafe(db: D1Database, values: Record<strin
 }
 
 export async function getSetting(db: D1Database, env: Env, key: keyof Env & string): Promise<string | undefined> {
+  const binding = typeof env[key] === "string" ? env[key] : undefined;
+  if (binding && isCredentialSetting(key)) return binding;
   const row = await db.prepare("SELECT value FROM system_settings WHERE key = ?").bind(key).first<SettingRow>();
-  return row?.value || (typeof env[key] === "string" ? env[key] : undefined);
+  return row?.value || binding;
 }
 
 function usageDateUtc(date = new Date()) {
@@ -243,6 +248,18 @@ export async function incrementDailyUsage(db: D1Database, counterKey: DailyUsage
   } catch (error) {
     console.error(`Daily usage counter failed for ${counterKey}:`, error);
   }
+}
+
+export async function reserveDailyUsage(db: D1Database, counterKey: DailyUsageKey) {
+  const limit = dailyUsageLimits[counterKey].dangerAt;
+  const reserved = await db.prepare(`
+    INSERT INTO daily_usage_counters (usage_date, counter_key, count, updated_at)
+    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT(usage_date, counter_key) DO UPDATE SET count = count + 1, updated_at = CURRENT_TIMESTAMP
+    WHERE count < ?
+    RETURNING count`)
+    .bind(usageDateUtc(), counterKey, limit).first<{ count: number }>();
+  return reserved !== null;
 }
 
 export async function getDailyUsage(db: D1Database) {

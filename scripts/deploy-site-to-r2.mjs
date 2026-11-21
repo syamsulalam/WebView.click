@@ -12,6 +12,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -111,6 +112,10 @@ Arguments:
     ["download", "download.zip"].includes(relPath.split("/")[0]))) {
     throw new Error("The export exceeds the ZIP limit or contains an unsupported object name.");
   }
+  const python = (script, args, timeout) => execFileSync("python", [
+    fileURLToPath(new URL(script, import.meta.url)), ...args,
+  ], { stdio: "inherit", timeout });
+  python("check-smb-export.py", ["check", siteDir, slug], 30000);
 
   const profileArgs = profile ? ["--profile", profile] : [];
   const cliEnv = { ...process.env, CF_TIMEOUT: "25000" };
@@ -193,12 +198,15 @@ Arguments:
     const superseded = list(previousPrefix, 1000);
     if (superseded.length > 999) throw new Error("Previous release exceeds the supported cleanup size.");
     const attempted = [];
-    try {
-      stage(prefix, attempted);
-    } catch (error) {
+    const dropCandidate = () => {
       for (const key of attempted) {
         try { remove(key); } catch { console.warn(`Could not remove incomplete object ${key}.`); }
       }
+    };
+    try {
+      stage(prefix, attempted);
+    } catch (error) {
+      dropCandidate();
       throw error;
     }
     if (active() !== previous) throw new Error("The active release changed during staging.");
@@ -212,10 +220,24 @@ Arguments:
       }
     }
     if (active() !== revision) throw new Error("The candidate release is not active.");
-    execFileSync("python", [
-      fileURLToPath(new URL("check-sites-edge.py", import.meta.url)),
-      "--export", siteDir, "--slug", slug, "--revision", revision,
-    ], { stdio: "inherit", timeout: 180000 });
+    try {
+      python("check-sites-edge.py", ["--export", siteDir, "--slug", slug, "--revision", revision], 180000);
+    } catch (error) {
+      if (active() !== revision) throw new Error("Verification failed and another release is active. All files were kept.", { cause: error });
+      // The same workstation lock owns activation and rollback.
+      if (previous) {
+        fs.writeFileSync(recordFile, JSON.stringify(previous));
+        upload(currentKey, recordFile, "application/json");
+      } else {
+        remove(currentKey);
+      }
+      if (active() !== previous) throw new Error("Rollback could not be confirmed. All files were kept.", { cause: error });
+      throw new Error(`Release verification failed. Restored ${previous || "the preceding flat site"}. Candidate files kept for diagnosis and active downloads.`, { cause: error });
+    }
+    if (superseded.length) {
+      console.log("Waiting 60 seconds for downloads from the previous release.");
+      await delay(60000);
+    }
     if (active() !== revision) throw new Error("The active release changed during verification.");
     for (const key of superseded) remove(key);
     console.log(`Published ${revision} at https://sites.webview.click/${slug}/`);

@@ -2,6 +2,8 @@ import { addColumnIfMissing, tableColumns, type ColumnSpec } from "./db";
 import type { D1Database } from "./types";
 
 export const generateRequiredColumns: ColumnSpec[] = [
+  { table: "generation_jobs", column: "step_claim_token", definition: "TEXT" },
+  { table: "generation_jobs", column: "step_claim_until", definition: "INTEGER" },
   { table: "leads", column: "niche", definition: "TEXT" },
   { table: "leads", column: "phone", definition: "TEXT" },
   { table: "leads", column: "website_url", definition: "TEXT" },
@@ -247,6 +249,8 @@ export async function setupTables(db: D1Database) {
   await addColumnIfMissing(db, "generation_jobs", "status", "TEXT");
   await addColumnIfMissing(db, "generation_jobs", "error", "TEXT");
   await addColumnIfMissing(db, "generation_jobs", "metadata_json", "TEXT");
+  await addColumnIfMissing(db, "generation_jobs", "step_claim_token", "TEXT");
+  await addColumnIfMissing(db, "generation_jobs", "step_claim_until", "INTEGER");
   await addColumnIfMissing(db, "generation_jobs", "updated_at", "DATETIME");
 }
 

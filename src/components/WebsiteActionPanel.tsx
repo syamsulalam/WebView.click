@@ -688,7 +688,7 @@ export default function WebsiteActionPanel({
           domain: selectedDomain,
           domainMode,
           domainCheck,
-          domainQuote: domainMode === "new" ? domainQuote : null,
+          staticPackage: Boolean(staticPackage),
           email,
           addOns: {
             newPages,
@@ -800,8 +800,8 @@ export default function WebsiteActionPanel({
             if (!response.ok || !capture.success) {
               throw new Error(capture.error || capture.message || "PayPal capture failed.");
             }
-            setCheckoutDetails((current: any) => ({ ...current, captured: true, capture }));
-            setCheckoutStatus(isSubscription ? "Yearly billing is active. We will start the domain, hosting, DNS, and launch setup." : "Payment captured. We will start the domain, hosting, DNS, and launch setup.");
+            setCheckoutDetails((current: any) => ({ ...current, approved: true, capture }));
+            setCheckoutStatus("");
           } finally {
             setPaypalLoading(false);
           }
@@ -1837,10 +1837,12 @@ export default function WebsiteActionPanel({
                   {checkoutStatus && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{checkoutStatus}</div>}
                   {checkoutDetails.paypalInline ? (
                     <div className="space-y-3">
-                      {checkoutDetails.captured ? (
+                      {checkoutDetails.approved ? (
                         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-                          <p className="font-semibold">Payment received</p>
-                          <p className="mt-1 text-xs">We will start setup and contact you for any DNS/domain access needed.</p>
+                          <p className="font-semibold">{checkoutDetails.capture.status === "paid" ? "Payment received" : "PayPal approval recorded"}</p>
+                          <p className="mt-1 text-xs">{checkoutDetails.capture.status === "paid"
+                            ? "We will start setup and contact you for any DNS or domain access needed."
+                            : "We will start setup once PayPal confirms the first payment."}</p>
                         </div>
                       ) : (
                         <>

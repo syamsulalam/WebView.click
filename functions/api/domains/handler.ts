@@ -264,6 +264,15 @@ async function quoteWithProvider(deps: DomainsDeps, db: D1DatabaseLike, env: unk
   return quoteSpaceship(config, domain, maxUsd);
 }
 
+export async function quoteDomainForCheckout(deps: DomainsDeps, db: D1DatabaseLike, env: unknown, domain: string, feeUsd: number) {
+  const provider = normalizeProvider(await configValue(deps, db, env, "DOMAIN_REGISTRAR_PROVIDER")) || "cloudflare_registrar";
+  const limit = Math.min(feeUsd, firstNumber(await configValue(deps, db, env, "DOMAIN_REGISTRATION_MAX_USD")) || 17);
+  const quote = await quoteWithProvider(deps, db, env, provider, domain, limit);
+  const supportedForMvp = quote.registrable && !quote.premium && quote.currency === "USD" &&
+    typeof quote.registrationUsd === "number" && quote.registrationUsd > 0 && quote.registrationUsd <= limit;
+  return { ...quote, maxRegistrationUsd: limit, supportedForMvp };
+}
+
 async function handleProviderStatus(deps: DomainsDeps, db: D1DatabaseLike, env: unknown) {
   const configuredDefault = normalizeProvider(await configValue(deps, db, env, "DOMAIN_REGISTRAR_PROVIDER")) || "cloudflare_registrar";
   const maxRegistrationUsd = firstNumber(await configValue(deps, db, env, "DOMAIN_REGISTRATION_MAX_USD")) || 17;
@@ -293,8 +302,9 @@ async function handleRegistrarQuote(deps: DomainsDeps, request: Request, db: D1D
   try {
     const quote = await quoteWithProvider(deps, db, env, provider, domain, maxRegistrationUsd);
     const unsupported = quote.premium || !quote.withinMaxPrice || !quote.registrable;
+    const { raw: _providerPayload, ...publicQuote } = quote;
     return deps.json({
-      ...quote,
+      ...publicQuote,
       tld: domainTld(domain),
       maxRegistrationUsd,
       supportedForMvp: !unsupported,

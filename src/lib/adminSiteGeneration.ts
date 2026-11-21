@@ -446,6 +446,7 @@ export async function runChunkedGenerationJob(
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               step,
+              ...(step === "offeringCopy" ? { expectedOfferingCursor: Number(result?.metadata?.offeringCopyCursor || 0) } : {}),
               ...(step === "offeringCopy" && forceOfferingCopyBatchSizeOne ? { forceOfferingCopyBatchSize: 1 } : {}),
             }),
           });

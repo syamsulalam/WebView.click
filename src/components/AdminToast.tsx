@@ -138,7 +138,7 @@ export function AdminToastProvider({ children }: { children: ReactNode }) {
                 )}
                 {toast.actions && toast.actions.length > 0 && !toast.actions.some((action) => typeof action !== "string") && (
                   <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-relaxed opacity-90">
-                    {toast.actions.map((action, index) => <li key={`${toast.id}-${index}`}>{action}</li>)}
+                    {toast.actions.map((action, index) => <li key={`${toast.id}-${index}`}>{typeof action === "string" ? action : action.label}</li>)}
                   </ul>
                 )}
                 {toast.rawMessage && (

@@ -209,7 +209,9 @@ foreach ($Biz in $Batch) {
     $VcfOut = Join-Path $ProjectRoot "contacts-$Slug.vcf"
     try {
         node "$ScriptDir\sync-google-contacts.mjs" --input $TempContactJson --vcf $VcfOut
-        if ($LASTEXITCODE -ne 0) { throw "Local vCard generation failed for $Slug." }
+        if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $VcfOut -PathType Leaf) -or (Get-Item -LiteralPath $VcfOut).Length -eq 0) {
+            throw "Local vCard generation failed for $Slug."
+        }
     } finally {
         Remove-Item -LiteralPath $TempContactJson -ErrorAction SilentlyContinue
     }

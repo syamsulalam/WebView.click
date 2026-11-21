@@ -412,7 +412,7 @@ test("conversion metadata defaults density to spacious and sizes the canonical C
   assert.ok(((reconversion.conversionAudit as any).flags as string[]).includes("undersized_cta"));
 });
 
-test("applyGeneratedSitePageInserts applies services, contact, feedback, and gallery in one sequence", () => {
+test("applyGeneratedSitePageInserts applies About, services, contact, feedback, and gallery in one sequence", () => {
   const site: Record<string, unknown> = {
     meta: { language: "en" },
     brand: { preferredHeroImage: "/hero.jpg" },
@@ -424,9 +424,9 @@ test("applyGeneratedSitePageInserts applies services, contact, feedback, and gal
   applyGeneratedSitePageInserts(site, { formatted_phone_number: "+1 555-0199" });
 
   const pageIds = (site.pages as Array<Record<string, unknown>>).map((page) => page.pageId);
-  assert.deepEqual(pageIds, ["home", "services", "contact", "feedback", "gallery"]);
+  assert.deepEqual(pageIds, ["home", "about", "services", "contact", "feedback", "gallery"]);
   const headerHrefs = (site.navigation as any).headerMenu.map((item: any) => item.href);
-  assert.deepEqual(headerHrefs, ["#home", "#services", "#gallery", "#contact"]);
+  assert.deepEqual(headerHrefs, ["#home", "#about", "#services", "#gallery", "#contact"]);
   const home = (site.pages as Array<Record<string, unknown>>).find((page) => page.pageId === "home");
   assert.ok((home?.sections as Array<Record<string, unknown>>).some((section) => section.type === "finalCta"));
 });

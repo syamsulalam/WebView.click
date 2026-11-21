@@ -54,7 +54,7 @@ export type PlacesDeps = {
   ensureRequiredColumns: (db: D1DatabaseLike, specs: unknown[]) => Promise<void>;
   updateProspectRecord: (db: D1DatabaseLike, placeId: string, values: Record<string, unknown>) => Promise<void>;
   getSetting: (db: D1DatabaseLike, env: unknown, key: string) => Promise<string | undefined>;
-  incrementDailyUsage: (db: D1DatabaseLike, counterKey: "places_search" | "places_details", amount?: number) => Promise<void>;
+  reserveDailyUsage: (db: D1DatabaseLike, counterKey: "places_search" | "places_details" | "places_photo") => Promise<boolean>;
   isMissingColumnError: (error: unknown, column?: string) => boolean;
   prospectListRequiredColumns: unknown[];
   prospectWebsiteCheckRequiredColumns: unknown[];
@@ -426,7 +426,7 @@ async function precheckWebsiteForPlaces(deps: PlacesDeps, db: D1DatabaseLike, pl
     }
 
     try {
-      await deps.incrementDailyUsage(db, "places_details");
+      if (!await deps.reserveDailyUsage(db, "places_details")) throw new Error("Daily Places details budget reached.");
       const { data } = await fetchPlaceDetailsLegacy(placeId, placesKey, [
         "place_id",
         "name",
@@ -568,7 +568,7 @@ export async function handlePlacesSearch(deps: PlacesDeps, url: URL, db: D1Datab
   }
 
   try {
-    await deps.incrementDailyUsage(db, "places_search");
+    if (!await deps.reserveDailyUsage(db, "places_search")) return deps.errorJson("Daily Places search budget reached.", 429);
     const response = await fetch(
       `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${encodeURIComponent(placesKey)}`,
     );
@@ -731,7 +731,7 @@ export async function handlePlacesDetails(deps: PlacesDeps, url: URL, db: D1Data
   ].join(",");
 
   try {
-    await deps.incrementDailyUsage(db, "places_details");
+    if (!await deps.reserveDailyUsage(db, "places_details")) return deps.errorJson("Daily Places details budget reached.", 429);
     const { response, data } = await fetchPlaceDetailsLegacy(placeId, placesKey, fields.split(","));
 
     if (!response.ok || (data.status && data.status !== "OK")) {
@@ -981,7 +981,7 @@ export async function handlePlacesManualDuplicates(deps: PlacesDeps, url: URL, d
 }
 
 function summarizeSearchProspects(deps: PlacesDeps, prospects: Array<Record<string, unknown>>) {
-  return prospects.reduce((summary, prospect) => {
+  return prospects.reduce<Record<string, number>>((summary, prospect) => {
     const website = deps.asString(prospect.website);
     const websiteStatus = deps.asString(prospect.websiteCheckStatus);
     const status = deps.asString(prospect.prospectStatus);
@@ -1089,8 +1089,9 @@ export async function handlePlacesPhoto(deps: PlacesDeps, url: URL, db: D1Databa
   const maxWidth = url.searchParams.get("maxwidth") || "320";
   const placesKey = await deps.getSetting(db, env, "GOOGLE_PLACES_API_KEY");
 
-  if (!reference) {
-    return deps.errorJson("Missing photo reference", 400);
+  if (!reference || !/^[A-Za-z0-9_-]{1,1024}$/.test(reference) || !/^\d{1,4}$/.test(maxWidth) ||
+      Number(maxWidth) < 1 || Number(maxWidth) > 1600) {
+    return deps.errorJson("Invalid photo reference or width.", 400);
   }
 
   if (!placesKey) {
@@ -1102,7 +1103,8 @@ export async function handlePlacesPhoto(deps: PlacesDeps, url: URL, db: D1Databa
   photoUrl.searchParams.set("photo_reference", reference);
   photoUrl.searchParams.set("key", placesKey);
 
-  const response = await fetch(photoUrl.toString(), { redirect: "follow" });
+  if (!await deps.reserveDailyUsage(db, "places_photo")) return deps.errorJson("Daily photo request budget reached.", 429);
+  const response = await fetch(photoUrl, { redirect: "follow", signal: AbortSignal.timeout(8000) });
   if (!response.ok || !response.body) {
     return deps.errorJson("Could not fetch Google Places photo", response.status || 500);
   }

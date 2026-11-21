@@ -167,6 +167,8 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
     status TEXT NOT NULL,
     error TEXT,
     metadata_json TEXT,
+    step_claim_token TEXT,
+    step_claim_until INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

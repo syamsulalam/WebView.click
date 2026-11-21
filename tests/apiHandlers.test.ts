@@ -106,7 +106,7 @@ function placesDeps(): PlacesDeps {
     ensureRequiredColumns: async () => undefined,
     updateProspectRecord: async () => undefined,
     getSetting: async () => undefined,
-    incrementDailyUsage: async () => undefined,
+    reserveDailyUsage: async () => true,
     isMissingColumnError: () => false,
     prospectListRequiredColumns: [],
     prospectWebsiteCheckRequiredColumns: [],
@@ -360,7 +360,7 @@ test("sites generate endpoint saves site JSON and updates job, lead, prospect, a
   assert.equal(savedJson.brand.logoImageUrl, "/api/places/photo?reference=photo-1&maxwidth=960");
   assert.equal(savedJson.brand.googlePhotoReference, "photo-1");
   assert.equal(savedJson.brand.selectedPhotoPriority, "hero");
-  assert.deepEqual(savedJson.brand.paletteOptions, [{ source: "photo-1", colors: ["#f8fafc", "#0f172a"] }]);
+  assert.deepEqual(savedJson.brand.paletteOptions, [{ source: "photo-1", colors: ["#0F172A", "#412786", "#F8FAFC"] }]);
   assert.equal(savedJson.sourceData.placeId, "place-good");
   assert.equal(savedJson.sourceData.googleMapsUri, "https://www.google.com/maps/place/North+Dallas+Roof+Repair");
   assert.ok(Array.isArray(savedJson.pages));
@@ -490,28 +490,30 @@ test("sites generate endpoint saves compact D1 manifest when R2 JSON storage is 
   );
 
   assert.equal(response.status, 200);
-  assert.equal(calls.r2Puts.length, 2);
-  assert.equal(calls.r2Puts[0].key, "sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
-  assert.equal(calls.r2Puts[1].contentType, "application/json; charset=utf-8");
+  assert.equal(calls.r2Puts.length, 1);
+  const revisionKey = calls.r2Puts[0].key;
+  const revisionUrl = "https://assets.example.test/" + revisionKey;
+  assert.match(revisionKey, /^sites\/austin-emergency-plumbing\/revisions\/[a-f0-9-]{36}\.json$/);
+  assert.equal(calls.r2Puts[0].contentType, "application/json; charset=utf-8");
 
   assert.equal(calls.sites.length, 1);
   const savedSite = calls.sites[0];
   assert.equal(savedSite.businessId, "austin-emergency-plumbing");
-  assert.equal(savedSite.options.r2_json_key, "sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
-  assert.equal(savedSite.options.r2_json_url, "https://assets.example.test/sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+  assert.equal(savedSite.options.r2_json_key, revisionKey);
+  assert.equal(savedSite.options.r2_json_url, revisionUrl);
 
   const manifest = JSON.parse(savedSite.jsonContent);
   assert.equal(manifest.storageOnly, true);
   assert.equal(manifest.businessId, "austin-emergency-plumbing");
-  assert.equal(manifest.r2JsonKey, "sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
-  assert.equal(manifest.r2JsonUrl, "https://assets.example.test/sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+  assert.equal(manifest.r2JsonKey, revisionKey);
+  assert.equal(manifest.r2JsonUrl, revisionUrl);
   assert.equal(manifest.summary.businessName, "Austin Emergency Plumbing");
   assert.equal(manifest.summary.rating, 4.7);
   assert.equal(manifest.pages, undefined);
 
-  const r2Json = JSON.parse(calls.r2Puts[1].text);
-  assert.equal(r2Json.storage.r2JsonKey, "sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
-  assert.equal(r2Json.storage.r2JsonUrl, "https://assets.example.test/sites/austin-emergency-plumbing/austin-emergency-plumbing.json");
+  const r2Json = JSON.parse(calls.r2Puts[0].text);
+  assert.equal(r2Json.storage.r2JsonKey, revisionKey);
+  assert.equal(r2Json.storage.r2JsonUrl, revisionUrl);
   assert.ok(Array.isArray(r2Json.pages));
 });
 
@@ -521,6 +523,10 @@ test("payments checkout creates PayPal inline order with add-on pricing", async 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     fetchCalls.push({ url, body: String(init?.body || "") });
+    if (url === "https://sites.webview.click/north-dallas-roof-repair/") {
+      assert.equal(init?.method, "HEAD");
+      return new Response(null, { headers: { "X-WebView-Release": "flat" } });
+    }
     if (url.endsWith("/v1/oauth2/token")) {
       return new Response(JSON.stringify({ access_token: "sandbox-token" }), {
         status: 200,
@@ -529,9 +535,9 @@ test("payments checkout creates PayPal inline order with add-on pricing", async 
     }
     if (url.endsWith("/v2/checkout/orders")) {
       return new Response(JSON.stringify({
-        id: "PAYPAL-ORDER-123",
+        id: "PAYPALORDER123",
         status: "CREATED",
-        links: [{ rel: "payer-action", href: "https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-ORDER-123" }],
+        links: [{ rel: "payer-action", href: "https://www.sandbox.paypal.com/checkoutnow?token=PAYPALORDER123" }],
       }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -540,6 +546,7 @@ test("payments checkout creates PayPal inline order with add-on pricing", async 
     return new Response(JSON.stringify({ message: "unexpected fetch" }), { status: 500 });
   }) as typeof fetch;
 
+  let createdLead = false;
   const ledgerRows: Array<Record<string, unknown>> = [];
   const activities: Array<Record<string, unknown>> = [];
   const settings: Record<string, string> = {
@@ -562,15 +569,20 @@ test("payments checkout creates PayPal inline order with add-on pricing", async 
           return this;
         },
         async first() {
-          if (query.includes("SELECT id FROM leads")) return { id: "lead-1" };
+          if (query.includes("SELECT id FROM leads")) return createdLead ? { id: "lead-1" } : null;
+          if (query.includes("SELECT * FROM lead_payments")) return ledgerRows[0] ? { raw_json: ledgerRows[0].rawJson } : null;
           return null;
         },
         async all() {
           return { results: [] };
         },
         async run() {
+          if (query.includes("INSERT INTO leads")) createdLead = true;
+          if (query.includes("json_patch(raw_json")) {
+            ledgerRows[0].rawJson = JSON.stringify({ ...JSON.parse(String(ledgerRows[0].rawJson)), ...JSON.parse(String(this.values[0])) });
+          }
           if (query.includes("INSERT INTO lead_payments")) {
-            const rawJson = String(this.values[10] || "{}");
+            const rawJson = String(this.values[9] || "{}");
             ledgerRows.push({
               businessId: this.values[2],
               processor: this.values[3],
@@ -597,6 +609,7 @@ test("payments checkout creates PayPal inline order with add-on pricing", async 
       checkoutRequiredColumns: [],
       paymentLedgerRequiredColumns: [],
       getSetting: async (_db, _env, key) => settings[key],
+      quoteNewDomain: async () => ({ supportedForMvp: true }),
       upsertLeadRecord: async () => undefined,
       insertCrmActivitySafe: async (_db, values) => {
         activities.push(values);
@@ -606,8 +619,9 @@ test("payments checkout creates PayPal inline order with add-on pricing", async 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         businessId: "north-dallas-roof-repair",
+        staticPackage: true,
         businessName: "North Dallas Roof Repair",
-        requestedDomain: "northdallasroof.com",
+        domain: "northdallasroof.com",
         domainMode: "new",
         email: "owner@example.com",
         addOns: { newPages: 3, editedPages: 2 },
@@ -621,28 +635,29 @@ test("payments checkout creates PayPal inline order with add-on pricing", async 
     assert.equal(payload.paypalInline, true);
     assert.equal(payload.paypalClientId, "sandbox-client");
     assert.equal(payload.paypalMode, "sandbox");
-    assert.equal(payload.paypalOrderId, "PAYPAL-ORDER-123");
-    assert.equal(payload.checkoutUrl, "https://www.sandbox.paypal.com/checkoutnow?token=PAYPAL-ORDER-123");
-    assert.equal(payload.amountUsd, 242);
+    assert.equal(payload.paypalOrderId, "PAYPALORDER123");
+    assert.equal(payload.checkoutUrl, "https://www.sandbox.paypal.com/checkoutnow?token=PAYPALORDER123");
+    assert.equal(payload.amountUsd, 422);
     assert.equal(payload.pricing.totalPageActions, 5);
     assert.equal(payload.pricing.discountRate, 0.1);
     assert.equal(payload.requiresManualReview, false);
 
     const orderBody = JSON.parse(fetchCalls.find((call) => call.url.endsWith("/v2/checkout/orders"))?.body || "{}");
     assert.equal(orderBody.intent, "CAPTURE");
-    assert.equal(orderBody.purchase_units[0].amount.value, "242.00");
+    assert.equal(orderBody.purchase_units[0].amount.value, "422.00");
     assert.equal(orderBody.purchase_units[0].items.length, 2);
-    assert.equal(orderBody.purchase_units[0].items[1].unit_amount.value, "45.00");
+    assert.equal(orderBody.purchase_units[0].items[1].unit_amount.value, "225.00");
     assert.equal(orderBody.purchase_units[0].payment_source, undefined);
     assert.equal(orderBody.payment_source.paypal.experience_context.shipping_preference, "NO_SHIPPING");
     assert.equal(orderBody.payment_source.paypal.experience_context.user_action, "PAY_NOW");
 
     assert.equal(ledgerRows.length, 1);
     assert.equal(ledgerRows[0].processor, "paypal");
-    assert.equal(ledgerRows[0].amountUsd, 242);
+    assert.equal(ledgerRows[0].amountUsd, 422);
     const raw = JSON.parse(String(ledgerRows[0].rawJson));
+    assert.equal(raw.paypalOrderId, "PAYPALORDER123");
     assert.equal(raw.pricing.totalPageActions, 5);
-    assert.equal(raw.pricing.addOnUsd, 45);
+    assert.equal(raw.pricing.addOnUsd, 225);
     assert.equal(activities.length, 1);
     assert.equal(activities[0].activity_type, "checkout_pending");
   } finally {
@@ -704,6 +719,7 @@ test("payments checkout falls back to PayPal Business link when order creation f
       checkoutRequiredColumns: [],
       paymentLedgerRequiredColumns: [],
       getSetting: async (_db, _env, key) => settings[key],
+      quoteNewDomain: async () => ({ supportedForMvp: true }),
       upsertLeadRecord: async () => undefined,
       insertCrmActivitySafe: async () => undefined,
     }, new Request("https://webview.click/api/payments/checkout", {
@@ -712,7 +728,7 @@ test("payments checkout falls back to PayPal Business link when order creation f
       body: JSON.stringify({
         businessId: "north-dallas-roof-repair",
         businessName: "North Dallas Roof Repair",
-        requestedDomain: "northdallasroof.com",
+        domain: "northdallasroof.com",
         domainMode: "new",
         email: "owner@example.com",
       }),

@@ -151,18 +151,19 @@ async function main() {
   if (args.length === 0 || args.includes("--help")) {
     console.log(`
 Usage:
-  node sync-google-contacts.mjs --input <prospects.json> [--token <google_oauth_token>] [--vcf <output.vcf>]
+  node sync-google-contacts.mjs --input <prospects.json> [--sync] [--vcf <output.vcf>]
 
 Arguments:
   --input   JSON file containing array of prospects: [{ name, phone, address, niche }]
-  --token   Google OAuth Access Token with https://www.googleapis.com/auth/contacts scope
+  --sync    Create Google Contacts using GOOGLE_CONTACTS_ACCESS_TOKEN
   --vcf     Path to write a combined .vcf vCard file for manual/local import
     `);
     process.exit(0);
   }
 
   const inputFile = inputIndex !== -1 ? args[inputIndex + 1] : null;
-  const token = tokenIndex !== -1 ? args[tokenIndex + 1] : process.env.GOOGLE_CONTACTS_ACCESS_TOKEN;
+  const sync = args.includes("--sync") || tokenIndex !== -1;
+  const token = sync ? (tokenIndex !== -1 ? args[tokenIndex + 1] : process.env.GOOGLE_CONTACTS_ACCESS_TOKEN) : "";
   const vcfOut = vcfIndex !== -1 ? args[vcfIndex + 1] : null;
 
   if (!inputFile || !fs.existsSync(inputFile)) {
@@ -170,7 +171,9 @@ Arguments:
     process.exit(1);
   }
 
-  const data = JSON.parse(fs.readFileSync(inputFile, "utf8"));
+  if (sync && !token) throw new Error("Google Contacts sync requires an OAuth token.");
+  if (vcfIndex !== -1 && !vcfOut) throw new Error("The --vcf option requires an output path.");
+  const data = JSON.parse(fs.readFileSync(inputFile, "utf8").replace(/^\uFEFF/, ""));
   const contacts = Array.isArray(data) ? data : [data];
 
   console.log(`📋 Found ${contacts.length} contact(s) to process.`);
@@ -196,6 +199,7 @@ Arguments:
       }
     }
     console.log(`🏁 API Sync Complete: ${success}/${contacts.length} saved to Google Contacts.`);
+    if (success !== contacts.length) process.exitCode = 1;
   } else if (!vcfOut) {
     console.log("ℹ️ No Google OAuth token provided. Generating default VCF export at 'contacts-export.vcf'...");
     const vcfContent = generateVCard(contacts);
@@ -205,5 +209,8 @@ Arguments:
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch(console.error);
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
 }

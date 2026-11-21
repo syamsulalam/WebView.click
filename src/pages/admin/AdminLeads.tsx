@@ -76,7 +76,7 @@ export default function AdminLeads() {
     saveLeadContact,
     openPaymentVerification,
     submitPaymentVerification,
-  } = useLeadCrm({ settings, showToast, showApiError });
+  } = useLeadCrm({ settings, showToast, showApiError: (error, source) => showApiError(error, { source }) });
 
   const providers: Record<string, { label: string; models: { value: string; label: string }[] }> = {
     OpenAI: {

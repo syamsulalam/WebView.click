@@ -29,7 +29,7 @@ test("missing Clerk bindings fail closed before database access", async () => {
 });
 
 test("credential detection covers stored provider secrets", () => {
-  for (const key of ["CLOUDFLARE_API_TOKEN", "GEMINI_API_KEY", "PAYPAL_LIVE_CLIENT_SECRET", "SPACESHIP_API_SECRET", "CLERK_SECRET_KEY"]) {
+  for (const key of ["CLOUDFLARE_API_TOKEN", "GEMINI_API_KEY", "PAYPAL_LIVE_CLIENT_SECRET", "SPACESHIP_API_SECRET", "CLERK_SECRET_KEY", "MIDTRANS_SERVER_KEY"]) {
     assert.equal(isCredentialSetting(key), true, key);
   }
   assert.equal(isCredentialSetting("PAYMENT_LINK_BASIC"), false);

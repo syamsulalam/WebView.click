@@ -1,14 +1,14 @@
 import templateSchema from "../../JSON/template-schema.json";
 import { authenticateAdmin, isPublicApiRequest } from "./_shared/adminAccess";
-import { createGenerationJob, ensureColumn, ensureRequiredColumns, getDailyUsage, getDb, getSetting, incrementDailyUsage, insertCrmActivitySafe, isMissingColumnError, saveJsonSiteRecord, tableColumns, updateGenerationJob, updateProspectRecord, upsertLeadRecord } from "./_shared/db";
+import { createGenerationJob, ensureColumn, ensureRequiredColumns, getDailyUsage, getDb, getSetting, incrementDailyUsage, insertCrmActivitySafe, isMissingColumnError, reserveDailyUsage, saveJsonSiteRecord, tableColumns, updateGenerationJob, updateProspectRecord, upsertLeadRecord } from "./_shared/db";
 import { asString, corsHeaders, errorJson, json, normalizeBusinessId, parseJsonArray, parseJsonObject, readJsonBody, sha256Json } from "./_shared/response";
-import { checkoutRequiredColumns, databaseRepairReport, generateRequiredColumns, paymentLedgerRequiredColumns, prospectDetailsRequiredColumns, prospectListRequiredColumns, prospectStatusRequiredColumns, prospectWebsiteCheckRequiredColumns, selectionRequiredColumns, setupTables } from "./_shared/schema";
+import { checkoutRequiredColumns, databaseRepairReport, generateRequiredColumns, paymentLedgerRequiredColumns, prospectDetailsRequiredColumns, prospectListRequiredColumns, prospectStatusRequiredColumns, prospectWebsiteCheckRequiredColumns, selectionRequiredColumns } from "./_shared/schema";
 import type { D1Database, Env, PagesContext } from "./_shared/types";
 import { buildAiFailureDiagnostics, extractProviderErrorDetails, getAiReadiness, handleAiProviderFailure, handleAiProviderHealth, handleAiReadiness, kieModelConfigs, type AiReadinessDeps } from "./ai/readiness";
 import { applyAiCopyPatch, applyAiOfferingOutline, buildAiCopyAudit, collectAiCopyAuditTargets, generateAiCopyPatch, generateAiOfferingOutline, type AiSiteGenerationDeps } from "./ai/siteGeneration";
 import { handleAudits, type AuditsDeps } from "./audits/handler";
 import { handleCloudflare, type CloudflareDeps } from "./cloudflare/handler";
-import { handleDomains, type DomainsDeps } from "./domains/handler";
+import { handleDomains, quoteDomainForCheckout, type DomainsDeps } from "./domains/handler";
 import { handleGenerationJobs, type GenerationJobsDeps } from "./generationJobs/handler";
 import { handleLeads, type LeadsDeps } from "./leads/handler";
 import { handleOutreach, type OutreachDeps } from "./outreach/handler";
@@ -61,7 +61,7 @@ const aiReadinessDeps: AiReadinessDeps = {
   asString,
   parseJsonObject,
   getSetting: getSetting as AiReadinessDeps["getSetting"],
-  incrementDailyUsage: incrementDailyUsage as AiReadinessDeps["incrementDailyUsage"],
+  reserveDailyUsage: reserveDailyUsage as AiReadinessDeps["reserveDailyUsage"],
 };
 
 const providerCooldownDeps: ProviderCooldownDeps = {
@@ -94,11 +94,13 @@ const paymentsDeps: PaymentsDeps = {
   checkoutRequiredColumns,
   paymentLedgerRequiredColumns,
   getSetting: getSetting as PaymentsDeps["getSetting"],
+  quoteNewDomain: (db, env, domain, fee) => quoteDomainForCheckout(domainsDeps, db, env, domain, fee),
   upsertLeadRecord: upsertLeadRecord as PaymentsDeps["upsertLeadRecord"],
   insertCrmActivitySafe: insertCrmActivitySafe as PaymentsDeps["insertCrmActivitySafe"],
 };
 
 const aiSiteGenerationDeps: AiSiteGenerationDeps = {
+  reserveProviderCall: (db) => reserveDailyUsage(db as D1Database, "ai_provider_calls"),
   getSetting: getSetting as AiSiteGenerationDeps["getSetting"],
   getAiReadiness: (db, env, provider, model, requiresAi, remoteValidate, refreshRemoteValidation) =>
     getAiReadiness(aiReadinessDeps, db as D1Database, env, provider, model, requiresAi, remoteValidate, refreshRemoteValidation),
@@ -188,7 +190,7 @@ const placesDeps: PlacesDeps = {
   ensureRequiredColumns: ensureRequiredColumns as PlacesDeps["ensureRequiredColumns"],
   updateProspectRecord: updateProspectRecord as PlacesDeps["updateProspectRecord"],
   getSetting: getSetting as PlacesDeps["getSetting"],
-  incrementDailyUsage: incrementDailyUsage as PlacesDeps["incrementDailyUsage"],
+  reserveDailyUsage: reserveDailyUsage as PlacesDeps["reserveDailyUsage"],
   isMissingColumnError,
   prospectListRequiredColumns,
   prospectWebsiteCheckRequiredColumns,
@@ -240,11 +242,6 @@ async function route(context: PagesContext): Promise<Response> {
 
   try {
     const db = getDb(env);
-    try {
-      await setupTables(db);
-    } catch (setupError) {
-      console.error("DB setup fallback:", setupError);
-    }
 
     if (segments[0] === "settings") {
       return handleSettings(settingsDeps, request, db, env);

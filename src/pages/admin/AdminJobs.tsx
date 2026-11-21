@@ -31,7 +31,7 @@ export default function AdminJobs() {
   useEffect(() => {
     fetch("/api/settings")
       .then((response) => response.ok ? response.json() : {})
-      .then((data) => setSettings(data && typeof data === "object" ? data : {}))
+      .then((data) => setSettings(data && typeof data === "object" ? data as Record<string, string> : {}))
       .catch(() => setSettings({}))
       .finally(() => setSettingsLoaded(true));
   }, []);
