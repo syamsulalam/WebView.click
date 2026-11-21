@@ -1,6 +1,6 @@
-# 📄 PRD — WebView.click v2 (DRAFT for approval)
+# PRD — WebView.click
 
-**Project:** WebView.click · **Version:** 2.0-draft · **Date:** 2026-10-01 · **Status:** 🟡 DRAFT — audit + review first, implementation only after approval.
+**Project:** WebView.click · **Updated:** 2026-11-21. Sections 1, 3, 5, and 15 describe the current product. Dated audits and roadmap sections retain their original scope.
 **Supersedes:** `docs/WebView.click.md` v1.0 (kept as historical record; its ID-market examples, WhatsApp-first flow, and $120/y pricing no longer describe the product).
 **Companion:** `CODEBASE.md` (root inventory: code, logic, reason) + `CODEBASE.md` Appendix A (full generation-quality audit with file:line evidence).
 
@@ -8,11 +8,9 @@ Legend: ✅ required · ⚠️ conditional · ❌ out of scope · 🔴 blocks pr
 
 ## 1 · Executive summary
 
-WebView.click is an automated client-acquisition and website delivery engine. It automatically finds local businesses without websites in high-purchasing-power international markets (UK, Singapore, UAE, DACH, Netherlands, Australia) using Google Places Scraping, auto-generates a personalized high-converting demo website from real business data/photos/reviews, renders high-fidelity visual mockups, and initiates automated outreach via WhatsApp Business. When a business owner accepts and pays through the frictionless checkout ($0 free static export vs. $180/year managed hosting + $17/year custom domain setup + optional $49/month SEO/maintenance retainer), the system automatically provisions the domain via Registrar API, deploys the site to Cloudflare Pages via GitHub/Cloudflare API, provisions SSL, and delivers the live production website with zero manual human touch.
+WebView.click qualifies local businesses whose Google listing has a missing or confirmed unavailable official website. A reviewed brief uses business facts, reuse-cleared media and sourced reviews. The SMB CLI uses Elementor Starter Templates and AI Bridge on `wpwv.codev.id`, exports with Simply Static, and publishes a stable preview and ZIP on `sites.webview.click`. The review and outreach queue waits for the prospect's reply to an identity check. Operators can publish a reviewed brief directly.
 
-The product operates on two intertwined architectures:
-1. **Core AI Site Builder & Grounding Engine**: Ensures every generated demo looks like a $997 custom-coded site (P0–P4 design-intelligence tokens, grounded copy, zero hallucinations, multi-photo layouts).
-2. **End-to-End Automated Agency Pipeline**: Scraper → AI Generator → Screenshot Renderer → WhatsApp Outreach Engine → Global Payment Processor / MoR → Registrar/DNS API → Cloudflare Pages API → Instant Delivery.
+The React CRM and JSON generator remain on the apex Pages app. Both paths offer a free static download and optional paid hosting and domain setup. The payment service records and verifies orders before fulfillment. Domain purchase and production provisioning remain operator fulfillment steps.
 
 ## 2 · What changed since v1.0 (truth table)
 
@@ -31,8 +29,9 @@ The product operates on two intertwined architectures:
 | Layer | Choice | Why |
 |---|---|---|
 | Frontend | React 19 + Vite + Tailwind | Token-driven renderer; generated-site CSS strictly scoped to `[data-wv-site-canvas]` so tool UI never inherits site styles |
-| Auth | Clerk (`publicMetadata.role === "admin"`) | Staff gating with dev bypass outside production |
+| Auth | Clerk (`publicMetadata.role === "admin"`) | Pages Functions verify session and role before private reads, writes or provider calls |
 | Production hosting/API/data | Cloudflare Pages + Pages Functions + D1 + R2 | `functions/api/*/handler.ts` modules; D1 manifests + R2 full JSON; Express/SQLite kept for local context only |
+| Static SMB generation and delivery | Elementor Starter Templates Companion + AI Bridge + Simply Static + separate R2 Worker | Reviewed brief and publish by slug. See [GUIDE.md](GUIDE.md) |
 | AI | OpenRouter / OpenAI / Gemini / KIE.ai / Opencode via chunked jobs | No single huge AI call (reliability rule); provider cooldowns + readiness preflight + 24h health guardrails |
 | Payments | PayPal API-first, Xendit/Midtrans/DOKU/Wise/Payoneer/manual rails | Server recomputes all pricing; buyer UI never shows wholesale registrar cost |
 | Proof asset | Deterministic GBP marketing audit (`/audit/:businessId`), no AI | Owner-facing score + evidence + PDF without hallucination risk |
@@ -51,9 +50,11 @@ The product operates on two intertwined architectures:
 
 ## 5 · User flows (current truth)
 
-**A · Admin acquisition:** login → Find Leads (niche + city + state, curated US routes) → Gather data (Place Details; `No website` verified only after details) → pick photo/palette (up to 5 palette options) → chunked Generate (outline → siteCopy → offeringCopy → finalize with progress bar) → QA in Sites/Jobs → audit snapshot → outreach queue.
+**A · React CRM acquisition:** login → Find Leads → Gather data and verify website status → choose photo/palette → chunked Generate → QA in Sites/Jobs → audit snapshot → outreach queue.
 **B · Owner conversion:** receives `/:businessId?owner=1` link (starts 7-day review countdown) → browses personalized preview → `Download / Setup` panel → FREE `$0` package modal ($997 → $0 value stack, page list, PDF guide) **or** done-for-you setup (term → optional $50 page add-ons → domain check → email/payment) → download zip or paid fulfillment queue.
 **C · Return visit:** `localStorage.savedBusinessId` reopens the owner's preview from the hub; expired review windows show an archived overlay with a `mailto:` restore path.
+
+**D · Static SMB delivery:** reviewed prospect brief → Elementor staging → Simply Static export → verify and publish by slug → **Download Your Site** opens `/site-package/:slug` for the free ZIP or managed setup. The publisher replaces the active revision at the same URL.
 
 ## 6 · Audit verdict: why current sites feel "not good enough"
 
@@ -196,7 +197,9 @@ UUPM's 34 `landing.csv` patterns supersede its own deprecated style rows 20/21/2
 - **Deprecated style rows** 20/21/24/26 and supplemental/mobile-only styles: excluded from recommendations by the source itself; use §13.2 patterns instead.
 
 
-## 14 · Fully Automated Zero-Touch Autonomous Agency Engine
+## 14 · Future automation concept
+
+This earlier proposal includes planned discovery, outreach, payment rails, and automated provisioning. The deployed workflow and supported setup steps are in §15 and [GUIDE.md](GUIDE.md).
 
 ### 14.1 The 6-Stage Autonomous Pipeline
 1. **Automated Discovery (Lead Scraper)**:

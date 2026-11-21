@@ -2,6 +2,8 @@
 
 Last updated: 14 Mei 2026.
 
+Rencana historis untuk generator JSON dan preview React. Generator SMB Elementor dan publikasi statis dijelaskan di [PRD aktif](../PRD.md) dan [GUIDE.md](../GUIDE.md).
+
 Tujuan dokumen ini: merencanakan upgrade schema JSON dan renderer supaya WebView.click bisa menghasilkan situs yang benar-benar customized, personalized, dan terlihat profesional, bukan hanya layout generic dari sample JSON.
 
 Input utama:

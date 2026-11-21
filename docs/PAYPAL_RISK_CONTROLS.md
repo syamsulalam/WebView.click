@@ -2,6 +2,8 @@
 
 Last checked: 2026-05-25
 
+Current order binding, verified settlement and older-order reconciliation are described in [CODEBASE.md](../CODEBASE.md). The paid offer also opens from static sites through `/site-package/:slug`.
+
 Purpose: keep WebView.click able to accept early PayPal payments without pretending PayPal Personal is a safe long-term business rail. This is operational/product guidance, not legal, tax, or compliance advice. Recheck PayPal's current User Agreement, Acceptable Use Policy, fees, and account-specific notices before going live.
 
 ## Recommendation

@@ -2,6 +2,8 @@
 
 Last updated: 31 Mei 2026.
 
+This plan covers the React-generated download. The current static-site package uses `/site-package/:slug` and links to the original Worker ZIP. See [GUIDE.md](../GUIDE.md) for the shared free download and managed setup offer.
+
 Purpose: turn the owner download package into a stronger perceived-value asset, replace plain `.txt` handoff files with a branded personalized PDF, and define ethical upsell/sidesell paths that can raise average order value without weakening the free-site offer.
 
 ## Progress Tracker

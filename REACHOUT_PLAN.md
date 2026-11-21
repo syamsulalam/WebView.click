@@ -50,7 +50,7 @@ Implementasi awal difokuskan ke email-first workflow:
 5. `POST /api/outreach/events` mencatat event `link_created` dan `email_sent_manual`.
 6. `POST /api/leads/:businessId/ping?owner=1...` mencatat owner view ke `outreach_events` sebagai `owner_viewed`.
 7. Manual send button di `/admin/reachout` mengupdate `leads.last_contacted`, menjaga status paid/viewed tidak diturunkan, dan menulis CRM activity.
-8. Preview React `/:businessId` bisa mengunduh tangkapan layar dari `[data-wv-site-canvas]` sebagai WebP. Penyimpanan ke `POST /api/sites/:businessId/screenshot` memerlukan sesi admin. Preview statis memakai pipeline mockup di [GUIDE.md](GUIDE.md).
+8. Admin dapat membuat tangkapan layar preview React dari `[data-wv-site-canvas]` sebagai WebP. Endpoint penyimpanan `POST /api/sites/:businessId/screenshot` memerlukan sesi admin. Preview statis memakai pipeline mockup di [GUIDE.md](GUIDE.md).
 
 Tahap ini sengaja belum mengirim email otomatis via provider. Tujuannya adalah memastikan lead quality, copy, tracking, screenshot, dan conversion attribution valid sebelum Sendy/Amazon SES sender diaktifkan.
 

@@ -2,6 +2,8 @@
 
 This guide is for `/admin/jobs`, the generation job audit and retry tool.
 
+The guide covers CRM JSON generator jobs. Current jobs store the next step and its lease in D1, so retry the reported step after any active claim expires. See [CODEBASE.md](../CODEBASE.md) for the job state and budget rules and [GUIDE.md](../GUIDE.md) for the separate Elementor staging pipeline.
+
 ## What this page is for
 
 Use this page when a generate/regenerate attempt fails, stops midway, uses fallback copy, or produces thin service pages.

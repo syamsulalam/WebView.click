@@ -405,7 +405,7 @@ Logic penting:
 - Stale/running chunked rows can show direct `Resume Outline/Site copy/Service copy/Finalize`; failed chunked rows show `Retry ...`, so partial retry is available from the table without finding the control inside the drawer.
 - Manual retry step otomatis mencoba ulang satu kali setelah 60 detik untuk error transient seperti HTTP 502/503/504/524, Cloudflare HTML response, temporary provider failure, upstream network failure, or empty response. Non-transient provider/model/key errors tetap gagal eksplisit.
 - Step `Service copy` sekarang micro-batched: UI tetap memanggil visible step `offeringCopy`, tetapi hook retry terus memanggil request berikutnya selama response masih `nextStep: "offeringCopy"`. Row/drawer menampilkan progress `service copy cursor/total` dari metadata supaya slow-provider progress terlihat.
-- Chunked step derivation lives in `src/lib/generationJobState.ts`, with targeted tests in `tests/generationJobState.test.ts`; run `npm run test:generation-job-state` when local dependencies are installed.
+- Chunked step derivation lives in `src/lib/generationJobState.ts`, with targeted tests in `tests/generationJobState.test.ts`; run `pnpm run test:generation-job-state` when local dependencies are installed.
 - Drawer details UI now lives in `src/components/generation-jobs/GenerationJobDetailsDrawer.tsx`, retry orchestration lives in `src/components/generation-jobs/useGenerationJobRetry.ts`, and reusable job badges/filter/sort/copy-audit helpers live in `src/components/generation-jobs/jobUtils.ts`. `GenerationJobsTable` keeps data loading, search/filter state, visible table rendering, and selected-job state.
 - Drawer details menampilkan `AI returned work` untuk parsed `offeringOutline`, combined `copyPatch`, `siteCopyPatch`, dan `offeringCopyPatch` dari job metadata, dengan tombol copy. Ini adalah surface utama untuk melihat output model sebelum patch diaplikasikan ke JSON final.
 - Drawer details menampilkan panel `About/nav timing` jika `metadata.aboutNavTiming` ada. Panel ini merangkum durasi `start`, `siteCopy`, `offeringCopy`, dan `finalize`, status, attempt count, current running step, error ringkas, serta collapsible recent nav-label call history agar bottleneck About/nav repair bisa dibaca tanpa membuka raw metadata.
@@ -948,7 +948,7 @@ Logic penting:
 
 Risiko debug:
 - Jika save gagal, form tetap menyimpan state lokal dan banner merah meminta retry.
-- Jika D1 binding belum ada, `GET /api/settings` bisa fallback kosong dari Function.
+- Router menolak akses anonimus sebelum membaca D1. Tanpa binding DB, endpoint privat yang memerlukan penyimpanan mengembalikan error JSON.
 
 ## Public Pages
 
@@ -1147,7 +1147,7 @@ Logic penting:
 - `applyGeneratedSitePageInserts(site, originData)` menjalankan urutan shared `repair service card images -> services -> contact -> feedback -> gallery`, dan dipakai oleh Function generation serta `SiteRenderer` runtime normalization.
 - Gallery nav disisipkan sebelum `#contact` jika contact nav sudah ada.
 - Modul ini DOM-free dan dependency-free supaya aman dipakai dari `functions/api/[[path]].ts`, React renderer, dan fixture tests.
-- Fixture tests ada di `tests/generatedSitePostProcess.test.ts`; jalankan `npm run test:postprocess` saat local dependencies tersedia.
+- Fixture tests ada di `tests/generatedSitePostProcess.test.ts`; jalankan `pnpm run test:postprocess` saat local dependencies tersedia.
 
 ### `src/lib/generatedSiteScaffold.ts`
 
@@ -1164,7 +1164,7 @@ Logic penting:
 - Utility helpers include `businessSlug`, `placeDisplayName`, `placePhone`, `placeMapsUrl`, `photoReference`, and `photoAttributions`.
 - Sejak B5 (2026-10-01) scaffold menulis factual `businessProfile.pricePositioning` dari `place.priceLevel`/`priceRange` (level + range, language-aware, kosong bila data tidak ada). Renderer menampilkan cue ini di bawah deskripsi section offers (owner-editable, ikut export); brief AI meneruskannya sebagai `facts.price.positioning` agar copy tidak kontradiksi.
 - Sejak A2 (2026-10-01) `buildOfferings` mendistribusikan photo pool generate-time ke setiap offering card/detail hero (hero tetap memakai selected `imageUrl` sebagai pool head; caller pool dari priority-sorted Places photos didahulukan, lalu foto place; round-robin bila offerings melebihi pool). `buildScaffoldGeneratePayload` membangun pool dari `sortedPhotosForPlace().slice(0, 8)` agar `/admin/leads` dan `/admin/sites` memakai foto terbaik lebih dulu. Single-photo output tidak berubah dan tetap tertahan gate `mediaReady`.
-- Fixture tests live in `tests/generatedSiteScaffold.test.ts`; run `npm run test:scaffold` when local dependencies are installed.
+- Fixture tests live in `tests/generatedSiteScaffold.test.ts`; run `pnpm run test:scaffold` when local dependencies are installed.
 
 ### `src/lib/adminSiteGeneration.ts`
 
@@ -1179,7 +1179,7 @@ Logic penting:
 - Photo helpers in this module centralize Google photo URL creation, attribution cleanup, owner-like/UGC priority scoring, sorted photo lists, prospect selection persistence payloads, palette option payloads, and generate-time selected photo/palette resolution.
 - `postGenerateSite()` is the shared POST wrapper for `/api/sites/generate`, using `readApiJson()` so Cloudflare/provider HTML errors stay actionable. `readApiJson()` accepts an explicit request path fallback and includes request path plus HTTP status in thrown raw messages, so admin toasts show which Pages Function endpoint returned HTML/non-JSON or failed JSON even when `response.url` is empty.
 - `/admin/leads` and `/admin/sites` should call this helper for new generate/regenerate flows instead of hand-writing readiness, cooldown, scaffold, or generate POST logic.
-- Fixture tests live in `tests/adminSiteGeneration.test.ts`; run `npm run test:admin-generation` when local dependencies are installed.
+- Fixture tests live in `tests/adminSiteGeneration.test.ts`; run `pnpm run test:admin-generation` when local dependencies are installed.
 
 ### `src/lib/domainExtensions.ts`
 
@@ -1224,7 +1224,7 @@ Logic penting:
 Fungsi:
 - Catch-all API production untuk `/api/*` di Cloudflare Pages.
 - Menggantikan Express API saat deploy di Cloudflare Pages.
-- Route handler ini sekarang terutama menyiapkan dependency wiring, menjalankan DB bootstrap, lalu dispatch ke focused modules seperti `functions/api/settings/handler.ts`, `functions/api/stats/handler.ts`, `functions/api/leads/handler.ts`, `functions/api/outreach/handler.ts`, `functions/api/prospects/handler.ts`, `functions/api/sites/handler.ts`, `functions/api/places/handler.ts`, `functions/api/payments/handler.ts`, `functions/api/domains/handler.ts`, dan `functions/api/cloudflare/handler.ts`.
+- Route handler ini sekarang terutama menyiapkan dependency wiring, memverifikasi akses admin untuk request privat, lalu dispatch ke focused modules seperti `functions/api/settings/handler.ts`, `functions/api/stats/handler.ts`, `functions/api/leads/handler.ts`, `functions/api/outreach/handler.ts`, `functions/api/prospects/handler.ts`, `functions/api/sites/handler.ts`, `functions/api/places/handler.ts`, `functions/api/payments/handler.ts`, `functions/api/domains/handler.ts`, dan `functions/api/cloudflare/handler.ts`.
 - Cloudflare Pages deployment history logs can be brought into admin via the official Cloudflare API `GET /accounts/{account_id}/pages/projects/{project_name}/deployments/{deployment_id}/history/logs`, but it requires explicit env/settings credentials (`CLOUDFLARE_ACCOUNT_ID`, Pages project name, restricted API token). Live Functions tail logs are a separate dashboard/Wrangler streaming workflow and should not be presented as stored historical logs unless Cloudflare exposes a stored API source.
 
 Endpoint:
@@ -1291,7 +1291,7 @@ Logic AI:
 - AI site generation helpers live in `functions/api/ai/siteGeneration.ts`. The router passes dependencies for settings, readiness, provider diagnostics, and KIE model config, while the module owns JSON object provider calls, one-shot JSON repair, offering outline normalization/apply, copy target brief creation, copy patch generation, deterministic merge, and copy audit helpers.
 - AI readiness, remote model validation cache, provider failure diagnostics, and provider health endpoints live in `functions/api/ai/readiness.ts`.
 - Provider cooldown API handling and cooldown event audit/pruning live in `functions/api/providerCooldowns/handler.ts`.
-- Targeted tests for offering outline normalization and copy audit behavior live in `tests/siteGeneration.test.ts`; run `npm run test:site-generation` when local dependencies are installed.
+- Targeted tests for offering outline normalization and copy audit behavior live in `tests/siteGeneration.test.ts`; run `pnpm run test:site-generation` when local dependencies are installed.
 - OpenRouter/OpenAI/Opencode memakai format Chat Completions.
 - Gemini memakai endpoint Google Generative Language.
 - KIE.ai mendukung:
@@ -1356,7 +1356,7 @@ Logic R2:
 - Since C1 (2026-10-01) the summary also stores gate-strict outreach readiness from `siteOutreachReadiness()`: `conversionAuditKnown`/`conversionReady`/`conversionFlagCount`/`conversionFlags`, `designAuditKnown`/`designReady`/`designFlagCount`/`designFlags`, `mediaReady` (2+ images, 2+ palettes, zero missing/duplicate card images), and `hasUsablePhone`/`hasUsableEmail`/`contactReady` from `businessProfile.contact`. Unknown audits fail closed (unlike the lenient `ready` inside `siteUpgradeAudit`, which treats missing audits as ready so old sites can still flow into upgrade-preview triage and upgrade), so pre-audit JSON must be resaved/upgraded before entering the outreach queue. `/api/sites` list exposes all gate fields; legacy D1 rows self-heal them when full JSON is present.
 - Binding optional: `R2`.
 - Public URL: `R2_PUBLIC_BASE_URL`, default/fallback production `https://assets.webview.click`.
-- Bucket CORS policy for `assets.webview.click` lives in `cloudflare/r2-cors-webview.json`, is applied with `npm run r2:cors`, and can be inspected with `npm run r2:cors:list`. It allows public `GET`/`HEAD` reads with wildcard origins so admin palette extraction can load R2 images using `<img crossOrigin="anonymous">` without tainting canvas. Applying this requires a Wrangler login/API token with R2 bucket CORS edit permission.
+- Bucket CORS policy for `assets.webview.click` lives in `cloudflare/r2-cors-webview.json`, is applied with `pnpm run r2:cors`, and can be inspected with `pnpm run r2:cors:list`. It allows public `GET`/`HEAD` reads with wildcard origins so admin palette extraction can load R2 images using `<img crossOrigin="anonymous">` without tainting canvas. Applying this requires a Wrangler login/API token with R2 bucket CORS edit permission.
 - Saat `POST /api/sites/generate`, Function:
   - Menormalisasi filename image non-URL agar mengandung slug `businessId`.
   - Meng-upload image URL non-Google yang bisa di-fetch ke `sites/{businessId}/assets/{businessId}-asset-XX.ext`.
@@ -1525,7 +1525,7 @@ Jika menambah laman atau komponen baru:
 
 Build/Deploy Guard:
 - `pnpm run check:syntax` menjalankan `scripts/check-build-syntax.mjs`, yaitu parse-only esbuild transform untuk file `.ts/.tsx/.js/.jsx` di `src`, `functions`, `tests`, plus `server.ts` dan `vite.config.ts`. Ini menangkap syntax error Vite/esbuild seperti bracket/ternary rusak sebelum full build.
-- `prebuild` otomatis menjalankan `pnpm run check:syntax`, sehingga Cloudflare Pages command `pnpm run build` gagal lebih awal dengan pesan file/baris yang lebih langsung setelah `pnpm install`.
+- `prebuild` menjalankan `pnpm run check:syntax` dan `pnpm run test:api-handlers`, sehingga Cloudflare Pages command `pnpm run build` gagal lebih awal dengan pesan file/baris yang lebih langsung setelah `pnpm install`.
 - Untuk verifikasi lokal, `pnpm install`, lint, dan build boleh dijalankan bila perlu, tetapi jangan start dev server dan hapus `dist`/build-only output setelah build selesai agar storage tetap hemat.
 
 ## Related Planning Docs

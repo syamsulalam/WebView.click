@@ -2,6 +2,8 @@
 
 Last updated: 14 Mei 2026.
 
+Dokumen ini menjelaskan jalur preview React. Untuk ekspor Elementor, gunakan aset yang diizinkan untuk dipakai ulang, catat sumber dan atribusi, dan validasi aset di ZIP. Lihat [GUIDE.md](../GUIDE.md) untuk alur media pada situs statis.
+
 Dokumen ini menjelaskan arah produk terbaru untuk foto Google Business Profile / Google Places di WebView.click.
 
 ## Decision

@@ -3,6 +3,8 @@
 Date: 2026-05-19
 Last updated: 2026-06-02
 
+Historical source audit. See [CODEBASE.md](../CODEBASE.md) for the current Pages router, authorization boundary, and explicit D1 schema migration path.
+
 Scope: source files with high line count, mixed responsibilities, or high change frequency in the WebView.click app. This is an audit only; it does not propose behavior changes in this pass.
 
 ## Executive Summary
