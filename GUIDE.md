@@ -5,7 +5,7 @@
 **Live Edge House:** `https://sites.webview.click` (Cloudflare Worker + R2)  
 The Worker streams the download at `sites.webview.click/<slug>.zip` directly from the static R2 files.
 **Contact Tooling:** `gog.exe` (Go static binary at `C:\Users\THINKPAD\scripts\gog.exe`).  
-**Core Invariant (JIT Generation):** Sites are generated **ONLY upon human reply to the initial identity check** — zero compute/storage wasted on unresponsive numbers!  
+The publishing CLI hosts reviewed briefs publicly by default. The automated outreach queue waits for a reply to its identity check.
 **SOP & Policy Authority:** [`SOP.md`](file:///C:/Users/THINKPAD/WebView.click/SOP.md) | City DB: [`data/cities.json`](file:///C:/Users/THINKPAD/WebView.click/data/cities.json) | Niche DB: [`data/smb_niches.json`](file:///C:/Users/THINKPAD/WebView.click/data/smb_niches.json)
 
 ---
@@ -153,12 +153,16 @@ The production recovery on 2026-11-19 replaced HTTP 522 with a redirect from `ht
 
 #### 4.1 Sync Static Assets to Cloudflare R2
 ```powershell
-# Use a reviewed brief and an affirmative reply before publishing.
+# Publish a reviewed brief and verify its public preview and ZIP.
 .\scripts\run-smb-pipeline.ps1 -ProspectFile .\reviewed-prospect.json -Limit 1
 ```
+Use `-StageOnly` for a local export or `-VerifyR2` for private storage verification. Use `-PrepareOutreach` only for the reply-gated contact and mockup workflow.
+
 *Live Links:*
-- Preview: `https://sites.webview.click/bengkel-jaya-motor-malang/`
-- Download: `https://sites.webview.click/bengkel-jaya-motor-malang.zip`
+- Preview: `https://sites.webview.click/bengkel-jaya-motor-car-repair-id-malang/`
+- Download: `https://sites.webview.click/bengkel-jaya-motor-car-repair-id-malang.zip`
+
+Check account-wide Standard R2 usage from the repository with `python scripts/check-r2-usage.py`. See the [free-tier audit](docs/FREE_TIER_LIMITS_AUDIT.md) for how to read the figures.
 
 #### 4.2 Capture High-Impact Mobile Screenshot
 ```powershell

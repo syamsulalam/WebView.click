@@ -23,16 +23,13 @@ The **very first message** sent to any prospect MUST strictly be a 6-word busine
 ---
 
 ### 🥈 Invariant 2: Just-In-Time (JIT) Generation on Human Reply
-**Zero websites are generated upfront.**
-- 🛑 **Do NOT** generate a WordPress site, run Simply Static, or upload to R2 for an uncontacted or unresponsive number.
+This rule applies to the automated outreach queue. The standalone reviewed-brief CLI publishes publicly by default when run by an operator.
+- 🛑 **Do NOT** enqueue generation for an uncontacted or unresponsive number.
 - 🕒 If a prospect does not reply within 48 hours, they simply expire from the queue. **Zero compute, disk, or bandwidth is wasted.**
 - 🚀 **ONLY upon receiving an affirmative human reply** (e.g., *"Yes it is, how can I help?"* or *"Yes, who's this?"*) does the system trigger the automated generation pipeline:
   1. Prepare a reviewed prospect brief with evidence and an approved photo. Use brand enrichment as input to the design review.
-  2. Run `run-smb-pipeline.ps1 -StageOnly` for `wpwv.codev.id`. It resolves the niche against the Companion catalog and requires a reviewed template mapping.
-  3. Review all pages in the isolated Simply Static artifact. Confirm business facts, mobile layout and contact actions before proceeding.
-  4. `deploy-site-to-r2.mjs`: Sync static assets once to `r2://webview-sites/sites/<slug>/`.
-  5. `capture-screenshot.py`: Capture high-resolution mobile mockup.
-  6. Dispatch Step 2 after the live preview and mobile mockup are ready. A failed build or upload stops delivery.
+  2. Run `run-smb-pipeline.ps1 -PrepareOutreach` for a fresh deployment. It checks the affirmative reply, resolves the Companion template, verifies the export and public ZIP, and prepares the contact and mobile mockup.
+  3. Review business facts, mobile layout and contact actions. Dispatch Step 2 separately after the live preview and mockup are ready.
 
 For infrastructure verification, run `python scripts/check-sites-edge.py` against the synthetic fixture. It exercises the public preview and ZIP without submitting a prospect or sending outreach.
 

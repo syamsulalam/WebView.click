@@ -10,7 +10,7 @@
     3. Static Export: Runs Simply Static, optionally localizes, and checks links and routes.
     4. Single Edge R2 Sync: Pushes flat assets to R2 and verifies the result.
        (Dynamic ZIP downloads are streamed on the fly via Cloudflare Worker at https://sites.webview.click/<slug>.zip).
-    5. Public delivery: Verifies the preview and ZIP before contact sync and mobile mockup capture.
+    5. Public hosting: Verifies the preview and ZIP. Contact sync and mobile mockups are opt-in.
     The resulting artifacts can be used by the separate LusmoBot outreach workflow.
 
 .PARAMETER ProspectFile
@@ -26,6 +26,9 @@
 .PARAMETER VerifyR2
     Verify the compiled static site through a private R2 upload and byte read-back.
     Skip contacts, public publication and mockups.
+.PARAMETER PrepareOutreach
+    Require the prospect outreach checks and affirmative reply, then sync contacts
+    and capture a mobile mockup after the public preview and ZIP pass verification.
 #>
 
 [CmdletBinding()]
@@ -46,6 +49,8 @@ param(
 
     [switch]$VerifyR2,
 
+    [switch]$PrepareOutreach,
+
     [string]$TemplateManifest = "",
 
     [string]$TemplateCache = "",
@@ -57,6 +62,7 @@ $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 if ($StageOnly -and $VerifyR2) { throw "Choose either -StageOnly or -VerifyR2." }
 $Publish = !$StageOnly -and !$VerifyR2
+if ($PrepareOutreach -and !$Publish) { throw "-PrepareOutreach requires the public publishing mode." }
 
 Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host " 🚀 WebView.click SMB Site Generation & Outreach Pipeline " -ForegroundColor Cyan
@@ -123,7 +129,7 @@ foreach ($Biz in $Batch) {
         $CompileArgs = @("$ScriptDir\compile-smb-site.py", $LocalBrief, $LocalCompiled, "--asset-dir", $ProspectDir)
         if ($TemplateManifest) { $CompileArgs += @("--manifest", $TemplateManifest) }
         if ($TemplateCache) { $CompileArgs += @("--template-cache", $TemplateCache) }
-        if ($Publish) { $CompileArgs += "--outreach" }
+        if ($PrepareOutreach) { $CompileArgs += "--outreach" }
         & python @CompileArgs
         if ($LASTEXITCODE -ne 0) { throw "Template or prospect brief needs review for $Slug." }
         Write-Host "⚙️ Generating and exporting $Slug on wpwv.codev.id..." -ForegroundColor Magenta
@@ -176,6 +182,11 @@ foreach ($Biz in $Batch) {
     & python "$ScriptDir\check-sites-edge.py" --export $LocalExportDir --slug $Slug
     if ($LASTEXITCODE -ne 0) { throw "Public preview or ZIP verification failed for $Slug." }
 
+    $PreviewUrl = "https://sites.webview.click/$Slug/"
+    Write-Host "🌐 Live Site: $PreviewUrl" -ForegroundColor Cyan
+    Write-Host "📦 Dynamic ZIP: https://sites.webview.click/${Slug}.zip" -ForegroundColor Cyan
+    if (!$PrepareOutreach) { continue }
+
     Write-Host "👤 Syncing to Google Contacts as '[SMB] $Name'..." -ForegroundColor Magenta
     
     $GogCli = "C:\Users\THINKPAD\scripts\gog.exe"
@@ -207,21 +218,18 @@ foreach ($Biz in $Batch) {
     }
 
     Write-Host "📸 Capturing mobile mockup for WhatsApp delivery..." -ForegroundColor Magenta
-    $PreviewUrl = "https://sites.webview.click/$Slug/"
     $MockupPath = Join-Path $ProjectRoot "mockups\$Slug-mobile.jpg"
     New-Item -ItemType Directory -Path (Split-Path -Parent $MockupPath) -Force | Out-Null
 
     python "$ScriptDir\capture-screenshot.py" --url $PreviewUrl --output $MockupPath
     if ($LASTEXITCODE -ne 0) { throw "Mobile mockup failed for $Slug." }
 
-    Write-Host "`n✅ Successfully Provisioned: $Name" -ForegroundColor Green
-    Write-Host "   🌐 Live Site: $PreviewUrl" -ForegroundColor Cyan
-    Write-Host "   📦 Dynamic ZIP: https://sites.webview.click/${Slug}.zip" -ForegroundColor Cyan
+    Write-Host "`n✅ Prepared for outreach: $Name" -ForegroundColor Green
     Write-Host "   🖼️ Mockup:    $MockupPath" -ForegroundColor Cyan
     Write-Host "   👤 Contact:   [SMB] $Name ($Phone)" -ForegroundColor Cyan
 }
 
-if (!$Publish) { return }
+if (!$PrepareOutreach) { return }
 
 Write-Host "`n═══════════════════════════════════════════════════════════" -ForegroundColor Green
 Write-Host " 🏁 Batch complete! Ready for LusmoBot 15/day dispatch.    " -ForegroundColor Green

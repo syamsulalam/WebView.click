@@ -12,7 +12,7 @@ From the repository root, generate and download a staging artifact for one prosp
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\run-smb-pipeline.ps1 -ProspectFile .\prospect-brief.json -Limit 1 -StageOnly
 ```
 
-The command uses the configured Oracle SSH runner and prints the local artifact directory. See the [pipeline guide](GUIDE.md) for input and publishing steps, the [outreach SOP](SOP.md) for when to generate sites, and the [codebase reference](CODEBASE.md) for the architecture.
+The command uses the configured Oracle SSH runner and prints the local artifact directory. Omit `-StageOnly` to publish a reviewed brief and verify the public preview and direct ZIP. Use `-VerifyR2` for private upload verification. Run `python scripts/check-r2-usage.py` for account-wide R2 usage estimates. See the [pipeline guide](GUIDE.md), [outreach SOP](SOP.md), and [codebase reference](CODEBASE.md).
 
 Check a niche against a current Starter Templates Companion manifest before planning a client preview. The build requires a reviewed mapping in `data/smb-template-layouts.json`. The first mapped template is Car Repair.
 

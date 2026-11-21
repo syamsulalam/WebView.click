@@ -42,11 +42,13 @@ Cloudflare D1 Free:
 - 5 GB total storage.
 - D1 free daily limits reset at 00:00 UTC.
 
-Cloudflare R2 Free:
+Cloudflare R2 Standard free tier, verified 2026-11-21:
 - 10 GB-month storage per month.
 - 1 million Class A operations per month. PutObject and ListObjects are Class A examples.
 - 10 million Class B operations per month. GetObject and HeadObject are Class B examples.
 - Internet egress is free for Standard storage.
+
+Run `python scripts/check-r2-usage.py` from the WebView checkout. It uses the named `webview` cf CLI profile for the Cloudflare account containing `webview-sites`. The JSON shows UTC calendar month-to-date Class A and Class B request counts, estimated GB-months, and remaining allowances across the account's buckets. Storage sums the reported daily bucket peaks and divides by 30 days. The report includes the number of observed days. Known operations include request errors because Cloudflare bills some failed requests. Unknown operation types and non-Standard storage classes are listed separately. The figures are analytics estimates and may lag. For invoiced and billing-cycle usage, open [Cloudflare Billable Usage](https://dash.cloudflare.com/?to=/:account/billing/billable-usage). [Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/) · [R2 Analytics API](https://developers.cloudflare.com/r2/platform/metrics-analytics/)
 
 Google Maps Platform:
 - Billing is SKU based and pay-as-you-go.

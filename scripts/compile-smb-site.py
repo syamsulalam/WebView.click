@@ -377,7 +377,7 @@ def verify_website_eligibility(prospect, now=None, probe=check_dns_unavailable):
 def verify_outreach(prospect, now=None):
     verify_website_eligibility(prospect, now)
     require((prospect.get("outreach") or {}).get("affirmative_reply") is True,
-            "Publishing a prospect preview requires an affirmative reply.")
+            "Preparing prospect outreach requires an affirmative reply.")
 
 
 def prepare_photo(photo, asset_dir):
@@ -976,7 +976,7 @@ def main():
     parser.add_argument("--template-cache", type=Path)
     parser.add_argument("--asset-dir", type=Path, help="Directory for relative media paths")
     checks = parser.add_mutually_exclusive_group()
-    checks.add_argument("--outreach", action="store_true", help="Require recent no-website and opt-in evidence")
+    checks.add_argument("--outreach", action="store_true", help="Require outreach eligibility and affirmative reply")
     checks.add_argument("--verify-website", action="store_true", help="Check no-site or unavailable-site evidence before first contact")
     args = parser.parse_args()
     if not args.verify_website and args.output is None:
