@@ -3,7 +3,8 @@
 ## Project Context
 - This is the WebView.click app at https://webview.click.
 - The app uses React, Vite, Express, TypeScript, Clerk, and SQLite.
-- Production architecture is Cloudflare Pages + Pages Functions + D1 + R2. Express/SQLite exists as older/local architecture context, but production work should prioritize Cloudflare Pages Functions and D1/R2 compatibility.
+- Production uses Cloudflare Pages and Clerk-gated Pages Functions backed by D1 and the `webview` R2 bucket. The separate `sites-webview-click` Worker streams static previews and ZIPs from the private `webview-sites` bucket. Express/SQLite is the legacy local path.
+- Use `PRD.md` for current product decisions, `CODEBASE.md` for implementation, and `GUIDE.md` for the Starter Templates Companion → Simply Static → R2 pipeline.
 
 ## Product Goal
 - WebView.click is a lead prospecting and AI website generation tool for finding Google Business Profile / Google Maps businesses, especially businesses without websites, then generating personalized demo websites for them.

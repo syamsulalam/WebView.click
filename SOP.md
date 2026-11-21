@@ -31,7 +31,7 @@ This rule applies to the automated outreach queue. The standalone reviewed-brief
   2. Run `run-smb-pipeline.ps1 -PrepareOutreach` for a fresh deployment. It checks the affirmative reply, resolves the Companion template, verifies the export and public ZIP, and prepares the contact and mobile mockup.
   3. Review business facts, mobile layout and contact actions. Dispatch Step 2 separately after the live preview and mockup are ready.
 
-For infrastructure verification, run `python scripts/check-sites-edge.py` against the synthetic fixture. It exercises the public preview and ZIP without submitting a prospect or sending outreach.
+For infrastructure verification, run `python scripts/check-sites-edge.py --export <export-folder> --slug <slug>` against an existing published export. It exercises the public preview and ZIP without sending outreach. See [GUIDE.md](GUIDE.md) for private R2 verification and same-slug replacement.
 
 ---
 
@@ -39,7 +39,8 @@ For infrastructure verification, run `python scripts/check-sites-edge.py` agains
 When delivering the completed website in Step 2:
 - Frame it as a **completed gift**, not a sales pitch.
 - Provide the live preview (`sites.webview.click/<slug>/`) and direct ZIP download (`sites.webview.click/<slug>.zip`).
-- Provide an effortless, friction-free opt-out clause (*"If you prefer not to hear from me again, simply reply 'STOP'..."*) to guarantee 100% compliance with international electronic communications regulations (Singapore PDPA, UAE TDRA, UK PECR/GDPR).
+- The preview's **Download Your Site** button opens the free download and optional domain and hosting setup at `webview.click/site-package/<slug>`.
+- Offer a simple opt-out (*"If you prefer not to hear from me again, simply reply 'STOP'..."*) and suppress contacts who opt out.
 
 ---
 

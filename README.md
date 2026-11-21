@@ -6,6 +6,10 @@
 
 [WebView.click](https://webview.click/) finds business listings and prepares website previews. The WordPress staging service at `wpwv.codev.id` generates the sites, and `sites.webview.click/<slug>/` serves published static previews.
 
+Cloudflare Pages serves the React app and `/api`. Pages Functions use Clerk for admin authorization, D1 for CRM and orders, and the `webview` R2 bucket for app assets. The separate `sites-webview-click` Worker reads the private `webview-sites` bucket for static previews and ZIPs. **Download Your Site** opens `webview.click/site-package/<slug>` for the free download and optional managed setup.
+
+Use the [PRD](PRD.md) for current product decisions, the [codebase reference](CODEBASE.md) for architecture, the [pipeline guide](GUIDE.md) for publishing, and the [Cloudflare setup guide](docs/setup-panduan.md) for bindings. Start verification with `pnpm install --frozen-lockfile`, `pnpm run lint`, and `pnpm run build`.
+
 From the repository root, generate and download a staging artifact for one prospect:
 
 ```powershell
@@ -20,4 +24,4 @@ Check a niche against a current Starter Templates Companion manifest before plan
 python scripts/resolve-smb-template.py --manifest C:/path/to/companion/assets/templates/manifest.json --query 'car detailing business bay dubai'
 ```
 
-Run `python scripts/check-sites-edge.py` to check the [live publishing fixture](https://sites.webview.click/webview-publishing-check-20261119/) and its ZIP.
+To verify a published export and its ZIP, run `python scripts/check-sites-edge.py --export <export-folder> --slug <slug>`. Keep the same slug when replacing a business's release.

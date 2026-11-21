@@ -31,7 +31,7 @@ The publishing CLI hosts reviewed briefs publicly by default. The automated outr
   - [ ] 4.1 On human confirmation, execute brand enrichment & palette synthesis (`scripts/enrich-business-brand.py`)
   - [ ] 4.2 Provision headless staging on `wpwv.codev.id` through the WebView planner
   - [ ] 4.3 Export flat static files through the Simply Static Free API
-  - [ ] 4.4 Push static assets once to `r2://webview-sites/sites/<slug>/`
+  - [ ] 4.4 Verify and activate a revision at `r2://webview-sites/releases/<slug>/<revision>/`
   - [ ] 4.5 Capture full-page mobile mockup (`mockups/<slug>-mobile.jpg`)
 - [ ] **Phase 5: Stage 2 Value Gift Drop & Conversion**
   - [ ] 5.1 Dispatch Step 2: Value gift drop with photo attachment, preview link, and direct ZIP link
@@ -62,11 +62,15 @@ Use Wrangler from `cloudflare/sites-worker` with an authenticated session for th
 
 ```powershell
 Set-Location cloudflare\sites-worker
+pnpm install --frozen-lockfile
 pnpm exec tsc --noEmit
+pnpm exec wrangler deploy --dry-run
 pnpm exec wrangler deploy
 Set-Location ..\..
-python scripts\check-sites-edge.py
+python scripts\check-sites-edge.py --export <export-folder> --slug <slug>
 ```
+
+The Worker package uses Wrangler v4. Use Node 22.12 or later for its tooling. The apex Pages app deploys separately from GitHub `main`.
 
 ---
 

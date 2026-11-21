@@ -2,6 +2,8 @@
 
 Last updated: 2026-05-28.
 
+Current production revalidates new-domain eligibility and the registrar quote server-side before payment. This document's post-payment registrar automation remains a plan. Use [CODEBASE.md](../CODEBASE.md) for the current checkout contract.
+
 ## Goal
 
 Make the done-for-you setup flow easier to fulfill:

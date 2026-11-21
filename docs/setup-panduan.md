@@ -6,21 +6,21 @@ Dokumen ini berisi panduan teknis lengkap untuk mendeploy aplikasi WebView.click
 
 ## 1. Cloudflare Pages Variables / Secrets Setup
 
-Aplikasi produksi berjalan di Cloudflare Pages dengan Pages Functions untuk route `/api/*`, Cloudflare D1 untuk database, dan R2 untuk object storage. Backend Express di `server.ts` tetap ada sebagai referensi/legacy Node build, tetapi produksi Cloudflare memakai file di direktori `functions/`.
+Aplikasi produksi berjalan di Cloudflare Pages dengan Pages Functions untuk `/api` dan `/api/*`, D1 untuk CRM dan order, serta R2 untuk penyimpanan aset. Express di `server.ts` adalah jalur lama. Halaman statis Elementor dari `wpwv.codev.id` diterbitkan terpisah oleh Worker `sites-webview-click` dari bucket privat `webview-sites`. Gunakan [panduan operasi](../GUIDE.md) untuk publish, verifikasi ZIP, dan penggantian revisi dengan slug yang sama.
 
 ### Langkah-langkah di Cloudflare Dashboard:
 1. Login ke [Cloudflare Dashboard](https://dash.cloudflare.com).
 2. Masuk ke **Workers & Pages**.
-3. Buat Project Pages baru, sambungkan dengan repository GitHub aplikasi ini.
+3. Buka project Pages `webview-click` pada akun WebView yang sudah tercatat di [GUIDE.md](../GUIDE.md). Untuk pemulihan dari awal, hubungkan project ke repository GitHub ini dengan branch produksi `main`.
    - **Framework preset:** `Vite`
-   - **Build command:** `npm run build`
+   - **Build command:** `pnpm run build`
    - **Build output directory:** `dist`
 4. Sebelum melakukan deploy pertama kali, masuk ke **Settings > Environment variables**.
 5. Tambahkan variable berikut:
    - `VITE_CLERK_PUBLISHABLE_KEY` (Publik, dari Clerk)
    - `CLERK_SECRET_KEY` (Rahasia, dari Clerk)
    
-*Catatan: API Keys lainnya seperti Google Places, OpenAI, Gemini, dan Payment Links dikonfigurasi melalui D1 App Dashboard (`/admin/settings`) dan tidak perlu dimasukkan ke Environment Variables.*
+Simpan kredensial provider seperti Google Places, AI, dan payment gateway sebagai **secret bindings**. Binding rahasia didahulukan dari nilai lama di D1. Halaman `/admin/settings` hanya menampilkan status keberadaan kredensial dan tidak mengirim nilainya kembali. Masukkan opsi publik dan konfigurasi nonrahasia lewat panel pengaturan yang sesuai.
 
 ### Cloudflare Pages Functions
 Semua endpoint API produksi berada di:
@@ -42,20 +42,13 @@ File ini menangani:
 
 Pastikan binding D1 bernama `DB`. Jika binding belum aktif, endpoint API akan mengembalikan JSON error, bukan fallback HTML.
 
+Router memverifikasi sesi Clerk dan role admin sebelum memproses endpoint privat. Endpoint publik terbatas pada daftar method dan path di `functions/api/_shared/adminAccess.ts`. Baca [dokumentasi Clerk](clerk-auth.md) sebelum memberi akses admin.
+
 File `public/_routes.json` membatasi Pages Functions hanya untuk `/api` dan `/api/*`, sehingga asset statis dan route SPA tetap dilayani Cloudflare Pages tanpa biaya invocation API yang tidak perlu.
 File `public/_redirects` berisi `/* /index.html 200` agar direct open/refresh pada route React seperti `/admin/jobs` atau `/{businessId}` tidak menjadi static 404 di Cloudflare Pages.
 
 ### Konfigurasi Cloudflare D1 (Database)
-Aplikasi produksi menggunakan Cloudflare D1:
-1. Buka Terminal lokal, pastikan Anda install Wrangler: `npm install -g wrangler`
-2. Login akun: `npx wrangler login`
-3. Buat database: `npx wrangler d1 create webview-db`
-4. Copy `database_id` yang muncul.
-5. Jalankan inisialisasi skema dengan command: 
-   `npx wrangler d1 execute webview-db --file=./SQL/schema.sql --remote`
-6. Pada Cloudflare Pages Dashboard Anda, pergi ke **Settings > Bindings > D1 database bindings**.
-7. Tambahkan binding baru dengan variabel `DB` dan pilih database `webview-db` yang baru saja Anda buat.
-8. Redeploy Pages setelah binding ditambahkan.
+Aplikasi memakai database D1 produksi yang terikat sebagai `DB`. Pertahankan binding ke database yang ada saat deploy rutin. Untuk database baru, inisialisasi dengan `SQL/schema.sql` dari root repository. Untuk database yang sudah terisi, periksa skema dan jalankan hanya migrasi yang diperlukan sebelum deploy. Endpoint publik tidak menjalankan migrasi.
 
 ### Konfigurasi Cloudflare R2 (Object Storage)
 1. Di Dashboard Cloudflare R2, klik **Create bucket**, namakan `webview`.
@@ -64,18 +57,15 @@ Aplikasi produksi menggunakan Cloudflare D1:
 4. Tambahkan binding dengan variabel `R2` dan hubungkan ke `webview`.
 5. Tambahkan environment variable `R2_PUBLIC_BASE_URL` dengan nilai `https://assets.webview.click`. Function juga punya fallback ke domain ini, tetapi env variable tetap disarankan agar konfigurasi eksplisit di dashboard Cloudflare Pages.
 6. Terapkan CORS bucket agar image asset di `assets.webview.click` bisa dibaca oleh browser canvas untuk ekstraksi palette warna:
-   `npm run r2:cors`
-   Script ini menjalankan `npx wrangler r2 bucket cors set webview --file cloudflare/r2-cors-webview.json --force`. Policy hanya membuka `GET`/`HEAD` untuk public asset read dan mengekspos header dasar (`Content-Length`, `Content-Type`, `ETag`), sehingga `<img crossOrigin="anonymous">` tidak membuat canvas tainted saat admin menjalankan refresh visual/palette.
-   - Verifikasi policy aktif dengan `npm run r2:cors:list`.
-   - Jika Wrangler memakai `CLOUDFLARE_API_TOKEN`, token harus punya izin Cloudflare account/R2 yang cukup untuk membaca dan mengubah bucket CORS policy. Jika muncul `Authentication error [code: 10000]`, buat token baru dengan permission R2 edit untuk account yang memiliki bucket `webview`, atau jalankan dari shell yang sudah `npx wrangler login`.
-7. Setelah deploy, hasil generate akan memakai pola URL publik:
-   - JSON: `https://assets.webview.click/sites/{businessId}/{businessId}.json`
-   - Asset: `https://assets.webview.click/sites/{businessId}/assets/{businessId}-asset-XX.ext`
+   Jalankan perintah berikut dari root repository, memakai profil `webview` yang sudah dikonfigurasi sesuai [GUIDE.md](../GUIDE.md).
+   Dari root repository, pasang tool Worker dengan `pnpm --dir cloudflare/sites-worker install --frozen-lockfile` lalu jalankan `pnpm run r2:cors`.
+   - Verifikasi dengan `pnpm run r2:cors:list`.
+7. JSON dan aset baru memakai kunci revisi di bawah namespace bisnis. Akses preview React melalui `GET /api/sites/<businessId>` agar selalu mengikuti revisi yang dipilih D1. Untuk URL statis dan ZIP, gunakan Worker pada `sites.webview.click`.
 
 ---
 
 ## 2. Setup AI Generators (Website Builders)
-Sistem memiliki pengaturan AI multikoneksi. Di `/admin`, Anda dapat memilih dari OpenRouter, OpenAI, Gemini, KIE.ai, atau Opencode untuk meracik JSON dan copywriting website klien Anda. Di dashboard aplikasi (`/admin/settings`), atur variabel ini:
+Sistem memiliki pengaturan AI multikoneksi untuk generator JSON di aplikasi. Atur pilihan provider di `/admin/settings` dan simpan API key di secret binding Cloudflare. Alur Elementor menggunakan AI Bridge dan brief yang direview menurut [GUIDE.md](../GUIDE.md).
 - `OPENROUTER_API_KEY`: Key dari OpenRouter untuk ratusan model OSS.
 - `OPENAI_API_KEY`: Key jika memilih platform OpenAI (`gpt-5.5`, `gpt-5.4`, atau `gpt-5.4-mini`).
 - `GEMINI_API_KEY`: Key jika memilih Gemini.
@@ -99,7 +89,7 @@ Agar fitur "cari prospek" berfungsi dengan data dunia nyata:
    - **API restrictions:** batasi hanya ke Places API yang dipakai project ini.
    - Aktifkan billing dan kuota/budget alert di Google Cloud.
 7. Cloudflare Pages tidak menyediakan static outbound IP yang stabil untuk IP restriction, jadi restriction IP biasanya tidak praktis untuk Pages Functions. Jika wajib IP restriction, pindahkan endpoint Google Places ke server dengan static egress IP.
-8. Copy API Key tersebut, lalu simpan di `/admin/settings` sebagai `GOOGLE_PLACES_API_KEY`.
+8. Simpan API key tersebut sebagai secret binding `GOOGLE_PLACES_API_KEY` pada project Pages.
 
 ---
 
@@ -111,7 +101,7 @@ Rekomendasi praktis:
 1. Mulai dari `PAYMENT_PROCESSOR=mock` agar checkout tetap mencatat lead `checkout_pending`.
 2. Setelah akun merchant siap, pilih salah satu live processor di `/admin/settings#settings-payment`: `xendit`, `midtrans`, atau `doku`.
 3. Isi `PAYMENT_USD_AMOUNT` dan `PAYMENT_USD_TO_IDR_RATE`. App menampilkan USD ke calon klien, lalu mengirim amount IDR ke gateway Indonesia.
-4. Simpan key provider:
+4. Simpan key provider sebagai secret bindings:
    - Xendit: `XENDIT_SECRET_KEY`
    - Midtrans: `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`
    - DOKU: `DOKU_CLIENT_ID`, `DOKU_SECRET_KEY`, `DOKU_IS_PRODUCTION`
@@ -121,3 +111,5 @@ Rekomendasi praktis:
 8. Setelah sandbox capture berhasil, isi `PAYPAL_SANDBOX_WEBHOOK_ID` jika memakai webhook sandbox. Lalu isi live API key / Client ID ke `PAYPAL_LIVE_CLIENT_ID`, live secret ke `PAYPAL_LIVE_CLIENT_SECRET`, live webhook ID ke `PAYPAL_LIVE_WEBHOOK_ID`, dan pilih mode Live (`PAYPAL_IS_PRODUCTION=true`). Endpoint webhook tersedia di `/api/payments/paypal-webhook` sebagai backup reconciliation.
 
 Gunakan PayPal Business, bukan PayPal Personal, untuk volume bisnis. Legacy Lemon Squeezy fields tetap ada hanya untuk kompatibilitas lama.
+
+Server mengikat order WebView ke transaksi PayPal dan menunggu settlement yang cocok sebelum menandai order sebagai dibayar. Persetujuan langganan tetap berstatus pending sampai ada pembayaran yang memenuhi syarat. Server juga memvalidasi ulang pilihan domain baru. Gunakan sandbox untuk menguji proses end-to-end.

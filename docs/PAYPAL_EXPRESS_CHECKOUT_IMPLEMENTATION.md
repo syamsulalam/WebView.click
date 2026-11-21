@@ -2,6 +2,8 @@
 
 Last updated: 28 May 2026.
 
+Production update, 21 November 2026. The same owner panel serves `/demo`, `/:businessId`, and `/site-package/:slug`. Current order and settlement rules live in [CODEBASE.md](../CODEBASE.md). The server records a pending order before calling PayPal. It checks the bound order or plan, amount, currency and settlement event. Subscription approval alone leaves the order pending. Older unbound orders require manual reconciliation.
+
 Purpose: local reference for WebView.click PayPal checkout, yearly subscription billing, pricing, D1 storage, and production QA.
 
 ## Official References

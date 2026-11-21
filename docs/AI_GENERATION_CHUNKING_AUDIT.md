@@ -2,6 +2,8 @@
 
 Last updated: 26 Mei 2026.
 
+This records the original React generator audit. [CODEBASE.md](../CODEBASE.md) describes current D1 step leases, retry checkpoints, and atomic AI call budgets. The separate Elementor and AI Bridge path is covered by [GUIDE.md](../GUIDE.md).
+
 ## Goal
 
 Generated WebView.click sites should not feel like thin Google Business Profile summaries. The target output is:

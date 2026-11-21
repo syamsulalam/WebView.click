@@ -2,6 +2,8 @@
 
 Dokumen ini menjelaskan bagaimana sistem autentikasi Clerk diimplementasikan pada aplikasi WebView.click, cara menyesuaikan metadata untuk akses admin, serta pembaruan terbaru mengenai `needs_client_trust`.
 
+Pada produksi, Pages Functions memverifikasi sesi dan membaca role admin dari Clerk sebelum akses data privat. `VITE_CLERK_PUBLISHABLE_KEY` dan secret binding `CLERK_SECRET_KEY` harus berasal dari aplikasi Clerk yang sama. Route admin menerima permintaan same-origin dari `webview.click` atau project produksi `webview-click.pages.dev`. Tanpa sesi, API menolak dengan HTTP 401. Pengguna tanpa role admin ditolak dengan HTTP 403. Lihat [CODEBASE.md](../CODEBASE.md) untuk batas API publik.
+
 ---
 
 ## 1. Pembaruan Kepercayaan Klien (`needs_client_trust`)
@@ -9,7 +11,7 @@ Dokumen ini menjelaskan bagaimana sistem autentikasi Clerk diimplementasikan pad
 Clerk telah merilis pembaruan keamanan yang menambahkan status baru `needs_client_trust`. Status ini dipicu jika pengguna masuk (Sign-In) dari perangkat atau klien yang benar-benar baru, di mana sistem akan memberikan tantangan tambahan (seperti autentikasi 2FA) untuk memastikan keamanan.
 
 ### Implementasi pada Aplikasi Kita:
-- **Kita Menggunakan Komponen Standar (`<SignIn />` dari `@clerk/clerk-react`)**: Pembaruan paket `@clerk/clerk-react` ke versi `6.0.0` atau yang lebih tinggi sudah secara otomatis mendukung dan menangani status `needs_client_trust` di dalam UI komponen bawaannya.
+- **Komponen standar Clerk.** Layar `<SignIn />` menangani alur sign-in. Periksa versi efektif di `pnpm-lock.yaml` sebelum mengikuti panduan upgrade Clerk.
 - **Tindakan Tambahan**: Tidak ada perubahan logika kustom yang perlu ditambahkan, karena kita _tidak_ menggunakan aliran sign-in kustom murni via API (seperti mengeksekusi `signIn.create` secara manual dan menangani siklus hidupnya). Cukup pastikan versi paket di `package.json` tetap up-to-date.
 
 ---

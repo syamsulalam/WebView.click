@@ -28,16 +28,31 @@ test("one claim owns a generation step and the next step must match the checkpoi
   const enteredProvider = new Promise<void>((resolve) => { entered = resolve; });
   const providerGate = new Promise<void>((resolve) => { release = resolve; });
   let calls = 0;
-  const deps = {
+  const unexpected = () => { throw new Error("Unexpected dependency call in generation lease fixture"); };
+  const deps: GenerationJobsDeps = {
     templateSchema: {}, asString, errorJson, json, parseJsonObject, readJsonBody,
+    normalizeBusinessId: unexpected,
+    placeIdFromPlace: unexpected,
     async ensureRequiredColumns() {},
+    generateRequiredColumns: [],
+    createGenerationJob: unexpected,
+    updateGenerationJob: unexpected,
+    updateProspectRecord: unexpected,
+    insertProviderCooldownEvent: unexpected,
+    getSetting: unexpected,
     async generateAiOfferingOutline() {
       calls += 1;
       entered();
       await providerGate;
       return null;
     },
-  } as GenerationJobsDeps;
+    applyAiOfferingOutline: unexpected,
+    generateAiCopyPatch: unexpected,
+    applyAiCopyPatch: unexpected,
+    collectAiCopyAuditTargets: unexpected,
+    buildAiCopyAudit: unexpected,
+    handleSites: unexpected,
+  };
   const post = (step: string) => handleGenerationJobs(deps, new Request("https://webview.click/api/generation-jobs/job/run-step", {
     method: "POST", body: JSON.stringify({ step }),
   }), db as never, {}, ["generation-jobs", "job", "run-step"]);

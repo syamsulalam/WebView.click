@@ -1,5 +1,7 @@
 # **📄 PRODUCT REQUIREMENTS DOCUMENT (PRD)**
 
+Catatan historis desain CRM dan generator JSON. Gunakan [PRD aktif](../PRD.md), [CODEBASE.md](../CODEBASE.md), dan [panduan operasi](../GUIDE.md) untuk konfigurasi, keputusan produk, dan deployment saat ini.
+
 **Project Name:** WebView.click  
 **Version:** 1.0  
 **Description:** Platform otomatisasi *lead generation* dan *website builder* berbasis JSON untuk mengonversi prospek Google My Business menjadi klien *managed hosting*.

@@ -35,7 +35,11 @@ def _document(text: str) -> dict:
 def validate(text: str) -> None:
     doc = _document(text)
     trigger = doc.get("on", doc.get(True))
-    if doc.get("name") != "API Handler Tests" or trigger != {"workflow_dispatch": None}:
+    if doc.get("name") != "API Handler Tests" or trigger != {
+        "workflow_dispatch": None,
+        "pull_request": {"branches": ["main"]},
+        "push": {"branches": ["main"], "paths-ignore": [".github/**", "docs/**", "README.md"]},
+    }:
         raise AssertionError("workflow name/trigger mismatch")
     if doc.get("permissions") != {"contents": "read"}:
         raise AssertionError("permissions mismatch")
@@ -45,18 +49,28 @@ def validate(text: str) -> None:
     job = jobs["api-handlers"]
     if job.get("runs-on") != "ubuntu-latest" or job.get("timeout-minutes") != 10:
         raise AssertionError("runner/timeout mismatch")
+    if job.get("if") != "github.actor != 'github-actions[bot]'":
+        raise AssertionError("automation actor guard mismatch")
     steps = job.get("steps")
-    if not isinstance(steps, list) or len(steps) != 5:
+    if not isinstance(steps, list) or len(steps) != 7:
         raise AssertionError("step count mismatch")
     if steps[0].get("uses") != f"actions/checkout@{PINS['actions/checkout']}" or steps[0].get("with", {}).get("persist-credentials") is not False:
         raise AssertionError("checkout mismatch")
-    if steps[1].get("uses") != f"pnpm/action-setup@{PINS['pnpm/action-setup']}" or steps[1].get("with") != {"version": "10.34.1", "run_install": False}:
+    sqlite_guard = (
+        "tracked=$(git ls-files -- '*.sqlite' '*.sqlite-*' '*.sqlite3' '*.sqlite3-*')\n"
+        'if [ -n "$tracked" ]; then\n'
+        '  echo "::error::Remove tracked SQLite databases and sidecars."\n'
+        "  exit 1\nfi\n"
+    )
+    if steps[1].get("run") != sqlite_guard:
+        raise AssertionError("tracked SQLite guard mismatch")
+    if steps[2].get("uses") != f"pnpm/action-setup@{PINS['pnpm/action-setup']}" or steps[2].get("with") != {"version": "10.34.1", "run_install": False}:
         raise AssertionError("pnpm setup mismatch")
-    if steps[2].get("uses") != f"actions/setup-node@{PINS['actions/setup-node']}" or steps[2].get("with") != {"node-version": 22, "cache": "pnpm", "cache-dependency-path": "pnpm-lock.yaml"}:
+    if steps[3].get("uses") != f"actions/setup-node@{PINS['actions/setup-node']}" or steps[3].get("with") != {"node-version": 22, "cache": "pnpm", "cache-dependency-path": "pnpm-lock.yaml"}:
         raise AssertionError("node setup mismatch")
-    if steps[3].get("run") != "pnpm install --frozen-lockfile" or steps[4].get("run") != "pnpm run test:api-handlers":
+    if [step.get("run") for step in steps[4:]] != ["pnpm install --frozen-lockfile", "pnpm run lint", "pnpm run test:api-handlers"]:
         raise AssertionError("command mismatch")
-    forbidden = re.compile(r"(?i)(\bnpm\b|\byarn\b|\bnpx\b|secrets\.|contents:\s*write|git\s+(commit|push)|schedule:|^\s*push:|pull_request:|uses:\s*[^\s@]+@(v\d|main|master|latest)\b)", re.MULTILINE)
+    forbidden = re.compile(r"(?i)(\bnpm\b|\byarn\b|\bnpx\b|secrets\.|contents:\s*write|git\s+(commit|push)|schedule:|pull_request_target:|uses:\s*[^\s@]+@(v\d|main|master|latest)\b)", re.MULTILINE)
     if forbidden.search(text):
         raise AssertionError("forbidden operation or mutable reference")
 
@@ -73,6 +87,7 @@ class ApiHandlerWorkflowTests(unittest.TestCase):
             source.replace("workflow_dispatch:", "push:", 1),
             source.replace("contents: read", "contents: write", 1),
             source.replace("timeout-minutes: 10\n", "", 1),
+            source.replace("exit 1", "exit 0", 1),
             source.replace("pnpm run test:api-handlers", "pnpm run test:api-handlers\n      - run: echo extra", 1),
         ]
         for poison in poisons:
@@ -100,5 +115,6 @@ class ApiHandlerWorkflowTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(exit=False)
+    if not unittest.main(exit=False).result.wasSuccessful():
+        sys.exit(1)
     print("installed_api_handler_tests_contract: PASS")

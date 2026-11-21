@@ -2,12 +2,21 @@ name: API Handler Tests
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.github/**'
+      - 'docs/**'
+      - 'README.md'
 
 permissions:
   contents: read
 
 jobs:
   api-handlers:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -15,6 +24,13 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - name: Reject tracked SQLite data
+        run: |
+          tracked=$(git ls-files -- '*.sqlite' '*.sqlite-*' '*.sqlite3' '*.sqlite3-*')
+          if [ -n "$tracked" ]; then
+            echo "::error::Remove tracked SQLite databases and sidecars."
+            exit 1
+          fi
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
@@ -28,5 +44,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Check application types
+        run: pnpm run lint
       - name: Run API handler tests
         run: pnpm run test:api-handlers
